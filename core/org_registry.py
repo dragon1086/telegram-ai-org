@@ -112,3 +112,49 @@ class OrgRegistry:
         if target_org and target_org.name != from_org:
             logger.info(f"크로스 조직 라우팅: {from_org} → {target_org.name} ({to_worker})")
         return target_org
+
+    def register_org(
+        self,
+        org_id: str,
+        bot_token: str,
+        chat_id: int,
+        specialties: list[str],
+        role: str = "",
+    ) -> None:
+        """새 조직 등록 + pm_{org_id}.md 초기화."""
+        from core.pm_identity import PMIdentity  # noqa: F401
+
+        # organizations.yaml에 추가
+        cfg = {
+            "name": org_id,
+            "description": role or f"{org_id} PM",
+            "pm_token": bot_token,
+            "group_chat_id": chat_id,
+            "workers": [],
+        }
+        org = Organization.from_config({**cfg, "pm_token": bot_token})
+        self._orgs[org_id] = org
+
+        # pm_{org_id}.md 생성
+        identity_path = Path.home() / ".ai-org" / "memory" / f"pm_{org_id}.md"
+        identity_path.parent.mkdir(parents=True, exist_ok=True)
+
+        specialties_str = ", ".join(specialties) if specialties else "일반"
+        content = (
+            f"## [CORE] PM 정체성\n"
+            f"- 봇명: @aiorg_{org_id}_pm_bot ({org_id})\n"
+            f"- 역할: {role or org_id + ' PM'}\n"
+            f"- 전문분야: {specialties_str}\n\n"
+            f"## [CORE] 조직 목록\n"
+            f"- pm_global: 전체 조율, 일반 대화\n"
+            f"- pm_{org_id}: {specialties_str}\n"
+        )
+        identity_path.write_text(content, encoding="utf-8")
+        logger.info(f"조직 등록 완료: {org_id} → {identity_path}")
+
+    def get_identity(self, org_id: str) -> "PMIdentity":
+        """org_id의 PMIdentity 반환."""
+        from core.pm_identity import PMIdentity
+        identity = PMIdentity(org_id)
+        identity.load()
+        return identity
