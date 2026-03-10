@@ -540,6 +540,7 @@ agent_hints:
     preferred_agents: [executor, architect, debugger]
     omc_team_format: "2:executor,1:architect"
     execution_mode: omc_team
+    preferred_engine: claude-code
 
   analysis:
     description: "분석, 리서치, 데이터 처리, 시장 조사"
@@ -547,6 +548,7 @@ agent_hints:
     preferred_agents: [analyst, scientist]
     omc_team_format: "1:analyst,1:scientist"
     execution_mode: agent_teams
+    preferred_engine: auto
 
   writing:
     description: "문서 작성, 보고서, README, 마케팅"
@@ -554,6 +556,7 @@ agent_hints:
     preferred_agents: [writer, document-specialist]
     omc_team_format: "2:writer"
     execution_mode: agent_teams
+    preferred_engine: claude-code
 
   review:
     description: "코드 리뷰, QA, 보안 감사, 품질 검증"
@@ -561,6 +564,7 @@ agent_hints:
     preferred_agents: [code-reviewer, qa-tester, verifier]
     omc_team_format: "1:code-reviewer,1:qa-tester"
     execution_mode: agent_teams
+    preferred_engine: claude-code
 
   planning:
     description: "계획 수립, 아키텍처 설계, 전략"
@@ -568,6 +572,7 @@ agent_hints:
     preferred_agents: [planner, architect, analyst]
     omc_team_format: "1:planner,1:architect"
     execution_mode: sequential
+    preferred_engine: claude-code
 
   simple:
     description: "단순 실행, 빠른 작업"
@@ -575,6 +580,7 @@ agent_hints:
     preferred_agents: [executor]
     omc_team_format: "1:executor"
     execution_mode: sequential
+    preferred_engine: codex
 """
 
 SUBSET_HINTS_YAML_TPL = """\
@@ -600,6 +606,7 @@ SECTION_MAP = {
     preferred_agents: [executor, architect, debugger]
     omc_team_format: "2:executor,1:architect"
     execution_mode: omc_team
+    preferred_engine: claude-code
 """,
     "analysis": """\
   analysis:
@@ -608,6 +615,7 @@ SECTION_MAP = {
     preferred_agents: [analyst, scientist]
     omc_team_format: "1:analyst,1:scientist"
     execution_mode: agent_teams
+    preferred_engine: auto
 """,
     "writing": """\
   writing:
@@ -616,6 +624,7 @@ SECTION_MAP = {
     preferred_agents: [writer, document-specialist]
     omc_team_format: "2:writer"
     execution_mode: agent_teams
+    preferred_engine: claude-code
 """,
     "review": """\
   review:
@@ -624,6 +633,7 @@ SECTION_MAP = {
     preferred_agents: [code-reviewer, qa-tester, verifier]
     omc_team_format: "1:code-reviewer,1:qa-tester"
     execution_mode: agent_teams
+    preferred_engine: claude-code
 """,
     "planning": """\
   planning:
@@ -632,6 +642,7 @@ SECTION_MAP = {
     preferred_agents: [planner, architect, analyst]
     omc_team_format: "1:planner,1:architect"
     execution_mode: sequential
+    preferred_engine: claude-code
 """,
 }
 
@@ -683,23 +694,107 @@ EXEC_MODE_LABEL = {
     "agent_teams": "Claude Code Agent Teams",
     "auto": "자동 선택 (LLM이 태스크에 따라 결정)",
 }
+EXEC_ENGINE_MAP = {"1": "claude-code", "2": "codex", "3": "auto"}
+EXEC_ENGINE_LABEL = {
+    "claude-code": "Claude Code (omc /team)",
+    "codex": "Codex CLI",
+    "auto": "자동 결정 (태스크 복잡도에 따라 선택)",
+}
+_ENGINE_TO_EXEC_MODE = {"claude-code": "omc_team", "codex": "sequential", "auto": "auto"}
+_CATEGORY_ENGINE_DEFAULTS = {"coding": "1", "analysis": "3", "writing": "1", "review": "1"}
+_CATEGORY_LABELS = {
+    "coding": "개발/코딩 작업",
+    "analysis": "분석/리서치 작업",
+    "writing": "문서/마케팅 작업",
+    "review": "코드 리뷰/QA",
+}
 
 
-def step_exec_engine(existing_cfg: dict[str, str]) -> str:
-    step_header(5, "실행 엔진 기본값 설정")
-    current_mode = existing_cfg.get("DEFAULT_EXECUTION_MODE", "auto")
-    current_label = EXEC_MODE_LABEL.get(current_mode, current_mode)
+def _update_agent_hints_engines(category_engines: dict[str, str]) -> None:
+    """agent_hints.yaml의 각 카테고리 preferred_engine 라인을 업데이트."""
+    if not AGENT_HINTS_FILE.exists():
+        return
+    try:
+        import re as _re
+        lines = AGENT_HINTS_FILE.read_text(encoding="utf-8").splitlines(keepends=True)
+        current_section: str | None = None
+        new_lines: list[str] = []
+        for line in lines:
+            m = _re.match(r"^  (\w[\w-]*):\s*$", line)
+            if m:
+                current_section = m.group(1)
+            if current_section in category_engines and line.strip().startswith("preferred_engine:"):
+                indent = len(line) - len(line.lstrip())
+                new_lines.append(" " * indent + f"preferred_engine: {category_engines[current_section]}\n")
+                continue
+            new_lines.append(line)
+        AGENT_HINTS_FILE.write_text("".join(new_lines), encoding="utf-8")
+        ok("agent_hints.yaml 엔진 설정 업데이트 완료")
+    except Exception as e:
+        warn(f"agent_hints.yaml 업데이트 실패: {e}")
+
+
+def _show_engine_check() -> None:
+    """--check 모드에서 agent_hints.yaml의 엔진 설정 현황 출력."""
+    if not AGENT_HINTS_FILE.exists():
+        return
+    try:
+        import re as _re
+        content = AGENT_HINTS_FILE.read_text(encoding="utf-8")
+        current_section: str | None = None
+        print(f"\n  {bold('카테고리별 엔진:')}")
+        for line in content.splitlines():
+            m = _re.match(r"^  (\w[\w-]*):\s*$", line)
+            if m:
+                current_section = m.group(1)
+            if current_section and line.strip().startswith("preferred_engine:"):
+                eng = line.strip().split(":", 1)[1].strip()
+                label = EXEC_ENGINE_LABEL.get(eng, eng)
+                print(f"    • {current_section}: {label}")
+    except Exception:
+        pass
+
+
+def step_exec_engine(
+    existing_cfg: dict[str, str],
+    preflight: PreflightResult | None = None,
+) -> tuple[str, str]:
+    """실행 엔진 설정. Returns (exec_mode, preferred_engine)."""
+    step_header(5, "실행 엔진 설정")
+
+    both_detected = preflight is not None and preflight.claude_ok and preflight.codex_ok
+    if both_detected:
+        assert preflight is not None
+        print(f"\n  {green('[OK]')} Claude Code ... {dim(preflight.claude_ver)}")
+        print(f"  {green('[OK]')} Codex .......... {dim(preflight.codex_ver)}")
+        print(f"\n  {bold('둘 다 감지됐습니다! 실행 엔진을 설정합니다.')}")
+
+    current_engine = existing_cfg.get("PREFERRED_ENGINE", "claude-code")
+    current_label = EXEC_ENGINE_LABEL.get(current_engine, current_engine)
     print(f"""
-  기본 실행 모드 {dim(f'(현재: {current_label})')}:
-    {bold('1.')} omc /team       {dim('(권장: plan→prd→exec→verify 파이프라인)')}
-    {bold('2.')} Agent Teams     {dim('(병렬 서브에이전트)')}
-    {bold('3.')} 자동 선택       {dim('(LLM이 태스크에 따라 결정) ← 기본')}
+  기본 실행 엔진 선택: {dim(f'(현재: {current_label})')}
+    {bold('1.')} Claude Code + omc /team  {dim('— 복잡한 태스크, 페르소나 21개, plan→exec→verify 파이프라인 [권장]')}
+    {bold('2.')} Codex                    {dim('— 빠른 단순 태스크')}
+    {bold('3.')} 자동 결정                {dim('— LLM이 태스크 복잡도에 따라 선택 (둘 다 사용)')}
 """)
-    default_choice = {"omc_team": "1", "agent_teams": "2", "auto": "3"}.get(current_mode, "3")
+    default_choice = {"claude-code": "1", "codex": "2", "auto": "3"}.get(current_engine, "1")
     choice = ask("선택", default=default_choice)
-    mode = EXEC_MODE_MAP.get(choice, "auto")
-    ok(f"기본 실행 모드: {EXEC_MODE_LABEL[mode]}")
-    return mode
+    engine = EXEC_ENGINE_MAP.get(choice, "claude-code")
+    exec_mode = _ENGINE_TO_EXEC_MODE.get(engine, "auto")
+    ok(f"기본 실행 엔진: {EXEC_ENGINE_LABEL[engine]}")
+
+    # 태스크 유형별 선호 엔진 (둘 다 감지됐을 때만)
+    if both_detected:
+        print(f"\n  {bold('태스크 유형별 선호 엔진 설정')} {dim('(엔터=기본값, 1=Claude Code, 2=Codex, 3=자동)')}\n")
+        category_engines: dict[str, str] = {}
+        for cat_key, cat_label in _CATEGORY_LABELS.items():
+            default = _CATEGORY_ENGINE_DEFAULTS[cat_key]
+            raw = ask(f"  {cat_label} (1/2/3)", default=default)
+            cat_choice = raw if raw in ("1", "2", "3") else default
+            category_engines[cat_key] = EXEC_ENGINE_MAP.get(cat_choice, "claude-code")
+        _update_agent_hints_engines(category_engines)
+
+    return exec_mode, engine
 
 
 # ─── Step 6: Python 의존성 설치 ───────────────────────────────────────────────
@@ -777,7 +872,7 @@ def step_simulation() -> None:
 
 # ─── 설정 저장 ────────────────────────────────────────────────────────────────
 
-def save_all(orgs: list[dict], exec_mode: str, binaries: dict) -> None:
+def save_all(orgs: list[dict], exec_mode: str, binaries: dict, preferred_engine: str = "claude-code") -> None:
     """config.yaml + organizations.yaml 저장."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -787,6 +882,7 @@ def save_all(orgs: list[dict], exec_mode: str, binaries: dict) -> None:
     lines.append(f"PM_BOT_TOKEN={first_org.get('pm_token', '')}\n")
     lines.append(f"TELEGRAM_GROUP_CHAT_ID={first_org.get('group_chat_id', '')}\n")
     lines.append(f"DEFAULT_EXECUTION_MODE={exec_mode}\n")
+    lines.append(f"PREFERRED_ENGINE={preferred_engine}\n")
     if binaries.get("claude"):
         lines.append(f"CLAUDE_CLI_PATH={binaries['claude']}\n")
     if binaries.get("codex"):
@@ -826,7 +922,7 @@ def save_all(orgs: list[dict], exec_mode: str, binaries: dict) -> None:
 
 # ─── 완료 화면 ────────────────────────────────────────────────────────────────
 
-def print_final_summary(r: PreflightResult, orgs: list[dict], exec_mode: str) -> None:
+def print_final_summary(r: PreflightResult, orgs: list[dict], exec_mode: str, preferred_engine: str = "claude-code") -> None:
     banner("✅ telegram-ai-org 설정 완료!")
 
     print(f"  {bold('환경:')}")
@@ -838,7 +934,8 @@ def print_final_summary(r: PreflightResult, orgs: list[dict], exec_mode: str) ->
         print(f"    • omc: v{r.omc_ver} ({team_str}, {teams_str})")
     if r.agent_count > 0:
         print(f"    • 에이전트: {r.agent_count}개 페르소나 로드됨")
-    print(f"    • 실행 엔진: {EXEC_MODE_LABEL.get(exec_mode, exec_mode)}")
+    print(f"    • 실행 모드: {EXEC_MODE_LABEL.get(exec_mode, exec_mode)}")
+    print(f"    • 기본 엔진: {EXEC_ENGINE_LABEL.get(preferred_engine, preferred_engine)}")
 
     print(f"\n  {bold('조직:')}")
     for org in orgs:
@@ -899,6 +996,14 @@ def main() -> None:
 
     if args.check:
         issues = preflight.issues
+        # 엔진 설정 현황
+        existing_check = load_existing_config()
+        preferred_engine_check = existing_check.get("PREFERRED_ENGINE", "미설정")
+        exec_mode_check = existing_check.get("DEFAULT_EXECUTION_MODE", "미설정")
+        print(f"\n{bold('⚙ 엔진 설정:')}")
+        print(f"  기본 엔진: {EXEC_ENGINE_LABEL.get(preferred_engine_check, preferred_engine_check)}")
+        print(f"  실행 모드: {EXEC_MODE_LABEL.get(exec_mode_check, exec_mode_check)}")
+        _show_engine_check()
         if issues:
             print(f"\n{yellow('⚠ 문제 감지:')} {', '.join(issues)}")
         else:
@@ -931,20 +1036,20 @@ def main() -> None:
     step_agent_hints()
 
     # Step 5: 실행 엔진
-    exec_mode = step_exec_engine(existing_cfg)
+    exec_mode, preferred_engine = step_exec_engine(existing_cfg, preflight)
 
     # Step 6: Python 의존성
     step_python_deps(preflight.deps_missing)
 
     # 설정 저장
     binaries = {"claude": preflight.claude_path, "codex": preflight.codex_path}
-    save_all(orgs, exec_mode, binaries)
+    save_all(orgs, exec_mode, binaries, preferred_engine)
 
     # Step 7: 시뮬레이션 검증
     step_simulation()
 
     # 완료 화면
-    print_final_summary(preflight, orgs, exec_mode)
+    print_final_summary(preflight, orgs, exec_mode, preferred_engine)
 
 
 if __name__ == "__main__":

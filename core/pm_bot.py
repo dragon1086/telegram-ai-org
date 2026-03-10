@@ -17,6 +17,9 @@ from core.context_db import ContextDB
 from core.message_schema import OrgMessage
 from core.task_manager import TaskManager, TaskStatus
 from core.worker_registry import WorkerRegistry
+from core.agent_catalog import AgentCatalog
+from core.dynamic_team_builder import DynamicTeamBuilder
+from tools.claude_code_runner import ClaudeCodeRunner
 
 
 def _extract_root_task_id(sub_id: str) -> str:
@@ -47,10 +50,37 @@ class PMBot:
         for w in self.workers:
             self.health.register(w.name)
         self.memory = ProjectMemory()
+        # 동적 팀 빌더 (새 아키텍처)
+        self.agent_catalog = AgentCatalog()
+        self.agent_catalog.load()
+        self.team_builder = DynamicTeamBuilder(catalog=self.agent_catalog)
+        self.runner = ClaudeCodeRunner()
         # 태스크별 실행 계획 및 Phase 상태 추적
         self._plans: dict[str, ExecutionPlan] = {}
         self._phase_idx: dict[str, int] = {}
         self._phase_pending: dict[str, set[str]] = {}
+
+    async def _execute_with_dynamic_team(self, task: str) -> str:
+        """DynamicTeamBuilder로 팀 구성 → ClaudeCodeRunner로 실행."""
+        team_config = await self.team_builder.build_team(task)
+        announcement = self.team_builder.format_team_announcement(team_config)
+        await self.send_text(announcement)
+
+        from core.dynamic_team_builder import ExecutionMode
+        agent_names = [p.name for p in team_config.agents]
+
+        # 엔진 우선 분기: codex가 명시되면 Codex CLI로 라우팅
+        if team_config.engine == "codex":
+            logger.info(f"[pm_bot] 엔진=codex → run_codex()")
+            return await self.runner.run_codex(task, agent_names)
+
+        if team_config.execution_mode == ExecutionMode.omc_team:
+            return await self.runner.run_omc_team(task, agent_names)
+        elif team_config.execution_mode == ExecutionMode.agent_teams:
+            return await self.runner.run_agent_teams(task, agent_names)
+        else:
+            persona = agent_names[0] if agent_names else None
+            return await self.runner.run_single(task, persona)
 
     async def _select_workers(self, task_description: str) -> list[str]:
         """LLM으로 태스크 분석 → 최적 워커 자율 선택."""
@@ -105,9 +135,21 @@ class PMBot:
 
         logger.info(f"유저 메시지 수신: @{user_name}: {user_text[:100]}")
 
+        # 동적 팀 모드: /run 또는 /execute 명령으로 직접 Claude Code 실행
+        if user_text.startswith(("/run ", "/execute ")):
+            direct_task = user_text.split(" ", 1)[1].strip()
+            await self.send_text(f"⚡ 동적 팀 모드로 실행: {direct_task[:100]}...")
+            result = await self._execute_with_dynamic_team(direct_task)
+            await self.send_text(f"✅ 완료:\n{result[:3000]}")
+            return
+
         workers = self.registry.list_workers()
         if not workers:
-            await self.send_text("❌ 현재 사용 가능한 워커 봇이 없습니다. `workers.yaml`을 확인하세요.")
+            # 워커 봇 없음 → 동적 에이전트 팀으로 자동 전환
+            logger.info("워커 봇 없음 → 동적 팀 모드로 자동 전환")
+            await self.send_text(f"🤖 AI 팀 구성 중...")
+            result = await self._execute_with_dynamic_team(user_text)
+            await self.send_text(f"✅ 완료:\n{result[:3000]}")
             return
 
         # RAG 컨텍스트로 플래너에 과거 태스크 이력 제공
@@ -289,15 +331,21 @@ class PMBot:
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if update.message:
-            workers = self.registry.list_workers()
-            worker_lines = "\n".join(
-                f"  • {w['handle']} ({w['engine']}) — {w['description']}"
-                for w in workers
-            ) or "  (워커 없음 — workers.yaml 확인)"
+            agents = self.catalog.list_agents() if hasattr(self, "catalog") else []
+            agent_names = ", ".join(a.name for a in agents[:8])
+            more = f" 외 {len(agents)-8}개" if len(agents) > 8 else ""
             await update.message.reply_text(
-                f"🤖 PM Bot 온라인. AI 조직 준비 완료.\n\n"
-                f"현재 워커 팀:\n{worker_lines}\n\n"
-                f"요청사항을 입력하면 적합한 팀원에게 태스크를 할당합니다."
+                f"🤖 **PM Bot 온라인**\n\n"
+                f"무엇이든 말씀하세요. 요청에 맞는 AI 전문가 팀을 자동으로 구성합니다.\n\n"
+                f"🧠 사용 가능한 전문가:\n"
+                f"  {agent_names}{more}\n\n"
+                f"💬 사용 예시:\n"
+                f"  • 프리즘 인사이트 주간 보고서 작성해줘\n"
+                f"  • FastAPI 서버 구현해줘\n"
+                f"  • 코드 보안 리뷰해줘\n\n"
+                f"/run <태스크> — 직접 실행\n"
+                f"/status — 진행 상태 확인",
+                parse_mode="Markdown"
             )
 
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -315,13 +363,32 @@ class PMBot:
                 text += f"\n\n{recent}"
             await update.message.reply_text(text, parse_mode="Markdown")
 
+    async def _handle_run_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """동적 팀 모드로 Claude Code 직접 실행."""
+        if update.message is None:
+            return
+        args = context.args
+        if not args:
+            await update.message.reply_text("사용법: /run <태스크 설명>")
+            return
+        task = " ".join(args)
+        await update.message.reply_text(f"⚡ 동적 팀 빌딩 중...")
+        result = await self._execute_with_dynamic_team(task)
+        await update.message.reply_text(f"✅ 결과:\n{result[:3000]}")
+
+    async def _post_init(self, application: "Application") -> None:
+        """봇 시작 후 비동기 초기화."""
+        await self.context_db.initialize()
+        logger.info("ContextDB 초기화 완료")
+
     def build(self) -> Application:
         """애플리케이션 빌드."""
-        self.app = Application.builder().token(self.token).build()
+        self.app = Application.builder().token(self.token).post_init(self._post_init).build()
         self.completion = CompletionProtocol(self.task_manager, self.send_text)
 
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("status", self.status_command))
+        self.app.add_handler(CommandHandler("run", self._handle_run_command))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_group_message))
 
         return self.app
