@@ -415,6 +415,20 @@ def step_pm_bot(existing: dict[str, str]) -> tuple[str, str]:
         if bot_info:
             print()
             ok(f"PM 봇 연결 확인: @{bot_info.get('username', '?')} ({bot_info.get('first_name', '')})")
+            # Privacy Mode 안내
+            print()
+            print("  " + "─" * 44)
+            print("  ⚠️  중요: Privacy Mode 반드시 해제하세요!")
+            print("  " + "─" * 44)
+            print(f"  1. 텔레그램에서 @BotFather 채팅 열기")
+            print(f"  2. /setprivacy 입력")
+            print(f"  3. @{bot_info.get('username', 'your_bot')} 선택")
+            print(f"  4. Disable 클릭")
+            print()
+            print("  ℹ️  Privacy Mode가 켜져 있으면 봇이 /명령어만 받고")
+            print("     일반 메시지에는 응답하지 않습니다.")
+            print("  " + "─" * 44)
+            ask_yes("  위 단계를 완료했나요? (나중에 해도 됩니다)", default=True)
             break
         else:
             print()

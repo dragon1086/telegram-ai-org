@@ -1,52 +1,17 @@
-# agent_hints.yaml — LLM 라우팅 힌트 카탈로그
-# 이 파일은 DynamicTeamBuilder가 팀 구성 시 참고하는 힌트입니다.
-# 실제 런타임 팀 구성은 Claude Code Agent Teams / omc /team 이 수행합니다.
-
 agent_hints:
   coding:
-    description: "코딩, 구현, 버그 수정, 리팩토링"
-    keywords: [implement, build, code, fix, refactor, debug, develop, 구현, 코딩, 개발, 수정]
+    preferred_engine: claude-code
     preferred_agents: [executor, architect, debugger]
     omc_team_format: "2:executor,1:architect"
-    execution_mode: omc_team
-    preferred_engine: claude-code
-
   analysis:
-    description: "분석, 리서치, 데이터 처리, 시장 조사"
-    keywords: [analyze, research, data, market, report, investigate, 분석, 리서치, 조사]
+    preferred_engine: auto
     preferred_agents: [analyst, scientist]
     omc_team_format: "1:analyst,1:scientist"
-    execution_mode: agent_teams
-    preferred_engine: auto
-
   writing:
-    description: "문서 작성, 보고서, README, 마케팅"
-    keywords: [write, document, report, README, content, blog, 작성, 문서, 보고서]
+    preferred_engine: claude-code
     preferred_agents: [writer, document-specialist]
     omc_team_format: "2:writer"
-    execution_mode: agent_teams
-    preferred_engine: claude-code
-
   review:
-    description: "코드 리뷰, QA, 보안 감사, 품질 검증"
-    keywords: [review, audit, security, quality, test, QA, verify, 리뷰, 검토, 감사]
-    preferred_agents: [code-reviewer, qa-tester, verifier]
+    preferred_engine: claude-code
+    preferred_agents: [code-reviewer, qa-tester, security-reviewer]
     omc_team_format: "1:code-reviewer,1:qa-tester"
-    execution_mode: agent_teams
-    preferred_engine: claude-code
-
-  planning:
-    description: "계획 수립, 아키텍처 설계, 전략"
-    keywords: [plan, design, architect, strategy, roadmap, 계획, 설계, 전략]
-    preferred_agents: [planner, architect, analyst]
-    omc_team_format: "1:planner,1:architect"
-    execution_mode: sequential
-    preferred_engine: claude-code
-
-  simple:
-    description: "단순 실행, 빠른 작업"
-    keywords: []
-    preferred_agents: [executor]
-    omc_team_format: "1:executor"
-    execution_mode: sequential
-    preferred_engine: codex

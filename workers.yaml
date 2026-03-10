@@ -1,24 +1,3 @@
-# 워커 봇 런타임 설정
-# setup_wizard.py로 자동 생성되거나 직접 편집 가능
-
-workers:
-  - name: cokac
-    token: "${COKAC_BOT_TOKEN}"
-    engine: claude-code
-    description: "코딩, 구현, 리팩토링 전문"
-
-  # 추가 워커 예시:
-  # - name: researcher
-  #   token: "${RESEARCHER_BOT_TOKEN}"
-  #   engine: codex
-  #   description: "분석, 리서치, 데이터 처리"
-  #
-  # - name: writer
-  #   token: "${WRITER_BOT_TOKEN}"
-  #   engine: claude-code
-  #   description: "문서화, README, 보고서 작성"
-  #
-  # - name: hybrid
-  #   token: "${HYBRID_BOT_TOKEN}"
-  #   engine: both
-  #   description: "범용 (PM이 태스크에 따라 엔진 선택)"
+# 동적 에이전트 시스템 사용 — 별도 워커 봇 토큰 불필요
+# PM봇이 ~/.claude/agents/ 페르소나를 동적으로 로드하여 팀 구성
+workers: []
