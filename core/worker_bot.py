@@ -30,6 +30,16 @@ class WorkerBot:
 
     async def execute(self, task_id: str, content: str, context: dict | None) -> str:
         """engine에 따라 적절한 러너로 태스크 실행."""
+        # context가 없으면 context_db에서 프로젝트 컨텍스트 조회
+        if context is None:
+            try:
+                ctx_list = await self.context_db.read_context(task_id)
+                if ctx_list:
+                    ctx_text = "\n".join(c.get("content", "") for c in ctx_list)
+                    context = {"content": ctx_text}
+            except Exception:
+                pass
+
         prompt = content
         if context:
             prompt = f"[배경 컨텍스트]\n{context.get('content', '')}\n\n[태스크]\n{content}"
