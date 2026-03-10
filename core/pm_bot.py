@@ -9,6 +9,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from core.completion import CompletionProtocol
+from core.llm_router import LLMRouter
 from core.context_db import ContextDB
 from core.message_schema import OrgMessage
 from core.task_manager import TaskManager, TaskStatus
@@ -29,32 +30,31 @@ class PMBot:
         # 동적 워커 레지스트리
         self.registry = WorkerRegistry()
         self.workers = self.registry.load()
+        self.router = LLMRouter()
 
-    def _select_workers(self, task_description: str) -> list[str]:
-        """태스크 설명을 분석해서 적합한 워커 핸들 목록 반환.
-
-        현재: 워커가 없으면 경고, 있으면 첫 번째 워커 선택.
-        TODO: LLM으로 태스크 분석 → 최적 워커 자율 선택.
-        """
+    async def _select_workers(self, task_description: str) -> list[str]:
+        """LLM으로 태스크 분석 → 최적 워커 자율 선택."""
         available = self.registry.list_workers()
         if not available:
             logger.warning("등록된 워커 없음 — 태스크 할당 불가")
             return []
 
-        # 간단한 키워드 매칭으로 워커 선택
+        try:
+            handles = await self.router.route_simple(task_description, available)
+            if handles:
+                logger.info(f"LLM 워커 선택: {handles}")
+                return handles
+        except Exception as e:
+            logger.warning(f"LLM 라우팅 실패, 키워드 폴백: {e}")
+
+        # 폴백: 키워드 매칭
         task_lower = task_description.lower()
         for worker in available:
             desc_lower = worker["description"].lower()
-            # 설명의 키워드가 태스크에 있으면 선택
             keywords = [kw.strip() for kw in desc_lower.replace(",", " ").split() if len(kw) > 2]
             if any(kw in task_lower for kw in keywords):
-                logger.info(f"키워드 매칭으로 워커 선택: {worker['handle']}")
                 return [worker["handle"]]
-
-        # 매칭 없으면 첫 번째 워커 (기본값)
-        default = available[0]["handle"]
-        logger.info(f"기본 워커 선택: {default}")
-        return [default]
+        return [available[0]["handle"]]
 
     async def send_org_message(self, msg: OrgMessage) -> None:
         """구조화된 OrgMessage를 그룹에 전송."""
@@ -86,7 +86,7 @@ class PMBot:
         logger.info(f"유저 메시지 수신: @{user_name}: {user_text[:100]}")
 
         # 적합한 워커 선택
-        worker_handles = self._select_workers(user_text)
+        worker_handles = await self._select_workers(user_text)
         if not worker_handles:
             await self.send_text("❌ 현재 사용 가능한 워커 봇이 없습니다. `workers.yaml`을 확인하세요.")
             return

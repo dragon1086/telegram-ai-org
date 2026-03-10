@@ -29,7 +29,7 @@ class ClaudeCodeRunner:
 
     async def run(self, prompt: str, flags: list[str] | None = None) -> str:
         """Claude Code 실행 후 결과 반환."""
-        cmd = [self.cli_path, "--print", prompt]
+        cmd = [self.cli_path, "--print", "--dangerously-skip-permissions", prompt]
         if flags:
             cmd.extend(flags)
 
