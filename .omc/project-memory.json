@@ -106,21 +106,27 @@
   },
   "hotPaths": [
     {
+      "path": "simulation_mode.py",
+      "accessCount": 10,
+      "lastAccessed": 1773126599624,
+      "type": "file"
+    },
+    {
       "path": "README.md",
       "accessCount": 6,
       "lastAccessed": 1773125309491,
       "type": "file"
     },
     {
-      "path": "core/worker_bot.py",
-      "accessCount": 4,
-      "lastAccessed": 1773125070885,
+      "path": "core/pm_bot.py",
+      "accessCount": 6,
+      "lastAccessed": 1773126526726,
       "type": "file"
     },
     {
-      "path": "core/pm_bot.py",
-      "accessCount": 4,
-      "lastAccessed": 1773125112207,
+      "path": "core/worker_bot.py",
+      "accessCount": 6,
+      "lastAccessed": 1773126527002,
       "type": "file"
     },
     {
@@ -139,6 +145,24 @@
       "path": ".env.example",
       "accessCount": 4,
       "lastAccessed": 1773125270283,
+      "type": "file"
+    },
+    {
+      "path": "core/llm_router.py",
+      "accessCount": 4,
+      "lastAccessed": 1773126541673,
+      "type": "file"
+    },
+    {
+      "path": "core/completion.py",
+      "accessCount": 4,
+      "lastAccessed": 1773126542165,
+      "type": "file"
+    },
+    {
+      "path": "core/task_manager.py",
+      "accessCount": 4,
+      "lastAccessed": 1773126542436,
       "type": "file"
     },
     {
@@ -181,6 +205,36 @@
       "path": "core/run_worker.py",
       "accessCount": 2,
       "lastAccessed": 1773125259332,
+      "type": "file"
+    },
+    {
+      "path": "core/message_schema.py",
+      "accessCount": 2,
+      "lastAccessed": 1773126524364,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_message_schema.py",
+      "accessCount": 2,
+      "lastAccessed": 1773126527008,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_pm_routing.py",
+      "accessCount": 2,
+      "lastAccessed": 1773126560062,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_completion.py",
+      "accessCount": 2,
+      "lastAccessed": 1773126574949,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_simulation.py",
+      "accessCount": 2,
+      "lastAccessed": 1773126584719,
       "type": "file"
     },
     {
