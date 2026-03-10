@@ -75,29 +75,32 @@ class TaskPlanner:
         self.client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
         self.model = os.environ.get("PM_MODEL", "gpt-4o")
 
-    async def plan(self, user_request: str, workers: list[dict]) -> ExecutionPlan:
+    async def plan(self, user_request: str, workers: list[dict], context: str = "") -> ExecutionPlan:
         """유저 요청을 Phase 기반 실행 계획으로 분해.
 
+        Args:
+            context: RAG 기반 과거 태스크 이력 (플래닝 참고용).
         LLM 실패 시 폴백: 단일 Phase, 모든 태스크 순차 배치.
         """
         if not workers:
             return ExecutionPlan(phases=[], summary="워커 없음", estimated_workers=[])
 
         try:
-            return await self._plan_with_llm(user_request, workers)
+            return await self._plan_with_llm(user_request, workers, context)
         except Exception:
             return self._fallback_plan(user_request, workers)
 
-    async def _plan_with_llm(self, user_request: str, workers: list[dict]) -> ExecutionPlan:
+    async def _plan_with_llm(self, user_request: str, workers: list[dict], context: str = "") -> ExecutionPlan:
         worker_list = "\n".join(
             f"- {w['name']} (engine: {w['engine']}): {w['description']}"
             for w in workers
         )
+        context_block = f"\n\nHistorical context:\n{context}" if context else ""
         user_content = f"""Available workers:
 {worker_list}
 
 User request:
-{user_request}
+{user_request}{context_block}
 
 Create an execution plan with phases."""
 

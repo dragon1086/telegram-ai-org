@@ -110,8 +110,11 @@ class PMBot:
             await self.send_text("❌ 현재 사용 가능한 워커 봇이 없습니다. `workers.yaml`을 확인하세요.")
             return
 
+        # RAG 컨텍스트로 플래너에 과거 태스크 이력 제공
+        planning_ctx = self.memory.get_planning_context(user_text)
+
         # TaskPlanner로 실행 계획 수립
-        plan = await self.planner.plan(user_text, workers)
+        plan = await self.planner.plan(user_text, workers, context=planning_ctx)
         if not plan.phases:
             await self.send_text("❌ 실행 계획을 수립하지 못했습니다.")
             return
@@ -170,17 +173,51 @@ class PMBot:
         logger.info(f"Phase {phase_index} ({mode}) 발행 완료: {len(pending)}개 태스크")
 
     async def handle_bot_report(self, org_msg: OrgMessage) -> None:
-        """Worker 봇의 보고 처리 + Phase 완료 시 다음 Phase 발행."""
+        """Worker 봇의 보고 처리 + Phase 완료 시 다음 Phase 발행.
+
+        실패 보고 시 리트라이/DLQ 로직 적용.
+        """
         sub_id = org_msg.task_id
-        # sub_id 형식: {task_id}_p{phase}_t{i} 또는 일반 task_id
         root_task_id = _extract_root_task_id(sub_id)
+        worker_name = org_msg.from_
 
         if org_msg.msg_type == "report":
+            # 성공/실패 판별 (content에 '실패' 또는 'error' 포함 시 실패)
+            is_success = not any(
+                kw in (org_msg.content or "").lower()
+                for kw in ("실패", "error", "failed", "❌")
+            )
+
+            # 워커 헬스 업데이트
+            self.health.mark_done(worker_name.lstrip("@"), is_success)
+
+            # 프로젝트 메모리에 태스크 기록
+            task_obj = self.task_manager.get_task(root_task_id)
+            if task_obj:
+                self.memory.record_task(TaskRecord(
+                    task_id=sub_id,
+                    description=task_obj.description[:200],
+                    assigned_to=[worker_name.lstrip("@")],
+                    result=org_msg.content[:500] if org_msg.content else None,
+                    success=is_success,
+                    duration_sec=0.0,
+                ))
+
+            # 실패 시 리트라이 또는 DLQ
+            if not is_success:
+                self.health.record_attempt(sub_id)
+                if self.health.should_retry(sub_id):
+                    delay = self.health.get_retry_delay(sub_id)
+                    logger.info(f"태스크 리트라이 예약: {sub_id} ({delay:.1f}s 후)")
+                    asyncio.create_task(self._retry_subtask(sub_id, root_task_id, delay))
+                    return  # 리트라이 대기 — Phase 완료 판정 보류
+                else:
+                    self.health.move_to_dlq(sub_id, worker_name, f"최대 시도 초과: {org_msg.content[:100]}")
+
             # Phase 추적 업데이트
             if root_task_id in self._phase_pending:
                 self._phase_pending[root_task_id].discard(sub_id)
                 if not self._phase_pending[root_task_id]:
-                    # 현재 Phase 완료 → 다음 Phase 발행
                     next_idx = self._phase_idx.get(root_task_id, 0) + 1
                     plan = self._plans.get(root_task_id)
                     if plan and next_idx < len(plan.phases):
@@ -188,7 +225,6 @@ class PMBot:
                         logger.info(f"Phase {next_idx - 1} 완료 → Phase {next_idx} 시작")
                         await self._dispatch_phase(root_task_id, next_idx)
                     else:
-                        # 모든 Phase 완료
                         task = self.task_manager.get_task(root_task_id)
                         if task:
                             await self.task_manager.update_status(root_task_id, TaskStatus.DONE, result=org_msg.content)
@@ -198,7 +234,6 @@ class PMBot:
                         self._phase_idx.pop(root_task_id, None)
                         self._phase_pending.pop(root_task_id, None)
             else:
-                # 일반 태스크 (phase 추적 없음)
                 task = self.task_manager.get_task(sub_id)
                 if task is None:
                     logger.warning(f"알 수 없는 태스크 ID: {sub_id}")
@@ -210,6 +245,34 @@ class PMBot:
         elif org_msg.msg_type == "ack":
             if self.completion:
                 await self.completion.receive_ack(sub_id, org_msg.from_)
+
+    async def _retry_subtask(self, sub_id: str, root_task_id: str, delay: float) -> None:
+        """지연 후 실패한 서브태스크 재발행."""
+        await asyncio.sleep(delay)
+        plan = self._plans.get(root_task_id)
+        if plan is None:
+            return
+
+        # sub_id에서 phase/task 인덱스 추출
+        import re as _re
+        m = _re.search(r"_p(\d+)_t(\d+)$", sub_id)
+        if not m:
+            return
+        p_idx, t_idx = int(m.group(1)), int(m.group(2))
+        if p_idx >= len(plan.phases) or t_idx >= len(plan.phases[p_idx].tasks):
+            return
+
+        subtask = plan.phases[p_idx].tasks[t_idx]
+        assign_msg = OrgMessage(
+            to=[subtask.worker_name],
+            from_="@pm_bot",
+            task_id=sub_id,
+            msg_type="assign",
+            content=subtask.instruction,
+            context_ref=f"{root_task_id}_request",
+        )
+        await self.send_org_message(assign_msg)
+        logger.info(f"리트라이 발행: {sub_id} → {subtask.worker_name}")
 
     async def handle_group_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """그룹 내 모든 메시지 감청."""
