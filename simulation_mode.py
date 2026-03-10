@@ -5,7 +5,26 @@ import asyncio
 import json
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
+
+SIM_DIR = Path.home() / ".ai-org"
+SIM_RESULTS = SIM_DIR / "sim_results.jsonl"
+
+
+def _ensure_sim_dir() -> None:
+    SIM_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _save_result(user_input: str, result: dict) -> None:
+    _ensure_sim_dir()
+    record = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "input": user_input,
+        "result": result,
+    }
+    with SIM_RESULTS.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 # 프로젝트 루트를 path에 추가
 sys.path.insert(0, str(Path(__file__).parent))
@@ -24,6 +43,7 @@ BANNER = """
 
 async def run_simulation() -> None:
     print(BANNER)
+    _ensure_sim_dir()
 
     # 워커 레지스트리 로드
     registry = WorkerRegistry()
@@ -87,6 +107,7 @@ async def run_simulation() -> None:
 
         print(f"✅ 완료 기준: {result.get('completion_criteria', '-')}\n")
         print("─" * 54 + "\n")
+        _save_result(user_input, result)
 
 
 def _keyword_fallback(task: str, workers: list[dict]) -> dict:
