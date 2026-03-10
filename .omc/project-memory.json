@@ -1,0 +1,194 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1773124976733,
+  "projectRoot": "/Users/rocky/telegram-ai-org",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "pyproject.toml"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "pytest",
+        "version": null,
+        "category": "testing"
+      }
+    ],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": "pytest",
+    "lintCommand": "ruff check",
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "scripts",
+      "tests"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "bots": {
+      "path": "bots",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1773124976717,
+      "keyFiles": [
+        "__init__.py",
+        "analyst_bot.py",
+        "dev_bot.py",
+        "docs_bot.py"
+      ]
+    },
+    "core": {
+      "path": "core",
+      "purpose": null,
+      "fileCount": 7,
+      "lastAccessed": 1773124976717,
+      "keyFiles": [
+        "__init__.py",
+        "completion.py",
+        "context_db.py",
+        "message_schema.py",
+        "pm_bot.py"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 2,
+      "lastAccessed": 1773124976718,
+      "keyFiles": [
+        "setup.sh",
+        "start_all.sh"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 1,
+      "lastAccessed": 1773124976719,
+      "keyFiles": [
+        "test_message_schema.py"
+      ]
+    },
+    "tools": {
+      "path": "tools",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1773124976719,
+      "keyFiles": [
+        "__init__.py",
+        "amp_caller.py",
+        "claude_code_runner.py",
+        "codex_runner.py"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "README.md",
+      "accessCount": 6,
+      "lastAccessed": 1773125309491,
+      "type": "file"
+    },
+    {
+      "path": "core/worker_bot.py",
+      "accessCount": 4,
+      "lastAccessed": 1773125070885,
+      "type": "file"
+    },
+    {
+      "path": "core/pm_bot.py",
+      "accessCount": 4,
+      "lastAccessed": 1773125112207,
+      "type": "file"
+    },
+    {
+      "path": "scripts/start_all.sh",
+      "accessCount": 4,
+      "lastAccessed": 1773125246798,
+      "type": "file"
+    },
+    {
+      "path": "bots/__init__.py",
+      "accessCount": 4,
+      "lastAccessed": 1773125265440,
+      "type": "file"
+    },
+    {
+      "path": ".env.example",
+      "accessCount": 4,
+      "lastAccessed": 1773125270283,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 2,
+      "lastAccessed": 1773124981372,
+      "type": "directory"
+    },
+    {
+      "path": "tools/claude_code_runner.py",
+      "accessCount": 2,
+      "lastAccessed": 1773124994663,
+      "type": "file"
+    },
+    {
+      "path": "tools/codex_runner.py",
+      "accessCount": 2,
+      "lastAccessed": 1773124994990,
+      "type": "file"
+    },
+    {
+      "path": "workers.yaml",
+      "accessCount": 2,
+      "lastAccessed": 1773125022812,
+      "type": "file"
+    },
+    {
+      "path": "core/worker_registry.py",
+      "accessCount": 2,
+      "lastAccessed": 1773125041372,
+      "type": "file"
+    },
+    {
+      "path": "scripts/setup_wizard.py",
+      "accessCount": 2,
+      "lastAccessed": 1773125222446,
+      "type": "file"
+    },
+    {
+      "path": "core/run_worker.py",
+      "accessCount": 2,
+      "lastAccessed": 1773125259332,
+      "type": "file"
+    },
+    {
+      "path": "bots/dev_bot.py",
+      "accessCount": 1,
+      "lastAccessed": 1773124994518,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
