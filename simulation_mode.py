@@ -30,6 +30,7 @@ def _save_result(user_input: str, result: dict) -> None:
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core.llm_router import LLMRouter
+from core.task_planner import TaskPlanner
 from core.worker_registry import WorkerRegistry
 
 
@@ -139,5 +140,45 @@ def _keyword_fallback(task: str, workers: list[dict]) -> dict:
     }
 
 
+async def run_planner_demo(workers: list[dict] | None = None) -> None:
+    """TaskPlanner 데모 — Phase 분해 결과를 출력."""
+    if workers is None:
+        workers = [
+            {"name": "cokac", "engine": "claude-code", "description": "코딩, 구현, 리팩토링 전문"},
+            {"name": "researcher", "engine": "codex", "description": "분석, 리서치, 데이터 처리"},
+        ]
+
+    planner = TaskPlanner()
+    demo_request = "prism-mobile 다크모드 + 분석 리포트 동시에 만들어줘"
+
+    print(f"\n{'─' * 54}")
+    print(f"📋 TaskPlanner 데모")
+    print(f"입력: {demo_request}")
+    print(f"{'─' * 54}\n")
+
+    try:
+        plan = await planner.plan(demo_request, workers)
+    except Exception as e:
+        print(f"⚠️  LLM 호출 실패 ({e}). 폴백 계획 사용.\n")
+        plan = planner._fallback_plan(demo_request, workers)
+
+    print(f"📌 요약: {plan.summary}")
+    print(f"🔧 예상 워커: {', '.join(plan.estimated_workers) or '-'}\n")
+
+    for i, phase in enumerate(plan.phases):
+        mode = "병렬 ⚡" if phase.parallel else "순차 →"
+        print(f"  Phase {i + 1} [{mode}]")
+        for j, task in enumerate(phase.tasks):
+            dep = f" (의존: {task.depends_on})" if task.depends_on else ""
+            print(f"    [{j + 1}] {task.worker_name}: {task.instruction}{dep}")
+        print()
+
+    print(f"{'─' * 54}\n")
+
+
 if __name__ == "__main__":
-    asyncio.run(run_simulation())
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--planner-demo":
+        asyncio.run(run_planner_demo())
+    else:
+        asyncio.run(run_simulation())
