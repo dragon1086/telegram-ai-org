@@ -10,6 +10,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 from core.completion import CompletionProtocol
 from core.llm_router import LLMRouter
+from core.worker_health import WorkerHealthMonitor
+from core.project_memory import ProjectMemory, TaskRecord
 from core.context_db import ContextDB
 from core.message_schema import OrgMessage
 from core.task_manager import TaskManager, TaskStatus
@@ -31,6 +33,11 @@ class PMBot:
         self.registry = WorkerRegistry()
         self.workers = self.registry.load()
         self.router = LLMRouter()
+        # 워커 상태 모니터에 등록
+        for w in self.workers:
+            self.health.register(w.name)
+        self.health = WorkerHealthMonitor()
+        self.memory = ProjectMemory()
 
     async def _select_workers(self, task_description: str) -> list[str]:
         """LLM으로 태스크 분석 → 최적 워커 자율 선택."""
@@ -161,12 +168,28 @@ class PMBot:
                 f"요청사항을 입력하면 적합한 팀원에게 태스크를 할당합니다."
             )
 
+    async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """워커 상태 + 프로젝트 메모리 요약 출력."""
+        if update.message:
+            health_report = self.health.get_status_report()
+            recent = self.memory.get_recent_context(5)
+            stats = self.memory.worker_stats
+            stats_text = "\n".join(
+                f"  {w}: 완료{v['done']} 실패{v['fail']} 평균{v['avg_sec']:.0f}s"
+                for w, v in stats.items()
+            ) or "  (기록 없음)"
+            text = f"{health_report}\n\n📈 **누적 태스크**: {self.memory.total_tasks}개\n{stats_text}"
+            if recent:
+                text += f"\n\n{recent}"
+            await update.message.reply_text(text, parse_mode="Markdown")
+
     def build(self) -> Application:
         """애플리케이션 빌드."""
         self.app = Application.builder().token(self.token).build()
         self.completion = CompletionProtocol(self.task_manager, self.send_text)
 
         self.app.add_handler(CommandHandler("start", self.start_command))
+        self.app.add_handler(CommandHandler("status", self.status_command))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_group_message))
 
         return self.app
