@@ -461,6 +461,9 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
         # 단일 조직
         org_name = ask("조직 이름", default="dev_team")
         org_desc = ask("조직 설명", default="개발팀 — 코딩, 구현, 배포")
+        specialties_raw = ask("이 PM의 전문분야를 입력하세요 (콤마 구분, 예: 코딩, 버그, API)", default="일반")
+        specialties = [s.strip() for s in specialties_raw.split(",") if s.strip()]
+        _generate_pm_identity(org_name, pm_token, int(pm_chat_id) if pm_chat_id.lstrip("-").isdigit() else 0, specialties, org_desc)
         return [{"name": org_name, "description": org_desc,
                  "pm_token": pm_token, "group_chat_id": pm_chat_id}]
 
@@ -506,11 +509,49 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
                     break
                 warn("숫자만 입력하세요.")
 
+        specialties_raw = ask(f"  이 PM의 전문분야를 입력하세요 (콤마 구분, 예: 코딩, 버그, API)", default="일반")
+        specialties = [s.strip() for s in specialties_raw.split(",") if s.strip()]
+        chat_id_int = int(chat_id) if chat_id.lstrip("-").isdigit() else 0
+        _generate_pm_identity(name, token, chat_id_int, specialties, desc)
+        print(f"  ✅ pm_{name}.md 생성 완료")
+
         orgs.append({"name": name, "description": desc,
                      "pm_token": token, "group_chat_id": chat_id})
         ok(f"{name} 조직 추가됨")
 
     return orgs
+
+
+def _generate_pm_identity(org_id: str, bot_token: str, chat_id: int, specialties: list[str], role: str = "") -> None:
+    """pm_{org_id}.md 자동 생성."""
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from core.org_registry import OrgRegistry
+        registry = OrgRegistry()
+        registry.register_org(
+            org_id=org_id,
+            bot_token=bot_token,
+            chat_id=chat_id,
+            specialties=specialties,
+            role=role,
+        )
+        print(f"  ✅ pm_{org_id}.md 생성 완료")
+    except Exception as e:
+        # fallback: 직접 파일 생성
+        memory_dir = Path.home() / ".ai-org" / "memory"
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        specialties_str = ", ".join(specialties) if specialties else "일반"
+        content = (
+            f"## [CORE] PM 정체성\n"
+            f"- 봇명: @aiorg_{org_id}_pm_bot ({org_id})\n"
+            f"- 역할: {role or org_id + ' PM'}\n"
+            f"- 전문분야: {specialties_str}\n\n"
+            f"## [CORE] 조직 목록\n"
+            f"- pm_global: 전체 조율, 일반 대화\n"
+            f"- pm_{org_id}: {specialties_str}\n"
+        )
+        (memory_dir / f"pm_{org_id}.md").write_text(content, encoding="utf-8")
+        warn(f"OrgRegistry 사용 불가 ({e}), 직접 파일 생성 완료")
 
 
 # ─── Step 4: Agent Hints 설정 ─────────────────────────────────────────────────
