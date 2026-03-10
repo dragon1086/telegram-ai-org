@@ -106,9 +106,75 @@
   },
   "hotPaths": [
     {
+      "path": "core/pm_bot.py",
+      "accessCount": 37,
+      "lastAccessed": 1773153624126,
+      "type": "file"
+    },
+    {
+      "path": "scripts/setup_wizard.py",
+      "accessCount": 34,
+      "lastAccessed": 1773156207861,
+      "type": "file"
+    },
+    {
       "path": "simulation_mode.py",
+      "accessCount": 33,
+      "lastAccessed": 1773156277990,
+      "type": "file"
+    },
+    {
+      "path": "tools/claude_code_runner.py",
+      "accessCount": 22,
+      "lastAccessed": 1773153612968,
+      "type": "file"
+    },
+    {
+      "path": "core/llm_router.py",
       "accessCount": 10,
-      "lastAccessed": 1773126599624,
+      "lastAccessed": 1773145441158,
+      "type": "file"
+    },
+    {
+      "path": "ARCHITECTURE.md",
+      "accessCount": 10,
+      "lastAccessed": 1773145595936,
+      "type": "file"
+    },
+    {
+      "path": "core/agent_catalog.py",
+      "accessCount": 10,
+      "lastAccessed": 1773145729102,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 8,
+      "lastAccessed": 1773145375585,
+      "type": "directory"
+    },
+    {
+      "path": "workers.yaml",
+      "accessCount": 8,
+      "lastAccessed": 1773145380160,
+      "type": "file"
+    },
+    {
+      "path": "FINDINGS.md",
+      "accessCount": 8,
+      "lastAccessed": 1773145631012,
+      "type": "file"
+    },
+    {
+      "path": "agent_hints.yaml",
+      "accessCount": 8,
+      "lastAccessed": 1773153783495,
+      "type": "file"
+    },
+    {
+      "path": "scripts/start_all.sh",
+      "accessCount": 8,
+      "lastAccessed": 1773156212203,
       "type": "file"
     },
     {
@@ -118,21 +184,9 @@
       "type": "file"
     },
     {
-      "path": "core/pm_bot.py",
-      "accessCount": 6,
-      "lastAccessed": 1773126526726,
-      "type": "file"
-    },
-    {
       "path": "core/worker_bot.py",
       "accessCount": 6,
       "lastAccessed": 1773126527002,
-      "type": "file"
-    },
-    {
-      "path": "scripts/start_all.sh",
-      "accessCount": 4,
-      "lastAccessed": 1773125246798,
       "type": "file"
     },
     {
@@ -148,12 +202,6 @@
       "type": "file"
     },
     {
-      "path": "core/llm_router.py",
-      "accessCount": 4,
-      "lastAccessed": 1773126541673,
-      "type": "file"
-    },
-    {
       "path": "core/completion.py",
       "accessCount": 4,
       "lastAccessed": 1773126542165,
@@ -166,39 +214,33 @@
       "type": "file"
     },
     {
-      "path": "",
-      "accessCount": 2,
-      "lastAccessed": 1773124981372,
-      "type": "directory"
+      "path": "tests/test_simulation.py",
+      "accessCount": 4,
+      "lastAccessed": 1773129759636,
+      "type": "file"
     },
     {
-      "path": "tools/claude_code_runner.py",
-      "accessCount": 2,
-      "lastAccessed": 1773124994663,
+      "path": "tests/test_pm_routing.py",
+      "accessCount": 4,
+      "lastAccessed": 1773129759908,
+      "type": "file"
+    },
+    {
+      "path": "core/worker_registry.py",
+      "accessCount": 4,
+      "lastAccessed": 1773145387144,
+      "type": "file"
+    },
+    {
+      "path": "organizations.yaml",
+      "accessCount": 4,
+      "lastAccessed": 1773148932972,
       "type": "file"
     },
     {
       "path": "tools/codex_runner.py",
       "accessCount": 2,
       "lastAccessed": 1773124994990,
-      "type": "file"
-    },
-    {
-      "path": "workers.yaml",
-      "accessCount": 2,
-      "lastAccessed": 1773125022812,
-      "type": "file"
-    },
-    {
-      "path": "core/worker_registry.py",
-      "accessCount": 2,
-      "lastAccessed": 1773125041372,
-      "type": "file"
-    },
-    {
-      "path": "scripts/setup_wizard.py",
-      "accessCount": 2,
-      "lastAccessed": 1773125222446,
       "type": "file"
     },
     {
@@ -220,21 +262,51 @@
       "type": "file"
     },
     {
-      "path": "tests/test_pm_routing.py",
-      "accessCount": 2,
-      "lastAccessed": 1773126560062,
-      "type": "file"
-    },
-    {
       "path": "tests/test_completion.py",
       "accessCount": 2,
       "lastAccessed": 1773126574949,
       "type": "file"
     },
     {
-      "path": "tests/test_simulation.py",
+      "path": "core/task_planner.py",
       "accessCount": 2,
-      "lastAccessed": 1773126584719,
+      "lastAccessed": 1773129802041,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_task_planner.py",
+      "accessCount": 2,
+      "lastAccessed": 1773129895080,
+      "type": "file"
+    },
+    {
+      "path": "core/org_registry.py",
+      "accessCount": 2,
+      "lastAccessed": 1773144439699,
+      "type": "file"
+    },
+    {
+      "path": "core/cross_org_bridge.py",
+      "accessCount": 2,
+      "lastAccessed": 1773144466175,
+      "type": "file"
+    },
+    {
+      "path": "core/project_memory.py",
+      "accessCount": 2,
+      "lastAccessed": 1773156044982,
+      "type": "file"
+    },
+    {
+      "path": "core/memory_manager.py",
+      "accessCount": 2,
+      "lastAccessed": 1773156156896,
+      "type": "file"
+    },
+    {
+      "path": "core/session_manager.py",
+      "accessCount": 2,
+      "lastAccessed": 1773156181155,
       "type": "file"
     },
     {

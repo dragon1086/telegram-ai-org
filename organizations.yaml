@@ -1,0 +1,16 @@
+# AI 조직 설정
+# 각 조직은 독립된 PM봇 + 워커 그룹으로 운영됩니다.
+# 토큰은 ${ENV_VAR} 형식으로 환경변수에서 자동 주입됩니다.
+
+organizations:
+  - name: dev_team
+    description: "개발팀 — 코딩, 구현, 배포"
+    pm_token: "${DEV_PM_TOKEN}"
+    group_chat_id: "${DEV_GROUP_CHAT_ID}"
+    workers: [cokac, analyst]
+
+  - name: marketing_team
+    description: "마케팅팀 — 콘텐츠, 분석, 전략"
+    pm_token: "${MKT_PM_TOKEN}"
+    group_chat_id: "${MKT_GROUP_CHAT_ID}"
+    workers: [researcher, writer]
