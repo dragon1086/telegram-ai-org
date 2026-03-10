@@ -157,9 +157,9 @@ class MemoryManager:
 
     # ── LOG 추가 ──────────────────────────────────────────────────────────
 
-    async def add_log(self, content: str, openai_client: Any = None) -> int:
+    async def add_log(self, content: str, anthropic_client: Any = None) -> int:
         """새 LOG 항목 추가. importance 자동 채점. returns importance 값."""
-        importance = await self._score_importance(content, openai_client)
+        importance = await self._score_importance(content, anthropic_client)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         entry = LogEntry(importance=importance, timestamp=timestamp, content=content[:200])
 
@@ -168,28 +168,25 @@ class MemoryManager:
 
         # LOG 30개 초과 시 compress 트리거
         if len(doc.log) > MAX_LOG_ENTRIES:
-            doc = await self._compress_doc(doc, openai_client)
+            doc = await self._compress_doc(doc, anthropic_client)
         else:
             self._save(doc)
 
         logger.debug(f"[{self.scope}] LOG 추가 (importance={importance}): {content[:60]}")
         return importance
 
-    async def _score_importance(self, content: str, openai_client: Any) -> int:
+    async def _score_importance(self, content: str, anthropic_client: Any) -> int:
         """LLM으로 importance 0-10 채점. 실패 시 키워드 폴백."""
-        if openai_client is None:
+        if anthropic_client is None:
             return self._keyword_score(content)
         try:
-            resp = await openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": _SCORE_SYSTEM},
-                    {"role": "user", "content": content[:500]},
-                ],
-                max_tokens=5,
-                temperature=0,
+            resp = await anthropic_client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=10,
+                system=_SCORE_SYSTEM,
+                messages=[{"role": "user", "content": content[:500]}],
             )
-            raw = resp.choices[0].message.content.strip()
+            raw = resp.content[0].text.strip()
             score = int(re.search(r"\d+", raw).group())  # type: ignore
             return max(0, min(10, score))
         except Exception as e:
@@ -232,12 +229,12 @@ class MemoryManager:
 
     # ── COMPRESS ─────────────────────────────────────────────────────────
 
-    async def compress(self, openai_client: Any = None) -> None:
+    async def compress(self, anthropic_client: Any = None) -> None:
         """사이즈 관리: LOG 초과 시 자동 압축."""
         doc = self.load()
-        doc = await self._compress_doc(doc, openai_client)
+        doc = await self._compress_doc(doc, anthropic_client)
 
-    async def _compress_doc(self, doc: MemoryDoc, openai_client: Any) -> MemoryDoc:
+    async def _compress_doc(self, doc: MemoryDoc, anthropic_client: Any) -> MemoryDoc:
         """
         1. importance 1-4 항목 삭제
         2. importance 5+ 항목 → LLM 한 줄 요약 → SUMMARY 승격
@@ -248,7 +245,7 @@ class MemoryManager:
 
         # high 항목들 SUMMARY 승격
         if high:
-            summary_line = await self._summarize_entries(high, openai_client)
+            summary_line = await self._summarize_entries(high, anthropic_client)
             if summary_line:
                 doc.summary.append(summary_line)
 
@@ -267,26 +264,23 @@ class MemoryManager:
         logger.info(f"[{self.scope}] 압축 완료: LOG {len(low)}건 제거, SUMMARY {len(doc.summary)}개")
         return doc
 
-    async def _summarize_entries(self, entries: list[LogEntry], openai_client: Any) -> str:
+    async def _summarize_entries(self, entries: list[LogEntry], anthropic_client: Any) -> str:
         """LOG 항목들을 한 줄 요약."""
         if not entries:
             return ""
         text = "\n".join(e.format() for e in entries)
-        if openai_client is None:
+        if anthropic_client is None:
             # 폴백: 첫 항목 내용 사용
             dates = f"{entries[0].timestamp[:7]}~{entries[-1].timestamp[:7]}"
             return f"{dates}: {entries[0].content[:80]}"
         try:
-            resp = await openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": _COMPRESS_SYSTEM},
-                    {"role": "user", "content": text[:1000]},
-                ],
+            resp = await anthropic_client.messages.create(
+                model="claude-haiku-4-5-20251001",
                 max_tokens=80,
-                temperature=0,
+                system=_COMPRESS_SYSTEM,
+                messages=[{"role": "user", "content": text[:1000]}],
             )
-            return resp.choices[0].message.content.strip()
+            return resp.content[0].text.strip()
         except Exception as e:
             logger.debug(f"요약 LLM 실패: {e}")
             dates = f"{entries[0].timestamp[:7]}"
@@ -338,7 +332,7 @@ class MemoryManager:
 
     # ── 자동 CORE 승격 ────────────────────────────────────────────────────
 
-    async def maybe_promote_to_core(self, content: str, openai_client: Any = None) -> bool:
+    async def maybe_promote_to_core(self, content: str, anthropic_client: Any = None) -> bool:
         """'이거 꼭 기억해' 감지 시 CORE 승격. 승격됐으면 True 반환."""
         # 빠른 키워드 체크 먼저
         keywords = ["꼭 기억", "항상 기억", "절대 잊지", "핵심 사실", "반드시 기억", "never forget"]
@@ -346,20 +340,17 @@ class MemoryManager:
             self.add_core(content)
             return True
 
-        if openai_client is None:
+        if anthropic_client is None:
             return False
 
         try:
-            resp = await openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": _CORE_DETECT_SYSTEM},
-                    {"role": "user", "content": content[:300]},
-                ],
+            resp = await anthropic_client.messages.create(
+                model="claude-haiku-4-5-20251001",
                 max_tokens=5,
-                temperature=0,
+                system=_CORE_DETECT_SYSTEM,
+                messages=[{"role": "user", "content": content[:300]}],
             )
-            answer = resp.choices[0].message.content.strip().lower()
+            answer = resp.content[0].text.strip().lower()
             if answer == "yes":
                 self.add_core(content)
                 return True
