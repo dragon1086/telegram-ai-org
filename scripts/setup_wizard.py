@@ -956,20 +956,40 @@ def print_final_summary(r: PreflightResult, orgs: list[dict], exec_mode: str, pr
 
 # ─── 설정 초기화 ──────────────────────────────────────────────────────────────
 
-def reset_config() -> None:
+MEMORY_DIR = CONFIG_DIR / "memory"
+
+
+def reset_config(keep_memory: bool | None = None) -> None:
     """--reset: 기존 설정 파일 초기화."""
     files = [CONFIG_FILE, ORGANIZATIONS_FILE, AGENT_HINTS_FILE, WORKERS_FILE]
-    print(f"\n{bold(red('⚠️  설정 초기화'))} — 아래 파일이 삭제됩니다:")
+
+    print(f"\n{bold(red('⚠️  기존 설정을 초기화합니다.'))}")
+    print(f"삭제될 항목:")
     for f in files:
         if f.exists():
             print(f"  • {f}")
+
     if not ask_yes("정말 초기화하시겠어요?", default=False):
         print("취소됨.")
         sys.exit(0)
+
+    # 메모리 보존 여부
+    memory_exists = MEMORY_DIR.exists() and any(MEMORY_DIR.iterdir()) if MEMORY_DIR.exists() else False
+    if keep_memory is None and memory_exists:
+        keep_memory = ask_yes("메모리는 보존하시겠습니까?", default=True)
+
     for f in files:
         if f.exists():
             f.unlink()
             print(f"  {red('삭제:')} {f}")
+
+    if not keep_memory and memory_exists:
+        import shutil as _shutil
+        _shutil.rmtree(str(MEMORY_DIR), ignore_errors=True)
+        print(f"  {red('삭제:')} {MEMORY_DIR}")
+    elif memory_exists:
+        ok(f"메모리 보존: {MEMORY_DIR}")
+
     ok("초기화 완료. 마법사를 다시 시작합니다.\n")
 
 
@@ -989,6 +1009,22 @@ def main() -> None:
 
     banner("🤖 telegram-ai-org 설치 마법사 v2")
     print(f"  {dim('Ctrl+C로 언제든 취소할 수 있습니다.')}\n")
+
+    # 기존 설정 감지 (--reset 없이 실행 시)
+    if not args.reset and CONFIG_FILE.exists():
+        existing_quick = load_existing_config()
+        pm_token_preview = existing_quick.get("PM_BOT_TOKEN", "")
+        chat_id_preview = existing_quick.get("TELEGRAM_GROUP_CHAT_ID", "")
+        token_display = f"@?? (토큰: {mask_token(pm_token_preview)})" if pm_token_preview else "미설정"
+        chat_display = chat_id_preview if chat_id_preview else "미설정"
+        print(f"  {yellow('기존 설정이 감지됐습니다')} ({token_display}, {chat_display}).")
+        print(f"""
+    {bold('1.')} 기존 설정 유지하고 계속
+    {bold('2.')} 초기화 후 처음부터
+""")
+        choice = ask("선택", default="1")
+        if choice == "2":
+            reset_config()
 
     # Step 0: Preflight
     step_header(0, "Preflight Check (자동 환경 점검)")

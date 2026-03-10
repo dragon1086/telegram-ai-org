@@ -62,6 +62,8 @@ else
     echo "⚠️  workers.yaml 없음 — 워커 봇 없이 PM만 실행"
 fi
 
+echo "📝 글로벌 메모리: $(wc -l < ~/.ai-org/memory/global.md 2>/dev/null || echo 0)줄"
+
 echo ""
 echo "모든 봇 실행 중. Ctrl+C로 종료."
 echo "PIDs: ${PIDS[*]}"
