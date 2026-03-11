@@ -28,6 +28,10 @@ from core.claim_manager import ClaimManager
 from core.confidence_scorer import ConfidenceScorer
 from core.session_store import SessionStore
 from core.global_context import GlobalContext
+from core.collab_request import (
+    is_collab_request, make_collab_request, make_collab_claim,
+    make_collab_done, parse_collab_request,
+)
 from core.keywords import GREETING_KW, ACTION_KW
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
@@ -79,6 +83,13 @@ class TelegramRelay:
 
         text = update.message.text or ""
         if not text:
+            return
+
+        # 봇 메시지 처리 — 협업 요청만 수락
+        sender = update.message.from_user
+        if sender and sender.is_bot:
+            if is_collab_request(text):
+                await self._handle_collab_request(text, update, context)
             return
 
         message_id = str(update.message.message_id)
@@ -165,6 +176,20 @@ class TelegramRelay:
             await progress_msg.edit_text("✅ 완료!")
         except Exception:
             pass
+
+        # [COLLAB:task|맥락:ctx] 태그 감지 → 협업 요청 채팅방 발송
+        if response:
+            import re as _re
+            for match in _re.findall(r'\[COLLAB:([^\]]+)\]', response):
+                parts = match.split("|맥락:", 1)
+                collab_task = parts[0].strip()
+                collab_ctx = parts[1].strip() if len(parts) > 1 else ""
+                collab_msg = make_collab_request(collab_task, self.org_id, context=collab_ctx)
+                try:
+                    await context.bot.send_message(chat_id=update.effective_chat.id, text=collab_msg)
+                except Exception as _e:
+                    logger.warning(f"협업 요청 발송 실패: {_e}")
+            response = _re.sub(r'\[COLLAB:[^\]]+\]', '', response).strip()
 
         if response:
             for chunk in _split_message(response, 4000):
@@ -341,6 +366,76 @@ class TelegramRelay:
 
 
 # ── 유틸 ──────────────────────────────────────────────────────────────────
+
+    async def _handle_collab_request(
+        self, text: str, update, context
+    ) -> None:
+        """다른 PM의 협업 요청 — confidence → claim → 실행 → 결과 채팅방 발송."""
+        parsed = parse_collab_request(text)
+        task = parsed["task"]
+        ctx = parsed["context"]
+        from_org = parsed["from_org"]
+
+        if from_org == self.org_id or not task:
+            return
+
+        # confidence 계산
+        score = await self.confidence_scorer.score(task, self.identity)
+        if score < 6:
+            return
+
+        import asyncio as _asyncio
+        await _asyncio.sleep(max(0.0, (10 - score) * 0.3))
+
+        message_id = f"collab_{update.message.message_id}"
+        if not self.claim_manager.try_claim(message_id, self.org_id):
+            return
+
+        await update.message.reply_text(make_collab_claim(self.org_id))
+
+        # 요청 조직의 맥락 + 글로벌 맥락 모두 주입
+        system_prompt = self.identity.build_system_prompt()
+        if ctx:
+            system_prompt += f"\n\n## 협업 요청 조직({from_org})의 작업 맥락\n{ctx}"
+
+        runner = ClaudeCodeRunner()
+        progress_msg = await update.message.reply_text("⚙️ 협업 작업 중...")
+        history: list[str] = []
+        last_edit = 0.0
+
+        async def on_progress(line: str) -> None:
+            nonlocal last_edit
+            import time
+            history.append(line)
+            if time.time() - last_edit > 1.5:
+                try:
+                    await progress_msg.edit_text(
+                        "⚙️ 협업 작업 중...\n\n" + "\n".join(history[-5:])
+                    )
+                    last_edit = time.time()
+                except Exception:
+                    pass
+
+        response = await runner.run_task(
+            task=task,
+            system_prompt=system_prompt,
+            progress_callback=on_progress,
+            session_store=self.session_store,
+            global_context=self.global_context,
+            org_id=self.org_id,
+        )
+
+        try:
+            await progress_msg.edit_text("✅ 협업 완료!")
+        except Exception:
+            pass
+
+        summary = (response or "(결과 없음)")[:300]
+        await update.message.reply_text(make_collab_done(self.org_id, summary))
+        if response and len(response) > 300:
+            for chunk in _split_message(response[300:], 4000):
+                await update.message.reply_text(chunk)
+
 
 def _split_message(text: str, max_len: int = 4000) -> list[str]:
     """텔레그램 메시지 길이 제한 분할."""
