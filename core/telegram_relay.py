@@ -441,37 +441,47 @@ class TelegramRelay:
             for chunk in _split_message(response[300:], 4000):
                 await update.message.reply_text(chunk)
 
-
-def _split_message(text: str, max_len: int = 4000) -> list[str]:
-    """텔레그램 메시지 길이 제한 분할."""
-    if len(text) <= max_len:
-        return [text]
-    chunks = []
-    while text:
-        chunks.append(text[:max_len])
-        text = text[max_len:]
-    return chunks
-
-
     async def _handle_command(
         self, text: str, update, context
     ) -> None:
         """/ 명령어 처리 — 특정 봇 태그(/org@aiorg_pm_bot)도 지원."""
-        # @봇이름 제거
         import re as _re
+        import os as _os
         cmd_full = text.strip().split()[0].lower()
         cmd = _re.sub(r'@\S+', '', cmd_full)  # /org@bot → /org
         arg = text[len(text.split()[0]):].strip()
 
-        # 이 PM 대상이 아닌 태그된 명령어면 무시
+        # 이 PM 대상이 아닌 태그된 명령어면 응답
         bot_tag = _re.search(r'@(\S+)', text.split()[0])
         if bot_tag:
             my_username = (await context.bot.get_me()).username or ""
             if bot_tag.group(1).lower() != my_username.lower():
+                # 알 수 없는 봇 태그 → 친절한 오류 응답 (default_handler만)
+                is_default = self.identity._data.get("default_handler", False)
+                if is_default:
+                    await update.message.reply_text(
+                        f"⚠️ @{bot_tag.group(1)} 봇을 찾을 수 없습니다.\n"
+                        f"현재 봇: @{my_username}"
+                    )
                 return
 
         # /org — 조직 정체성 조회/설정
         if cmd == "/org":
+            # @태그 없을 때 다중 PM 보호: default_handler만 처리
+            pm_count = int(_os.environ.get("PM_COUNT", "1"))
+            if not bot_tag and pm_count > 1:
+                is_default = self.identity._data.get("default_handler", False)
+                if not is_default:
+                    return  # 다른 PM은 조용히 무시
+                # default_handler가 경고 메시지 (설정 변경 없이)
+                if arg and arg.lower() != "status":
+                    await update.message.reply_text(
+                        f"⚠️ PM이 {pm_count}개 있습니다. 특정 PM을 지정해주세요:\n"
+                        f"`/org@봇이름 역할|전문분야|방향성`",
+                        parse_mode="Markdown"
+                    )
+                    return
+
             if not arg or arg.lower() == "status":
                 d = self.identity._data
                 msg = (
@@ -482,16 +492,17 @@ def _split_message(text: str, max_len: int = 4000) -> list[str]:
                 )
                 await update.message.reply_text(msg, parse_mode="Markdown")
             else:
-                # 자유 텍스트 → 정체성 업데이트
+                # 자유 텍스트 → 정체성 업데이트 (빈 필드 skip)
                 parts = [p.strip() for p in arg.split("|")]
-                new_data: dict = {"direction": arg}
-                # 파이프 구분 파싱: 역할|전문분야|방향성
-                if len(parts) >= 1:
+                new_data: dict = {}
+                if len(parts) >= 1 and parts[0]:
                     new_data["role"] = parts[0]
-                if len(parts) >= 2:
-                    new_data["specialties"] = [s.strip() for s in parts[1].split(",")]
-                if len(parts) >= 3:
+                if len(parts) >= 2 and parts[1]:
+                    new_data["specialties"] = [s.strip() for s in parts[1].split(",") if s.strip()]
+                if len(parts) >= 3 and parts[2]:
                     new_data["direction"] = parts[2]
+                elif not new_data:
+                    new_data["direction"] = arg  # 파이프 없으면 전체를 direction으로
                 self.identity.update(new_data)
                 d = self.identity._data
                 msg = (
