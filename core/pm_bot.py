@@ -1,3 +1,4 @@
+# DEPRECATED: TelegramRelay로 교체됨. main.py는 TelegramRelay를 사용합니다.
 """PM Bot — 오케스트레이터."""
 from __future__ import annotations
 
@@ -145,6 +146,13 @@ class PMBot:
 
         workers = self.registry.list_workers()
         if not workers:
+            # 대화형 질문은 Claude Code 실행 없이 직접 응답
+            conversational_kw = ['뭐야','뭔가요','인가요','알려줘','설명해줘','어때','어떤','뭐임','뭐지','맞나','맞아','왜','어떻게','했어','됐어']
+            action_kw = ['만들어','작성해','구현해','분석해','개발해','생성해','수정해','고쳐','보고서','빌드']
+            if len(user_text) < 60 and any(k in user_text for k in conversational_kw) and not any(k in user_text for k in action_kw):
+                await self.send_text('💬 구체적인 작업을 말씀해주세요.\n예: "프리즘 인사이트 주간 보고서 작성해줘"')
+                return
+
             # 워커 봇 없음 → 동적 에이전트 팀으로 자동 전환
             logger.info("워커 봇 없음 → 동적 팀 모드로 자동 전환")
             await self.send_text(f"🤖 AI 팀 구성 중...")

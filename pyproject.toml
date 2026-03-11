@@ -12,6 +12,9 @@ dependencies = [
     "python-dotenv>=1.0",
     "loguru>=0.7",
     "typer>=0.9",
+    "openai>=1.0",
+    "anthropic>=0.20",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]

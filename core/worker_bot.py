@@ -33,10 +33,9 @@ class WorkerBot:
         # context가 없으면 context_db에서 프로젝트 컨텍스트 조회
         if context is None:
             try:
-                ctx_list = await self.context_db.read_context(task_id)
-                if ctx_list:
-                    ctx_text = "\n".join(c.get("content", "") for c in ctx_list)
-                    context = {"content": ctx_text}
+                ctx_data = await self.context_db.read_context(task_id)
+                if ctx_data:
+                    context = {"content": ctx_data.get("content", "")}
             except Exception:
                 pass
 
