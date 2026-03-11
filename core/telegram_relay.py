@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
+from pathlib import Path
 
 from loguru import logger
 from telegram import Update
@@ -72,60 +74,191 @@ class TelegramRelay:
         message_id = str(update.message.message_id)
         logger.info(f"텔레그램 수신 [{self.org_id}]: {text[:80]}")
 
-        # 1. confidence 계산
-        score = await self.confidence_scorer.score(text, self.identity)
-        logger.debug(f"[routing] {self.org_id} confidence={score} for msg={message_id}")
+        # 1. 대화형 vs 작업 분류
+        action_kw = ["작성해","만들어","분석해","구현해","개발해","조사해","생성해","수정해","고쳐","빌드","보고서","리포트","기획","설계"]
+        is_task = any(kw in text for kw in action_kw) or len(text) > 40
 
-        # 2. confidence 임계값 체크 (기본 PM은 항상 후보)
+        if not is_task:
+            # 대화형 → Anthropic API로 짧게 직접 응답 (팀 구성 없음)
+            import anthropic as _anth
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if api_key:
+                client = _anth.Anthropic(api_key=api_key)
+                resp = client.messages.create(
+                    model="claude-haiku-4-5", max_tokens=150,
+                    system=f"당신은 {self.org_id} PM봇. 친근하게 짧게 한국어로 대화.",
+                    messages=[{"role": "user", "content": text}],
+                )
+                await update.message.reply_text(resp.content[0].text if resp.content else "안녕하세요! 😊")
+            else:
+                await update.message.reply_text(f"안녕하세요! {self.org_id} PM입니다 😊")
+            return
+
+        # 2. 작업 요청 → confidence 계산
+        score = await self.confidence_scorer.score(text, self.identity)
         is_default = self.identity._data.get("default_handler", False)
         if score < DEFAULT_CONFIDENCE_THRESHOLD and not is_default:
-            logger.debug(f"[routing] {self.org_id} 양보 (score={score})")
             return
 
-        # 3. 대기 (score 높을수록 빨리 응답 → 먼저 claim)
-        if not is_default or score >= DEFAULT_CONFIDENCE_THRESHOLD:
-            wait_time = max(0.0, (10 - score) * 0.3)
-        else:
-            wait_time = ClaimManager.CLAIM_TIMEOUT - 0.1  # 기본 PM은 마지막에 시도
+        wait_time = max(0.0, (10 - score) * 0.3) if (not is_default or score >= DEFAULT_CONFIDENCE_THRESHOLD) else ClaimManager.CLAIM_TIMEOUT - 0.1
         await asyncio.sleep(wait_time)
 
-        # 4. 원자적 claim 시도
         if not self.claim_manager.try_claim(message_id, self.org_id):
-            logger.debug(f"[routing] {self.org_id}: 다른 PM이 먼저 claim함")
             return
 
-        # 5. 오래된 claim 정리 (비동기 백그라운드)
         asyncio.get_event_loop().run_in_executor(None, self.claim_manager.cleanup_old_claims)
 
-        # 6. 담당 선언
-        await update.message.reply_text(f"✋ {self.org_id} PM이 담당합니다!")
-
-        # 7. 세션 보장 + 메모리 로그
-        self.session_manager.ensure_session(TEAM_ID)
+        # 3. 담당 선언 + --print 모드로 실행 (안정적)
+        await update.message.reply_text(f"✋ {self.org_id} PM 담당!")
         await self.memory_manager.add_log(f"사용자 메시지: {text[:200]}")
 
+        from core.dynamic_team_builder import DynamicTeamBuilder
+        from core.agent_catalog import AgentCatalog
+        from tools.claude_code_runner import ClaudeCodeRunner
+
+        catalog = AgentCatalog(); catalog.load()
+        builder = DynamicTeamBuilder(catalog)
+        runner = ClaudeCodeRunner()
+
+        team_config = await builder.build_team(text)
+        from core.dynamic_team_builder import ExecutionMode
+        agent_names = [p.name for p in team_config.agents]
+
+        await update.message.reply_text(f"🤖 팀: {', '.join(agent_names[:3])}")
+
+        # 진행상황 실시간 edit
+        progress_msg = await update.message.reply_text("⚙️ 작업 중...")
+        buffer: list[str] = []
+        last_edit = time.time()
+
+        async def on_progress(line: str) -> None:
+            nonlocal last_edit
+            if not line.strip():
+                return
+            buffer.append(line)
+            if time.time() - last_edit > 3 or len(buffer) >= 10:
+                preview = "\n".join(buffer[-15:])[-3000:]
+                try:
+                    await progress_msg.edit_text(
+                        f"⚙️ 작업 중...\n```\n{preview}\n```",
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    pass
+                last_edit = time.time()
+
+        if team_config.execution_mode == ExecutionMode.omc_team:
+            response = await runner.run_omc_team(text, agent_names, progress_callback=on_progress)
+        elif team_config.execution_mode == ExecutionMode.agent_teams:
+            response = await runner.run_agent_teams(text, agent_names, progress_callback=on_progress)
+        else:
+            response = await runner.run_single(text, progress_callback=on_progress)
+
         try:
-            response = await self.session_manager.send_message(TEAM_ID, text)
-        except Exception as e:
-            logger.error(f"세션 메시지 전달 실패: {e}")
-            await update.message.reply_text(f"❌ 오류: {e}")
-            return
+            await progress_msg.edit_text("✅ 완료!")
+        except Exception:
+            pass
 
         if response:
             for chunk in _split_message(response, 4000):
                 await update.message.reply_text(chunk)
-        else:
-            await update.message.reply_text("(응답 없음)")
+            await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
+            # 생성 파일 자동 업로드
+            await runner._auto_upload(response, self.token, self.allowed_chat_id)
 
-        # 8. 메시지 카운터 + compact 체크
-        self._message_count += 1
-        compacted = await self.session_manager.maybe_compact(TEAM_ID, self._message_count)
-        if compacted:
-            self._message_count = 0
-            logger.info("compact 실행 → 카운터 리셋")
+    # ── 첨부파일 처리 ──────────────────────────────────────────────────────
+
+    async def on_attachment(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """문서/이미지 수신 → 로컬 저장 → claude에 전달."""
+        msg = update.message
+        if msg is None:
+            return
+        if update.effective_chat is None or update.effective_chat.id != self.allowed_chat_id:
+            return
+
+        save_dir = Path.home() / ".ai-org" / "uploads"
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        if msg.document:
+            tg_file = await context.bot.get_file(msg.document.file_id)
+            filename = msg.document.file_name or f"doc_{msg.message_id}"
+            save_path = save_dir / filename
+            await tg_file.download_to_drive(save_path)
+            caption = msg.caption or f"{filename} 파일을 분석해줘"
+        elif msg.photo:
+            photo = msg.photo[-1]
+            tg_file = await context.bot.get_file(photo.file_id)
+            save_path = save_dir / f"photo_{msg.message_id}.jpg"
+            await tg_file.download_to_drive(save_path)
+            caption = msg.caption or "이 이미지를 분석해줘"
+        else:
+            return
+
+        await msg.reply_text(f"📎 파일 수신: {save_path.name}\n처리 중...")
+        logger.info(f"[on_attachment] 저장: {save_path}")
+
+        task = f"{caption}\n\n첨부파일 경로: {save_path}"
+        score = await self.confidence_scorer.score(task, self.identity)
+        is_default = self.identity._data.get("default_handler", False)
+        if score < DEFAULT_CONFIDENCE_THRESHOLD and not is_default:
+            return
+
+        message_id = str(msg.message_id) + "_att"
+        if not self.claim_manager.try_claim(message_id, self.org_id):
+            return
+
+        await self._execute_task(task, msg)
+
+    async def _execute_task(self, task: str, msg: object) -> None:
+        """태스크 실행 공통 로직 (progress 스트리밍 + 결과 전송)."""
+        from core.dynamic_team_builder import DynamicTeamBuilder, ExecutionMode
+        from core.agent_catalog import AgentCatalog
+        from tools.claude_code_runner import ClaudeCodeRunner
+
+        catalog = AgentCatalog(); catalog.load()
+        builder = DynamicTeamBuilder(catalog)
+        runner = ClaudeCodeRunner()
+
+        team_config = await builder.build_team(task)
+        agent_names = [p.name for p in team_config.agents]
+
+        progress_msg = await msg.reply_text("⚙️ 작업 중...")
+        buffer: list[str] = []
+        last_edit = time.time()
+
+        async def on_progress(line: str) -> None:
+            nonlocal last_edit
+            if not line.strip():
+                return
+            buffer.append(line)
+            if time.time() - last_edit > 3 or len(buffer) >= 10:
+                preview = "\n".join(buffer[-15:])[-3000:]
+                try:
+                    await progress_msg.edit_text(
+                        f"⚙️ 작업 중...\n```\n{preview}\n```",
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    pass
+                last_edit = time.time()
+
+        if team_config.execution_mode == ExecutionMode.omc_team:
+            response = await runner.run_omc_team(task, agent_names, progress_callback=on_progress)
+        elif team_config.execution_mode == ExecutionMode.agent_teams:
+            response = await runner.run_agent_teams(task, agent_names, progress_callback=on_progress)
+        else:
+            response = await runner.run_single(task, progress_callback=on_progress)
+
+        try:
+            await progress_msg.edit_text("✅ 완료!")
+        except Exception:
+            pass
 
         if response:
+            for chunk in _split_message(response, 4000):
+                await msg.reply_text(chunk)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
+            await runner._auto_upload(response, self.token, self.allowed_chat_id)
 
     # ── 명령 처리 ──────────────────────────────────────────────────────────
 
@@ -200,6 +333,8 @@ class TelegramRelay:
         self.app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_message)
         )
+        self.app.add_handler(MessageHandler(filters.Document.ALL, self.on_attachment))
+        self.app.add_handler(MessageHandler(filters.PHOTO, self.on_attachment))
 
         return self.app
 
