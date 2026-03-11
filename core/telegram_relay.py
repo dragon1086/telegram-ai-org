@@ -127,25 +127,23 @@ class TelegramRelay:
         await update.message.reply_text(f"🤖 팀: {', '.join(agent_names[:3])}")
 
         # 진행상황 실시간 edit
-        progress_msg = await update.message.reply_text("⚙️ 작업 중...")
-        buffer: list[str] = []
+        progress_msg = await update.message.reply_text("⚙️ 작업 시작...")
+        history: list[str] = []
         last_edit = time.time()
 
         async def on_progress(line: str) -> None:
             nonlocal last_edit
-            if not line.strip():
+            stripped = line.strip()
+            if not stripped:
                 return
-            buffer.append(line)
-            if time.time() - last_edit > 3 or len(buffer) >= 10:
-                preview = "\n".join(buffer[-15:])[-3000:]
+            history.append(stripped)
+            if time.time() - last_edit > 1.5:
+                display = "\n".join(history[-5:])
                 try:
-                    await progress_msg.edit_text(
-                        f"⚙️ 작업 중...\n```\n{preview}\n```",
-                        parse_mode="Markdown",
-                    )
+                    await progress_msg.edit_text(f"⚙️ 작업 중...\n\n{display}")
+                    last_edit = time.time()
                 except Exception:
                     pass
-                last_edit = time.time()
 
         if team_config.execution_mode == ExecutionMode.omc_team:
             response = await runner.run_omc_team(text, agent_names, progress_callback=on_progress)
@@ -222,25 +220,23 @@ class TelegramRelay:
         team_config = await builder.build_team(task)
         agent_names = [p.name for p in team_config.agents]
 
-        progress_msg = await msg.reply_text("⚙️ 작업 중...")
-        buffer: list[str] = []
+        progress_msg = await msg.reply_text("⚙️ 작업 시작...")
+        history: list[str] = []
         last_edit = time.time()
 
         async def on_progress(line: str) -> None:
             nonlocal last_edit
-            if not line.strip():
+            stripped = line.strip()
+            if not stripped:
                 return
-            buffer.append(line)
-            if time.time() - last_edit > 3 or len(buffer) >= 10:
-                preview = "\n".join(buffer[-15:])[-3000:]
+            history.append(stripped)
+            if time.time() - last_edit > 1.5:
+                display = "\n".join(history[-5:])
                 try:
-                    await progress_msg.edit_text(
-                        f"⚙️ 작업 중...\n```\n{preview}\n```",
-                        parse_mode="Markdown",
-                    )
+                    await progress_msg.edit_text(f"⚙️ 작업 중...\n\n{display}")
+                    last_edit = time.time()
                 except Exception:
                     pass
-                last_edit = time.time()
 
         if team_config.execution_mode == ExecutionMode.omc_team:
             response = await runner.run_omc_team(task, agent_names, progress_callback=on_progress)
