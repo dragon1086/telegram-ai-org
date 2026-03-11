@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from loguru import logger
+
+FILE_PATTERN = re.compile(r"(?:저장[됨했]|생성[됨했]|작성[됨했]):?\s*([~/\w\-\.]+\.\w+)")
 
 
 CLAUDE_CLI = os.environ.get("CLAUDE_CLI_PATH", "/Users/rocky/.local/bin/claude")
@@ -36,6 +39,7 @@ class ClaudeCodeRunner:
         task: str,
         agents: list[str],
         counts: list[int] | None = None,
+        progress_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> str:
         """omc /team 형식으로 다중 에이전트 실행.
 
@@ -62,7 +66,7 @@ class ClaudeCodeRunner:
             prompt,
         ]
         logger.info(f"[omc_team] team_spec={team_spec}")
-        return await self._run_subprocess(cmd)
+        return await self._run_subprocess(cmd, progress_callback=progress_callback)
 
     # ------------------------------------------------------------------
     # Mode 2: agent_teams_mode
@@ -71,6 +75,7 @@ class ClaudeCodeRunner:
         self,
         task: str,
         agent_personas: list[str],
+        progress_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> str:
         """CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 환경변수로 에이전트 팀 실행.
 
@@ -88,7 +93,7 @@ class ClaudeCodeRunner:
         ]
         extra_env = {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"}
         logger.info(f"[agent_teams] personas={agent_personas}")
-        return await self._run_subprocess(cmd, extra_env=extra_env)
+        return await self._run_subprocess(cmd, extra_env=extra_env, progress_callback=progress_callback)
 
     # ------------------------------------------------------------------
     # Mode 3: single_agent_mode
@@ -97,6 +102,7 @@ class ClaudeCodeRunner:
         self,
         task: str,
         persona: str | None = None,
+        progress_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> str:
         """단일 에이전트 실행.
 
@@ -116,7 +122,7 @@ class ClaudeCodeRunner:
             full_task,
         ]
         logger.info(f"[single] persona={persona}")
-        return await self._run_subprocess(cmd)
+        return await self._run_subprocess(cmd, progress_callback=progress_callback)
 
     # ------------------------------------------------------------------
     # Mode 4: codex_mode
@@ -148,9 +154,11 @@ class ClaudeCodeRunner:
         if agents:
             full_task = f"[Agents: {', '.join(agents)}] {task}"
 
-        cmd = [codex_cli, "exec", "--full-auto", full_task]
-        logger.info(f"[codex] task={task[:60]}")
-        return await self._run_subprocess(cmd)
+        # Codex는 git repo 안에서만 실행 가능 → 프로젝트 루트 사용
+        codex_workdir = str(Path(__file__).parent.parent)  # ~/telegram-ai-org
+        cmd = [codex_cli, "exec", "--full-auto", "--skip-git-repo-check", full_task]
+        logger.info(f"[codex] task={task[:60]}, workdir={codex_workdir}")
+        return await self._run_subprocess(cmd, workdir=codex_workdir)
 
     # ------------------------------------------------------------------
     # Backward compat
@@ -167,6 +175,7 @@ class ClaudeCodeRunner:
         cmd: list[str],
         extra_env: dict[str, str] | None = None,
         progress_callback: Callable[[str], Awaitable[None]] | None = None,
+        workdir: str | None = None,
     ) -> str:
         """subprocess 실행 후 stdout 스트림 → 결과 반환.
 
@@ -188,6 +197,9 @@ class ClaudeCodeRunner:
         if extra_env:
             env.update(extra_env)
 
+        # 중첩 Claude Code 세션 방지 — CLAUDECODE 반드시 unset
+        env.pop("CLAUDECODE", None)
+
         logger.debug(f"Running cmd: {' '.join(cmd[:3])}...")
 
         try:
@@ -195,7 +207,7 @@ class ClaudeCodeRunner:
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=self.workdir,
+                cwd=workdir or self.workdir,
                 env=env,
             )
         except FileNotFoundError:
@@ -245,3 +257,14 @@ class ClaudeCodeRunner:
                 return f"❌ 프로세스 오류 (code={proc.returncode}): {stderr}"
 
         return full_output or "(결과 없음)"
+
+    async def _auto_upload(self, response: str, bot_token: str, chat_id: int) -> None:
+        """응답에서 생성된 파일 경로 감지 → 자동 텔레그램 업로드."""
+        from tools.telegram_uploader import upload_file
+
+        matches = FILE_PATTERN.findall(response)
+        for fpath in matches:
+            fpath = os.path.expanduser(fpath.strip())
+            if os.path.exists(fpath):
+                logger.info(f"[auto_upload] {fpath}")
+                await upload_file(bot_token, chat_id, fpath, f"📄 생성된 파일: {Path(fpath).name}")
