@@ -31,6 +31,7 @@ class PMIdentity:
             "bot_name": self._parse_field(core_section, "봇명"),
             "role": self._parse_field(core_section, "역할"),
             "specialties": self._parse_specialties(core_section),
+            "direction": self._parse_field(core_section, "방향성"),
             "default_handler": "어떤 PM도 자신없을 때 기본 담당" in core_section,
         }
         logger.debug(f"PM 정체성 로드: {self.org_id} → {self._data['role']}")
