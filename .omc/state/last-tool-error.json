@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"source .venv/bin/activate && python simulation_mode.py --memory-test 2>&1\",\"description\":\"Run memory test simulation\"}",
-  "error": "Exit code 1\n2026-03-10 08:24:31.347 | INFO     | core.memory_manager:add_core:221 - [sim_test] CORE 추가: 프리즘 인사이트 = 주식분석 텔레그램 채널 (@stock_ai_ko)\n2026-03-10 08:24:31.347 | INFO     | core.memory_manager:add_core:221 - [sim_test] CORE 추가: 보안 리뷰는 배포 전 필수 (상록 지시)\n2026-03-10 08:24:31.347 | DEBUG    | core.memory_manager:add_log:175 - [sim_test] LOG 추가 (importance=4): FastAPI 서버 구축 완료\n2026-03-10 08:24:31.348 | DEBUG    | core.memory_manager:add_log:175 - [sim_test] LOG 추가 (importance=5): 인증 버그 수정 — JWT ...",
-  "timestamp": "2026-03-10T15:24:31.561Z",
-  "retry_count": 1
+  "tool_input_preview": "{\"command\":\"python3 -c \\\"\\nimport urllib.request, urllib.parse\\ntoken = '8612007634:AAH9Uh7Ivkjz_LMAg3jC4WVlvGjrlD9Gkwc'\\nmsg = 'cokac 완료: PM이 이제 진짜 Claude Code 자체! 팀 구성도 스스로 결정하고 공지해요'\\ndata = urllib...",
+  "error": "Exit code 1\nTraceback (most recent call last):\n  File \"<string>\", line 6, in <module>\n    urllib.request.urlopen(f'https://api.telegram.org/bot{token}/sendMessage', data)\n    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py\", line 187, in urlopen\n    return opener.open(url, data, timeout)\n           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"/o...",
+  "timestamp": "2026-03-11T06:56:57.996Z",
+  "retry_count": 3
 }

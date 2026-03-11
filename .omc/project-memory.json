@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1773124976733,
+  "lastScanned": 1773211417455,
   "projectRoot": "/Users/rocky/telegram-ai-org",
   "techStack": {
     "languages": [
@@ -47,272 +47,111 @@
   },
   "customNotes": [],
   "directoryMap": {
+    "__pycache__": {
+      "path": "__pycache__",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1773211417444,
+      "keyFiles": [
+        "simulation_mode.cpython-314.pyc"
+      ]
+    },
     "bots": {
       "path": "bots",
       "purpose": null,
-      "fileCount": 4,
-      "lastAccessed": 1773124976717,
+      "fileCount": 1,
+      "lastAccessed": 1773211417444,
       "keyFiles": [
-        "__init__.py",
-        "analyst_bot.py",
-        "dev_bot.py",
-        "docs_bot.py"
+        "__init__.py"
       ]
     },
     "core": {
       "path": "core",
       "purpose": null,
-      "fileCount": 7,
-      "lastAccessed": 1773124976717,
+      "fileCount": 26,
+      "lastAccessed": 1773211417445,
       "keyFiles": [
         "__init__.py",
+        "agent_catalog.py",
+        "claim_manager.py",
         "completion.py",
-        "context_db.py",
-        "message_schema.py",
-        "pm_bot.py"
+        "confidence_scorer.py"
       ]
     },
     "scripts": {
       "path": "scripts",
       "purpose": "Build/utility scripts",
-      "fileCount": 2,
-      "lastAccessed": 1773124976718,
+      "fileCount": 4,
+      "lastAccessed": 1773211417445,
       "keyFiles": [
+        "bot_control.sh",
         "setup.sh",
+        "setup_wizard.py",
         "start_all.sh"
       ]
     },
     "tests": {
       "path": "tests",
       "purpose": "Test files",
-      "fileCount": 1,
-      "lastAccessed": 1773124976719,
+      "fileCount": 7,
+      "lastAccessed": 1773211417445,
       "keyFiles": [
-        "test_message_schema.py"
+        "test_completion.py",
+        "test_message_schema.py",
+        "test_pm_routing.py",
+        "test_project_memory.py",
+        "test_simulation.py"
       ]
     },
     "tools": {
       "path": "tools",
       "purpose": null,
-      "fileCount": 4,
-      "lastAccessed": 1773124976719,
+      "fileCount": 5,
+      "lastAccessed": 1773211417445,
       "keyFiles": [
         "__init__.py",
         "amp_caller.py",
         "claude_code_runner.py",
-        "codex_runner.py"
+        "codex_runner.py",
+        "telegram_uploader.py"
       ]
     }
   },
   "hotPaths": [
     {
-      "path": "core/pm_bot.py",
-      "accessCount": 37,
-      "lastAccessed": 1773153624126,
-      "type": "file"
-    },
-    {
-      "path": "scripts/setup_wizard.py",
-      "accessCount": 34,
-      "lastAccessed": 1773156207861,
-      "type": "file"
-    },
-    {
-      "path": "simulation_mode.py",
-      "accessCount": 33,
-      "lastAccessed": 1773156277990,
-      "type": "file"
-    },
-    {
       "path": "tools/claude_code_runner.py",
-      "accessCount": 22,
-      "lastAccessed": 1773153612968,
+      "accessCount": 12,
+      "lastAccessed": 1773212592509,
       "type": "file"
     },
     {
-      "path": "core/llm_router.py",
-      "accessCount": 10,
-      "lastAccessed": 1773145441158,
+      "path": "core/pm_identity.py",
+      "accessCount": 8,
+      "lastAccessed": 1773212613657,
       "type": "file"
     },
     {
-      "path": "ARCHITECTURE.md",
-      "accessCount": 10,
-      "lastAccessed": 1773145595936,
+      "path": "core/telegram_relay.py",
+      "accessCount": 6,
+      "lastAccessed": 1773212170334,
       "type": "file"
     },
     {
       "path": "core/agent_catalog.py",
-      "accessCount": 10,
-      "lastAccessed": 1773145729102,
-      "type": "file"
-    },
-    {
-      "path": "",
-      "accessCount": 8,
-      "lastAccessed": 1773145375585,
-      "type": "directory"
-    },
-    {
-      "path": "workers.yaml",
-      "accessCount": 8,
-      "lastAccessed": 1773145380160,
-      "type": "file"
-    },
-    {
-      "path": "FINDINGS.md",
-      "accessCount": 8,
-      "lastAccessed": 1773145631012,
-      "type": "file"
-    },
-    {
-      "path": "agent_hints.yaml",
-      "accessCount": 8,
-      "lastAccessed": 1773153783495,
-      "type": "file"
-    },
-    {
-      "path": "scripts/start_all.sh",
-      "accessCount": 8,
-      "lastAccessed": 1773156212203,
-      "type": "file"
-    },
-    {
-      "path": "README.md",
-      "accessCount": 6,
-      "lastAccessed": 1773125309491,
-      "type": "file"
-    },
-    {
-      "path": "core/worker_bot.py",
-      "accessCount": 6,
-      "lastAccessed": 1773126527002,
-      "type": "file"
-    },
-    {
-      "path": "bots/__init__.py",
-      "accessCount": 4,
-      "lastAccessed": 1773125265440,
-      "type": "file"
-    },
-    {
-      "path": ".env.example",
-      "accessCount": 4,
-      "lastAccessed": 1773125270283,
-      "type": "file"
-    },
-    {
-      "path": "core/completion.py",
-      "accessCount": 4,
-      "lastAccessed": 1773126542165,
-      "type": "file"
-    },
-    {
-      "path": "core/task_manager.py",
-      "accessCount": 4,
-      "lastAccessed": 1773126542436,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_simulation.py",
-      "accessCount": 4,
-      "lastAccessed": 1773129759636,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_pm_routing.py",
-      "accessCount": 4,
-      "lastAccessed": 1773129759908,
-      "type": "file"
-    },
-    {
-      "path": "core/worker_registry.py",
-      "accessCount": 4,
-      "lastAccessed": 1773145387144,
-      "type": "file"
-    },
-    {
-      "path": "organizations.yaml",
-      "accessCount": 4,
-      "lastAccessed": 1773148932972,
-      "type": "file"
-    },
-    {
-      "path": "tools/codex_runner.py",
       "accessCount": 2,
-      "lastAccessed": 1773124994990,
+      "lastAccessed": 1773212516429,
       "type": "file"
     },
     {
-      "path": "core/run_worker.py",
+      "path": "tools/team_strategy.py",
       "accessCount": 2,
-      "lastAccessed": 1773125259332,
+      "lastAccessed": 1773212566233,
       "type": "file"
     },
     {
-      "path": "core/message_schema.py",
+      "path": "tools/agent_catalog_v2.py",
       "accessCount": 2,
-      "lastAccessed": 1773126524364,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_message_schema.py",
-      "accessCount": 2,
-      "lastAccessed": 1773126527008,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_completion.py",
-      "accessCount": 2,
-      "lastAccessed": 1773126574949,
-      "type": "file"
-    },
-    {
-      "path": "core/task_planner.py",
-      "accessCount": 2,
-      "lastAccessed": 1773129802041,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_task_planner.py",
-      "accessCount": 2,
-      "lastAccessed": 1773129895080,
-      "type": "file"
-    },
-    {
-      "path": "core/org_registry.py",
-      "accessCount": 2,
-      "lastAccessed": 1773144439699,
-      "type": "file"
-    },
-    {
-      "path": "core/cross_org_bridge.py",
-      "accessCount": 2,
-      "lastAccessed": 1773144466175,
-      "type": "file"
-    },
-    {
-      "path": "core/project_memory.py",
-      "accessCount": 2,
-      "lastAccessed": 1773156044982,
-      "type": "file"
-    },
-    {
-      "path": "core/memory_manager.py",
-      "accessCount": 2,
-      "lastAccessed": 1773156156896,
-      "type": "file"
-    },
-    {
-      "path": "core/session_manager.py",
-      "accessCount": 2,
-      "lastAccessed": 1773156181155,
-      "type": "file"
-    },
-    {
-      "path": "bots/dev_bot.py",
-      "accessCount": 1,
-      "lastAccessed": 1773124994518,
+      "lastAccessed": 1773212580130,
       "type": "file"
     }
   ],

@@ -741,6 +741,59 @@ def step_agent_hints() -> None:
     ok(f"agent_hints.yaml 생성 ({', '.join(labels)})")
 
 
+
+# ─── Step 4b: agency-agents 설치 ─────────────────────────────────────────────
+
+def step_agency_agents() -> None:
+    step_header("4b", "agency-agents 커뮤니티 에이전트 설치")
+    agents_dir = Path.home() / ".claude" / "agents"
+    existing = len(list(agents_dir.glob("*.md"))) if agents_dir.exists() else 0
+
+    print(f"""
+  {bold('agency-agents')} — 커뮤니티가 만든 전문 에이전트 컬렉션
+  {dim('https://github.com/msitarzewski/agency-agents')}
+
+  포함 항목:
+    • engineering  — Frontend, Backend, AI Engineer, DevOps, Security...
+    • marketing    — Social Media, Content, Brand, SEO...
+    • design       — UI/UX, Brand Guardian, Visual Storyteller...
+    • testing      — QA, Performance, Accessibility...
+    • product      — Product Manager, Roadmap, Growth...
+    • + 총 130개+ 전문 에이전트
+
+  현재 {bold(str(existing))}개 에이전트 설치됨
+""")
+
+    choice = ask("agency-agents 설치할까요?", default="y").strip().lower()
+    if choice not in ("y", "yes", ""):
+        info("건너뜀 — 나중에 수동으로 설치 가능:")
+        print(f"  {dim('git clone https://github.com/msitarzewski/agency-agents /tmp/agency-agents')}")
+        print(f"  {dim('find /tmp/agency-agents -name "*.md" ! -path "*/examples/*" -exec cp {{}} ~/.claude/agents/ \;')}")
+        return
+
+    import subprocess as _sp, tempfile, shutil
+    tmp = Path(tempfile.mkdtemp()) / "agency-agents"
+    info("다운로드 중...")
+    result = _sp.run(
+        ["git", "clone", "--depth=1", "https://github.com/msitarzewski/agency-agents", str(tmp)],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        warn(f"다운로드 실패: {result.stderr[:100]}")
+        return
+
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    count = 0
+    for md in tmp.glob("**/*.md"):
+        if any(skip in str(md) for skip in ["examples/", ".github/", "README", "CONTRIBUTING"]):
+            continue
+        shutil.copy(md, agents_dir / md.name)
+        count += 1
+
+    shutil.rmtree(tmp, ignore_errors=True)
+    total = len(list(agents_dir.glob("*.md")))
+    ok(f"agency-agents {count}개 설치 완료 → 총 {total}개 에이전트")
+
 # ─── Step 5: 실행 엔진 기본값 ─────────────────────────────────────────────────
 
 EXEC_MODE_MAP = {"1": "omc_team", "2": "agent_teams", "3": "auto"}
@@ -1125,6 +1178,9 @@ def main() -> None:
 
     # Step 4: 에이전트 힌트
     step_agent_hints()
+
+    # Step 4b: agency-agents
+    step_agency_agents()
 
     # Step 5: 실행 엔진
     exec_mode, preferred_engine = step_exec_engine(existing_cfg, preflight)

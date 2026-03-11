@@ -54,13 +54,31 @@ class PMIdentity:
         specialties = data.get("specialties", [])
         spec_text = ", ".join(specialties)
 
-        # ~/.claude/agents/ 에서 사용 가능한 에이전트 목록 읽기
-        agents_dir = Path.home() / ".claude" / "agents"
-        available_agents: list[str] = []
-        if agents_dir.exists():
-            for f in sorted(agents_dir.glob("*.md")):
-                available_agents.append(f.stem)
-        agents_list = ", ".join(available_agents[:15]) or "analyst, writer, executor, planner, debugger"
+        # ~/.claude/agents/ 에서 사용 가능한 에이전트 목록 읽기 (카테고리별)
+        from tools.agent_catalog_v2 import list_agents_by_category
+        from tools.team_strategy import detect_strategy
+
+        categorized = list_agents_by_category()
+        total_count = sum(len(v) for v in categorized.items())
+
+        strategy_name = detect_strategy()
+        strategy_desc = {
+            "omc": "omc /team (강력)",
+            "native": "native agents",
+            "solo": "단독 실행",
+        }
+
+        # 카테고리별 에이전트 목록 (각 최대 5개 표시)
+        category_lines: list[str] = []
+        for cat, agents in categorized.items():
+            preview = ", ".join(agents[:5])
+            suffix = f" 외 {len(agents) - 5}개" if len(agents) > 5 else ""
+            category_lines.append(f"  - {cat}: {preview}{suffix}")
+        agents_by_cat = "\n".join(category_lines) if category_lines else "  - (에이전트 없음)"
+
+        # fallback용 평탄 목록
+        all_agents = [a for agents in categorized.values() for a in agents]
+        total_count = len(all_agents)
 
         return f"""당신은 {org} 조직의 PM입니다.
 
@@ -69,8 +87,9 @@ class PMIdentity:
 - 전문 분야: {spec_text}
 - 방향성: 조직의 정체성에 맞는 방향으로 판단하고 실행
 
-## 팀 구성 규칙
-사용 가능한 에이전트: {agents_list}
+## 팀 구성 전략: {strategy_desc.get(strategy_name, strategy_name)}
+사용 가능한 에이전트 ({total_count}개):
+{agents_by_cat}
 
 작업 수신 시 다음 순서로 처리:
 1. 팀 구성이 필요하면 **반드시 먼저 아래 형식으로 팀 구성을 공지**:

@@ -8,7 +8,7 @@ from enum import Enum
 from pathlib import Path
 
 from loguru import logger
-from openai import AsyncOpenAI
+import anthropic
 
 from core.agent_catalog import AgentCatalog, AgentPersona
 
@@ -86,13 +86,13 @@ class DynamicTeamBuilder:
         if not self._catalog.list_agents():
             self._catalog.load()
 
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        self._model = os.environ.get("PM_MODEL", "gpt-4o")
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        self._model = os.environ.get("PM_MODEL", "claude-haiku-4-5")
         self._llm_available = bool(api_key)
-        self._client: AsyncOpenAI | None = AsyncOpenAI(api_key=api_key) if self._llm_available else None
+        self._client = anthropic.AsyncAnthropic(api_key=api_key) if self._llm_available else None
 
         if not self._llm_available:
-            logger.warning("OPENAI_API_KEY not set — DynamicTeamBuilder will use fallback mode")
+            logger.warning("ANTHROPIC_API_KEY not set — DynamicTeamBuilder will use fallback mode")
         self._hints: dict = {}  # lazy-loaded from agent_hints.yaml
 
     def _load_hints(self) -> dict:
@@ -131,16 +131,15 @@ class DynamicTeamBuilder:
             return self._fallback_team(task)
 
         try:
-            resp = await self._client.chat.completions.create(
+            resp = await self._client.messages.create(
                 model=self._model,
+                max_tokens=512,
+                system=_TEAM_SYSTEM_PROMPT,
                 messages=[
-                    {"role": "system", "content": _TEAM_SYSTEM_PROMPT},
                     {"role": "user", "content": f"Task: {task}"},
                 ],
-                temperature=0.2,
-                response_format={"type": "json_object"},
             )
-            content = resp.choices[0].message.content or "{}"
+            content = resp.content[0].text if resp.content else "{}"
             data = json.loads(content)
             return self._parse_llm_response(data)
 
@@ -234,7 +233,7 @@ class DynamicTeamBuilder:
         elif execution_mode == ExecutionMode.agent_teams:
             engine = self._engine_for_category("analysis", default="claude-code")
         else:
-            engine = self._engine_for_category("simple", default="codex")
+            engine = self._engine_for_category("writing", default="claude-code")
         # omc_team always needs claude-code regardless of hints
         if execution_mode == ExecutionMode.omc_team:
             engine = "claude-code"
