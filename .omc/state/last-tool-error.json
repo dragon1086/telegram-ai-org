@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"python3 -c \\\"\\nimport urllib.request, urllib.parse\\ntoken = '8612007634:AAH9Uh7Ivkjz_LMAg3jC4WVlvGjrlD9Gkwc'\\nmsg = 'cokac 완료: PM이 이제 진짜 Claude Code 자체! 팀 구성도 스스로 결정하고 공지해요'\\ndata = urllib...",
-  "error": "Exit code 1\nTraceback (most recent call last):\n  File \"<string>\", line 6, in <module>\n    urllib.request.urlopen(f'https://api.telegram.org/bot{token}/sendMessage', data)\n    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py\", line 187, in urlopen\n    return opener.open(url, data, timeout)\n           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"/o...",
-  "timestamp": "2026-03-11T06:56:57.996Z",
-  "retry_count": 3
-}
