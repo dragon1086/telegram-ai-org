@@ -12,6 +12,8 @@ from loguru import logger
 
 from core.session_store import SessionStore
 from core.global_context import GlobalContext
+from tools.team_strategy import get_strategy
+from tools.agent_catalog_v2 import recommend_agents
 
 FILE_PATTERN = re.compile(r"(?:저장[됨했]|생성[됨했]|작성[됨했]):?\s*([~/\w\-\.]+\.\w+)")
 
@@ -243,7 +245,17 @@ class ClaudeCodeRunner:
             if ctx:
                 cmd.extend(["--append-system-prompt", ctx])
 
-        cmd.append(task)
+        # TEAM_REQUEST 감지용 프리패스 (빠른 키워드 체크)
+        needs_team = len(task) > 30 or any(
+            k in task for k in ["분석", "개발", "작성", "기획", "전략", "구현", "보고서", "평가"]
+        )
+
+        if needs_team:
+            agents = recommend_agents(task)
+            strategy = get_strategy()
+            cmd = strategy.build_cmd(task, agents, cmd)
+        else:
+            cmd.append(task)
 
         logger.info(f"[run_task] org_id={org_id}, task={task[:60]}")
         result = await self._run_stream_json(
