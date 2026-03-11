@@ -362,7 +362,7 @@ class TelegramRelay:
         self.app.add_handler(CommandHandler("status", self.on_command_status))
         self.app.add_handler(CommandHandler("reset", self.on_command_reset))
         self.app.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_message)
+            MessageHandler(filters.TEXT, self.on_message)  # 명령어 포함
         )
         self.app.add_handler(MessageHandler(filters.Document.ALL, self.on_attachment))
         self.app.add_handler(MessageHandler(filters.PHOTO, self.on_attachment))

@@ -16,7 +16,7 @@ start() {
     fi
 
     cd "$BOT_DIR"
-    nohup .venv/bin/python3 main.py > "$LOG_FILE" 2>&1 &
+    nohup .venv/bin/python3 -u main.py > "$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"
     echo "✅ PM봇 시작 (PID: $(cat $PID_FILE))"
 }
