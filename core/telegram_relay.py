@@ -28,6 +28,7 @@ from core.claim_manager import ClaimManager
 from core.confidence_scorer import ConfidenceScorer
 from core.session_store import SessionStore
 from core.global_context import GlobalContext
+from core.keywords import GREETING_KW, ACTION_KW
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
@@ -83,12 +84,8 @@ class TelegramRelay:
         logger.info(f"텔레그램 수신 [{self.org_id}]: {text[:80]}")
 
         # 1. 대화형 vs 작업 분류
-        greeting_kw = ["안녕", "hi", "hello", "ㅎㅇ", "잘 지내", "뭐해", "있어?", "왔어", "반가"]
-        action_kw = ["작성해","만들어","분석해","구현해","개발해","조사해","생성해","수정해",
-                     "고쳐","빌드","보고서","리포트","기획","설계","평가","검토","요약","정리",
-                     "비교","추천","제안","계획","전략","조회","확인해","알려줘","해줘"]
-        is_greeting = any(kw in text for kw in greeting_kw) and len(text) < 15
-        is_task = not is_greeting and (any(kw in text for kw in action_kw) or len(text) > 20)
+        is_greeting = any(kw in text for kw in GREETING_KW) and len(text) < 15
+        is_task = not is_greeting and (any(kw in text for kw in ACTION_KW) or len(text) > 20)
 
         # 2. 인사 → default PM만 claim 후 응답
         if is_greeting:
@@ -98,8 +95,8 @@ class TelegramRelay:
             if not self.claim_manager.try_claim(message_id, self.org_id):
                 return
             import anthropic as _anth
-            client = _anth.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
-            resp = client.messages.create(
+            client = _anth.AsyncAnthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+            resp = await client.messages.create(
                 model="claude-haiku-4-5", max_tokens=80,
                 system="친근하게 아주 짧게 한국어로 대화. 이모지 1개.",
                 messages=[{"role": "user", "content": text}],

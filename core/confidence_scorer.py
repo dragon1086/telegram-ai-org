@@ -7,11 +7,12 @@ import re
 from loguru import logger
 
 from core.pm_identity import PMIdentity
+from core.keywords import GREETING_KW
 
 DEFAULT_CONFIDENCE_THRESHOLD = 6  # 이 점수 이상이어야 claim
 
-# 짧은 인사말 패턴 — 담당 없음 (0점)
-GREETING_PATTERNS = ["안녕", "hi", "hello", "잘 지내", "뭐해", "왔어", "있어?", "ㅎㅇ", "반가"]
+# 짧은 인사말 패턴 — 담당 없음 (0점) — core/keywords.py에서 가져옴
+GREETING_PATTERNS = GREETING_KW
 
 
 class ConfidenceScorer:
