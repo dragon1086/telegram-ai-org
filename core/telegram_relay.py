@@ -26,6 +26,7 @@ from core.memory_manager import MemoryManager
 from core.pm_identity import PMIdentity
 from core.claim_manager import ClaimManager
 from core.confidence_scorer import ConfidenceScorer
+from core.session_store import SessionStore
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
@@ -56,6 +57,9 @@ class TelegramRelay:
         self.claim_manager = ClaimManager()
         self.confidence_scorer = ConfidenceScorer()
 
+        # Claude Code 세션 영속화 (--resume으로 대화 맥락 유지)
+        self.session_store = SessionStore(org_id)
+
     # ── 메시지 처리 ────────────────────────────────────────────────────────
 
     async def on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -75,26 +79,31 @@ class TelegramRelay:
         logger.info(f"텔레그램 수신 [{self.org_id}]: {text[:80]}")
 
         # 1. 대화형 vs 작업 분류
-        action_kw = ["작성해","만들어","분석해","구현해","개발해","조사해","생성해","수정해","고쳐","빌드","보고서","리포트","기획","설계"]
-        is_task = any(kw in text for kw in action_kw) or len(text) > 40
+        greeting_kw = ["안녕", "hi", "hello", "ㅎㅇ", "잘 지내", "뭐해", "있어?", "왔어", "반가"]
+        action_kw = ["작성해","만들어","분석해","구현해","개발해","조사해","생성해","수정해",
+                     "고쳐","빌드","보고서","리포트","기획","설계","평가","검토","요약","정리",
+                     "비교","추천","제안","계획","전략","조회","확인해","알려줘","해줘"]
+        is_greeting = any(kw in text for kw in greeting_kw) and len(text) < 15
+        is_task = not is_greeting and (any(kw in text for kw in action_kw) or len(text) > 20)
 
-        if not is_task:
-            # 대화형 → Anthropic API로 짧게 직접 응답 (팀 구성 없음)
+        # 2. 인사 → default PM만 claim 후 응답
+        if is_greeting:
+            is_default = self.identity._data.get("default_handler", False)
+            if not is_default:
+                return
+            if not self.claim_manager.try_claim(message_id, self.org_id):
+                return
             import anthropic as _anth
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            if api_key:
-                client = _anth.Anthropic(api_key=api_key)
-                resp = client.messages.create(
-                    model="claude-haiku-4-5", max_tokens=150,
-                    system=f"당신은 {self.org_id} PM봇. 친근하게 짧게 한국어로 대화.",
-                    messages=[{"role": "user", "content": text}],
-                )
-                await update.message.reply_text(resp.content[0].text if resp.content else "안녕하세요! 😊")
-            else:
-                await update.message.reply_text(f"안녕하세요! {self.org_id} PM입니다 😊")
+            client = _anth.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+            resp = client.messages.create(
+                model="claude-haiku-4-5", max_tokens=80,
+                system="친근하게 아주 짧게 한국어로 대화. 이모지 1개.",
+                messages=[{"role": "user", "content": text}],
+            )
+            await update.message.reply_text(resp.content[0].text if resp.content else "안녕하세요! 😊")
             return
 
-        # 2. 작업 요청 → confidence 계산
+        # 3. 작업 요청 → confidence 계산
         score = await self.confidence_scorer.score(text, self.identity)
         is_default = self.identity._data.get("default_handler", False)
         if score < DEFAULT_CONFIDENCE_THRESHOLD and not is_default:
@@ -108,8 +117,8 @@ class TelegramRelay:
 
         asyncio.get_event_loop().run_in_executor(None, self.claim_manager.cleanup_old_claims)
 
-        # 3. 담당 선언 + --print 모드로 실행 (안정적)
-        await update.message.reply_text(f"✋ {self.org_id} PM 담당!")
+        # 4. 담당 선언 + 팀 구성
+        await update.message.reply_text(f"✋ {self.org_id} PM 담당! 팀 구성 중...")
         await self.memory_manager.add_log(f"사용자 메시지: {text[:200]}")
 
         from core.dynamic_team_builder import DynamicTeamBuilder
@@ -146,11 +155,11 @@ class TelegramRelay:
                     pass
 
         if team_config.execution_mode == ExecutionMode.omc_team:
-            response = await runner.run_omc_team(text, agent_names, progress_callback=on_progress)
+            response = await runner.run_omc_team(text, agent_names, progress_callback=on_progress, session_store=self.session_store)
         elif team_config.execution_mode == ExecutionMode.agent_teams:
             response = await runner.run_agent_teams(text, agent_names, progress_callback=on_progress)
         else:
-            response = await runner.run_single(text, progress_callback=on_progress)
+            response = await runner.run_single(text, progress_callback=on_progress, session_store=self.session_store)
 
         try:
             await progress_msg.edit_text("✅ 완료!")
@@ -239,11 +248,11 @@ class TelegramRelay:
                     pass
 
         if team_config.execution_mode == ExecutionMode.omc_team:
-            response = await runner.run_omc_team(task, agent_names, progress_callback=on_progress)
+            response = await runner.run_omc_team(task, agent_names, progress_callback=on_progress, session_store=self.session_store)
         elif team_config.execution_mode == ExecutionMode.agent_teams:
             response = await runner.run_agent_teams(task, agent_names, progress_callback=on_progress)
         else:
-            response = await runner.run_single(task, progress_callback=on_progress)
+            response = await runner.run_single(task, progress_callback=on_progress, session_store=self.session_store)
 
         try:
             await progress_msg.edit_text("✅ 완료!")
@@ -312,7 +321,8 @@ class TelegramRelay:
         try:
             await self.session_manager.writeback_and_reset(TEAM_ID, self.memory_manager)
             self._message_count = 0
-            await update.message.reply_text("✅ 새 세션으로 시작합니다.")
+            self.session_store.reset()
+            await update.message.reply_text("✅ 새 세션으로 시작합니다. 대화 기록도 초기화했습니다.")
         except Exception as e:
             logger.error(f"리셋 실패: {e}")
             await update.message.reply_text(f"❌ 리셋 실패: {e}")

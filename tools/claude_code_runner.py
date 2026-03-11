@@ -10,6 +10,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from core.session_store import SessionStore
+
 FILE_PATTERN = re.compile(r"(?:저장[됨했]|생성[됨했]|작성[됨했]):?\s*([~/\w\-\.]+\.\w+)")
 
 TOOL_EMOJI = {
@@ -56,6 +58,7 @@ class ClaudeCodeRunner:
         agents: list[str],
         counts: list[int] | None = None,
         progress_callback: Callable[[str], Awaitable[None]] | None = None,
+        session_store: SessionStore | None = None,
     ) -> str:
         """omc /team 형식으로 다중 에이전트 실행.
 
@@ -82,7 +85,7 @@ class ClaudeCodeRunner:
             prompt,
         ]
         logger.info(f"[omc_team] team_spec={team_spec}")
-        return await self._run_stream_json(cmd, progress_callback=progress_callback)
+        return await self._run_stream_json(cmd, progress_callback=progress_callback, session_store=session_store)
 
     # ------------------------------------------------------------------
     # Mode 2: agent_teams_mode
@@ -119,6 +122,7 @@ class ClaudeCodeRunner:
         task: str,
         persona: str | None = None,
         progress_callback: Callable[[str], Awaitable[None]] | None = None,
+        session_store: SessionStore | None = None,
     ) -> str:
         """단일 에이전트 실행.
 
@@ -138,7 +142,7 @@ class ClaudeCodeRunner:
             full_task,
         ]
         logger.info(f"[single] persona={persona}")
-        return await self._run_stream_json(cmd, progress_callback=progress_callback)
+        return await self._run_stream_json(cmd, progress_callback=progress_callback, session_store=session_store)
 
     # ------------------------------------------------------------------
     # Mode 4: codex_mode
@@ -193,11 +197,24 @@ class ClaudeCodeRunner:
         extra_env: dict[str, str] | None = None,
         progress_callback: Callable[[str], Awaitable[None]] | None = None,
         workdir: str | None = None,
+        session_store: SessionStore | None = None,
     ) -> str:
         """--output-format stream-json으로 실행 → tool_use 이벤트 파싱 후 결과 반환.
 
         stream-json 실패 시 _run_subprocess로 fallback.
         """
+        # --resume 삽입 (기존 session_id 있으면 이전 대화 이어받기)
+        if session_store:
+            existing_id = session_store.get_session_id()
+            if existing_id:
+                new_cmd: list[str] = []
+                for arg in cmd:
+                    new_cmd.append(arg)
+                    if arg in ("--print", "-p"):
+                        new_cmd.extend(["--resume", existing_id])
+                cmd = new_cmd
+                logger.info(f"[stream_json] --resume {existing_id[:8]}...")
+
         # --print 뒤에 --verbose --output-format stream-json 삽입
         stream_cmd: list[str] = []
         for i, arg in enumerate(cmd):
@@ -232,9 +249,10 @@ class ClaudeCodeRunner:
         final_result = ""
         tool_counts: dict[str, int] = {}
         raw_lines: list[str] = []
+        current_session_id: str | None = None
 
         async def _read_stream() -> None:
-            nonlocal final_result
+            nonlocal final_result, current_session_id
             assert proc.stdout is not None
             async for raw_line in proc.stdout:
                 line = raw_line.decode("utf-8", errors="replace").strip()
@@ -247,6 +265,10 @@ class ClaudeCodeRunner:
                     continue
 
                 etype = event.get("type", "")
+
+                # session_id 추출 (system init 이벤트)
+                if etype == "system" and event.get("subtype") == "init":
+                    current_session_id = event.get("session_id")
 
                 if etype == "assistant":
                     msg_obj = event.get("message", {})
@@ -262,19 +284,48 @@ class ClaudeCodeRunner:
                         emoji = TOOL_EMOJI.get(tool_name, "⚙️")
                         if tool_name == "Bash":
                             snippet = str(tool_input.get("command", ""))[:60]
-                            msg_text = f"{emoji} `{snippet}`"
+                            msg_text = f"🔧 Bash: `{snippet}`"
                         elif tool_name in ("Read", "Edit", "Write", "MultiEdit"):
                             fpath = str(tool_input.get("file_path", tool_input.get("path", "")))
                             fpath = fpath.replace("/Users/rocky/", "~/")
-                            msg_text = f"{emoji} {tool_name}: `{fpath}`"
+                            EDIT_EMOJI = {"Read": "📖", "Edit": "✏️", "Write": "📝", "MultiEdit": "✏️"}
+                            msg_text = f"{EDIT_EMOJI.get(tool_name, '📄')} {tool_name}: `{fpath}`"
                         elif tool_name == "Task":
-                            desc = str(tool_input.get("description", ""))[:50]
-                            msg_text = f"🤖 서브에이전트: {desc}"
+                            desc = str(tool_input.get("description", tool_input.get("prompt", "")))[:60]
+                            msg_text = f"🤖 Task: {desc}"
                         elif tool_name == "WebSearch":
                             q = str(tool_input.get("query", ""))[:50]
-                            msg_text = f"🔍 검색: {q}"
+                            msg_text = f"🔍 WebSearch: {q}"
+                        elif tool_name == "Glob":
+                            pat = str(tool_input.get("pattern", ""))[:50]
+                            msg_text = f"📂 Glob: `{pat}`"
+                        elif tool_name == "Grep":
+                            pat = str(tool_input.get("pattern", ""))[:40]
+                            msg_text = f"🔎 Grep: `{pat}`"
+                        # omc 전용 툴
+                        elif tool_name in ("mcp__omc__Skill", "Skill"):
+                            skill = (tool_input.get("skill_name") or
+                                     tool_input.get("name") or
+                                     list(tool_input.values())[0] if tool_input else "")
+                            desc = str(skill)[:50]
+                            msg_text = f"🛠️ Skill: {desc}"
+                        elif tool_name in ("mcp__omc__Agent", "Agent"):
+                            agent = (tool_input.get("agent_name") or
+                                     tool_input.get("name") or
+                                     tool_input.get("role") or
+                                     list(tool_input.values())[0] if tool_input else "")
+                            desc = str(agent)[:50]
+                            msg_text = f"🤝 Agent: {desc}"
+                        elif tool_name.startswith("mcp__omc__"):
+                            short = tool_name.replace("mcp__omc__", "")
+                            msg_text = f"⚡ omc/{short}"
                         else:
-                            msg_text = f"{emoji} {tool_name}"
+                            # 알 수 없는 tool: input 첫 값 힌트로 보여주기
+                            hint = ""
+                            if tool_input:
+                                first_val = str(list(tool_input.values())[0])[:40]
+                                hint = f": {first_val}"
+                            msg_text = f"⚙️ {tool_name}{hint}"
 
                         if progress_callback:
                             try:
@@ -285,6 +336,10 @@ class ClaudeCodeRunner:
                 elif etype == "result":
                     if event.get("subtype") == "success":
                         final_result = event.get("result", "")
+                        # session_id 저장 (다음 실행 시 --resume으로 재사용)
+                        if session_store and current_session_id:
+                            session_store.save_session_id(current_session_id)
+                            logger.info(f"[stream_json] session_id 저장: {current_session_id[:8]}...")
                         duration = event.get("duration_ms", 0) / 1000
                         if progress_callback:
                             tools_summary = (
