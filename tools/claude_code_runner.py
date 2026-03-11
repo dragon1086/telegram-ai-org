@@ -11,6 +11,7 @@ from pathlib import Path
 from loguru import logger
 
 from core.session_store import SessionStore
+from core.global_context import GlobalContext
 
 FILE_PATTERN = re.compile(r"(?:저장[됨했]|생성[됨했]|작성[됨했]):?\s*([~/\w\-\.]+\.\w+)")
 
@@ -59,6 +60,8 @@ class ClaudeCodeRunner:
         counts: list[int] | None = None,
         progress_callback: Callable[[str], Awaitable[None]] | None = None,
         session_store: SessionStore | None = None,
+        org_id: str = "global",
+        global_context: GlobalContext | None = None,
     ) -> str:
         """omc /team 형식으로 다중 에이전트 실행.
 
@@ -84,8 +87,21 @@ class ClaudeCodeRunner:
             "--print",
             prompt,
         ]
+
+        # 글로벌 맥락 주입
+        if global_context:
+            ctx_prompt = global_context.build_system_prompt(org_id)
+            if ctx_prompt:
+                cmd.extend(["--append-system-prompt", ctx_prompt])
+
         logger.info(f"[omc_team] team_spec={team_spec}")
-        return await self._run_stream_json(cmd, progress_callback=progress_callback, session_store=session_store)
+        result = await self._run_stream_json(cmd, progress_callback=progress_callback, session_store=session_store)
+
+        # 작업 완료 후 핵심 내용 추출 → global_context 저장
+        if global_context and result:
+            global_context.extract_and_save(org_id, task, result)
+
+        return result
 
     # ------------------------------------------------------------------
     # Mode 2: agent_teams_mode
@@ -123,6 +139,8 @@ class ClaudeCodeRunner:
         persona: str | None = None,
         progress_callback: Callable[[str], Awaitable[None]] | None = None,
         session_store: SessionStore | None = None,
+        org_id: str = "global",
+        global_context: GlobalContext | None = None,
     ) -> str:
         """단일 에이전트 실행.
 
@@ -141,8 +159,21 @@ class ClaudeCodeRunner:
             "--print",
             full_task,
         ]
+
+        # 글로벌 맥락 주입
+        if global_context:
+            ctx_prompt = global_context.build_system_prompt(org_id)
+            if ctx_prompt:
+                cmd.extend(["--append-system-prompt", ctx_prompt])
+
         logger.info(f"[single] persona={persona}")
-        return await self._run_stream_json(cmd, progress_callback=progress_callback, session_store=session_store)
+        result = await self._run_stream_json(cmd, progress_callback=progress_callback, session_store=session_store)
+
+        # 작업 완료 후 핵심 내용 추출 → global_context 저장
+        if global_context and result:
+            global_context.extract_and_save(org_id, task, result)
+
+        return result
 
     # ------------------------------------------------------------------
     # Mode 4: codex_mode

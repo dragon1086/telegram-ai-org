@@ -27,6 +27,7 @@ from core.pm_identity import PMIdentity
 from core.claim_manager import ClaimManager
 from core.confidence_scorer import ConfidenceScorer
 from core.session_store import SessionStore
+from core.global_context import GlobalContext
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
@@ -59,6 +60,9 @@ class TelegramRelay:
 
         # Claude Code 세션 영속화 (--resume으로 대화 맥락 유지)
         self.session_store = SessionStore(org_id)
+
+        # PM 집단 기억 — PM 간 맥락 공유
+        self.global_context = GlobalContext()
 
     # ── 메시지 처리 ────────────────────────────────────────────────────────
 
@@ -155,11 +159,11 @@ class TelegramRelay:
                     pass
 
         if team_config.execution_mode == ExecutionMode.omc_team:
-            response = await runner.run_omc_team(text, agent_names, progress_callback=on_progress, session_store=self.session_store)
+            response = await runner.run_omc_team(text, agent_names, progress_callback=on_progress, session_store=self.session_store, org_id=self.org_id, global_context=self.global_context)
         elif team_config.execution_mode == ExecutionMode.agent_teams:
             response = await runner.run_agent_teams(text, agent_names, progress_callback=on_progress)
         else:
-            response = await runner.run_single(text, progress_callback=on_progress, session_store=self.session_store)
+            response = await runner.run_single(text, progress_callback=on_progress, session_store=self.session_store, org_id=self.org_id, global_context=self.global_context)
 
         try:
             await progress_msg.edit_text("✅ 완료!")
@@ -248,11 +252,11 @@ class TelegramRelay:
                     pass
 
         if team_config.execution_mode == ExecutionMode.omc_team:
-            response = await runner.run_omc_team(task, agent_names, progress_callback=on_progress, session_store=self.session_store)
+            response = await runner.run_omc_team(task, agent_names, progress_callback=on_progress, session_store=self.session_store, org_id=self.org_id, global_context=self.global_context)
         elif team_config.execution_mode == ExecutionMode.agent_teams:
             response = await runner.run_agent_teams(task, agent_names, progress_callback=on_progress)
         else:
-            response = await runner.run_single(task, progress_callback=on_progress, session_store=self.session_store)
+            response = await runner.run_single(task, progress_callback=on_progress, session_store=self.session_store, org_id=self.org_id, global_context=self.global_context)
 
         try:
             await progress_msg.edit_text("✅ 완료!")
