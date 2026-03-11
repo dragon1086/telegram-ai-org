@@ -463,7 +463,21 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
         org_desc = ask("조직 설명", default="개발팀 — 코딩, 구현, 배포")
         specialties_raw = ask("이 PM의 전문분야를 입력하세요 (콤마 구분, 예: 코딩, 버그, API)", default="일반")
         specialties = [s.strip() for s in specialties_raw.split(",") if s.strip()]
-        _generate_pm_identity(org_name, pm_token, int(pm_chat_id) if pm_chat_id.lstrip("-").isdigit() else 0, specialties, org_desc)
+        direction = ask(
+            "조직 방향성/문화 (예: 스타트업 스타일, 빠른 실행 우선)", default=""
+        )
+        print(f"""
+  {dim('선호 에이전트를 지정하면 PM이 팀 구성 시 우선적으로 활용합니다.')}
+  {dim('예: engineering-rapid-prototyper, marketing-content-strategist')}
+  {dim('엔터 건너뛰면 PM이 자동 선택')}""")
+        preferred_raw = ask("선호 에이전트 (콤마 구분, 엔터=자동)", default="")
+        preferred = [a.strip() for a in preferred_raw.split(",") if a.strip()]
+        _generate_pm_identity(
+            org_name, pm_token,
+            int(pm_chat_id) if pm_chat_id.lstrip("-").isdigit() else 0,
+            specialties, org_desc,
+            direction=direction, preferred_agents=preferred,
+        )
         return [{"name": org_name, "description": org_desc,
                  "pm_token": pm_token, "group_chat_id": pm_chat_id}]
 
@@ -511,8 +525,12 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
 
         specialties_raw = ask(f"  이 PM의 전문분야를 입력하세요 (콤마 구분, 예: 코딩, 버그, API)", default="일반")
         specialties = [s.strip() for s in specialties_raw.split(",") if s.strip()]
+        direction = ask("  조직 방향성/문화 (예: 스타트업, 빠른 실행)", default="")
+        preferred_raw = ask("  선호 에이전트 (콤마 구분, 엔터=자동)", default="")
+        preferred = [a.strip() for a in preferred_raw.split(",") if a.strip()]
         chat_id_int = int(chat_id) if chat_id.lstrip("-").isdigit() else 0
-        _generate_pm_identity(name, token, chat_id_int, specialties, desc)
+        _generate_pm_identity(name, token, chat_id_int, specialties, desc,
+                              direction=direction, preferred_agents=preferred)
         print(f"  ✅ pm_{name}.md 생성 완료")
 
         orgs.append({"name": name, "description": desc,
@@ -522,7 +540,7 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
     return orgs
 
 
-def _generate_pm_identity(org_id: str, bot_token: str, chat_id: int, specialties: list[str], role: str = "") -> None:
+def _generate_pm_identity(org_id: str, bot_token: str, chat_id: int, specialties: list[str], role: str = "", direction: str = "", preferred_agents: list | None = None) -> None:
     """pm_{org_id}.md 자동 생성."""
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
@@ -550,6 +568,11 @@ def _generate_pm_identity(org_id: str, bot_token: str, chat_id: int, specialties
             f"- pm_global: 전체 조율, 일반 대화\n"
             f"- pm_{org_id}: {specialties_str}\n"
         )
+        # direction, preferred_agents 추가
+        if direction:
+            content += f"- 방향성: {direction}\n"
+        if preferred_agents:
+            content += f"- 선호 에이전트: {', '.join(preferred_agents)}\n"
         (memory_dir / f"pm_{org_id}.md").write_text(content, encoding="utf-8")
         warn(f"OrgRegistry 사용 불가 ({e}), 직접 파일 생성 완료")
 
