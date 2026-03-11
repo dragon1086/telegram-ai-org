@@ -80,12 +80,15 @@ class PMIdentity:
         all_agents = [a for agents in categorized.values() for a in agents]
         total_count = len(all_agents)
 
+        direction = data.get("direction", "")
+        direction_line = f"- 방향성: {direction}" if direction else "- 방향성: 조직의 정체성에 맞게 판단"
+
         return f"""당신은 {org} 조직의 PM입니다.
 
 ## 조직 정체성
 - 역할: {role}
 - 전문 분야: {spec_text}
-- 방향성: 조직의 정체성에 맞는 방향으로 판단하고 실행
+{direction_line}
 
 ## 팀 구성 전략: {strategy_desc.get(strategy_name, strategy_name)}
 사용 가능한 에이전트 ({total_count}개):

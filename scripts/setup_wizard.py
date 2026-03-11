@@ -464,19 +464,15 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
         specialties_raw = ask("이 PM의 전문분야를 입력하세요 (콤마 구분, 예: 코딩, 버그, API)", default="일반")
         specialties = [s.strip() for s in specialties_raw.split(",") if s.strip()]
         direction = ask(
-            "조직 방향성/문화 (예: 스타트업 스타일, 빠른 실행 우선)", default=""
+            "조직 방향성/문화를 자유롭게 설명해주세요",
+            default="빠른 실행, 결과 중심"
         )
-        print(f"""
-  {dim('선호 에이전트를 지정하면 PM이 팀 구성 시 우선적으로 활용합니다.')}
-  {dim('예: engineering-rapid-prototyper, marketing-content-strategist')}
-  {dim('엔터 건너뛰면 PM이 자동 선택')}""")
-        preferred_raw = ask("선호 에이전트 (콤마 구분, 엔터=자동)", default="")
-        preferred = [a.strip() for a in preferred_raw.split(",") if a.strip()]
+        # 선호 에이전트는 PM(Claude Code)이 direction + specialties 보고 자동 선택
         _generate_pm_identity(
             org_name, pm_token,
             int(pm_chat_id) if pm_chat_id.lstrip("-").isdigit() else 0,
             specialties, org_desc,
-            direction=direction, preferred_agents=preferred,
+            direction=direction, preferred_agents=None,
         )
         return [{"name": org_name, "description": org_desc,
                  "pm_token": pm_token, "group_chat_id": pm_chat_id}]
@@ -525,12 +521,10 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
 
         specialties_raw = ask(f"  이 PM의 전문분야를 입력하세요 (콤마 구분, 예: 코딩, 버그, API)", default="일반")
         specialties = [s.strip() for s in specialties_raw.split(",") if s.strip()]
-        direction = ask("  조직 방향성/문화 (예: 스타트업, 빠른 실행)", default="")
-        preferred_raw = ask("  선호 에이전트 (콤마 구분, 엔터=자동)", default="")
-        preferred = [a.strip() for a in preferred_raw.split(",") if a.strip()]
+        direction = ask("  조직 방향성/문화를 자유롭게 설명해주세요", default="빠른 실행, 결과 중심")
         chat_id_int = int(chat_id) if chat_id.lstrip("-").isdigit() else 0
         _generate_pm_identity(name, token, chat_id_int, specialties, desc,
-                              direction=direction, preferred_agents=preferred)
+                              direction=direction, preferred_agents=None)
         print(f"  ✅ pm_{name}.md 생성 완료")
 
         orgs.append({"name": name, "description": desc,
