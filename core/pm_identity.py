@@ -145,3 +145,26 @@ class PMIdentity:
             "specialties": [],
             "default_handler": self.org_id == "global",
         }
+
+    def update(self, new_data: dict) -> None:
+        """정체성 업데이트 후 파일 저장."""
+        self._data.update(new_data)
+        from pathlib import Path
+        import re
+        identity_file = Path.home() / ".ai-org" / "memory" / f"pm_{self.org_id}.md"
+        existing = identity_file.read_text(encoding="utf-8") if identity_file.exists() else ""
+        # 방향성 줄 업데이트
+        for key, label in [("role", "역할"), ("direction", "방향성")]:
+            if key in new_data:
+                val = new_data[key]
+                if f"- {label}:" in existing:
+                    existing = re.sub(f"- {label}:.*", f"- {label}: {val}", existing)
+                else:
+                    existing += f"\n- {label}: {val}"
+        if "specialties" in new_data:
+            specs = ", ".join(new_data["specialties"])
+            if "- 전문분야:" in existing:
+                existing = re.sub(r"- 전문분야:.*", f"- 전문분야: {specs}", existing)
+            else:
+                existing += f"\n- 전문분야: {specs}"
+        identity_file.write_text(existing, encoding="utf-8")
