@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 from collections.abc import Awaitable, Callable
@@ -10,6 +11,21 @@ from pathlib import Path
 from loguru import logger
 
 FILE_PATTERN = re.compile(r"(?:저장[됨했]|생성[됨했]|작성[됨했]):?\s*([~/\w\-\.]+\.\w+)")
+
+TOOL_EMOJI = {
+    "Bash": "🔧",
+    "Read": "📖",
+    "Edit": "✏️",
+    "Write": "📝",
+    "MultiEdit": "✏️",
+    "WebSearch": "🔍",
+    "WebFetch": "🌐",
+    "Task": "🤖",
+    "TodoWrite": "📋",
+    "Glob": "📂",
+    "Grep": "🔎",
+    "LS": "📂",
+}
 
 
 CLAUDE_CLI = os.environ.get("CLAUDE_CLI_PATH", "/Users/rocky/.local/bin/claude")
@@ -66,7 +82,7 @@ class ClaudeCodeRunner:
             prompt,
         ]
         logger.info(f"[omc_team] team_spec={team_spec}")
-        return await self._run_subprocess(cmd, progress_callback=progress_callback)
+        return await self._run_stream_json(cmd, progress_callback=progress_callback)
 
     # ------------------------------------------------------------------
     # Mode 2: agent_teams_mode
@@ -122,7 +138,7 @@ class ClaudeCodeRunner:
             full_task,
         ]
         logger.info(f"[single] persona={persona}")
-        return await self._run_subprocess(cmd, progress_callback=progress_callback)
+        return await self._run_stream_json(cmd, progress_callback=progress_callback)
 
     # ------------------------------------------------------------------
     # Mode 4: codex_mode
@@ -131,6 +147,7 @@ class ClaudeCodeRunner:
         self,
         task: str,
         agents: list[str] | None = None,
+        progress_callback=None,
     ) -> str:
         """Codex CLI로 태스크 실행.
 
@@ -158,7 +175,7 @@ class ClaudeCodeRunner:
         codex_workdir = str(Path(__file__).parent.parent)  # ~/telegram-ai-org
         cmd = [codex_cli, "exec", "--full-auto", "--skip-git-repo-check", full_task]
         logger.info(f"[codex] task={task[:60]}, workdir={codex_workdir}")
-        return await self._run_subprocess(cmd, workdir=codex_workdir)
+        return await self._run_subprocess(cmd, workdir=codex_workdir, progress_callback=progress_callback)
 
     # ------------------------------------------------------------------
     # Backward compat
@@ -168,8 +185,144 @@ class ClaudeCodeRunner:
         return await self.run_single(prompt)
 
     # ------------------------------------------------------------------
-    # Private helper
+    # Private helpers
     # ------------------------------------------------------------------
+    async def _run_stream_json(
+        self,
+        cmd: list[str],
+        extra_env: dict[str, str] | None = None,
+        progress_callback: Callable[[str], Awaitable[None]] | None = None,
+        workdir: str | None = None,
+    ) -> str:
+        """--output-format stream-json으로 실행 → tool_use 이벤트 파싱 후 결과 반환.
+
+        stream-json 실패 시 _run_subprocess로 fallback.
+        """
+        # --print 뒤에 --verbose --output-format stream-json 삽입
+        stream_cmd: list[str] = []
+        for i, arg in enumerate(cmd):
+            stream_cmd.append(arg)
+            if arg in ("--print", "-p"):
+                stream_cmd.extend(["--verbose", "--output-format", "stream-json"])
+
+        env = os.environ.copy()
+        oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+        if oauth_token:
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
+        if extra_env:
+            env.update(extra_env)
+        env.pop("CLAUDECODE", None)
+        env.pop("CLAUDE_CODE_SESSION_ID", None)
+
+        logger.debug(f"[stream_json] cmd: {' '.join(stream_cmd[:4])}...")
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *stream_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                cwd=workdir or self.workdir,
+                env=env,
+            )
+        except FileNotFoundError:
+            msg = f"❌ Claude CLI를 찾을 수 없습니다: {stream_cmd[0]}"
+            logger.error(msg)
+            return msg
+
+        final_result = ""
+        tool_counts: dict[str, int] = {}
+        raw_lines: list[str] = []
+
+        async def _read_stream() -> None:
+            nonlocal final_result
+            assert proc.stdout is not None
+            async for raw_line in proc.stdout:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+                raw_lines.append(line)
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                etype = event.get("type", "")
+
+                if etype == "assistant":
+                    msg_obj = event.get("message", {})
+                    for block in msg_obj.get("content", []):
+                        if not isinstance(block, dict):
+                            continue
+                        if block.get("type") != "tool_use":
+                            continue
+                        tool_name = block.get("name", "")
+                        tool_input = block.get("input", {})
+                        tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+
+                        emoji = TOOL_EMOJI.get(tool_name, "⚙️")
+                        if tool_name == "Bash":
+                            snippet = str(tool_input.get("command", ""))[:60]
+                            msg_text = f"{emoji} `{snippet}`"
+                        elif tool_name in ("Read", "Edit", "Write", "MultiEdit"):
+                            fpath = str(tool_input.get("file_path", tool_input.get("path", "")))
+                            fpath = fpath.replace("/Users/rocky/", "~/")
+                            msg_text = f"{emoji} {tool_name}: `{fpath}`"
+                        elif tool_name == "Task":
+                            desc = str(tool_input.get("description", ""))[:50]
+                            msg_text = f"🤖 서브에이전트: {desc}"
+                        elif tool_name == "WebSearch":
+                            q = str(tool_input.get("query", ""))[:50]
+                            msg_text = f"🔍 검색: {q}"
+                        else:
+                            msg_text = f"{emoji} {tool_name}"
+
+                        if progress_callback:
+                            try:
+                                await progress_callback(msg_text)
+                            except Exception as cb_err:
+                                logger.warning(f"progress_callback 오류: {cb_err}")
+
+                elif etype == "result":
+                    if event.get("subtype") == "success":
+                        final_result = event.get("result", "")
+                        duration = event.get("duration_ms", 0) / 1000
+                        if progress_callback:
+                            tools_summary = (
+                                " · ".join(f"{v}×{k}" for k, v in tool_counts.items())
+                                if tool_counts else "없음"
+                            )
+                            try:
+                                await progress_callback(
+                                    f"✅ 완료 ({duration:.1f}초) | 도구: {tools_summary}"
+                                )
+                            except Exception:
+                                pass
+                    elif event.get("subtype") == "error":
+                        final_result = event.get("result", "")
+
+        try:
+            await asyncio.wait_for(_read_stream(), timeout=self.timeout)
+            await proc.wait()
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            msg = f"❌ 타임아웃 ({self.timeout}s) 초과"
+            logger.error(msg)
+            return msg
+        except Exception as exc:
+            proc.kill()
+            await proc.wait()
+            msg = f"❌ 실행 중 오류: {exc}"
+            logger.exception(msg)
+            return msg
+
+        # stream-json이 아무 JSON도 못 파싱했으면 raw 텍스트 반환
+        if not final_result and raw_lines:
+            logger.warning("[stream_json] result 이벤트 없음 — raw 텍스트 반환")
+            return "\n".join(raw_lines)
+
+        return final_result or "(결과 없음)"
+
     async def _run_subprocess(
         self,
         cmd: list[str],
