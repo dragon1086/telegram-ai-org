@@ -8,6 +8,11 @@ from loguru import logger
 
 from core.pm_identity import PMIdentity
 
+DEFAULT_CONFIDENCE_THRESHOLD = 6  # 이 점수 이상이어야 claim
+
+# 짧은 인사말 패턴 — 담당 없음 (0점)
+GREETING_PATTERNS = ["안녕", "hi", "hello", "잘 지내", "뭐해", "왔어", "있어?", "ㅎㅇ", "반가"]
+
 
 class ConfidenceScorer:
     """메시지에 대한 이 PM의 담당 confidence 계산 (0-10)."""
@@ -62,6 +67,10 @@ class ConfidenceScorer:
 
     def _keyword_score(self, message: str, specialties: list[str]) -> int:
         """키워드 매칭 기반 fallback scoring."""
+        # 짧은 인사말은 담당 없음 (0점)
+        if len(message) < 20 and any(p in message.lower() for p in GREETING_PATTERNS):
+            return 0
+
         if not specialties:
             return 3  # 전문분야 없으면 낮은 점수
 

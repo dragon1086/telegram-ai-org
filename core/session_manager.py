@@ -14,7 +14,14 @@ from pathlib import Path
 from loguru import logger
 
 SESSION_PREFIX = "aiorg"
-OUTPUT_TIMEOUT = 30  # 응답 대기 최대 초
+OUTPUT_TIMEOUT = 120  # 응답 대기 최대 초
+PROMPT_TIMEOUT = 15   # claude 초기화 대기 최대 초
+
+# TUI 아티팩트 제거 패턴
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mGKHFA-Za-z]")
+_BOX_RE = re.compile(r"[╭╮╰╯│─┤├┬┴┼▸▹●○◆◇▲△▼▽►◄╔╗╚╝═║]+")
+_OMC_BAR_RE = re.compile(r"\[OMC#.*?\].*")
+_PROMPT_RE = re.compile(r"\s*[❯>$]\s*$", re.MULTILINE)
 
 WRITEBACK_PROMPT = """\
 지금까지 대화에서 중요한 결정, 사실, 합의사항을 3-10개 추출해서
@@ -58,20 +65,40 @@ class SessionManager:
         out = self._run_tmux("has-session", "-t", name)
         return not out  # has-session은 성공 시 출력 없음, 실패 시 에러 출력
 
-    def ensure_session(self, team_id: str) -> str:
+    def ensure_session(self, team_id: str, disable_omc: bool = False) -> str:
         """세션이 없으면 생성 + claude 시작. 세션 이름 반환."""
         name = self.session_name(team_id)
         if not self.session_exists(team_id):
-            self._run_tmux("new-session", "-d", "-s", name)
-            # claude CLI를 대화형으로 시작
+            self._run_tmux("new-session", "-d", "-s", name, "-x", "220", "-y", "50")
             claude_cli = os.environ.get("CLAUDE_CLI_PATH", "/Users/rocky/.local/bin/claude")
+            env_prefix = "CLAUDECODE= "
+            if disable_omc:
+                env_prefix += "DISABLE_OMC=1 "
             self._run_tmux("send-keys", "-t", name,
-                           f"{claude_cli} --dangerously-skip-permissions", "Enter")
-            import time; time.sleep(2)  # claude 초기화 대기
-            logger.info(f"tmux 세션 생성 + claude 시작: {name}")
+                           f"{env_prefix}{claude_cli} --dangerously-skip-permissions", "Enter")
+            # 프롬프트 나올 때까지 폴링 (sleep 고정 제거)
+            ready = self._wait_for_prompt(name, timeout=PROMPT_TIMEOUT)
+            if ready:
+                logger.info(f"tmux 세션 생성 완료: {name}")
+            else:
+                logger.warning(f"tmux 세션 프롬프트 타임아웃: {name}")
         else:
             logger.debug(f"tmux 세션 재사용: {name}")
         return name
+
+    def _wait_for_prompt(self, session_name: str, timeout: float = PROMPT_TIMEOUT) -> bool:
+        """claude 프롬프트(❯ 또는 >) 나올 때까지 폴링 대기."""
+        import time
+        start = time.time()
+        while time.time() - start < timeout:
+            pane = self._run_tmux("capture-pane", "-t", session_name, "-p")
+            if "❯" in pane or ("> " in pane and "dangerously" in pane.lower()):
+                return True
+            # bypass permissions 안내 화면도 준비 완료 신호
+            if "bypass" in pane.lower() and ("permission" in pane.lower() or "skip" in pane.lower()):
+                return True
+            time.sleep(0.5)
+        return False
 
     def list_sessions(self) -> list[str]:
         """aiorg_ 접두어 세션 목록 반환."""
@@ -146,66 +173,89 @@ class SessionManager:
         """tmux pane 현재 내용 캡처."""
         return self._run_tmux("capture-pane", "-t", session_name, "-p", "-S", "-100")
 
+    def _extract_response(self, current_pane: str, before_pane: str) -> str:
+        """TUI 아티팩트 제거 + 실제 응답만 추출."""
+        # before에 없는 새 라인만 추출
+        before_set = set(before_pane.splitlines())
+        new_lines = [l for l in current_pane.splitlines() if l not in before_set]
+        text = "\n".join(new_lines)
+
+        # ANSI 이스케이프 코드 제거
+        text = _ANSI_RE.sub("", text)
+        # 박스 문자 제거
+        text = _BOX_RE.sub("", text)
+        # OMC 상태바 라인 제거
+        text = _OMC_BAR_RE.sub("", text)
+        # 프롬프트 라인 제거
+        text = _PROMPT_RE.sub("", text)
+        # bypass permissions 안내 제거
+        text = re.sub(r"bypass permissions.*", "", text, flags=re.IGNORECASE)
+        # 연속 빈 줄 정리
+        text = re.sub(r"\n{3,}", "\n\n", text)
+
+        return text.strip()
+
+    # 하위 호환: 기존 코드에서 _extract_new_content 호출 가능하도록 유지
     def _extract_new_content(self, before: str, after: str) -> str:
-        """before → after 사이에 새로 추가된 내용 추출."""
-        before_lines = before.splitlines()
-        after_lines = after.splitlines()
-
-        # before의 마지막 줄부터 after에서 새로운 부분 찾기
-        if before_lines:
-            last_before = before_lines[-1]
-            try:
-                idx = after_lines.index(last_before)
-                new_lines = after_lines[idx + 1:]
-            except ValueError:
-                new_lines = after_lines
-        else:
-            new_lines = after_lines
-
-        # 프롬프트 라인 제거 (claude 프롬프트 기호)
-        cleaned = [l for l in new_lines if not l.strip().startswith(("❯", ">", "$"))]
-        return "\n".join(cleaned).strip()
+        return self._extract_response(after, before)
 
     async def _wait_for_response(self, session_name: str, before: str) -> str:
-        """출력이 안정화될 때까지 대기 (응답 완료 감지)."""
-        prev_content = before
+        """프롬프트(❯) 재등장으로 완료 감지 + 안정화 확인."""
+        last_content = ""
         stable_count = 0
-        STABLE_THRESHOLD = 3  # 3회 연속 동일하면 완료로 판단
+        STABLE_THRESHOLD = 2
 
-        await asyncio.sleep(1.0)  # 초기 대기
+        await asyncio.sleep(1.0)
 
         while True:
             await asyncio.sleep(0.8)
             current = self._capture_pane(session_name)
 
-            if current == prev_content:
-                stable_count += 1
-                if stable_count >= STABLE_THRESHOLD:
-                    # 출력 안정화 → 완료
-                    return self._extract_new_content(before, current)
+            # 프롬프트가 다시 나타나면 응답 완료 신호
+            prompt_ready = "❯" in current and current != before
+            if prompt_ready:
+                content = self._extract_response(current, before)
+                if content == last_content:
+                    stable_count += 1
+                    if stable_count >= STABLE_THRESHOLD:
+                        return content
+                else:
+                    last_content = content
+                    stable_count = 0
             else:
                 stable_count = 0
-                prev_content = current
+                last_content = ""
 
     async def send_message(self, team_id: str, message: str) -> str:
         """tmux 세션의 claude에 메시지 전달 후 응답 수집.
 
         흐름:
-        1. 현재 pane 내용을 스냅샷으로 저장
-        2. tmux send-keys로 메시지 입력
-        3. claude 응답 완료까지 대기 (출력 안정화 감지)
-        4. 새로 추가된 텍스트 반환
+        1. claude 프롬프트 준비 확인
+        2. 현재 pane 스냅샷 저장
+        3. 메시지 전송 (긴 메시지는 tempfile 경유)
+        4. 프롬프트 재등장까지 대기 후 TUI 아티팩트 제거된 텍스트 반환
         """
         name = self.ensure_session(team_id)
 
-        # 1. 전송 전 스냅샷
+        # claude 준비 확인
+        if not self._wait_for_prompt(name, timeout=5):
+            logger.warning(f"claude 세션 준비 미완료: {name}")
+            return "❌ claude 세션 준비 안됨"
+
+        # 전송 전 스냅샷
         before = self._capture_pane(name)
 
-        # 2. 메시지 전송
-        escaped = message.replace("'", "'\\''")
-        self._run_tmux("send-keys", "-t", name, message, "Enter")
+        # 메시지 전송
+        if len(message) > 200:
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
+                f.write(message)
+                tmp = f.name
+            self._run_tmux("send-keys", "-t", name, f"cat {tmp}", "Enter")
+        else:
+            self._run_tmux("send-keys", "-t", name, message, "Enter")
 
-        # 3. 응답 완료 대기
+        # 응답 완료 대기
         try:
             response = await asyncio.wait_for(
                 self._wait_for_response(name, before),
@@ -215,7 +265,7 @@ class SessionManager:
         except asyncio.TimeoutError:
             logger.warning(f"응답 타임아웃: {name}")
             current = self._capture_pane(name)
-            return self._extract_new_content(before, current)
+            return self._extract_response(current, before)
 
     async def maybe_compact(self, team_id: str, message_count: int = 0) -> bool:
         """컨텍스트 80% 초과 감지 시 /compact 실행. 실행 여부 반환.
