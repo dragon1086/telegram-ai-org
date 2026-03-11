@@ -95,6 +95,11 @@ class TelegramRelay:
         message_id = str(update.message.message_id)
         logger.info(f"텔레그램 수신 [{self.org_id}]: {text[:80]}")
 
+        # 명령어 처리 (/ 로 시작)
+        if text.startswith("/"):
+            await self._handle_command(text, update, context)
+            return
+
         # 1. 대화형 vs 작업 분류
         is_greeting = any(kw in text for kw in GREETING_KW) and len(text) < 15
         is_task = not is_greeting and (any(kw in text for kw in ACTION_KW) or len(text) > 20)
@@ -446,3 +451,107 @@ def _split_message(text: str, max_len: int = 4000) -> list[str]:
         chunks.append(text[:max_len])
         text = text[max_len:]
     return chunks
+
+
+    async def _handle_command(
+        self, text: str, update, context
+    ) -> None:
+        """/ 명령어 처리 — 특정 봇 태그(/org@aiorg_pm_bot)도 지원."""
+        # @봇이름 제거
+        import re as _re
+        cmd_full = text.strip().split()[0].lower()
+        cmd = _re.sub(r'@\S+', '', cmd_full)  # /org@bot → /org
+        arg = text[len(text.split()[0]):].strip()
+
+        # 이 PM 대상이 아닌 태그된 명령어면 무시
+        bot_tag = _re.search(r'@(\S+)', text.split()[0])
+        if bot_tag:
+            my_username = (await context.bot.get_me()).username or ""
+            if bot_tag.group(1).lower() != my_username.lower():
+                return
+
+        # /org — 조직 정체성 조회/설정
+        if cmd == "/org":
+            if not arg or arg.lower() == "status":
+                d = self.identity._data
+                msg = (
+                    f"🏢 **{self.org_id} 조직 정체성**\n\n"
+                    f"역할: {d.get('role','미설정')}\n"
+                    f"전문분야: {', '.join(d.get('specialties', []))}\n"
+                    f"방향성: {d.get('direction','미설정')}"
+                )
+                await update.message.reply_text(msg, parse_mode="Markdown")
+            else:
+                # 자유 텍스트 → 정체성 업데이트
+                parts = [p.strip() for p in arg.split("|")]
+                new_data: dict = {"direction": arg}
+                # 파이프 구분 파싱: 역할|전문분야|방향성
+                if len(parts) >= 1:
+                    new_data["role"] = parts[0]
+                if len(parts) >= 2:
+                    new_data["specialties"] = [s.strip() for s in parts[1].split(",")]
+                if len(parts) >= 3:
+                    new_data["direction"] = parts[2]
+                self.identity.update(new_data)
+                d = self.identity._data
+                msg = (
+                    f"✅ **{self.org_id} 정체성 업데이트!**\n\n"
+                    f"역할: {d.get('role','')}\n"
+                    f"전문분야: {', '.join(d.get('specialties', []))}\n"
+                    f"방향성: {d.get('direction','')}\n\n"
+                    f"이제 이 방향성으로 팀을 구성할게요 🤖"
+                )
+                await update.message.reply_text(msg, parse_mode="Markdown")
+            return
+
+        # /agents — 에이전트 목록
+        if cmd == "/agents":
+            from pathlib import Path as _Path
+            agents_dir = _Path.home() / ".claude" / "agents"
+            agents = sorted(agents_dir.glob("*.md"))
+            by_cat: dict = {}
+            for a in agents:
+                cat = a.stem.split("-")[0]
+                by_cat.setdefault(cat, []).append(a.stem.split("-", 1)[-1])
+            msg = f"🤖 **에이전트 {len(agents)}개**\n\n"
+            for cat, names in sorted(by_cat.items()):
+                preview = ", ".join(names[:4])
+                suffix = f" +{len(names)-4}" if len(names) > 4 else ""
+                msg += f"**{cat}** ({len(names)}): {preview}{suffix}\n"
+            await update.message.reply_text(msg[:4000], parse_mode="Markdown")
+            return
+
+        # /team — 현재 전략
+        if cmd == "/team":
+            from tools.team_strategy import detect_strategy
+            s = detect_strategy()
+            desc = {
+                "omc": "omc /team (plan→exec→verify)",
+                "native": "native --agents",
+                "solo": "단독 실행",
+            }
+            await update.message.reply_text(
+                f"⚙️ 현재 팀 전략: **{desc.get(s, s)}**",
+                parse_mode="Markdown",
+            )
+            return
+
+        # /reset — 세션 초기화
+        if cmd == "/reset":
+            self.session_store.reset(self.org_id)
+            await update.message.reply_text("🔄 PM 세션 초기화됨")
+            return
+
+        # /pm — 이 방의 PM 목록 (여러 PM 있을 때 관리)
+        if cmd == "/pm":
+            sub = arg.lower()
+            if not sub or sub == "list":
+                msg = (
+                    f"🤖 **현재 활성 PM**\n\n"
+                    f"• @{(await context.bot.get_me()).username} — {self.org_id}\n"
+                    f"  역할: {self.identity._data.get('role','')}\n"
+                    f"  전문분야: {', '.join(self.identity._data.get('specialties', []))}\n"
+                )
+                await update.message.reply_text(msg, parse_mode="Markdown")
+            return
+
