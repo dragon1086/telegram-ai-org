@@ -542,16 +542,68 @@ def _split_message(text: str, max_len: int = 4000) -> list[str]:
             await update.message.reply_text("🔄 PM 세션 초기화됨")
             return
 
-        # /pm — 이 방의 PM 목록 (여러 PM 있을 때 관리)
+        # /pm — 다중 PM 관리
         if cmd == "/pm":
-            sub = arg.lower()
-            if not sub or sub == "list":
+            parts = arg.split(None, 1)
+            sub = parts[0].lower() if parts else "list"
+            sub_arg = parts[1] if len(parts) > 1 else ""
+
+            if not arg or sub == "list":
+                me = await context.bot.get_me()
+                d = self.identity._data
                 msg = (
-                    f"🤖 **현재 활성 PM**\n\n"
-                    f"• @{(await context.bot.get_me()).username} — {self.org_id}\n"
-                    f"  역할: {self.identity._data.get('role','')}\n"
-                    f"  전문분야: {', '.join(self.identity._data.get('specialties', []))}\n"
+                    f"🤖 **PM 목록**\n\n"
+                    f"• @{me.username} ({self.org_id})\n"
+                    f"  역할: {d.get('role','미설정')}\n"
+                    f"  전문분야: {', '.join(d.get('specialties', []))}\n"
+                    f"  방향성: {d.get('direction','미설정')}\n\n"
+                    f"_여러 PM이 있으면 각 봇마다 이 명령어가 표시됩니다_"
                 )
                 await update.message.reply_text(msg, parse_mode="Markdown")
+
+            elif sub == "set":
+                # /pm set 역할|전문분야|방향성
+                fields = [f.strip() for f in sub_arg.split("|")]
+                new_data: dict = {}
+                if len(fields) >= 1 and fields[0]: new_data["role"] = fields[0]
+                if len(fields) >= 2 and fields[1]: new_data["specialties"] = [s.strip() for s in fields[1].split(",")]
+                if len(fields) >= 3 and fields[2]: new_data["direction"] = fields[2]
+                if new_data:
+                    self.identity.update(new_data)
+                    d = self.identity._data
+                    await update.message.reply_text(
+                        f"✅ **{self.org_id} 업데이트!**\n"
+                        f"역할: {d.get('role','')}\n"
+                        f"전문분야: {', '.join(d.get('specialties',[]))}\n"
+                        f"방향성: {d.get('direction','')}",
+                        parse_mode="Markdown"
+                    )
+                else:
+                    await update.message.reply_text("사용법: `/pm set 역할|전문분야1,분야2|방향성`", parse_mode="Markdown")
+
+            elif sub == "delete":
+                await update.message.reply_text(
+                    f"⚠️ PM 삭제는 봇을 그룹에서 내보내고\n"
+                    f"`~/.ai-org/memory/pm_{self.org_id}.md` 삭제 후\n"
+                    f"봇을 재시작하면 됩니다."
+                )
+            return
+
+        # /help
+        if cmd == "/help":
+            msg = (
+                "📖 **명령어 안내**\n\n"
+                "`/org status` — 정체성 조회\n"
+                "`/org 역할|전문분야|방향성` — 정체성 설정\n\n"
+                "`/pm list` — PM 목록\n"
+                "`/pm set 역할|분야|방향성` — PM 정체성 수정\n"
+                "`/pm delete` — PM 삭제 안내\n\n"
+                "`/agents` — 에이전트 150개 목록\n"
+                "`/team` — 현재 팀 전략\n"
+                "`/reset` — 세션 초기화\n\n"
+                "💡 여러 PM이 있을 때 특정 PM만:\n"
+                "`/org@pm_dev_bot 역할|분야|방향성`"
+            )
+            await update.message.reply_text(msg, parse_mode="Markdown")
             return
 
