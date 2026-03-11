@@ -213,6 +213,51 @@ class ClaudeCodeRunner:
         return await self._run_subprocess(cmd, workdir=codex_workdir, progress_callback=progress_callback)
 
     # ------------------------------------------------------------------
+    # Mode 5: run_task (PM 자율 판단 — DynamicTeamBuilder 대체)
+    # ------------------------------------------------------------------
+    async def run_task(
+        self,
+        task: str,
+        system_prompt: str = "",
+        progress_callback: Callable[[str], Awaitable[None]] | None = None,
+        session_store: "SessionStore | None" = None,
+        global_context: "GlobalContext | None" = None,
+        org_id: str = "global",
+    ) -> str:
+        """PM 자율 판단으로 태스크 실행. 팀 구성 여부는 Claude Code가 결정.
+
+        조직 정체성 + 팀 구성 지침이 담긴 system_prompt를 주입하면
+        Claude Code가 스스로 팀 구성 여부와 에이전트 선택을 결정한다.
+        """
+        cmd = [
+            self.cli_path,
+            "--permission-mode", "bypassPermissions",
+            "--print",
+        ]
+
+        if system_prompt:
+            cmd.extend(["--append-system-prompt", system_prompt])
+
+        if global_context:
+            ctx = global_context.build_system_prompt(org_id)
+            if ctx:
+                cmd.extend(["--append-system-prompt", ctx])
+
+        cmd.append(task)
+
+        logger.info(f"[run_task] org_id={org_id}, task={task[:60]}")
+        result = await self._run_stream_json(
+            cmd,
+            progress_callback=progress_callback,
+            session_store=session_store,
+        )
+
+        if global_context and result:
+            global_context.extract_and_save(org_id, task, result)
+
+        return result
+
+    # ------------------------------------------------------------------
     # Backward compat
     # ------------------------------------------------------------------
     async def run(self, prompt: str, flags: list[str] | None = None) -> str:
@@ -305,6 +350,15 @@ class ClaudeCodeRunner:
                     msg_obj = event.get("message", {})
                     for block in msg_obj.get("content", []):
                         if not isinstance(block, dict):
+                            continue
+                        # 팀 구성 공지 텍스트 감지
+                        if block.get("type") == "text":
+                            text_chunk = block.get("text", "")
+                            if "🤖 팀 구성:" in text_chunk and progress_callback:
+                                try:
+                                    await progress_callback(text_chunk.strip())
+                                except Exception:
+                                    pass
                             continue
                         if block.get("type") != "tool_use":
                             continue

@@ -64,6 +64,7 @@ class TelegramRelay:
 
         # PM 집단 기억 — PM 간 맥락 공유
         self.global_context = GlobalContext()
+        self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
     # ── 메시지 처리 ────────────────────────────────────────────────────────
 
@@ -94,14 +95,20 @@ class TelegramRelay:
                 return
             if not self.claim_manager.try_claim(message_id, self.org_id):
                 return
-            import anthropic as _anth
-            client = _anth.AsyncAnthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
-            resp = await client.messages.create(
-                model="claude-haiku-4-5", max_tokens=80,
-                system="친근하게 아주 짧게 한국어로 대화. 이모지 1개.",
-                messages=[{"role": "user", "content": text}],
+            # claude --print로 인사 응답 (Anthropic API 키 불필요)
+            import asyncio as _aio, subprocess as _sp
+            _env = {**os.environ, "CLAUDECODE": "", "ANTHROPIC_API_KEY": ""}
+            _proc = await _aio.create_subprocess_exec(
+                "/Users/rocky/.local/bin/claude",
+                "--permission-mode", "bypassPermissions", "-p",
+                "--system-prompt", "친근하게 아주 짧게 한국어로 대화. 이모지 1개. 두 문장 이내.",
+                text,
+                stdout=_aio.subprocess.PIPE, stderr=_aio.subprocess.DEVNULL,
+                env=_env, cwd="/Users/rocky/telegram-ai-org",
             )
-            await update.message.reply_text(resp.content[0].text if resp.content else "안녕하세요! 😊")
+            _out, _ = await _aio.wait_for(_proc.communicate(), timeout=15)
+            reply = (_out.decode().strip() if _out else "") or "안녕하세요! 😊"
+            await update.message.reply_text(reply[:300])
             return
 
         # 3. 작업 요청 → confidence 계산
@@ -118,26 +125,16 @@ class TelegramRelay:
 
         asyncio.get_event_loop().run_in_executor(None, self.claim_manager.cleanup_old_claims)
 
-        # 4. 담당 선언 + 팀 구성
-        await update.message.reply_text(f"✋ {self.org_id} PM 담당! 팀 구성 중...")
+        # 4. 담당 선언 + 실행 (Claude Code가 팀 구성 자율 결정)
+        await update.message.reply_text(f"✋ {self.org_id} PM 담당!")
         await self.memory_manager.add_log(f"사용자 메시지: {text[:200]}")
 
-        from core.dynamic_team_builder import DynamicTeamBuilder
-        from core.agent_catalog import AgentCatalog
         from tools.claude_code_runner import ClaudeCodeRunner
 
-        catalog = AgentCatalog(); catalog.load()
-        builder = DynamicTeamBuilder(catalog)
         runner = ClaudeCodeRunner()
+        system_prompt = self.identity.build_system_prompt()
 
-        team_config = await builder.build_team(text)
-        from core.dynamic_team_builder import ExecutionMode
-        agent_names = [p.name for p in team_config.agents]
-
-        await update.message.reply_text(f"🤖 팀: {', '.join(agent_names[:3])}")
-
-        # 진행상황 실시간 edit
-        progress_msg = await update.message.reply_text("⚙️ 작업 시작...")
+        progress_msg = await update.message.reply_text("⚙️ 처리 중...")
         history: list[str] = []
         last_edit = time.time()
 
@@ -155,12 +152,14 @@ class TelegramRelay:
                 except Exception:
                     pass
 
-        if team_config.execution_mode == ExecutionMode.omc_team:
-            response = await runner.run_omc_team(text, agent_names, progress_callback=on_progress, session_store=self.session_store, org_id=self.org_id, global_context=self.global_context)
-        elif team_config.execution_mode == ExecutionMode.agent_teams:
-            response = await runner.run_agent_teams(text, agent_names, progress_callback=on_progress)
-        else:
-            response = await runner.run_single(text, progress_callback=on_progress, session_store=self.session_store, org_id=self.org_id, global_context=self.global_context)
+        response = await runner.run_task(
+            task=text,
+            system_prompt=system_prompt,
+            progress_callback=on_progress,
+            session_store=self.session_store,
+            global_context=self.global_context,
+            org_id=self.org_id,
+        )
 
         try:
             await progress_msg.edit_text("✅ 완료!")
@@ -171,7 +170,6 @@ class TelegramRelay:
             for chunk in _split_message(response, 4000):
                 await update.message.reply_text(chunk)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
-            # 생성 파일 자동 업로드
             await runner._auto_upload(response, self.token, self.allowed_chat_id)
 
     # ── 첨부파일 처리 ──────────────────────────────────────────────────────
@@ -219,18 +217,12 @@ class TelegramRelay:
 
     async def _execute_task(self, task: str, msg: object) -> None:
         """태스크 실행 공통 로직 (progress 스트리밍 + 결과 전송)."""
-        from core.dynamic_team_builder import DynamicTeamBuilder, ExecutionMode
-        from core.agent_catalog import AgentCatalog
         from tools.claude_code_runner import ClaudeCodeRunner
 
-        catalog = AgentCatalog(); catalog.load()
-        builder = DynamicTeamBuilder(catalog)
         runner = ClaudeCodeRunner()
+        system_prompt = self.identity.build_system_prompt()
 
-        team_config = await builder.build_team(task)
-        agent_names = [p.name for p in team_config.agents]
-
-        progress_msg = await msg.reply_text("⚙️ 작업 시작...")
+        progress_msg = await msg.reply_text("⚙️ 처리 중...")
         history: list[str] = []
         last_edit = time.time()
 
@@ -248,12 +240,14 @@ class TelegramRelay:
                 except Exception:
                     pass
 
-        if team_config.execution_mode == ExecutionMode.omc_team:
-            response = await runner.run_omc_team(task, agent_names, progress_callback=on_progress, session_store=self.session_store, org_id=self.org_id, global_context=self.global_context)
-        elif team_config.execution_mode == ExecutionMode.agent_teams:
-            response = await runner.run_agent_teams(task, agent_names, progress_callback=on_progress)
-        else:
-            response = await runner.run_single(task, progress_callback=on_progress, session_store=self.session_store, org_id=self.org_id, global_context=self.global_context)
+        response = await runner.run_task(
+            task=task,
+            system_prompt=system_prompt,
+            progress_callback=on_progress,
+            session_store=self.session_store,
+            global_context=self.global_context,
+            org_id=self.org_id,
+        )
 
         try:
             await progress_msg.edit_text("✅ 완료!")

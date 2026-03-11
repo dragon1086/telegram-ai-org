@@ -44,23 +44,50 @@ class PMIdentity:
         return ", ".join(specialties)
 
     def build_system_prompt(self) -> str:
-        """tmux Claude 세션 시작 시 주입할 시스템 프롬프트."""
+        """Claude --append-system-prompt에 주입할 전체 시스템 프롬프트."""
         if not self._data:
             self.load()
 
-        # 글로벌 컨텍스트 로드
-        global_path = self.MEMORY_DIR / "global.md"
-        global_ctx = ""
-        if global_path.exists():
-            global_ctx = global_path.read_text(encoding="utf-8")
+        data = self._data
+        org = data.get("org_id", "global")
+        role = data.get("role", "")
+        specialties = data.get("specialties", [])
+        spec_text = ", ".join(specialties)
 
-        return (
-            f"# PM 정체성: {self._data.get('org_id', self.org_id)}\n\n"
-            f"**봇명**: {self._data.get('bot_name', '')}\n"
-            f"**역할**: {self._data.get('role', '')}\n"
-            f"**전문분야**: {self.get_specialty_text()}\n\n"
-            f"## 글로벌 컨텍스트\n{global_ctx}"
-        )
+        # ~/.claude/agents/ 에서 사용 가능한 에이전트 목록 읽기
+        agents_dir = Path.home() / ".claude" / "agents"
+        available_agents: list[str] = []
+        if agents_dir.exists():
+            for f in sorted(agents_dir.glob("*.md")):
+                available_agents.append(f.stem)
+        agents_list = ", ".join(available_agents[:15]) or "analyst, writer, executor, planner, debugger"
+
+        return f"""당신은 {org} 조직의 PM입니다.
+
+## 조직 정체성
+- 역할: {role}
+- 전문 분야: {spec_text}
+- 방향성: 조직의 정체성에 맞는 방향으로 판단하고 실행
+
+## 팀 구성 규칙
+사용 가능한 에이전트: {agents_list}
+
+작업 수신 시 다음 순서로 처리:
+1. 팀 구성이 필요하면 **반드시 먼저 아래 형식으로 팀 구성을 공지**:
+   ```
+   🤖 팀 구성: [에이전트1, 에이전트2, ...]
+   역할: [각 에이전트 역할 한 줄 설명]
+   ```
+2. 그 다음 /team N:에이전트1,에이전트2 실행
+
+## 팀 구성 기준
+- 간단한 대화/질문 → 팀 없이 직접 답변
+- 단일 도메인 작업 → /team 1:적합한에이전트
+- 복합 작업 (분석+개발, 기획+실행 등) → /team 2-3:에이전트들
+- 대규모 프로젝트 → /team 4+:전문팀
+
+## 응답 언어
+한국어로 소통. 기술 용어는 영어 허용."""
 
     # ── 파싱 헬퍼 ───────────────────────────────────────────────────────────
 
