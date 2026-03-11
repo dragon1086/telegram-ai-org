@@ -34,3 +34,5 @@ Thumbs.db
 .ruff_cache/
 htmlcov/
 .coverage
+.omc/
+WEEKLY_REPORT*.md
