@@ -40,6 +40,7 @@ from core.collab_request import (
 from core.keywords import GREETING_KW, ACTION_KW
 from core.display_limiter import DisplayLimiter, MessagePriority
 from core.nl_classifier import NLClassifier, Intent
+from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR, KNOWN_DEPTS
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
@@ -61,6 +62,7 @@ class TelegramRelay:
         org_id: str = "global",
         engine: str = "claude-code",
         bus: MessageBus | None = None,
+        context_db: "ContextDB | None" = None,
     ) -> None:
         self.token = token
         self.allowed_chat_id = allowed_chat_id
@@ -69,6 +71,7 @@ class TelegramRelay:
         self.org_id = org_id
         self.engine = engine
         self.bus = bus
+        self.context_db = context_db
         self.app: Application | None = None
         self._message_count: int = 0
 
@@ -91,6 +94,27 @@ class TelegramRelay:
             enabled=os.getenv("USE_DISPLAY_LIMITER", "true").lower() == "true",
         )
         self._nl_classifier = NLClassifier()
+
+        # PM 오케스트레이터 모드 — ENABLE_PM_ORCHESTRATOR + context_db 필요
+        self._pm_orchestrator = None
+        self._is_pm_org = ENABLE_PM_ORCHESTRATOR and org_id not in KNOWN_DEPTS
+        self._is_dept_org = ENABLE_PM_ORCHESTRATOR and org_id in KNOWN_DEPTS
+        if self._is_pm_org and context_db is not None:
+            from core.task_graph import TaskGraph
+            from core.pm_orchestrator import PMOrchestrator
+            self._pm_orchestrator = PMOrchestrator(
+                context_db=context_db,
+                task_graph=TaskGraph(context_db),
+                claim_manager=self.claim_manager,
+                memory=self.memory_manager,
+                org_id=org_id,
+                telegram_send_func=self._pm_send_message,
+            )
+
+    async def _pm_send_message(self, chat_id: int, text: str) -> None:
+        """PMOrchestrator용 텔레그램 메시지 발송 콜백."""
+        if self.app and self.app.bot:
+            await self.display.send_to_chat(self.app.bot, chat_id, text)
 
     def _make_runner(self):
         """engine 설정에 따라 적합한 runner를 반환한다."""
@@ -116,11 +140,13 @@ class TelegramRelay:
         if not text:
             return
 
-        # 봇 메시지 처리 — 협업 요청만 수락
+        # 봇 메시지 처리 — 협업 요청 또는 [PM_TASK:...] 수락
         sender = update.message.from_user
         if sender and sender.is_bot:
             if is_collab_request(text):
                 await self._handle_collab_request(text, update, context)
+            elif self._is_dept_org and "[PM_TASK:" in text:
+                await self._handle_pm_task(text, update, context)
             return
 
         message_id = str(update.message.message_id)
@@ -171,15 +197,24 @@ class TelegramRelay:
             await self.display.send_reply(update.message, reply[:300])
             return
 
+        # PM 오케스트레이터 모드: 부서 봇은 사용자 메시지에 자율 입찰 안함
+        if self._is_dept_org:
+            logger.debug(f"[{self.org_id}] PM 오케스트레이터 활성 — 사용자 메시지 입찰 건너뜀")
+            return
+
         # 3. 작업 요청 → confidence 계산
         score = await self.confidence_scorer.score(text, self.identity)
         is_default = self.identity._data.get("default_handler", False)
         if score < DEFAULT_CONFIDENCE_THRESHOLD and not is_default:
             return
 
-        # 1단계: 입찰 제출 (default_handler threshold 미달 시 score=0으로 최후 보루)
+        # 1단계: 입찰 제출
         text_hash = hashlib.md5(text.encode()).hexdigest()
-        bid_score = score if score >= DEFAULT_CONFIDENCE_THRESHOLD else 0
+        # PM 오케스트레이터 모드: PM은 score=999로 항상 승리
+        if self._is_pm_org:
+            bid_score = 999
+        else:
+            bid_score = score if score >= DEFAULT_CONFIDENCE_THRESHOLD else 0
         self.claim_manager.submit_bid(text_hash, self.org_id, bid_score)
 
         # 2단계: BID_WAIT_SEC 대기 (다른 봇들도 입찰 제출하도록)
@@ -197,6 +232,29 @@ class TelegramRelay:
             return
 
         asyncio.get_event_loop().run_in_executor(None, self.claim_manager.cleanup_old_claims)
+
+        # PM 오케스트레이터: 사용자 요청을 분해·배분 (Claude Code 직접 실행 대신)
+        if self._pm_orchestrator is not None:
+            await self.display.send_reply(update.message, f"📋 {self.org_id} PM 오케스트레이터 — 태스크 분해 중...")
+            try:
+                parent_id = self._pm_orchestrator._next_task_id()
+                await self.context_db.create_pm_task(
+                    task_id=parent_id,
+                    description=text[:500],
+                    assigned_dept=self.org_id,
+                    created_by=self.org_id,
+                )
+                subtasks = await self._pm_orchestrator.decompose(text)
+                task_ids = await self._pm_orchestrator.dispatch(parent_id, subtasks, self.allowed_chat_id)
+                dept_list = ", ".join(KNOWN_DEPTS.get(st.assigned_dept, st.assigned_dept) for st in subtasks)
+                await self.display.send_reply(
+                    update.message,
+                    f"✅ {len(subtasks)}개 부서에 태스크 배분 완료: {dept_list}",
+                )
+            except Exception as e:
+                logger.error(f"[PM] 오케스트레이터 분해 실패: {e}")
+                await self.display.send_reply(update.message, f"❌ 태스크 분해 실패: {e}")
+            return
 
         # 4. 담당 선언 + 실행 (Claude Code가 팀 구성 자율 결정)
         await self.display.send_reply(update.message, f"✋ {self.org_id} 담당 — 팀 구성 중...")
@@ -625,6 +683,65 @@ class TelegramRelay:
 
 
 # ── 유틸 ──────────────────────────────────────────────────────────────────
+
+    async def _handle_pm_task(
+        self, text: str, update, context
+    ) -> None:
+        """PM 오케스트레이터가 배정한 [PM_TASK:task_id|dept:org_id] 처리."""
+        import re as _re
+        match = _re.search(r'\[PM_TASK:([^|]+)\|dept:([^\]]+)\]', text)
+        if not match:
+            return
+
+        task_id = match.group(1).strip()
+        target_dept = match.group(2).strip()
+
+        # 내 부서에 배정된 태스크만 처리
+        if target_dept != self.org_id:
+            return
+
+        if self.context_db is None:
+            logger.warning(f"[{self.org_id}] context_db 없음 — PM_TASK 처리 불가")
+            return
+
+        # ContextDB에서 태스크 상세 읽기
+        task_info = await self.context_db.get_pm_task(task_id)
+        if not task_info:
+            logger.warning(f"[{self.org_id}] PM_TASK {task_id} ContextDB에 없음")
+            return
+
+        description = task_info.get("description", "")
+        logger.info(f"[{self.org_id}] PM_TASK 수신: {task_id} — {description[:80]}")
+
+        await self.context_db.update_pm_task_status(task_id, "running")
+
+        # Claude Code / Codex로 태스크 실행
+        try:
+            runner = self._make_runner()
+            system_prompt = self.identity.build_system_prompt()
+            system_prompt += f"\n\n## PM 배정 태스크\nTask ID: {task_id}\n{description}"
+
+            response = await runner.run_task(
+                task=description,
+                system_prompt=system_prompt,
+                progress_callback=None,
+                session_store=self.session_store,
+                global_context=self.global_context,
+                org_id=self.org_id,
+            )
+
+            result = (response or "(완료)")[:1000]
+            await self.context_db.update_pm_task_status(task_id, "done", result=result)
+            logger.info(f"[{self.org_id}] PM_TASK {task_id} 완료")
+
+            # 결과를 채팅방에 공유
+            summary = f"✅ [{self.org_id}] 태스크 {task_id} 완료\n{result[:300]}"
+            if self.app and self.app.bot:
+                await self.display.send_to_chat(self.app.bot, self.allowed_chat_id, summary)
+
+        except Exception as e:
+            logger.error(f"[{self.org_id}] PM_TASK {task_id} 실행 실패: {e}")
+            await self.context_db.update_pm_task_status(task_id, "failed", result=str(e))
 
     async def _handle_collab_request(
         self, text: str, update, context
