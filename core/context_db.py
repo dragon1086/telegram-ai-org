@@ -82,6 +82,35 @@ class ContextDB:
                 CREATE INDEX IF NOT EXISTS idx_pm_tasks_parent ON pm_tasks(parent_id);
                 CREATE INDEX IF NOT EXISTS idx_pm_tasks_status ON pm_tasks(status);
                 CREATE INDEX IF NOT EXISTS idx_pm_tasks_dept ON pm_tasks(assigned_dept);
+
+                CREATE TABLE IF NOT EXISTS pm_discussions (
+                    id TEXT PRIMARY KEY,
+                    topic TEXT NOT NULL,
+                    parent_task_id TEXT,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    participants TEXT NOT NULL,
+                    max_rounds INTEGER DEFAULT 3,
+                    round_timeout_sec REAL DEFAULT 120.0,
+                    current_round INTEGER DEFAULT 1,
+                    decision TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS pm_discussion_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    discussion_id TEXT NOT NULL,
+                    msg_type TEXT NOT NULL,
+                    topic TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    from_dept TEXT NOT NULL,
+                    round_num INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (discussion_id) REFERENCES pm_discussions(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_pm_disc_status ON pm_discussions(status);
+                CREATE INDEX IF NOT EXISTS idx_pm_disc_msg_disc ON pm_discussion_messages(discussion_id);
             """)
             await db.commit()
 
@@ -230,3 +259,139 @@ class ContextDB:
             """, (parent_id,))
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
+
+    # ── Discussion CRUD ───────────────────────────────────────────────────
+
+    async def create_discussion(self, discussion_id: str, topic: str,
+                                 participants: list[str],
+                                 parent_task_id: str | None = None,
+                                 max_rounds: int = 3,
+                                 round_timeout_sec: float = 120.0) -> dict:
+        """토론 생성."""
+        now = datetime.utcnow().isoformat()
+        parts_json = json.dumps(participants)
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """INSERT INTO pm_discussions
+                   (id, topic, parent_task_id, status, participants,
+                    max_rounds, round_timeout_sec, current_round, created_at, updated_at)
+                   VALUES (?, ?, ?, 'open', ?, ?, ?, 1, ?, ?)""",
+                (discussion_id, topic, parent_task_id, parts_json,
+                 max_rounds, round_timeout_sec, now, now),
+            )
+            await db.commit()
+        return {"id": discussion_id, "topic": topic, "parent_task_id": parent_task_id,
+                "status": "open", "participants": participants,
+                "max_rounds": max_rounds, "round_timeout_sec": round_timeout_sec,
+                "current_round": 1, "created_at": now, "updated_at": now}
+
+    async def add_discussion_message(self, discussion_id: str, msg_type: str,
+                                      topic: str, content: str,
+                                      from_dept: str, round_num: int) -> dict:
+        """토론 메시지 추가."""
+        now = datetime.utcnow().isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                """INSERT INTO pm_discussion_messages
+                   (discussion_id, msg_type, topic, content, from_dept, round_num, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (discussion_id, msg_type, topic, content, from_dept, round_num, now),
+            )
+            msg_id = cursor.lastrowid
+            await db.commit()
+        return {"id": msg_id, "discussion_id": discussion_id, "msg_type": msg_type,
+                "topic": topic, "content": content, "from_dept": from_dept,
+                "round_num": round_num, "created_at": now}
+
+    async def get_discussion(self, discussion_id: str) -> dict | None:
+        """토론 조회."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT * FROM pm_discussions WHERE id=?", (discussion_id,))
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["participants"] = json.loads(d["participants"])
+            return d
+
+    async def get_discussion_messages(self, discussion_id: str,
+                                       round_num: int | None = None) -> list[dict]:
+        """토론 메시지 조회. round_num 지정 시 해당 라운드만."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            if round_num is not None:
+                cursor = await db.execute(
+                    "SELECT * FROM pm_discussion_messages WHERE discussion_id=? AND round_num=? ORDER BY id",
+                    (discussion_id, round_num),
+                )
+            else:
+                cursor = await db.execute(
+                    "SELECT * FROM pm_discussion_messages WHERE discussion_id=? ORDER BY id",
+                    (discussion_id,),
+                )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def check_convergence(self, discussion_id: str) -> bool:
+        """현재 라운드에 COUNTER 메시지가 없으면 수렴으로 판정."""
+        disc = await self.get_discussion(discussion_id)
+        if not disc:
+            return False
+        current_round = disc["current_round"]
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                """SELECT COUNT(*) FROM pm_discussion_messages
+                   WHERE discussion_id=? AND round_num=? AND msg_type='COUNTER'""",
+                (discussion_id, current_round),
+            )
+            row = await cursor.fetchone()
+            count = row[0] if row else 0
+        # 수렴 조건: 현재 라운드에 메시지가 있고 COUNTER가 없음
+        msgs = await self.get_discussion_messages(discussion_id, current_round)
+        return len(msgs) > 0 and count == 0
+
+    async def update_discussion_status(self, discussion_id: str, status: str,
+                                        decision: str | None = None) -> dict | None:
+        """토론 상태 업데이트."""
+        now = datetime.utcnow().isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            if decision is not None:
+                await db.execute(
+                    "UPDATE pm_discussions SET status=?, decision=?, updated_at=? WHERE id=?",
+                    (status, decision, now, discussion_id),
+                )
+            else:
+                await db.execute(
+                    "UPDATE pm_discussions SET status=?, updated_at=? WHERE id=?",
+                    (status, now, discussion_id),
+                )
+            await db.commit()
+        return await self.get_discussion(discussion_id)
+
+    async def advance_discussion_round(self, discussion_id: str) -> int:
+        """토론 라운드 진행. 새 라운드 번호 반환."""
+        now = datetime.utcnow().isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "UPDATE pm_discussions SET current_round=current_round+1, updated_at=? WHERE id=?",
+                (now, discussion_id),
+            )
+            await db.commit()
+        disc = await self.get_discussion(discussion_id)
+        return disc["current_round"] if disc else -1
+
+    async def get_active_discussions(self) -> list[dict]:
+        """진행 중인 토론 목록."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM pm_discussions WHERE status='open' ORDER BY created_at"
+            )
+            rows = await cursor.fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                d["participants"] = json.loads(d["participants"])
+                result.append(d)
+            return result

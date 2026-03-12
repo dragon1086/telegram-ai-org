@@ -41,6 +41,8 @@ from core.keywords import GREETING_KW, ACTION_KW
 from core.display_limiter import DisplayLimiter, MessagePriority
 from core.nl_classifier import NLClassifier, Intent
 from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR, KNOWN_DEPTS
+from core.discussion_parser import is_discussion_message, parse_discussion_tags
+from core.discussion import ENABLE_DISCUSSION_PROTOCOL
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
@@ -111,6 +113,20 @@ class TelegramRelay:
                 telegram_send_func=self._pm_send_message,
             )
 
+        # Discussion Protocol — ENABLE_DISCUSSION_PROTOCOL + context_db 필요
+        self._discussion_manager = None
+        if ENABLE_DISCUSSION_PROTOCOL and context_db is not None:
+            from core.discussion import DiscussionManager
+            self._discussion_manager = DiscussionManager(
+                context_db=context_db,
+                telegram_send_func=self._pm_send_message,
+                bus=self.bus,
+                org_id=org_id,
+            )
+            # PM 오케스트레이터에 토론 매니저 연결
+            if self._pm_orchestrator is not None:
+                self._pm_orchestrator._discussion = self._discussion_manager
+
     async def _pm_send_message(self, chat_id: int, text: str) -> None:
         """PMOrchestrator용 텔레그램 메시지 발송 콜백."""
         if self.app and self.app.bot:
@@ -140,13 +156,15 @@ class TelegramRelay:
         if not text:
             return
 
-        # 봇 메시지 처리 — 협업 요청 또는 [PM_TASK:...] 수락
+        # 봇 메시지 처리 — 협업 요청, [PM_TASK:...], 토론 태그 수락
         sender = update.message.from_user
         if sender and sender.is_bot:
             if is_collab_request(text):
                 await self._handle_collab_request(text, update, context)
             elif self._is_dept_org and "[PM_TASK:" in text:
                 await self._handle_pm_task(text, update, context)
+            elif self._discussion_manager and is_discussion_message(text):
+                await self._handle_discussion_message(text, update, context)
             return
 
         message_id = str(update.message.message_id)
@@ -683,6 +701,30 @@ class TelegramRelay:
 
 
 # ── 유틸 ──────────────────────────────────────────────────────────────────
+
+    async def _handle_discussion_message(
+        self, text: str, update, context
+    ) -> None:
+        """토론 태그 메시지 처리 — DiscussionManager에 위임."""
+        if not self._discussion_manager:
+            return
+        tags = parse_discussion_tags(text)
+        for tag in tags:
+            # 토론 ID 추출: 메시지에 discussion_id가 포함되어야 함
+            import re as _re
+            disc_match = _re.search(r'ID:\s*(D-[\w-]+)', text)
+            if disc_match:
+                disc_id = disc_match.group(1)
+                # 발신자 org_id 추출
+                from_match = _re.search(r'\[(\w+)\]', text)
+                from_dept = from_match.group(1) if from_match else self.org_id
+                await self._discussion_manager.add_message(
+                    discussion_id=disc_id,
+                    msg_type=tag.msg_type,
+                    content=tag.content,
+                    from_dept=from_dept,
+                    chat_id=self.allowed_chat_id,
+                )
 
     async def _handle_pm_task(
         self, text: str, update, context
