@@ -37,6 +37,7 @@ from core.collab_request import (
     make_collab_done, parse_collab_request,
 )
 from core.keywords import GREETING_KW, ACTION_KW
+from core.display_limiter import DisplayLimiter, MessagePriority
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
@@ -79,6 +80,11 @@ class TelegramRelay:
         # PM 집단 기억 — PM 간 맥락 공유
         self.global_context = GlobalContext()
         self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+
+        self.display = DisplayLimiter(
+            debounce_sec=5.0,
+            enabled=os.getenv("USE_DISPLAY_LIMITER", "true").lower() == "true",
+        )
 
     def _make_runner(self):
         """engine 설정에 따라 적합한 runner를 반환한다."""
@@ -147,7 +153,7 @@ class TelegramRelay:
             )
             _out, _ = await _aio.wait_for(_proc.communicate(), timeout=15)
             reply = (_out.decode().strip() if _out else "") or "안녕하세요! 😊"
-            await update.message.reply_text(reply[:300])
+            await self.display.send_reply(update.message, reply[:300])
             return
 
         # 3. 작업 요청 → confidence 계산
@@ -178,13 +184,13 @@ class TelegramRelay:
         asyncio.get_event_loop().run_in_executor(None, self.claim_manager.cleanup_old_claims)
 
         # 4. 담당 선언 + 실행 (Claude Code가 팀 구성 자율 결정)
-        await update.message.reply_text(f"✋ {self.org_id} 담당 — 팀 구성 중...")
+        await self.display.send_reply(update.message, f"✋ {self.org_id} 담당 — 팀 구성 중...")
         await self.memory_manager.add_log(f"사용자 메시지: {text[:200]}")
 
         runner = self._make_runner()
         system_prompt = self.identity.build_system_prompt()
 
-        progress_msg = await update.message.reply_text("⚙️ 처리 중...")
+        progress_msg = await self.display.send_reply(update.message, "⚙️ 처리 중...")
         history: list[str] = []
         last_edit = time.time()
 
@@ -197,7 +203,7 @@ class TelegramRelay:
             if time.time() - last_edit > 1.5:
                 display = "\n".join(history[-5:])
                 try:
-                    await progress_msg.edit_text(f"⚙️ 작업 중...\n\n{display}")
+                    await self.display.edit_progress(progress_msg, f"⚙️ 작업 중...\n\n{display}", agent_id=self.org_id)
                     last_edit = time.time()
                 except Exception:
                     pass
@@ -232,7 +238,7 @@ class TelegramRelay:
                 # 태그 없으면 solo로 자동 처리
                 team_notice = f"👤 {self.org_id} 단독 처리"
             try:
-                await context.bot.send_message(chat_id=update.effective_chat.id, text=team_notice)
+                await self.display.send_to_chat(context.bot, update.effective_chat.id, team_notice)
             except Exception as _e:
                 logger.warning(f"팀 구성 공지 실패: {_e}")
 
@@ -245,14 +251,14 @@ class TelegramRelay:
                 collab_ctx = parts[1].strip() if len(parts) > 1 else ""
                 collab_msg = make_collab_request(collab_task, self.org_id, context=collab_ctx)
                 try:
-                    await context.bot.send_message(chat_id=update.effective_chat.id, text=collab_msg)
+                    await self.display.send_to_chat(context.bot, update.effective_chat.id, collab_msg)
                 except Exception as _e:
                     logger.warning(f"협업 요청 발송 실패: {_e}")
             response = _re.sub(r'\[COLLAB:[^\]]+\]', '', response).strip()
 
         if response:
             for chunk in _split_message(response, 4000):
-                await update.message.reply_text(chunk)
+                await self.display.send_reply(update.message, chunk)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
             await runner._auto_upload(response, self.token, self.allowed_chat_id)
 
