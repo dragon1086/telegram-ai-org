@@ -123,6 +123,9 @@ class TelegramRelay:
                 bus=self.bus,
                 org_id=org_id,
             )
+            # PM 오케스트레이터에 토론 매니저 연결
+            if self._pm_orchestrator is not None:
+                self._pm_orchestrator._discussion = self._discussion_manager
 
     async def _pm_send_message(self, chat_id: int, text: str) -> None:
         """PMOrchestrator용 텔레그램 메시지 발송 콜백."""
