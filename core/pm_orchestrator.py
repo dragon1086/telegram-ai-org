@@ -33,6 +33,14 @@ class SubTask:
     depends_on: list[str] = field(default_factory=list)  # 다른 subtask의 인덱스 (0-based)
 
 
+@dataclass
+class DiscussionNeeded:
+    """분해 결과 중 토론이 필요한 항목."""
+    topic: str
+    proposal: str
+    participants: list[str] = field(default_factory=list)
+
+
 class PMOrchestrator:
     """사용자 요청을 부서별 태스크로 분해하고 배분하는 오케스트레이터."""
 
@@ -44,6 +52,7 @@ class PMOrchestrator:
         memory: MemoryManager,
         org_id: str,
         telegram_send_func: Callable[[int, str], Awaitable[None]],
+        discussion_manager: "DiscussionManager | None" = None,
     ):
         self._db = context_db
         self._graph = task_graph
@@ -51,6 +60,7 @@ class PMOrchestrator:
         self._memory = memory
         self._org_id = org_id
         self._send = telegram_send_func
+        self._discussion = discussion_manager
         self._task_counter = 0
 
     def _next_task_id(self) -> str:
@@ -201,3 +211,59 @@ class PMOrchestrator:
             result = st.get("result", "(결과 없음)")
             lines.append(f"**{dept_name}**: {result[:200]}")
         return "\n".join(lines)
+
+    # ── Discussion Integration ────────────────────────────────────────────
+
+    # 토론이 필요한 키워드 패턴 — 여러 부서가 동시에 관여하고 방향 결정이 필요할 때
+    _DISCUSSION_KEYWORDS = ["어떤 방식", "어떻게 할까", "선택", "비교", "vs", "논의", "토론", "결정"]
+
+    def detect_discussion_needs(self, user_message: str, subtasks: list[SubTask]) -> list[DiscussionNeeded]:
+        """분해 결과에서 토론이 필요한 항목을 감지.
+
+        조건: 2개 이상 부서가 관여하고, 메시지에 결정 키워드가 포함될 때.
+        """
+        if len(subtasks) < 2:
+            return []
+
+        msg_lower = user_message.lower()
+        has_decision_keyword = any(kw in msg_lower for kw in self._DISCUSSION_KEYWORDS)
+        if not has_decision_keyword:
+            return []
+
+        # 관여 부서 목록
+        participants = list({st.assigned_dept for st in subtasks})
+        if len(participants) < 2:
+            return []
+
+        return [DiscussionNeeded(
+            topic=user_message[:100],
+            proposal=user_message[:300],
+            participants=participants,
+        )]
+
+    async def start_discussions(
+        self, discussions: list[DiscussionNeeded],
+        parent_task_id: str, chat_id: int,
+    ) -> list[str]:
+        """토론이 필요한 항목들에 대해 DiscussionManager로 토론 시작.
+
+        Returns:
+            생성된 discussion_id 목록.
+        """
+        if not self._discussion or not discussions:
+            return []
+
+        disc_ids: list[str] = []
+        for dn in discussions:
+            disc = await self._discussion.start_discussion(
+                topic=dn.topic,
+                initial_proposal=dn.proposal,
+                from_dept=self._org_id,
+                participants=dn.participants,
+                parent_task_id=parent_task_id,
+                chat_id=chat_id,
+            )
+            disc_ids.append(disc["id"])
+            logger.info(f"[PM] 토론 시작: {disc['id']} — {dn.topic[:50]}")
+
+        return disc_ids
