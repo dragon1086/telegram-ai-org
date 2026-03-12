@@ -8,9 +8,11 @@ organizations:
     pm_token: "${DEV_PM_TOKEN}"
     group_chat_id: "${DEV_GROUP_CHAT_ID}"
     workers: [cokac, analyst]
+    # engine: claude-code  # 기본값, 생략 가능
 
   - name: marketing_team
     description: "마케팅팀 — 콘텐츠, 분석, 전략"
     pm_token: "${MKT_PM_TOKEN}"
     group_chat_id: "${MKT_GROUP_CHAT_ID}"
     workers: [researcher, writer]
+    # engine: codex  # 예: codex 엔진 사용 시

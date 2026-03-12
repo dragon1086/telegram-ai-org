@@ -35,7 +35,7 @@ TOOL_EMOJI = {
 
 CLAUDE_CLI = os.environ.get("CLAUDE_CLI_PATH", "/Users/rocky/.local/bin/claude")
 CODEX_CLI = os.environ.get("CODEX_CLI_PATH", "/opt/homebrew/bin/codex")
-DEFAULT_TIMEOUT = 300  # 5분
+DEFAULT_TIMEOUT = 7200  # 2시간
 
 
 class ClaudeCodeRunner:
@@ -86,6 +86,7 @@ class ClaudeCodeRunner:
         cmd = [
             self.cli_path,
             "--permission-mode", "bypassPermissions",
+            *self._get_dir_flags(org_id),
             "--print",
             prompt,
         ]
@@ -158,6 +159,7 @@ class ClaudeCodeRunner:
         cmd = [
             self.cli_path,
             "--permission-mode", "bypassPermissions",
+            *self._get_dir_flags(org_id),
             "--print",
             full_task,
         ]
@@ -183,6 +185,7 @@ class ClaudeCodeRunner:
     async def run_codex(
         self,
         task: str,
+        org_id: str = "global",
         agents: list[str] | None = None,
         progress_callback=None,
     ) -> str:
@@ -190,6 +193,7 @@ class ClaudeCodeRunner:
 
         Args:
             task: 실행할 태스크 문자열.
+            org_id: 조직 ID (방법론 주입에 사용).
             agents: 힌트용 에이전트 이름 목록 (태스크 컨텍스트에 포함).
         """
         codex_cli = CODEX_CLI
@@ -207,6 +211,15 @@ class ClaudeCodeRunner:
         full_task = task
         if agents:
             full_task = f"[Agents: {', '.join(agents)}] {task}"
+
+        # 조직별 방법론 prepend (AGENTS.md 내용을 task 앞에 주입)
+        org_dir = Path.home() / ".ai-org" / "orgs" / org_id
+        agents_file = org_dir / "AGENTS.md"
+        if not agents_file.exists():
+            agents_file = Path.home() / ".ai-org" / "workspace" / "AGENTS.md"
+        if agents_file.exists():
+            methodology = agents_file.read_text().strip()
+            full_task = f"{methodology}\n\n---\n\n{full_task}"
 
         # Codex는 git repo 안에서만 실행 가능 → 프로젝트 루트 사용
         codex_workdir = str(Path(__file__).parent.parent)  # ~/telegram-ai-org
@@ -234,6 +247,7 @@ class ClaudeCodeRunner:
         cmd = [
             self.cli_path,
             "--permission-mode", "bypassPermissions",
+            *self._get_dir_flags(org_id),
             "--print",
         ]
 
@@ -279,6 +293,14 @@ class ClaudeCodeRunner:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+    def _get_dir_flags(self, org_id: str = "global") -> list[str]:
+        """조직별 --add-dir 플래그 반환 (전역 workspace + 조직별 디렉토리)."""
+        flags = ["--add-dir", str(Path.home() / ".ai-org" / "workspace")]
+        org_dir = Path.home() / ".ai-org" / "orgs" / org_id
+        if org_dir.exists():
+            flags.extend(["--add-dir", str(org_dir)])
+        return flags
+
     async def _run_stream_json(
         self,
         cmd: list[str],

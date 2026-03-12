@@ -1,86 +1,102 @@
-"""메시지에 대한 PM 담당 confidence 계산 (0-10)."""
+"""메시지에 대한 PM 담당 confidence 계산 (0-10).
+
+각 봇이 자신의 Claude Code 엔진으로 자율 판단.
+"""
 from __future__ import annotations
 
+import asyncio
 import os
 import re
+import subprocess
+from pathlib import Path
 
 from loguru import logger
 
 from core.pm_identity import PMIdentity
 from core.keywords import GREETING_KW
 
-DEFAULT_CONFIDENCE_THRESHOLD = 6  # 이 점수 이상이어야 claim
+DEFAULT_CONFIDENCE_THRESHOLD = 6
 
-# 짧은 인사말 패턴 — 담당 없음 (0점) — core/keywords.py에서 가져옴
 GREETING_PATTERNS = GREETING_KW
+
+# Claude CLI 경로
+CLAUDE_CLI = "/Users/rocky/.local/bin/claude"
+
+
+def _get_oauth_token() -> str:
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+    if token:
+        return token
+    try:
+        zrc = Path(os.path.expanduser("~/.zshrc")).read_text()
+        m = re.search(r"CLAUDE_CODE_OAUTH_TOKEN='([^']+)'", zrc)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return ""
 
 
 class ConfidenceScorer:
-    """메시지에 대한 이 PM의 담당 confidence 계산 (0-10)."""
-
-    SCORING_PROMPT = """\
-당신은 {org_id} PM입니다.
-전문분야: {specialties}
-
-다음 메시지가 당신이 담당해야 할 내용인지 0-10점으로 평가하세요.
-기준:
-- 전문분야와 직접 관련: 8-10
-- 간접 관련: 4-7
-- 관련 없음: 0-3
-숫자 하나만 응답.
-
-메시지: {message}
-"""
+    """각 봇이 자기 AI 엔진으로 자율적으로 담당 여부 판단."""
 
     async def score(self, message: str, identity: PMIdentity) -> int:
-        """confidence 점수 계산. Anthropic API 없으면 keyword fallback."""
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        specialties = identity.get_specialty_text()
+        specialties = identity._data.get("specialties", [])
 
-        if api_key:
-            try:
-                return await self._llm_score(message, identity.org_id, specialties, api_key)
-            except Exception as e:
-                logger.warning(f"[confidence] LLM 점수 실패, keyword fallback: {e}")
+        # 짧은 인사말 → 0점 (greeting handler가 처리)
+        msg = message.lower()
+        if len(message) < 20 and any(p in msg for p in GREETING_PATTERNS):
+            return 0
 
-        return self._keyword_score(message, identity._data.get("specialties", []))
+        # specialties 없으면 keyword fallback
+        if not specialties:
+            return 3
 
-    async def _llm_score(self, message: str, org_id: str, specialties: str, api_key: str) -> int:
-        """Anthropic API로 confidence 점수 계산."""
-        import anthropic  # lazy import
+        # Claude Code 엔진으로 자율 판단
+        try:
+            score = await asyncio.wait_for(
+                self._engine_score(message, specialties),
+                timeout=15.0,
+            )
+            logger.debug(f"[confidence] engine score: {score}")
+            return score
+        except Exception as e:
+            logger.warning(f"[confidence] engine 판단 실패, keyword fallback: {e}")
+            return self._keyword_score(message, specialties)
 
-        prompt = self.SCORING_PROMPT.format(
-            org_id=org_id,
-            specialties=specialties,
-            message=message,
-        )
+    async def _engine_score(self, message: str, specialties: list[str]) -> int:
+        """Claude Code (--print) 로 자율 판단. 초단순 프롬프트."""
+        specs = ", ".join(specialties)
+        prompt = f"숫자만 0~10: '{message}'가 [{specs}] 전문가가 담당해야 하나?"
 
-        client = anthropic.AsyncAnthropic(api_key=api_key)
-        response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=10,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = response.content[0].text.strip()
-        match = re.search(r"\d+", raw)
-        score = int(match.group()) if match else 5
+        token = _get_oauth_token()
+        env = {**os.environ, "CLAUDECODE": ""}
+        if token:
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+
+        loop = asyncio.get_event_loop()
+
+        def _run():
+            result = subprocess.run(
+                [CLAUDE_CLI, "--print", "-p", prompt],
+                capture_output=True, text=True, timeout=12, env=env,
+            )
+            return result.stdout.strip()
+
+        raw = await loop.run_in_executor(None, _run)
+        m = re.search(r"\d+", raw)
+        score = int(m.group()) if m else 0
         return max(0, min(10, score))
 
     def _keyword_score(self, message: str, specialties: list[str]) -> int:
-        """키워드 매칭 기반 fallback scoring."""
-        # 짧은 인사말은 담당 없음 (0점)
-        if len(message) < 20 and any(p in message.lower() for p in GREETING_PATTERNS):
-            return 0
-
-        if not specialties:
-            return 3  # 전문분야 없으면 낮은 점수
-
-        message_lower = message.lower()
+        """keyword 양방향 매칭 fallback."""
+        msg = message.lower()
+        msg_words = [w for w in re.split(r"\s+", msg) if len(w) >= 2]
         matched = sum(
-            1 for s in specialties
-            if s.lower() in message_lower
+            1 for sp in specialties
+            if sp.lower() in msg
+            or any(w in sp.lower() for w in msg_words)
         )
-
         if matched == 0:
             return 2
         elif matched == 1:
