@@ -1,40 +1,25 @@
 """메시지에 대한 PM 담당 confidence 계산 (0-10).
 
-각 봇이 자신의 Claude Code 엔진으로 자율 판단.
+각 봇이 자율 판단. LLMProvider 추상화 레이어로 Gemini/OpenAI/Anthropic/DeepSeek/Ollama 자동 선택.
+LLMProvider 없으면 keyword fallback 유지.
 """
 from __future__ import annotations
 
 import asyncio
-import os
 import re
-import subprocess
-from pathlib import Path
 
 from loguru import logger
 
 from core.pm_identity import PMIdentity
 from core.keywords import GREETING_KW
+from core.llm_provider import LLMProvider, get_provider
 
 DEFAULT_CONFIDENCE_THRESHOLD = 6
 
 GREETING_PATTERNS = GREETING_KW
 
-# Claude CLI 경로
-CLAUDE_CLI = "/Users/rocky/.local/bin/claude"
-
-
-def _get_oauth_token() -> str:
-    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
-    if token:
-        return token
-    try:
-        zrc = Path(os.path.expanduser("~/.zshrc")).read_text()
-        m = re.search(r"CLAUDE_CODE_OAUTH_TOKEN='([^']+)'", zrc)
-        if m:
-            return m.group(1)
-    except Exception:
-        pass
-    return ""
+# 모듈 수준 캐싱 — 매번 생성 금지
+_provider: LLMProvider | None = get_provider()
 
 
 class ConfidenceScorer:
@@ -52,7 +37,11 @@ class ConfidenceScorer:
         if not specialties:
             return 3
 
-        # Claude Code 엔진으로 자율 판단
+        # LLM provider가 없으면 즉시 keyword fallback
+        if _provider is None:
+            return self._keyword_score(message, specialties)
+
+        # LLM 엔진으로 자율 판단
         try:
             score = await asyncio.wait_for(
                 self._engine_score(message, specialties),
@@ -65,25 +54,11 @@ class ConfidenceScorer:
             return self._keyword_score(message, specialties)
 
     async def _engine_score(self, message: str, specialties: list[str]) -> int:
-        """Claude Code (--print) 로 자율 판단. 초단순 프롬프트."""
+        """LLMProvider.complete()으로 자율 판단. 초단순 프롬프트."""
         specs = ", ".join(specialties)
-        prompt = f"숫자만 0~10: '{message}'가 [{specs}] 전문가가 담당해야 하나?"
+        prompt = f"Reply with a single integer 0-10 only. No explanation. How relevant is this message to [{specs}] expert? Message: '{message}'"
 
-        token = _get_oauth_token()
-        env = {**os.environ, "CLAUDECODE": ""}
-        if token:
-            env["CLAUDE_CODE_OAUTH_TOKEN"] = token
-
-        loop = asyncio.get_event_loop()
-
-        def _run():
-            result = subprocess.run(
-                [CLAUDE_CLI, "--print", "-p", prompt],
-                capture_output=True, text=True, timeout=5, env=env,
-            )
-            return result.stdout.strip()
-
-        raw = await loop.run_in_executor(None, _run)
+        raw = await _provider.complete(prompt, timeout=12.0)  # type: ignore[union-attr]
         m = re.search(r"\d+", raw)
         score = int(m.group()) if m else 0
         return max(0, min(10, score))

@@ -23,6 +23,19 @@ from core.memory_manager import MemoryManager
 from core.telegram_relay import TelegramRelay
 
 if __name__ == "__main__":
+    # ── PID lock (중복 실행 방지) ─────────────────────────────────────────
+    import fcntl
+    _pid_file = Path(f"/tmp/telegram-ai-org-{os.environ.get('PM_ORG_NAME', 'global')}.pid")
+    _lock_fh = open(_pid_file, "w")
+    try:
+        fcntl.flock(_lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _pid_file.write_text(str(os.getpid()))
+    except IOError:
+        existing = _pid_file.read_text().strip() if _pid_file.exists() else "?"
+        print(f"[ABORT] 이미 실행 중인 인스턴스 있음 (PID {existing}). 종료.", flush=True)
+        import sys; sys.exit(1)
+    # ─────────────────────────────────────────────────────────────────────
+
     token = os.environ["PM_BOT_TOKEN"]
     chat_id = int(os.environ["TELEGRAM_GROUP_CHAT_ID"])
 
@@ -56,19 +69,33 @@ if __name__ == "__main__":
         org_id=org_id,
         engine=engine,
     )
-    max_retries = 15
+    max_retries = 10
+    CONFLICT_WAIT = 70  # Telegram 서버 long-polling timeout(60s) + 여유
+
     for attempt in range(max_retries):
         app = relay.build()  # 매 시도마다 새 Application 생성
         _start = time.time()
         try:
             app.run_polling(drop_pending_updates=True)
         except Exception as _e:
+            err_str = str(_e)
             print(f'[ERROR] 봇 실행 오류: {_e}', flush=True)
-            raise
+            if 'Conflict' in err_str or 'conflict' in err_str:
+                # Application 완전 종료 후 충분히 대기
+                try:
+                    import asyncio
+                    asyncio.get_event_loop().run_until_complete(app.shutdown())
+                except Exception:
+                    pass
+                print(f'[CONFLICT] Telegram 서버 연결 만료 대기 ({CONFLICT_WAIT}초)...', flush=True)
+                time.sleep(CONFLICT_WAIT)
+                continue  # 재시도
+            else:
+                raise
         _elapsed = time.time() - _start
         if _elapsed > 10:
             print(f'[OK] 봇 정상 종료 (실행 {_elapsed:.0f}초)', flush=True)
             break
-        wait = 10 * (attempt + 1)
-        print(f'[RETRY] Conflict 추정 ({_elapsed:.1f}초), {wait}초 후 재시도 ({attempt+1}/{max_retries})', flush=True)
+        wait = CONFLICT_WAIT
+        print(f'[RETRY] 빠른 종료 ({_elapsed:.1f}초), {wait}초 후 재시도 ({attempt+1}/{max_retries})', flush=True)
         time.sleep(wait)

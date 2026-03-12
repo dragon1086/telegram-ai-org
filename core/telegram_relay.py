@@ -7,6 +7,7 @@ Python봇의 역할: 메시지 수신 → session_manager.send_message() → 응
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import time
 from pathlib import Path
@@ -70,6 +71,7 @@ class TelegramRelay:
         self.identity.load()
         self.claim_manager = ClaimManager()
         self.confidence_scorer = ConfidenceScorer()
+        self._start_time = time.time()  # 봇 시작 시각 — 이전 메시지 무시용
 
         # Claude Code 세션 영속화 (--resume으로 대화 맥락 유지)
         self.session_store = SessionStore(org_id)
@@ -110,6 +112,10 @@ class TelegramRelay:
             return
 
         message_id = str(update.message.message_id)
+        # 봇 시작 이전 메시지 무시 (pending updates 방지)
+        if update.message.date and update.message.date.timestamp() < self._start_time - 5:
+            logger.debug(f"[{self.org_id}] 오래된 메시지 무시 (message_id={message_id})")
+            return
         logger.info(f"텔레그램 수신 [{self.org_id}]: {text[:80]}")
 
         # 명령어 처리 (/ 로 시작)
@@ -150,16 +156,29 @@ class TelegramRelay:
         if score < DEFAULT_CONFIDENCE_THRESHOLD and not is_default:
             return
 
-        wait_time = max(0.0, (10 - score) * 0.3) if (not is_default or score >= DEFAULT_CONFIDENCE_THRESHOLD) else 8.0
-        await asyncio.sleep(wait_time)
+        # 1단계: 입찰 제출 (default_handler threshold 미달 시 score=0으로 최후 보루)
+        text_hash = hashlib.md5(text.encode()).hexdigest()
+        bid_score = score if score >= DEFAULT_CONFIDENCE_THRESHOLD else 0
+        self.claim_manager.submit_bid(text_hash, self.org_id, bid_score)
 
-        if not self.claim_manager.try_claim(message_id, self.org_id):
+        # 2단계: BID_WAIT_SEC 대기 (다른 봇들도 입찰 제출하도록)
+        BID_WAIT_SEC = 2.5
+        await asyncio.sleep(BID_WAIT_SEC)
+
+        # 3단계: 내가 winner인지 확인
+        winner = self.claim_manager.get_winner(text_hash)
+        if winner != self.org_id:
+            logger.debug(f"[bid] {self.org_id} 패배 — winner: {winner}")
+            return
+
+        # 4단계: hash lock + message_id claim (race condition 최종 방지)
+        if not self.claim_manager.try_claim(message_id, self.org_id, text_hash):
             return
 
         asyncio.get_event_loop().run_in_executor(None, self.claim_manager.cleanup_old_claims)
 
         # 4. 담당 선언 + 실행 (Claude Code가 팀 구성 자율 결정)
-        await update.message.reply_text(f"✋ {self.org_id} PM 담당!")
+        await update.message.reply_text(f"✋ {self.org_id} 담당 — 팀 구성 중...")
         await self.memory_manager.add_log(f"사용자 메시지: {text[:200]}")
 
         runner = self._make_runner()
@@ -196,6 +215,26 @@ class TelegramRelay:
             await progress_msg.edit_text("✅ 완료!")
         except Exception:
             pass
+
+        # [TEAM:에이전트1,에이전트2,...] 태그 감지 → 팀 구성 공지
+        if response:
+            import re as _re
+            team_match = _re.search(r'\[TEAM:([^\]]+)\]', response)
+            if team_match:
+                members = [m.strip() for m in team_match.group(1).split(',')]
+                if members == ['solo']:
+                    team_notice = f"👤 {self.org_id} 단독 처리"
+                else:
+                    member_lines = "\n".join(f"• {m}" for m in members)
+                    team_notice = f"👥 팀 구성 완료\n{member_lines}"
+                response = _re.sub(r'\[TEAM:[^\]]+\]', '', response).strip()
+            else:
+                # 태그 없으면 solo로 자동 처리
+                team_notice = f"👤 {self.org_id} 단독 처리"
+            try:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=team_notice)
+            except Exception as _e:
+                logger.warning(f"팀 구성 공지 실패: {_e}")
 
         # [COLLAB:task|맥락:ctx] 태그 감지 → 협업 요청 채팅방 발송
         if response:
@@ -519,7 +558,9 @@ class TelegramRelay:
 
     def build(self) -> Application:
         """텔레그램 Application 빌드."""
-        self.app = Application.builder().token(self.token).build()
+        from telegram.request import HTTPXRequest
+        req = HTTPXRequest(connection_pool_size=1)
+        self.app = Application.builder().token(self.token).request(req).build()
 
         # /setup 마법사 — ConversationHandler로 다단계 대화 처리
         setup_conv = ConversationHandler(
