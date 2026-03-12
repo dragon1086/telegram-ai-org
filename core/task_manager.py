@@ -46,6 +46,7 @@ class Task(BaseModel):
     completed_at: str | None = None
     result: str | None = None
     acks: list[str] = []  # 완료 확인한 봇 목록
+    parent_id: str | None = None
 
     def model_post_init(self, __context: object) -> None:
         if not self.created_at:
@@ -69,12 +70,12 @@ class TaskManager:
         """태스크 상태 변경 시 콜백 등록."""
         self._status_callbacks.append(callback)
 
-    async def create_task(self, description: str, assigned_to: list[str]) -> Task:
+    async def create_task(self, description: str, assigned_to: list[str], parent_id: str | None = None) -> Task:
         """새 태스크 생성."""
         async with self._lock:
             self._counter += 1
             task_id = f"T{self._counter:03d}"
-            task = Task(id=task_id, description=description, assigned_to=assigned_to)
+            task = Task(id=task_id, description=description, assigned_to=assigned_to, parent_id=parent_id)
             self._tasks[task_id] = task
             logger.info(f"태스크 생성: {task_id} → {assigned_to}")
             return task
@@ -119,3 +120,14 @@ class TaskManager:
     def get_active_tasks(self) -> list[Task]:
         return [t for t in self._tasks.values()
                 if t.status not in (TaskStatus.CLOSED, TaskStatus.FAILED, TaskStatus.CANCELLED)]
+
+    async def update_parent_status(self, parent_id: str) -> None:
+        """자식 태스크 상태를 집계하여 부모 상태 자동 갱신."""
+        children = [t for t in self._tasks.values() if t.parent_id == parent_id]
+        if not children:
+            return
+        if any(c.status == TaskStatus.FAILED for c in children):
+            await self.update_status(parent_id, TaskStatus.FAILED)
+        elif all(c.status == TaskStatus.DONE for c in children):
+            await self.update_status(parent_id, TaskStatus.WAITING_ACK)
+        # 그 외 (일부 진행 중) -> 변경 없음
