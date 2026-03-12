@@ -17,6 +17,9 @@ def _resolve_env(value: str) -> str:
     return value
 
 
+_VALID_ENGINES = {"claude-code", "codex", "auto"}
+
+
 @dataclass
 class Organization:
     """AI 조직 단위."""
@@ -26,6 +29,7 @@ class Organization:
     pm_token: str
     group_chat_id: int | None
     workers: list[str]  # worker handle names (e.g. ["cokac", "analyst"])
+    engine: str = "claude-code"  # 실행 엔진: "claude-code" | "codex" | "auto"
 
     @classmethod
     def from_config(cls, cfg: dict) -> "Organization":
@@ -41,12 +45,20 @@ class Organization:
         else:
             chat_id = None
 
+        raw_engine = cfg.get("engine", "claude-code")
+        engine = raw_engine if raw_engine in _VALID_ENGINES else "claude-code"
+        if raw_engine and raw_engine not in _VALID_ENGINES:
+            logger.warning(
+                f"조직 '{cfg.get('name', '?')}' 알 수 없는 engine '{raw_engine}' → 'claude-code' 사용"
+            )
+
         return cls(
             name=cfg["name"],
             description=cfg.get("description", ""),
             pm_token=token,
             group_chat_id=chat_id,
             workers=cfg.get("workers", []),
+            engine=engine,
         )
 
     def to_dict(self) -> dict:
@@ -55,6 +67,7 @@ class Organization:
             "description": self.description,
             "group_chat_id": self.group_chat_id,
             "workers": self.workers,
+            "engine": self.engine,
         }
 
 
@@ -120,6 +133,7 @@ class OrgRegistry:
         chat_id: int,
         specialties: list[str],
         role: str = "",
+        engine: str = "claude-code",
     ) -> None:
         """새 조직 등록 + pm_{org_id}.md 초기화."""
         from core.pm_identity import PMIdentity  # noqa: F401
@@ -131,6 +145,7 @@ class OrgRegistry:
             "pm_token": bot_token,
             "group_chat_id": chat_id,
             "workers": [],
+            "engine": engine,
         }
         org = Organization.from_config({**cfg, "pm_token": bot_token})
         self._orgs[org_id] = org

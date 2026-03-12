@@ -32,7 +32,7 @@ class PMIdentity:
             "role": self._parse_field(core_section, "역할"),
             "specialties": self._parse_specialties(core_section),
             "direction": self._parse_field(core_section, "방향성"),
-            "default_handler": "어떤 PM도 자신없을 때 기본 담당" in core_section,
+            "default_handler": self.org_id == "global" or "어떤 PM도 자신없을 때 기본 담당" in core_section or "default_handler: true" in core_section,
         }
         logger.debug(f"PM 정체성 로드: {self.org_id} → {self._data['role']}")
         return self._data
@@ -55,12 +55,7 @@ class PMIdentity:
         specialties = data.get("specialties", [])
         spec_text = ", ".join(specialties)
 
-        # ~/.claude/agents/ 에서 사용 가능한 에이전트 목록 읽기 (카테고리별)
-        from tools.agent_catalog_v2 import list_agents_by_category
         from tools.team_strategy import detect_strategy
-
-        categorized = list_agents_by_category()
-        total_count = sum(len(v) for v in categorized.items())
 
         strategy_name = detect_strategy()
         strategy_desc = {
@@ -69,17 +64,15 @@ class PMIdentity:
             "solo": "단독 실행",
         }
 
-        # 카테고리별 에이전트 목록 (각 최대 5개 표시)
-        category_lines: list[str] = []
-        for cat, agents in categorized.items():
-            preview = ", ".join(agents[:5])
-            suffix = f" 외 {len(agents) - 5}개" if len(agents) > 5 else ""
-            category_lines.append(f"  - {cat}: {preview}{suffix}")
-        agents_by_cat = "\n".join(category_lines) if category_lines else "  - (에이전트 없음)"
-
-        # fallback용 평탄 목록
-        all_agents = [a for agents in categorized.values() for a in agents]
-        total_count = len(all_agents)
+        # 전문분야 기반 추천 에이전트 (최대 5개)
+        recommend_line = ""
+        try:
+            from tools.agent_catalog_v2 import recommend_agents
+            recommended = recommend_agents(spec_text, max_agents=5)
+            if recommended:
+                recommend_line = f"\n추천 (전문분야 기반): {', '.join(recommended)}"
+        except Exception:
+            pass
 
         direction = data.get("direction", "")
         direction_line = f"- 방향성: {direction}" if direction else "- 방향성: 조직의 정체성에 맞게 판단"
@@ -92,22 +85,37 @@ class PMIdentity:
 {direction_line}
 
 ## 팀 구성 전략: {strategy_desc.get(strategy_name, strategy_name)}
-사용 가능한 에이전트 ({total_count}개):
-{agents_by_cat}
 
-작업 수신 시 다음 순서로 처리:
-1. 팀 구성이 필요하면 **반드시 먼저 아래 형식으로 팀 구성을 공지**:
-   ```
-   🤖 팀 구성: [에이전트1, 에이전트2, ...]
-   역할: [각 에이전트 역할 한 줄 설명]
-   ```
-2. 그 다음 /team N:에이전트1,에이전트2 실행
+## 에이전트
+전체 목록: ~/.claude/agents/ (팀 구성 전 ls로 확인 후 실제 존재하는 에이전트만 사용){recommend_line}
 
-## 팀 구성 기준
-- 간단한 대화/질문 → 팀 없이 직접 답변
-- 단일 도메인 작업 → /team 1:적합한에이전트
-- 복합 작업 (분석+개발, 기획+실행 등) → /team 2-3:에이전트들
-- 대규모 프로젝트 → /team 4+:전문팀
+## 팀 구성 원칙 (필수 준수)
+
+기본 판단 기준: **실행이 수반되는가?**
+
+### 팀 구성 생략 (PM 직접 답변)
+→ 첫 줄에 반드시: "💬 PM 직접 답변"
+- 인사/안부
+- 방향 안내, 순서 설명, 단계별 가이드
+- 개념/기술 설명
+- 단순 추천 (도구, 방법론 등)
+- 사실 질문
+
+### 팀 구성 필수
+→ 작업 시작 전 반드시 발표:
+🏗️ 팀 구성
+• [에이전트A]: [담당 역할]
+• [에이전트B]: [담당 역할]
+이유: [선택 이유 한 줄]
+(예: executor: 코드 구현 / analyst: 요구사항 분석)
+- 실제 코드 작성/수정/구현
+- 파일·시스템·DB 변경
+- 보고서·문서 직접 작성
+- 전략 기획 (실행 계획 포함)
+- 배포·인프라 작업
+- 데이터 분석 및 결과 도출
+
+---
 
 ## 협업 요청
 작업 중 다른 조직의 도움이 필요할 때:
