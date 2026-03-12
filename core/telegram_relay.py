@@ -43,6 +43,8 @@ from core.nl_classifier import NLClassifier, Intent
 from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR, KNOWN_DEPTS
 from core.discussion_parser import is_discussion_message, parse_discussion_tags
 from core.discussion import ENABLE_DISCUSSION_PROTOCOL
+from core.dispatch_engine import ENABLE_AUTO_DISPATCH
+from core.verification import ENABLE_CROSS_VERIFICATION
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
@@ -126,6 +128,27 @@ class TelegramRelay:
             # PM 오케스트레이터에 토론 매니저 연결
             if self._pm_orchestrator is not None:
                 self._pm_orchestrator._discussion = self._discussion_manager
+
+        # Auto-Dispatch 엔진 — ENABLE_AUTO_DISPATCH + PM org + context_db 필요
+        self._dispatch_engine = None
+        if ENABLE_AUTO_DISPATCH and self._is_pm_org and context_db is not None:
+            from core.dispatch_engine import DispatchEngine
+            from core.task_graph import TaskGraph
+            tg = self._pm_orchestrator._graph if self._pm_orchestrator else TaskGraph(context_db)
+            self._dispatch_engine = DispatchEngine(
+                context_db=context_db,
+                task_graph=tg,
+                telegram_send_func=self._pm_send_message,
+            )
+
+        # Cross-Model Verification — ENABLE_CROSS_VERIFICATION + PM org + context_db 필요
+        self._verifier = None
+        if ENABLE_CROSS_VERIFICATION and self._is_pm_org and context_db is not None:
+            from core.verification import CrossModelVerifier
+            self._verifier = CrossModelVerifier(
+                context_db=context_db,
+                telegram_send_func=self._pm_send_message,
+            )
 
     async def _pm_send_message(self, chat_id: int, text: str) -> None:
         """PMOrchestrator용 텔레그램 메시지 발송 콜백."""
