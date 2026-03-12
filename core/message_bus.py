@@ -22,6 +22,11 @@ class EventType(Enum):
     HEALTH_UPDATE = "health_update"
     COLLAB_REQUEST = "collab_request"
     MEMORY_UPDATE = "memory_update"
+    DISCUSSION_STARTED = "discussion_started"
+    DISCUSSION_MESSAGE = "discussion_message"
+    DISCUSSION_CONVERGED = "discussion_converged"
+    DISCUSSION_DECIDED = "discussion_decided"
+    DISCUSSION_TIMED_OUT = "discussion_timed_out"
 
 
 @dataclass
