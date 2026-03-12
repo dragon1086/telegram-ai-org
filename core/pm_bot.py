@@ -73,7 +73,7 @@ class PMBot:
         # 엔진 우선 분기: codex가 명시되면 Codex CLI로 라우팅
         if team_config.engine == "codex":
             logger.info(f"[pm_bot] 엔진=codex → run_codex()")
-            return await self.runner.run_codex(task, agent_names)
+            return await self.runner.run_codex(task, org_id=self.org_id, agents=agent_names)
 
         if team_config.execution_mode == ExecutionMode.omc_team:
             return await self.runner.run_omc_team(task, agent_names)

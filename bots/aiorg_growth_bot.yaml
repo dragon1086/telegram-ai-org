@@ -1,0 +1,6 @@
+# 자동 생성 봇 설정 — 2026-03-11T07:42:17.014246
+username: "aiorg_growth_bot"
+org_id: "aiorg_growth_bot"
+token_env: "BOT_TOKEN_AIORG_GROWTH_BOT"
+chat_id: -5203707291
+engine: "claude-code"

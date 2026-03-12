@@ -13,9 +13,12 @@ from pathlib import Path
 
 from loguru import logger
 from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
+    ConversationHandler,
     ContextTypes,
     MessageHandler,
     filters,
@@ -37,6 +40,9 @@ from core.keywords import GREETING_KW, ACTION_KW
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
 
+# /setup 마법사 ConversationHandler 상태
+SETUP_MENU, SETUP_AWAIT_TOKEN, SETUP_AWAIT_ENGINE = range(3)
+
 
 class TelegramRelay:
     """텔레그램 ↔ tmux Claude Code 세션 중계만 담당."""
@@ -48,12 +54,14 @@ class TelegramRelay:
         session_manager: SessionManager,
         memory_manager: MemoryManager,
         org_id: str = "global",
+        engine: str = "claude-code",
     ) -> None:
         self.token = token
         self.allowed_chat_id = allowed_chat_id
         self.session_manager = session_manager
         self.memory_manager = memory_manager
         self.org_id = org_id
+        self.engine = engine
         self.app: Application | None = None
         self._message_count: int = 0
 
@@ -69,6 +77,15 @@ class TelegramRelay:
         # PM 집단 기억 — PM 간 맥락 공유
         self.global_context = GlobalContext()
         self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+
+    def _make_runner(self):
+        """engine 설정에 따라 적합한 runner를 반환한다."""
+        if self.engine == "codex":
+            from tools.codex_runner import CodexRunner
+            return _CodexRunnerAdapter(CodexRunner())
+        # claude-code (기본) 또는 auto
+        from tools.claude_code_runner import ClaudeCodeRunner
+        return ClaudeCodeRunner()
 
     # ── 메시지 처리 ────────────────────────────────────────────────────────
 
@@ -145,9 +162,7 @@ class TelegramRelay:
         await update.message.reply_text(f"✋ {self.org_id} PM 담당!")
         await self.memory_manager.add_log(f"사용자 메시지: {text[:200]}")
 
-        from tools.claude_code_runner import ClaudeCodeRunner
-
-        runner = ClaudeCodeRunner()
+        runner = self._make_runner()
         system_prompt = self.identity.build_system_prompt()
 
         progress_msg = await update.message.reply_text("⚙️ 처리 중...")
@@ -247,9 +262,7 @@ class TelegramRelay:
 
     async def _execute_task(self, task: str, msg: object) -> None:
         """태스크 실행 공통 로직 (progress 스트리밍 + 결과 전송)."""
-        from tools.claude_code_runner import ClaudeCodeRunner
-
-        runner = ClaudeCodeRunner()
+        runner = self._make_runner()
         system_prompt = self.identity.build_system_prompt()
 
         progress_msg = await msg.reply_text("⚙️ 처리 중...")
@@ -352,11 +365,184 @@ class TelegramRelay:
             logger.error(f"리셋 실패: {e}")
             await update.message.reply_text(f"❌ 리셋 실패: {e}")
 
+    async def on_command_setup(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """설정 마법사 진입 — 메뉴 표시."""
+        if update.message is None:
+            return ConversationHandler.END
+        keyboard = [
+            [InlineKeyboardButton("📋 현재 봇 설정 보기", callback_data="setup_view")],
+            [InlineKeyboardButton("🤖 새 조직 봇 추가 (토큰 입력)", callback_data="setup_add")],
+            [InlineKeyboardButton("❌ 취소", callback_data="setup_cancel")],
+        ]
+        await update.message.reply_text(
+            "🔧 *봇 설정 마법사*\n\n원하는 작업을 선택하세요:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown",
+        )
+        return SETUP_MENU
+
+    async def _setup_callback_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """메뉴 버튼 선택 처리."""
+        query = update.callback_query
+        await query.answer()
+
+        if query.data == "setup_view":
+            me = await query.bot.get_me()
+            bot_name = me.username or "봇이름"
+            d = self.identity._data
+            msg = (
+                f"🔧 *{self.org_id} 봇 현재 설정*\n\n"
+                f"역할: {d.get('role', '미설정')}\n"
+                f"전문분야: {', '.join(d.get('specialties', [])) or '미설정'}\n"
+                f"방향성: {d.get('direction', '미설정')}\n\n"
+                f"*설정 변경 명령어*\n"
+                f"`/pm set@{bot_name} 역할|전문분야1,분야2|방향성`\n"
+                f"`/org add@{bot_name} <이름> [engine]`\n\n"
+                f"💡 그룹방에서는 `/명령어@{bot_name}` 형식으로 사용하세요."
+            )
+            await query.edit_message_text(msg, parse_mode="Markdown")
+            return ConversationHandler.END
+
+        elif query.data == "setup_add":
+            await query.edit_message_text(
+                "🤖 *새 조직 봇 추가*\n\n"
+                "BotFather에서 발급받은 토큰을 입력하세요:\n\n"
+                "⚠️ 보안: 토큰 메시지는 즉시 삭제됩니다.\n"
+                "취소하려면 /cancel 을 입력하세요.",
+                parse_mode="Markdown",
+            )
+            return SETUP_AWAIT_TOKEN
+
+        else:  # setup_cancel
+            await query.edit_message_text("❌ 설정 취소됨.")
+            return ConversationHandler.END
+
+    async def _setup_receive_token(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """토큰 수신 → 검증 → 등록 → 봇 실행."""
+        if update.message is None:
+            return SETUP_AWAIT_TOKEN
+
+        token = (update.message.text or "").strip()
+
+        # 보안: 토큰 메시지 즉시 삭제
+        try:
+            await update.message.delete()
+        except Exception:
+            pass
+
+        processing_msg = await update.effective_chat.send_message("🔍 토큰 검증 중...")
+
+        bot_info = await _validate_bot_token(token)
+        if not bot_info:
+            await processing_msg.edit_text(
+                "❌ 유효하지 않은 토큰입니다.\n\n"
+                "토큰을 다시 입력하거나 /cancel 로 취소하세요."
+            )
+            return SETUP_AWAIT_TOKEN
+
+        username = bot_info["username"]
+        bot_display = bot_info["first_name"]
+        chat_id = update.effective_chat.id
+
+        # 토큰 임시 저장 후 엔진 선택 단계로 진행
+        context.user_data["setup_token"] = token
+        context.user_data["setup_username"] = username
+        context.user_data["setup_bot_display"] = bot_display
+        context.user_data["setup_chat_id"] = chat_id
+
+        keyboard = [
+            [InlineKeyboardButton("1️⃣ Claude Code (기본, 권장)", callback_data="engine_claude-code")],
+            [InlineKeyboardButton("2️⃣ Codex", callback_data="engine_codex")],
+            [InlineKeyboardButton("3️⃣ Auto (자동 결정)", callback_data="engine_auto")],
+        ]
+        await processing_msg.edit_text(
+            f"✅ 봇 확인: *@{username}*\n\n"
+            f"⚙️ *실행 엔진을 선택하세요:*\n\n"
+            f"1️⃣ `claude-code` — 복잡한 작업, 고품질 *(기본)*\n"
+            f"2️⃣ `codex` — 단순한 작업, 저렴\n"
+            f"3️⃣ `auto` — LLM이 자동 결정",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return SETUP_AWAIT_ENGINE
+
+    async def _setup_receive_engine(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """엔진 선택 콜백 → 등록 완료."""
+        query = update.callback_query
+        await query.answer()
+
+        engine = (query.data or "").replace("engine_", "") or "claude-code"
+        token = context.user_data.get("setup_token", "")
+        username = context.user_data.get("setup_username", "")
+        bot_display = context.user_data.get("setup_bot_display", "")
+        chat_id = context.user_data.get("setup_chat_id", 0)
+
+        _engine_labels = {
+            "claude-code": "Claude Code (omc /team)",
+            "codex": "Codex",
+            "auto": "자동 결정",
+        }
+        await query.edit_message_text(
+            f"✅ 엔진 선택: `{engine}` — {_engine_labels.get(engine, engine)}\n\n⚙️ 등록 중...",
+            parse_mode="Markdown",
+        )
+
+        try:
+            env_key = f"BOT_TOKEN_{username.upper().replace('-', '_')}"
+            _append_env_var(env_key, token)
+            _create_bot_config(username, env_key, org_id=username, chat_id=chat_id, engine=engine)
+            pid = _launch_bot_subprocess(token, username, chat_id)
+            await _set_org_bot_commands(token)
+
+            await query.edit_message_text(
+                f"✅ *@{username} 등록 완료!*\n\n"
+                f"봇 이름: {bot_display}\n"
+                f"엔진: `{engine}` ({_engine_labels.get(engine, engine)})\n"
+                f"PID: {pid}\n\n"
+                f"봇이 시작되었습니다. 그룹방에 초대 후\n"
+                f"`/start@{username}` 으로 초기화하세요.",
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            logger.error(f"봇 등록 실패: {e}")
+            await query.edit_message_text(f"❌ 등록 실패: {e}")
+
+        return ConversationHandler.END
+
+    async def _setup_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """설정 마법사 취소."""
+        if update.message:
+            await update.message.reply_text("❌ 설정 취소됨.")
+        return ConversationHandler.END
+
     # ── 앱 빌드 ───────────────────────────────────────────────────────────
 
     def build(self) -> Application:
         """텔레그램 Application 빌드."""
         self.app = Application.builder().token(self.token).build()
+
+        # /setup 마법사 — ConversationHandler로 다단계 대화 처리
+        setup_conv = ConversationHandler(
+            entry_points=[CommandHandler("setup", self.on_command_setup)],
+            states={
+                SETUP_MENU: [
+                    CallbackQueryHandler(self._setup_callback_menu, pattern="^setup_"),
+                ],
+                SETUP_AWAIT_TOKEN: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._setup_receive_token),
+                    CommandHandler("cancel", self._setup_cancel),
+                ],
+                SETUP_AWAIT_ENGINE: [
+                    CallbackQueryHandler(self._setup_receive_engine, pattern="^engine_"),
+                    CommandHandler("cancel", self._setup_cancel),
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", self._setup_cancel)],
+            per_chat=True,
+            per_user=True,
+            allow_reentry=True,
+        )
+        self.app.add_handler(setup_conv)
 
         self.app.add_handler(CommandHandler("start", self.on_command_start))
         self.app.add_handler(CommandHandler("status", self.on_command_status))
@@ -403,7 +589,7 @@ class TelegramRelay:
         if ctx:
             system_prompt += f"\n\n## 협업 요청 조직({from_org})의 작업 맥락\n{ctx}"
 
-        runner = ClaudeCodeRunner()
+        runner = self._make_runner()
         progress_msg = await update.message.reply_text("⚙️ 협업 작업 중...")
         history: list[str] = []
         last_edit = 0.0
@@ -456,14 +642,7 @@ class TelegramRelay:
         if bot_tag:
             my_username = (await context.bot.get_me()).username or ""
             if bot_tag.group(1).lower() != my_username.lower():
-                # 알 수 없는 봇 태그 → 친절한 오류 응답 (default_handler만)
-                is_default = self.identity._data.get("default_handler", False)
-                if is_default:
-                    await update.message.reply_text(
-                        f"⚠️ @{bot_tag.group(1)} 봇을 찾을 수 없습니다.\n"
-                        f"현재 봇: @{my_username}"
-                    )
-                return
+                return  # 다른 봇 대상 명령어는 조용히 무시
 
         # /org — 조직 정체성 조회/설정
         if cmd == "/org":
@@ -484,11 +663,21 @@ class TelegramRelay:
 
             if not arg or arg.lower() == "status":
                 d = self.identity._data
+                me = await context.bot.get_me()
+                bot_name = me.username or "봇이름"
                 msg = (
                     f"🏢 **{self.org_id} 조직 정체성**\n\n"
-                    f"역할: {d.get('role','미설정')}\n"
-                    f"전문분야: {', '.join(d.get('specialties', []))}\n"
-                    f"방향성: {d.get('direction','미설정')}"
+                    f"현재 설정:\n"
+                    f"• 역할: {d.get('role','미설정')}\n"
+                    f"• 전문분야: {', '.join(d.get('specialties', [])) or '미설정'}\n"
+                    f"• 방향성: {d.get('direction','미설정')}\n\n"
+                    f"⚙️ 설정 방법:\n"
+                    f"`/org@{bot_name} 프로덕트PM|기획,UX|사용자중심`\n\n"
+                    f"형식: `역할|전문분야1,분야2|방향성`\n"
+                    f"예시:\n"
+                    f"  • 개발PM|백엔드,API|빠른출시\n"
+                    f"  • 디자인PM|UI,UX|사용자경험\n"
+                    f"  • 마케팅PM|콘텐츠,SNS|성장"
                 )
                 await update.message.reply_text(msg, parse_mode="Markdown")
             else:
@@ -513,6 +702,48 @@ class TelegramRelay:
                     f"이제 이 방향성으로 팀을 구성할게요 🤖"
                 )
                 await update.message.reply_text(msg, parse_mode="Markdown")
+            return
+
+        # /org add <이름> [engine] — 새 조직 등록
+        if arg.lower().startswith("add ") or arg.lower() == "add":
+            add_parts = arg.split(None, 2)  # ["add", <name>, <engine?>]
+            if len(add_parts) < 2:
+                await update.message.reply_text(
+                    "사용법: `/org add <이름> [engine]`\n"
+                    "engine: `claude-code` (기본) | `codex` | `auto`",
+                    parse_mode="Markdown"
+                )
+                return
+            new_org_id = add_parts[1].strip()
+            raw_engine = add_parts[2].strip() if len(add_parts) >= 3 else "claude-code"
+            _valid_engines = {"claude-code", "codex", "auto"}
+            if raw_engine not in _valid_engines:
+                await update.message.reply_text(
+                    f"⚠️ 알 수 없는 engine: `{raw_engine}`\n"
+                    f"사용 가능: `claude-code` | `codex` | `auto`",
+                    parse_mode="Markdown"
+                )
+                return
+            try:
+                from core.org_registry import OrgRegistry
+                registry = OrgRegistry()
+                registry.load()
+                registry.register_org(
+                    org_id=new_org_id,
+                    bot_token=self.token,
+                    chat_id=self.allowed_chat_id,
+                    specialties=["일반"],
+                    engine=raw_engine,
+                )
+                _engine_labels = {"claude-code": "Claude Code (omc /team)", "codex": "Codex", "auto": "자동 결정"}
+                await update.message.reply_text(
+                    f"✅ **{new_org_id}** 조직 등록 완료!\n"
+                    f"engine: `{raw_engine}` ({_engine_labels.get(raw_engine, raw_engine)})",
+                    parse_mode="Markdown"
+                )
+            except Exception as _e:
+                logger.error(f"조직 등록 실패: {_e}")
+                await update.message.reply_text(f"❌ 조직 등록 실패: {_e}")
             return
 
         # /agents — 에이전트 목록
@@ -561,13 +792,19 @@ class TelegramRelay:
 
             if not arg or sub == "list":
                 me = await context.bot.get_me()
+                bot_name = me.username or "봇이름"
                 d = self.identity._data
                 msg = (
-                    f"🤖 **PM 목록**\n\n"
-                    f"• @{me.username} ({self.org_id})\n"
-                    f"  역할: {d.get('role','미설정')}\n"
-                    f"  전문분야: {', '.join(d.get('specialties', []))}\n"
-                    f"  방향성: {d.get('direction','미설정')}\n\n"
+                    f"🤖 **PM 정체성**\n\n"
+                    f"현재 설정:\n"
+                    f"• 역할: {d.get('role','미설정')}\n"
+                    f"• 전문분야: {', '.join(d.get('specialties', [])) or '미설정'}\n"
+                    f"• 방향성: {d.get('direction','미설정')}\n\n"
+                    f"⚙️ 설정 방법:\n"
+                    f"`/pm set@{bot_name} 역할|전문분야|방향성`\n\n"
+                    f"예시:\n"
+                    f"  • `/pm set@{bot_name} 시니어PM|모바일,앱|린스타트업`\n"
+                    f"  • `/pm set@{bot_name} 주니어PM|기획,분석|데이터드리븐`\n\n"
                     f"_여러 PM이 있으면 각 봇마다 이 명령어가 표시됩니다_"
                 )
                 await update.message.reply_text(msg, parse_mode="Markdown")
@@ -600,21 +837,188 @@ class TelegramRelay:
                 )
             return
 
+        # /prompt — 시스템 프롬프트 조회/수정
+        if cmd == "/prompt":
+            parts = arg.split(None, 1)
+            sub = parts[0].lower() if parts else "show"
+            sub_arg = parts[1] if len(parts) > 1 else ""
+
+            if sub == "show" or not arg:
+                prompt_text = self.identity.build_system_prompt()
+                await update.message.reply_text(
+                    f"📋 **현재 시스템 프롬프트 ({self.org_id})**\n\n{prompt_text[:3000]}",
+                    parse_mode="Markdown",
+                )
+            elif sub == "add" and sub_arg:
+                current = self.identity._data.get("direction", "") or ""
+                new_direction = (current + "\n" + sub_arg).strip() if current else sub_arg
+                self.identity.update({"direction": new_direction})
+                await update.message.reply_text(
+                    f"✅ direction에 추가됨:\n`{sub_arg}`\n\n현재 방향성:\n{new_direction}",
+                    parse_mode="Markdown",
+                )
+            elif sub == "set" and sub_arg:
+                self.identity.update({"direction": sub_arg})
+                await update.message.reply_text(
+                    f"✅ direction 교체됨:\n`{sub_arg}`",
+                    parse_mode="Markdown",
+                )
+            elif sub == "reset":
+                self.identity.update({"direction": ""})
+                await update.message.reply_text("✅ direction 초기화됨.")
+            else:
+                await update.message.reply_text(
+                    "사용법:\n"
+                    "`/prompt show` — 현재 시스템 프롬프트 표시\n"
+                    "`/prompt add <텍스트>` — direction에 추가\n"
+                    "`/prompt set <텍스트>` — direction 전체 교체\n"
+                    "`/prompt reset` — direction 초기화",
+                    parse_mode="Markdown",
+                )
+            return
+
         # /help
         if cmd == "/help":
+            import os as _os
+            me = await context.bot.get_me()
+            bot_name = me.username or "봇이름"
+            pm_count = int(_os.environ.get("PM_COUNT", "1"))
+            multibot_hint = (
+                f"\n🤖 **그룹방 멀티봇 사용법**\n"
+                f"`/명령어@{bot_name}` — 이 봇에게만 명령\n"
+                f"`@{bot_name} 메시지` — 이 봇에게 메시지\n"
+                f"봇 목록: PM_COUNT={pm_count}개 활성 중"
+            ) if pm_count > 1 else (
+                f"\n💡 그룹방에선 `/명령어@{bot_name}` 형식 사용 권장"
+            )
             msg = (
-                "📖 **명령어 안내**\n\n"
-                "`/org status` — 정체성 조회\n"
-                "`/org 역할|전문분야|방향성` — 정체성 설정\n\n"
-                "`/pm list` — PM 목록\n"
-                "`/pm set 역할|분야|방향성` — PM 정체성 수정\n"
-                "`/pm delete` — PM 삭제 안내\n\n"
-                "`/agents` — 에이전트 150개 목록\n"
-                "`/team` — 현재 팀 전략\n"
-                "`/reset` — 세션 초기화\n\n"
-                "💡 여러 PM이 있을 때 특정 PM만:\n"
-                "`/org@pm_dev_bot 역할|분야|방향성`"
+                f"📋 **명령어 안내**\n\n"
+                f"🔧 **설정**\n"
+                f"`/org` — 조직 정체성 조회·설정\n"
+                f"  예) `/org@{bot_name} 프로덕트PM|기획,UX|사용자중심`\n"
+                f"`/pm` — PM 정체성 조회·설정\n"
+                f"  예) `/pm set@{bot_name} 시니어PM|모바일|린스타트업`\n\n"
+                f"📊 **조회**\n"
+                f"`/status` — 봇 상태 확인\n"
+                f"`/team` — 전체 팀 현황\n"
+                f"`/agents` — 에이전트 목록\n\n"
+                f"⚙️ **관리 (총괄PM만)**\n"
+                f"`/setup` — 새 조직 봇 등록 마법사\n"
+                f"`/reset` — 세션 초기화\n"
+                + multibot_hint
             )
             await update.message.reply_text(msg, parse_mode="Markdown")
             return
 
+
+
+def _split_message(text: str, max_len: int) -> list[str]:
+    """긴 메시지를 max_len 단위로 분할한다."""
+    return [text[i : i + max_len] for i in range(0, len(text), max_len)]
+
+
+# ── /setup 마법사 헬퍼 함수 ────────────────────────────────────────────────
+
+async def _set_org_bot_commands(token: str) -> None:
+    """새로 등록된 조직봇에 전용 명령어 세트를 자동으로 등록한다."""
+    from telegram import Bot as _TGBot, BotCommand as _BotCommand
+    org_commands = [
+        _BotCommand("status", "봇 상태 확인"),
+        _BotCommand("org", "조직 정체성 설정"),
+        _BotCommand("pm", "PM 정체성 설정"),
+        _BotCommand("prompt", "시스템 프롬프트 조회/수정"),
+        _BotCommand("team", "현재 팀 전략 확인"),
+        _BotCommand("help", "명령어 안내"),
+        _BotCommand("reset", "세션 초기화"),
+    ]
+    try:
+        bot = _TGBot(token=token)
+        await bot.set_my_commands(org_commands)
+        logger.info(f"조직봇 명령어 자동 등록 완료: {[c.command for c in org_commands]}")
+    except Exception as e:
+        logger.warning(f"조직봇 명령어 등록 실패 (무시): {e}")
+
+
+async def _validate_bot_token(token: str) -> dict | None:
+    """토큰으로 봇 정보를 조회한다. 유효하지 않으면 None 반환."""
+    from telegram import Bot as _TGBot
+    try:
+        bot = _TGBot(token=token)
+        me = await bot.get_me()
+        return {"username": me.username, "first_name": me.first_name, "id": me.id}
+    except Exception:
+        return None
+
+
+def _append_env_var(key: str, value: str) -> None:
+    """.env 파일에 환경변수를 추가한다. 이미 존재하면 덮어쓴다."""
+    env_path = Path(__file__).parent.parent / ".env"
+    lines = env_path.read_text().splitlines() if env_path.exists() else []
+    new_lines = [line for line in lines if not line.startswith(f"{key}=")]
+    new_lines.append(f"{key}={value}")
+    env_path.write_text("\n".join(new_lines) + "\n")
+
+
+def _create_bot_config(username: str, token_env: str, org_id: str, chat_id: int, engine: str = "claude-code") -> None:
+    """bots/ 디렉토리에 봇 설정 YAML 파일을 생성한다."""
+    import datetime
+    bots_dir = Path(__file__).parent.parent / "bots"
+    bots_dir.mkdir(exist_ok=True)
+    config_path = bots_dir / f"{username}.yaml"
+    config_path.write_text(
+        f"# 자동 생성 봇 설정 — {datetime.datetime.now().isoformat()}\n"
+        f"username: \"{username}\"\n"
+        f"org_id: \"{org_id}\"\n"
+        f"token_env: \"{token_env}\"\n"
+        f"chat_id: {chat_id}\n"
+        f"engine: \"{engine}\"\n"
+    )
+
+
+def _launch_bot_subprocess(token: str, org_id: str, chat_id: int) -> int:
+    """새 봇 프로세스를 시작하고 PID를 반환한다."""
+    import subprocess as _subprocess
+    import sys as _sys
+    project_dir = Path(__file__).parent.parent
+    env = {
+        **os.environ,
+        "PM_BOT_TOKEN": token,
+        "TELEGRAM_GROUP_CHAT_ID": str(chat_id),
+        "PM_ORG_NAME": org_id,
+    }
+    proc = _subprocess.Popen(
+        [_sys.executable, str(project_dir / "main.py")],
+        env=env,
+        stdout=_subprocess.DEVNULL,
+        stderr=_subprocess.DEVNULL,
+        cwd=str(project_dir),
+    )
+    pid_dir = Path.home() / ".ai-org" / "bots"
+    pid_dir.mkdir(parents=True, exist_ok=True)
+    (pid_dir / f"{org_id}.pid").write_text(str(proc.pid))
+    return proc.pid
+
+
+class _CodexRunnerAdapter:
+    """CodexRunner를 ClaudeCodeRunner와 동일한 run_task 인터페이스로 감싸는 어댑터."""
+
+    def __init__(self, codex_runner) -> None:
+        self._runner = codex_runner
+
+    async def run_task(
+        self,
+        task: str,
+        system_prompt: str = "",
+        progress_callback=None,
+        session_store=None,
+        global_context=None,
+        org_id: str = "global",
+    ) -> str:
+        full_prompt = f"{system_prompt}\n\n{task}".strip() if system_prompt else task
+        result = await self._runner.run(full_prompt)
+        if progress_callback:
+            await progress_callback(result[:200])
+        return result
+
+    async def _auto_upload(self, response: str, token: str, chat_id: int) -> None:
+        """Codex runner는 자동 업로드 미지원 — no-op."""
