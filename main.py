@@ -22,6 +22,7 @@ from core.message_bus import MessageBus
 from core.session_manager import SessionManager
 from core.memory_manager import MemoryManager
 from core.telegram_relay import TelegramRelay
+from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR
 
 if __name__ == "__main__":
     # ── PID lock (중복 실행 방지) ─────────────────────────────────────────
@@ -63,6 +64,14 @@ if __name__ == "__main__":
     memory_manager = MemoryManager(org_id)
     bus = MessageBus()
 
+    # PM 오케스트레이터 모드: ContextDB 초기화
+    context_db = None
+    if ENABLE_PM_ORCHESTRATOR:
+        import asyncio as _aio
+        from core.context_db import ContextDB
+        context_db = ContextDB()
+        _aio.get_event_loop().run_until_complete(context_db.initialize())
+
     relay = TelegramRelay(
         token=token,
         allowed_chat_id=chat_id,
@@ -71,6 +80,7 @@ if __name__ == "__main__":
         org_id=org_id,
         engine=engine,
         bus=bus,
+        context_db=context_db,
     )
     max_retries = 10
     CONFLICT_WAIT = 70  # Telegram 서버 long-polling timeout(60s) + 여유

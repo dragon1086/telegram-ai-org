@@ -59,7 +59,7 @@ def test_invalid_task_id():
         OrgMessage(
             to="@dev_bot",
             from_="@pm_bot",
-            task_id="TASK-001",  # 잘못된 형식
+            task_id="001",  # T 접두사 없음 — 잘못된 형식
             msg_type="assign",
             content="테스트",
         )
@@ -100,3 +100,27 @@ def test_is_addressed_to_single():
     )
     assert msg.is_addressed_to("@dev_bot")
     assert not msg.is_addressed_to("@analyst_bot")
+
+
+def test_namespaced_task_id_valid():
+    """T-pm-001 형식의 네임스페이스 태스크 ID 허용."""
+    msg = OrgMessage(
+        to="@bot1",
+        from_="@pm_bot",
+        task_id="T-pm-001",
+        msg_type="assign",
+        content="test",
+    )
+    assert msg.task_id == "T-pm-001"
+
+
+def test_namespaced_task_id_with_dept():
+    """T-eng-003 형식도 허용."""
+    msg = OrgMessage(
+        to="@bot1",
+        from_="@pm_bot",
+        task_id="T-eng-003",
+        msg_type="assign",
+        content="test",
+    )
+    assert msg.task_id == "T-eng-003"
