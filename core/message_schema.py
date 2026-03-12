@@ -42,8 +42,8 @@ class OrgMessage(BaseModel):
     @field_validator("task_id")
     @classmethod
     def validate_task_id(cls, v: str) -> str:
-        if not re.match(r"^T\d+$", v):
-            raise ValueError(f"유효하지 않은 태스크 ID: {v!r} (T001 형식 필요)")
+        if not re.match(r"^T[-\w]+$", v):
+            raise ValueError(f"유효하지 않은 태스크 ID: {v!r} (T001 또는 T-org-001 형식 필요)")
         return v
 
     def is_addressed_to(self, bot_handle: str) -> bool:
