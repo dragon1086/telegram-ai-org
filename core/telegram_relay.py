@@ -38,9 +38,11 @@ from core.collab_request import (
 )
 from core.keywords import GREETING_KW, ACTION_KW
 from core.display_limiter import DisplayLimiter, MessagePriority
+from core.nl_classifier import NLClassifier, Intent
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
+USE_NL_CLASSIFIER = True  # 2-tier NLClassifier 활성화 플래그 (False 시 기존 키워드 로직 사용)
 
 # /setup 마법사 ConversationHandler 상태
 SETUP_MENU, SETUP_AWAIT_TOKEN, SETUP_AWAIT_ENGINE = range(3)
@@ -85,6 +87,7 @@ class TelegramRelay:
             debounce_sec=5.0,
             enabled=os.getenv("USE_DISPLAY_LIMITER", "true").lower() == "true",
         )
+        self._nl_classifier = NLClassifier()
 
     def _make_runner(self):
         """engine 설정에 따라 적합한 runner를 반환한다."""
@@ -130,8 +133,17 @@ class TelegramRelay:
             return
 
         # 1. 대화형 vs 작업 분류
-        is_greeting = any(kw in text for kw in GREETING_KW) and len(text) < 15
-        is_task = not is_greeting and (any(kw in text for kw in ACTION_KW) or len(text) > 20)
+        if USE_NL_CLASSIFIER:
+            _result = self._nl_classifier.classify(text)
+            _intent = _result.intent
+            is_greeting = _intent == Intent.GREETING
+            # APPROVE/REJECT/CANCEL/STATUS 는 짧은 명령이므로 task로 라우팅
+            # CHAT 은 greeting과 동일하게 default PM만 처리
+            is_greeting = is_greeting or _intent == Intent.CHAT
+            is_task = _intent in (Intent.TASK, Intent.APPROVE, Intent.REJECT, Intent.CANCEL, Intent.STATUS)
+        else:
+            is_greeting = any(kw in text for kw in GREETING_KW) and len(text) < 15
+            is_task = not is_greeting and (any(kw in text for kw in ACTION_KW) or len(text) > 20)
 
         # 2. 인사 → default PM만 claim 후 응답
         if is_greeting:
