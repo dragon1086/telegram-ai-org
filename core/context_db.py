@@ -130,6 +130,23 @@ class ContextDB:
 
                 CREATE INDEX IF NOT EXISTS idx_pm_verify_task ON pm_verifications(task_id);
                 CREATE INDEX IF NOT EXISTS idx_pm_verify_status ON pm_verifications(status);
+
+                CREATE TABLE IF NOT EXISTS pm_goals (
+                    id TEXT PRIMARY KEY,
+                    description TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    milestones TEXT DEFAULT '[]',
+                    iteration INTEGER DEFAULT 0,
+                    max_iterations INTEGER DEFAULT 10,
+                    stagnation_count INTEGER DEFAULT 0,
+                    last_progress TEXT,
+                    chat_id INTEGER,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_pm_goals_status ON pm_goals(status);
             """)
             await db.commit()
 
@@ -516,3 +533,108 @@ class ContextDB:
                 d["suggestions"] = json.loads(d["suggestions"])
                 result.append(d)
             return result
+
+    # ── Goal CRUD ──────────────────────────────────────────────────────────
+
+    async def create_goal(self, goal_id: str, description: str,
+                          created_by: str, chat_id: int,
+                          max_iterations: int = 10) -> dict:
+        """PM 목표 생성."""
+        now = datetime.utcnow().isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """INSERT INTO pm_goals
+                   (id, description, status, milestones, iteration, max_iterations,
+                    stagnation_count, chat_id, created_by, created_at, updated_at)
+                   VALUES (?, ?, 'active', '[]', 0, ?, 0, ?, ?, ?, ?)""",
+                (goal_id, description, max_iterations, chat_id, created_by, now, now),
+            )
+            await db.commit()
+        return {"id": goal_id, "description": description, "status": "active",
+                "milestones": [], "iteration": 0, "max_iterations": max_iterations,
+                "stagnation_count": 0, "chat_id": chat_id,
+                "created_by": created_by, "created_at": now, "updated_at": now}
+
+    async def get_goal(self, goal_id: str) -> dict | None:
+        """PM 목표 조회."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT * FROM pm_goals WHERE id=?", (goal_id,))
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["milestones"] = json.loads(d["milestones"])
+            return d
+
+    async def get_active_goals(self) -> list[dict]:
+        """활성 목표 목록."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM pm_goals WHERE status='active' ORDER BY created_at"
+            )
+            rows = await cursor.fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                d["milestones"] = json.loads(d["milestones"])
+                result.append(d)
+            return result
+
+    async def _query_max_goal_counter(self, org_id: str) -> int:
+        """기존 goal ID에서 최대 카운터 값을 추출. restart-safe ID 생성용."""
+        prefix = f"G-{org_id}-"
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT id FROM pm_goals WHERE id LIKE ? ORDER BY id DESC LIMIT 1",
+                (f"{prefix}%",),
+            )
+            row = await cursor.fetchone()
+            if not row:
+                return 0
+            # "G-pm-003" → 3
+            try:
+                return int(row[0].replace(prefix, ""))
+            except (ValueError, IndexError):
+                return 0
+
+    async def update_goal(self, goal_id: str, **kwargs) -> dict | None:
+        """PM 목표 업데이트. milestones, status, iteration, stagnation_count, last_progress 지원."""
+        now = datetime.utcnow().isoformat()
+
+        # 각 컬럼을 명시적으로 처리 (SQL injection 방지)
+        set_parts: list[str] = []
+        values: list = []
+
+        if "status" in kwargs:
+            set_parts.append("status=?")
+            values.append(kwargs["status"])
+        if "milestones" in kwargs:
+            set_parts.append("milestones=?")
+            values.append(json.dumps(kwargs["milestones"]))
+        if "iteration" in kwargs:
+            set_parts.append("iteration=?")
+            values.append(kwargs["iteration"])
+        if "stagnation_count" in kwargs:
+            set_parts.append("stagnation_count=?")
+            values.append(kwargs["stagnation_count"])
+        if "last_progress" in kwargs:
+            set_parts.append("last_progress=?")
+            values.append(kwargs["last_progress"])
+
+        if not set_parts:
+            return await self.get_goal(goal_id)
+
+        set_parts.append("updated_at=?")
+        values.append(now)
+        values.append(goal_id)
+
+        set_clause = ", ".join(set_parts)
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                f"UPDATE pm_goals SET {set_clause} WHERE id=?",
+                values,
+            )
+            await db.commit()
+        return await self.get_goal(goal_id)

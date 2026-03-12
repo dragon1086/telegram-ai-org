@@ -30,6 +30,10 @@ class EventType(Enum):
     VERIFICATION_REQUESTED = "verification_requested"
     VERIFICATION_COMPLETED = "verification_completed"
     AUTO_DISPATCH = "auto_dispatch"
+    GOAL_CREATED = "goal_created"
+    GOAL_EVALUATED = "goal_evaluated"
+    GOAL_ACHIEVED = "goal_achieved"
+    GOAL_STAGNATED = "goal_stagnated"
 
 
 @dataclass
