@@ -1,0 +1,6 @@
+# 자동 생성 봇 설정 — 2026-03-11T07:36:52.087404
+username: "aiorg_design_bot"
+org_id: "aiorg_design_bot"
+token_env: "BOT_TOKEN_AIORG_DESIGN_BOT"
+chat_id: -5203707291
+engine: "codex"

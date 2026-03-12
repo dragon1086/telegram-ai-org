@@ -30,10 +30,10 @@ stop() {
         fi
         rm -f "$PID_FILE"
     else
-        pkill -9 -f "telegram-ai-org.*main.py" 2>/dev/null
+        pkill -9 -if "python.*main.py" 2>/dev/null
     fi
     # 항상 잔여 좀비도 제거
-    pkill -9 -f "python3.*main.py" 2>/dev/null; true
+    pkill -9 -if "python.*main.py" 2>/dev/null; true
     sleep 2
 }
 

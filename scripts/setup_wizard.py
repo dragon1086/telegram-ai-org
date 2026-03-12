@@ -447,8 +447,18 @@ def step_pm_bot(existing: dict[str, str]) -> tuple[str, str]:
 
 # ─── Step 3: 조직 구성 선택 ───────────────────────────────────────────────────
 
+def _ask_org_engine(prefix: str = "") -> str:
+    """조직별 engine 선택 (1=claude-code, 2=codex, 3=auto). 기본값: claude-code."""
+    print(f"\n  {prefix}{bold('실행 엔진 선택:')}")
+    print(f"    {bold('1.')} claude-code  {dim('— 복잡한 작업, 고품질 [기본]')}")
+    print(f"    {bold('2.')} codex        {dim('— 단순한 작업, 저렴')}")
+    print(f"    {bold('3.')} auto         {dim('— LLM이 자동 결정')}")
+    choice = ask(f"  {prefix}선택", default="1")
+    return EXEC_ENGINE_MAP.get(choice, "claude-code")
+
+
 def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
-    """조직 목록 반환. [{name, description, pm_token, group_chat_id}]"""
+    """조직 목록 반환. [{name, description, pm_token, group_chat_id, engine}]"""
     step_header(3, "조직 구성 선택")
     print(f"""
   조직 구성 방식을 선택하세요:
@@ -468,6 +478,7 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
             default="빠른 실행, 결과 중심"
         )
         # 선호 에이전트는 PM(Claude Code)이 direction + specialties 보고 자동 선택
+        org_engine = _ask_org_engine()
         _generate_pm_identity(
             org_name, pm_token,
             int(pm_chat_id) if pm_chat_id.lstrip("-").isdigit() else 0,
@@ -475,7 +486,8 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
             direction=direction, preferred_agents=None,
         )
         return [{"name": org_name, "description": org_desc,
-                 "pm_token": pm_token, "group_chat_id": pm_chat_id}]
+                 "pm_token": pm_token, "group_chat_id": pm_chat_id,
+                 "engine": org_engine}]
 
     # 다중 조직
     while True:
@@ -522,14 +534,16 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
         specialties_raw = ask(f"  이 PM의 전문분야를 입력하세요 (콤마 구분, 예: 코딩, 버그, API)", default="일반")
         specialties = [s.strip() for s in specialties_raw.split(",") if s.strip()]
         direction = ask("  조직 방향성/문화를 자유롭게 설명해주세요", default="빠른 실행, 결과 중심")
+        org_engine = _ask_org_engine(prefix="  ")
         chat_id_int = int(chat_id) if chat_id.lstrip("-").isdigit() else 0
         _generate_pm_identity(name, token, chat_id_int, specialties, desc,
                               direction=direction, preferred_agents=None)
         print(f"  ✅ pm_{name}.md 생성 완료")
 
         orgs.append({"name": name, "description": desc,
-                     "pm_token": token, "group_chat_id": chat_id})
-        ok(f"{name} 조직 추가됨")
+                     "pm_token": token, "group_chat_id": chat_id,
+                     "engine": org_engine})
+        ok(f"{name} 조직 추가됨 (engine: {EXEC_ENGINE_LABEL.get(org_engine, org_engine)})")
 
     return orgs
 
@@ -1035,11 +1049,13 @@ def save_all(orgs: list[dict], exec_mode: str, binaries: dict, preferred_engine:
         env_name = org["name"].upper()
         token_ref = "${PM_BOT_TOKEN}" if i == 0 else f"${{{env_name}_PM_TOKEN}}"
         chat_ref = "${TELEGRAM_GROUP_CHAT_ID}" if i == 0 else f"${{{env_name}_GROUP_CHAT_ID}}"
+        org_engine = org.get("engine", "claude-code")
         org_lines += [
             f"  - name: {org['name']}\n",
             f"    description: \"{org['description']}\"\n",
             f"    pm_token: \"{token_ref}\"\n",
             f"    group_chat_id: \"{chat_ref}\"\n",
+            f"    engine: {org_engine}\n",
         ]
     ORGANIZATIONS_FILE.write_text("".join(org_lines), encoding="utf-8")
     ok(f"조직 설정 저장: {ORGANIZATIONS_FILE}")

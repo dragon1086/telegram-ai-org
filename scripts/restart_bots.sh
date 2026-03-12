@@ -26,7 +26,7 @@ if [ -f "$PM_PID_FILE" ]; then
     rm -f "$PM_PID_FILE"
 fi
 # 잔여 프로세스 정리
-pkill -9 -f "telegram-ai-org.*main\.py" 2>/dev/null || true
+pkill -9 -if "python.*main.py" 2>/dev/null || true
 sleep 1
 
 cd "$BOT_DIR"
