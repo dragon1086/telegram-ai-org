@@ -27,6 +27,9 @@ class EventType(Enum):
     DISCUSSION_CONVERGED = "discussion_converged"
     DISCUSSION_DECIDED = "discussion_decided"
     DISCUSSION_TIMED_OUT = "discussion_timed_out"
+    VERIFICATION_REQUESTED = "verification_requested"
+    VERIFICATION_COMPLETED = "verification_completed"
+    AUTO_DISPATCH = "auto_dispatch"
 
 
 @dataclass

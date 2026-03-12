@@ -111,6 +111,25 @@ class ContextDB:
 
                 CREATE INDEX IF NOT EXISTS idx_pm_disc_status ON pm_discussions(status);
                 CREATE INDEX IF NOT EXISTS idx_pm_disc_msg_disc ON pm_discussion_messages(discussion_id);
+
+                CREATE TABLE IF NOT EXISTS pm_verifications (
+                    id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    original_dept TEXT NOT NULL,
+                    verifier_dept TEXT NOT NULL,
+                    original_model TEXT NOT NULL,
+                    verifier_model TEXT NOT NULL,
+                    verdict TEXT,
+                    issues TEXT DEFAULT '[]',
+                    suggestions TEXT DEFAULT '[]',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (task_id) REFERENCES pm_tasks(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_pm_verify_task ON pm_verifications(task_id);
+                CREATE INDEX IF NOT EXISTS idx_pm_verify_status ON pm_verifications(status);
             """)
             await db.commit()
 
@@ -393,5 +412,107 @@ class ContextDB:
             for r in rows:
                 d = dict(r)
                 d["participants"] = json.loads(d["participants"])
+                result.append(d)
+            return result
+
+    # ── Auto-Dispatch 헬퍼 ────────────────────────────────────────────────
+
+    async def get_stalled_tasks(self, stall_minutes: int = 30) -> list[str]:
+        """지정 시간 이상 진행 없는 태스크 ID 목록 반환."""
+        from datetime import datetime, timedelta
+        cutoff = (datetime.utcnow() - timedelta(minutes=stall_minutes)).isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                """SELECT id FROM pm_tasks
+                   WHERE status IN ('assigned', 'in_progress')
+                   AND updated_at < ?
+                   ORDER BY updated_at""",
+                (cutoff,),
+            )
+            rows = await cursor.fetchall()
+            return [r[0] for r in rows]
+
+    # ── Verification CRUD ─────────────────────────────────────────────────
+
+    async def create_verification(
+        self,
+        task_id: str,
+        original_dept: str,
+        verifier_dept: str,
+        original_model: str,
+        verifier_model: str,
+    ) -> str:
+        """교차 검증 요청 생성. 자동 생성된 ID 반환."""
+        now = datetime.utcnow().isoformat()
+        # 고유 ID: V-{task_id}-{counter}
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM pm_verifications WHERE task_id=?",
+                (task_id,),
+            )
+            row = await cursor.fetchone()
+            count = (row[0] if row else 0) + 1
+            v_id = f"V-{task_id}-{count:03d}"
+            await db.execute(
+                """INSERT INTO pm_verifications
+                   (id, task_id, original_dept, verifier_dept,
+                    original_model, verifier_model, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+                (v_id, task_id, original_dept, verifier_dept,
+                 original_model, verifier_model, now, now),
+            )
+            await db.commit()
+        return v_id
+
+    async def get_verification(self, verification_id: str) -> dict | None:
+        """검증 레코드 조회."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM pm_verifications WHERE id=?",
+                (verification_id,),
+            )
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["issues"] = json.loads(d["issues"])
+            d["suggestions"] = json.loads(d["suggestions"])
+            return d
+
+    async def update_verification(
+        self,
+        verification_id: str,
+        verdict: str,
+        issues: list[str] | None = None,
+        suggestions: list[str] | None = None,
+    ) -> dict | None:
+        """검증 결과 업데이트."""
+        now = datetime.utcnow().isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """UPDATE pm_verifications
+                   SET verdict=?, issues=?, suggestions=?, status='completed', updated_at=?
+                   WHERE id=?""",
+                (verdict, json.dumps(issues or []), json.dumps(suggestions or []),
+                 now, verification_id),
+            )
+            await db.commit()
+        return await self.get_verification(verification_id)
+
+    async def get_verifications_for_task(self, task_id: str) -> list[dict]:
+        """태스크에 대한 모든 검증 레코드 조회."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM pm_verifications WHERE task_id=? ORDER BY created_at",
+                (task_id,),
+            )
+            rows = await cursor.fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                d["issues"] = json.loads(d["issues"])
+                d["suggestions"] = json.loads(d["suggestions"])
                 result.append(d)
             return result
