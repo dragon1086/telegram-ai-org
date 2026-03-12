@@ -79,7 +79,7 @@ class ConfidenceScorer:
         def _run():
             result = subprocess.run(
                 [CLAUDE_CLI, "--print", "-p", prompt],
-                capture_output=True, text=True, timeout=12, env=env,
+                capture_output=True, text=True, timeout=5, env=env,
             )
             return result.stdout.strip()
 

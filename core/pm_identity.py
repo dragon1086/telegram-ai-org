@@ -136,7 +136,7 @@ class PMIdentity:
 
     def _parse_field(self, text: str, field: str) -> str:
         """'- 필드명: 값' 형식 파싱."""
-        match = re.search(rf"- {field}: (.+)", text)
+        match = re.search(rf"- \*?\*?{field}\*?\*?: (.+)", text)
         return match.group(1).strip() if match else ""
 
     def _parse_specialties(self, text: str) -> list[str]:

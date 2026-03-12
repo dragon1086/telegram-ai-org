@@ -548,6 +548,53 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
     return orgs
 
 
+def _auto_start_bots() -> None:
+    """설정 완료 후 bots/*.yaml 읽어서 bot_manager.py로 봇 기동."""
+    import subprocess, time
+    from pathlib import Path as _P
+    import yaml as _yaml
+
+    bots_dir = PROJECT_ROOT / "bots"
+    config_lines = CONFIG_FILE.read_text().splitlines() if CONFIG_FILE.exists() else []
+    config = {}
+    for line in config_lines:
+        if "=" in line and not line.startswith("#"):
+            k, _, v = line.partition("=")
+            config[k.strip()] = v.strip()
+
+    if not bots_dir.exists():
+        print("ℹ️  bots/ 디렉토리 없음 — 봇 자동기동 건너뜀")
+        return
+
+    started = 0
+    for bot_yaml in sorted(bots_dir.glob("*.yaml")):
+        try:
+            data = _yaml.safe_load(bot_yaml.read_text()) or {}
+            org_id = data.get("org_id", bot_yaml.stem)
+            token_env = data.get("token_env", "")
+            chat_id = str(data.get("chat_id", ""))
+            token = config.get(token_env, "")
+            if not token or not chat_id:
+                warn(f"  {org_id}: 토큰/chat_id 없음 — 건너뜀")
+                continue
+            r = subprocess.run(
+                [sys.executable, "scripts/bot_manager.py", "start", token, org_id, chat_id],
+                capture_output=True, text=True, cwd=str(PROJECT_ROOT),
+            )
+            if "시작됨" in r.stdout or r.returncode == 0:
+                ok(f"  {org_id} 시작됨")
+                started += 1
+            else:
+                warn(f"  {org_id} 기동 실패: {r.stderr[:60]}")
+            time.sleep(2)
+        except Exception as e:
+            warn(f"  {bot_yaml.stem}: {e}")
+
+    if started:
+        ok(f"총 {started}개 봇 자동 기동 완료")
+
+
+
 def _generate_pm_identity(org_id: str, bot_token: str, chat_id: int, specialties: list[str], role: str = "", direction: str = "", preferred_agents: list | None = None) -> None:
     """pm_{org_id}.md 자동 생성."""
     try:
@@ -1032,9 +1079,9 @@ def save_all(orgs: list[dict], exec_mode: str, binaries: dict, preferred_engine:
     if len(orgs) > 1:
         lines.append("\n# 추가 조직 토큰\n")
         for i, org in enumerate(orgs[1:], 2):
-            env_name = org["name"].upper()
-            lines.append(f"{env_name}_PM_TOKEN={org['pm_token']}\n")
-            lines.append(f"{env_name}_GROUP_CHAT_ID={org['group_chat_id']}\n")
+            env_name = f"BOT_TOKEN_{org['name'].upper()}"
+            lines.append(f"{env_name}={org['pm_token']}\n")
+            lines.append(f"{org['name'].upper()}_GROUP_CHAT_ID={org['group_chat_id']}\n")
 
     CONFIG_FILE.write_text("".join(lines), encoding="utf-8")
     ok(f"설정 저장: {CONFIG_FILE}")
@@ -1047,7 +1094,8 @@ def save_all(orgs: list[dict], exec_mode: str, binaries: dict, preferred_engine:
     ]
     for i, org in enumerate(orgs):
         env_name = org["name"].upper()
-        token_ref = "${PM_BOT_TOKEN}" if i == 0 else f"${{{env_name}_PM_TOKEN}}"
+        env_name_ref = f"BOT_TOKEN_{org['name'].upper()}"
+        token_ref = "${PM_BOT_TOKEN}" if i == 0 else f"${{{env_name_ref}}}"
         chat_ref = "${TELEGRAM_GROUP_CHAT_ID}" if i == 0 else f"${{{env_name}_GROUP_CHAT_ID}}"
         org_engine = org.get("engine", "claude-code")
         org_lines += [
@@ -1227,6 +1275,9 @@ def main() -> None:
 
     # Step 7: 시뮬레이션 검증
     step_simulation()
+
+    # Step 8: 봇 자동 기동
+    _auto_start_bots()
 
     # 완료 화면
     print_final_summary(preflight, orgs, exec_mode, preferred_engine)

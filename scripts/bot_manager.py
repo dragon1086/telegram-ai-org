@@ -32,8 +32,8 @@ def start_bot(token: str, org_id: str, chat_id: int) -> int:
     proc = subprocess.Popen(
         [sys.executable, str(PROJECT_DIR / "main.py")],
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=open(Path.home() / ".ai-org" / f"{org_id}.log", "a"),
+        stderr=subprocess.STDOUT,
         cwd=str(PROJECT_DIR),
     )
     (PID_DIR / f"{org_id}.pid").write_text(str(proc.pid))
