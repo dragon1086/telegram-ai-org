@@ -18,6 +18,7 @@ if env_file.exists():
             k, _, v = line.partition("=")
             os.environ.setdefault(k.strip(), v.strip())
 
+from core.message_bus import MessageBus
 from core.session_manager import SessionManager
 from core.memory_manager import MemoryManager
 from core.telegram_relay import TelegramRelay
@@ -60,6 +61,7 @@ if __name__ == "__main__":
 
     session_manager = SessionManager()
     memory_manager = MemoryManager(org_id)
+    bus = MessageBus()
 
     relay = TelegramRelay(
         token=token,
@@ -68,6 +70,7 @@ if __name__ == "__main__":
         memory_manager=memory_manager,
         org_id=org_id,
         engine=engine,
+        bus=bus,
     )
     max_retries = 10
     CONFLICT_WAIT = 70  # Telegram 서버 long-polling timeout(60s) + 여유
