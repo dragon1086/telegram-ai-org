@@ -350,6 +350,7 @@ class ClaudeCodeRunner:
                 stderr=asyncio.subprocess.DEVNULL,
                 cwd=workdir or self.workdir,
                 env=env,
+                limit=1024 * 1024 * 10,  # 10MB — 기본 64KB 한도 초과 방지
             )
         except FileNotFoundError:
             msg = f"❌ Claude CLI를 찾을 수 없습니다: {stream_cmd[0]}"
@@ -534,6 +535,7 @@ class ClaudeCodeRunner:
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=1024 * 1024 * 10,  # 10MB — 기본 64KB 한도 초과 방지
                 cwd=workdir or self.workdir,
                 env=env,
             )

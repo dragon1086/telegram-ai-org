@@ -44,6 +44,41 @@ class PMIdentity:
         specialties = self._data.get("specialties", [])
         return ", ".join(specialties)
 
+    def _load_colleagues(self) -> list[dict]:
+        """동료 팀 목록 로드 (self.org_id 제외, global은 모두 포함)."""
+        colleagues = []
+        is_global = self._data.get("default_handler", False)
+        for path in sorted(self.MEMORY_DIR.glob("pm_*.md")):
+            # 자신 제외
+            candidate_org = path.stem[len("pm_"):]
+            if candidate_org == self.org_id:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+                core = self._extract_core_section(text)
+                bot_name = self._parse_field(core, "봇명")
+                role = self._parse_field(core, "역할")
+                specialties = self._parse_specialties(core)
+                default_handler = (
+                    candidate_org == "global"
+                    or "어떤 PM도 자신없을 때 기본 담당" in core
+                    or "default_handler: true" in core
+                )
+                # global 봇은 모든 동료 포함, 조직봇은 global 제외
+                if not is_global and default_handler:
+                    continue
+                if not bot_name and not role:
+                    continue
+                colleagues.append({
+                    "org_id": candidate_org,
+                    "bot_name": bot_name or f"@{candidate_org}_bot",
+                    "role": role,
+                    "specialties": specialties,
+                })
+            except Exception:
+                pass
+        return colleagues
+
     def build_system_prompt(self) -> str:
         """Claude --append-system-prompt에 주입할 전체 시스템 프롬프트."""
         if not self._data:
@@ -77,6 +112,21 @@ class PMIdentity:
         direction = data.get("direction", "")
         direction_line = f"- 방향성: {direction}" if direction else "- 방향성: 조직의 정체성에 맞게 판단"
 
+        # 동료 팀 섹션
+        colleagues = self._load_colleagues()
+        if colleagues:
+            colleague_lines = "\n".join(
+                f"• {c['bot_name']} — {', '.join(c['specialties']) or c['role']}"
+                for c in colleagues
+            )
+            colleague_section = f"""
+## 동료 팀 (협업 가능)
+{colleague_lines}
+→ 위 팀이 더 적합한 업무가 있으면 [COLLAB:태스크|맥락:ctx] 태그로 위임 요청
+"""
+        else:
+            colleague_section = ""
+
         return f"""당신은 {org} 조직의 PM입니다.
 
 ## 조직 정체성
@@ -88,10 +138,16 @@ class PMIdentity:
 
 ## 에이전트
 전체 목록: ~/.claude/agents/ (팀 구성 전 ls로 확인 후 실제 존재하는 에이전트만 사용){recommend_line}
-
+{colleague_section}
 ## 팀 구성 원칙 (필수 준수)
 
 기본 판단 기준: **실행이 수반되는가?**
+
+### 협업 원칙
+- 동료 팀의 전문분야와 겹치는 작업은 단독 처리보다 협업 우선
+- 복합 태스크(예: 분석+구현, 설계+마케팅)는 반드시 관련 팀에 [COLLAB:] 요청
+- 혼자 처리해도 되지만 다른 팀이 더 잘할 수 있으면 적극 위임
+
 
 ### 팀 구성 생략 (PM 직접 답변)
 → 첫 줄에 반드시: "💬 PM 직접 답변"
@@ -102,7 +158,12 @@ class PMIdentity:
 - 사실 질문
 
 ### 팀 구성 필수
-→ 작업 시작 전 반드시 발표:
+⚠️ **무조건 응답 맨 첫 줄에 [TEAM:...] 태그 작성. 빠뜨리면 시스템 오류.**
+→ 응답 첫 줄에 반드시 [TEAM:에이전트1,에이전트2,...] 태그 포함:
+  예: [TEAM:backend-engineer, ux-designer, data-analyst]
+  팀원 없이 혼자 처리하면: [TEAM:solo]
+  (에이전트 호출해도 solo이면 [TEAM:solo] 작성)
+→ 그 다음 팀 구성 발표:
 🏗️ 팀 구성
 • [에이전트A]: [담당 역할]
 • [에이전트B]: [담당 역할]
