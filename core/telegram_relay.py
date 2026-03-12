@@ -25,6 +25,7 @@ from telegram.ext import (
     filters,
 )
 
+from core.message_bus import MessageBus, Event, EventType
 from core.session_manager import SessionManager
 from core.memory_manager import MemoryManager
 from core.pm_identity import PMIdentity
@@ -37,9 +38,12 @@ from core.collab_request import (
     make_collab_done, parse_collab_request,
 )
 from core.keywords import GREETING_KW, ACTION_KW
+from core.display_limiter import DisplayLimiter, MessagePriority
+from core.nl_classifier import NLClassifier, Intent
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
+USE_NL_CLASSIFIER = True  # 2-tier NLClassifier 활성화 플래그 (False 시 기존 키워드 로직 사용)
 
 # /setup 마법사 ConversationHandler 상태
 SETUP_MENU, SETUP_AWAIT_TOKEN, SETUP_AWAIT_ENGINE = range(3)
@@ -56,6 +60,7 @@ class TelegramRelay:
         memory_manager: MemoryManager,
         org_id: str = "global",
         engine: str = "claude-code",
+        bus: MessageBus | None = None,
     ) -> None:
         self.token = token
         self.allowed_chat_id = allowed_chat_id
@@ -63,6 +68,7 @@ class TelegramRelay:
         self.memory_manager = memory_manager
         self.org_id = org_id
         self.engine = engine
+        self.bus = bus
         self.app: Application | None = None
         self._message_count: int = 0
 
@@ -79,6 +85,12 @@ class TelegramRelay:
         # PM 집단 기억 — PM 간 맥락 공유
         self.global_context = GlobalContext()
         self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+
+        self.display = DisplayLimiter(
+            debounce_sec=5.0,
+            enabled=os.getenv("USE_DISPLAY_LIMITER", "true").lower() == "true",
+        )
+        self._nl_classifier = NLClassifier()
 
     def _make_runner(self):
         """engine 설정에 따라 적합한 runner를 반환한다."""
@@ -124,8 +136,17 @@ class TelegramRelay:
             return
 
         # 1. 대화형 vs 작업 분류
-        is_greeting = any(kw in text for kw in GREETING_KW) and len(text) < 15
-        is_task = not is_greeting and (any(kw in text for kw in ACTION_KW) or len(text) > 20)
+        if USE_NL_CLASSIFIER:
+            _result = self._nl_classifier.classify(text)
+            _intent = _result.intent
+            is_greeting = _intent == Intent.GREETING
+            # APPROVE/REJECT/CANCEL/STATUS 는 짧은 명령이므로 task로 라우팅
+            # CHAT 은 greeting과 동일하게 default PM만 처리
+            is_greeting = is_greeting or _intent == Intent.CHAT
+            is_task = _intent in (Intent.TASK, Intent.APPROVE, Intent.REJECT, Intent.CANCEL, Intent.STATUS)
+        else:
+            is_greeting = any(kw in text for kw in GREETING_KW) and len(text) < 15
+            is_task = not is_greeting and (any(kw in text for kw in ACTION_KW) or len(text) > 20)
 
         # 2. 인사 → default PM만 claim 후 응답
         if is_greeting:
@@ -147,7 +168,7 @@ class TelegramRelay:
             )
             _out, _ = await _aio.wait_for(_proc.communicate(), timeout=15)
             reply = (_out.decode().strip() if _out else "") or "안녕하세요! 😊"
-            await update.message.reply_text(reply[:300])
+            await self.display.send_reply(update.message, reply[:300])
             return
 
         # 3. 작업 요청 → confidence 계산
@@ -178,13 +199,13 @@ class TelegramRelay:
         asyncio.get_event_loop().run_in_executor(None, self.claim_manager.cleanup_old_claims)
 
         # 4. 담당 선언 + 실행 (Claude Code가 팀 구성 자율 결정)
-        await update.message.reply_text(f"✋ {self.org_id} 담당 — 팀 구성 중...")
+        await self.display.send_reply(update.message, f"✋ {self.org_id} 담당 — 팀 구성 중...")
         await self.memory_manager.add_log(f"사용자 메시지: {text[:200]}")
 
         runner = self._make_runner()
         system_prompt = self.identity.build_system_prompt()
 
-        progress_msg = await update.message.reply_text("⚙️ 처리 중...")
+        progress_msg = await self.display.send_reply(update.message, "⚙️ 처리 중...")
         history: list[str] = []
         last_edit = time.time()
 
@@ -197,7 +218,7 @@ class TelegramRelay:
             if time.time() - last_edit > 1.5:
                 display = "\n".join(history[-5:])
                 try:
-                    await progress_msg.edit_text(f"⚙️ 작업 중...\n\n{display}")
+                    await self.display.edit_progress(progress_msg, f"⚙️ 작업 중...\n\n{display}", agent_id=self.org_id)
                     last_edit = time.time()
                 except Exception:
                     pass
@@ -232,7 +253,7 @@ class TelegramRelay:
                 # 태그 없으면 solo로 자동 처리
                 team_notice = f"👤 {self.org_id} 단독 처리"
             try:
-                await context.bot.send_message(chat_id=update.effective_chat.id, text=team_notice)
+                await self.display.send_to_chat(context.bot, update.effective_chat.id, team_notice)
             except Exception as _e:
                 logger.warning(f"팀 구성 공지 실패: {_e}")
 
@@ -245,16 +266,22 @@ class TelegramRelay:
                 collab_ctx = parts[1].strip() if len(parts) > 1 else ""
                 collab_msg = make_collab_request(collab_task, self.org_id, context=collab_ctx)
                 try:
-                    await context.bot.send_message(chat_id=update.effective_chat.id, text=collab_msg)
+                    await self.display.send_to_chat(context.bot, update.effective_chat.id, collab_msg)
                 except Exception as _e:
                     logger.warning(f"협업 요청 발송 실패: {_e}")
             response = _re.sub(r'\[COLLAB:[^\]]+\]', '', response).strip()
 
         if response:
             for chunk in _split_message(response, 4000):
-                await update.message.reply_text(chunk)
+                await self.display.send_reply(update.message, chunk)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
             await runner._auto_upload(response, self.token, self.allowed_chat_id)
+            if self.bus:
+                await self.bus.publish(Event(
+                    type=EventType.TASK_RESULT,
+                    source=self.org_id,
+                    data={"response": response[:500], "message_id": message_id},
+                ))
 
     # ── 첨부파일 처리 ──────────────────────────────────────────────────────
 
