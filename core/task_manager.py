@@ -12,11 +12,26 @@ from pydantic import BaseModel
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
+    ASSIGNED = "assigned"           # 신규
     RUNNING = "running"
     WAITING_ACK = "waiting_ack"  # 완료 확인 대기
+    REWORK = "rework"               # 신규
     DONE = "done"
     FAILED = "failed"
     CLOSED = "closed"  # 모든 봇 확인 완료
+    CANCELLED = "cancelled"         # 신규
+
+
+VALID_TRANSITIONS: dict[TaskStatus, list[TaskStatus]] = {
+    TaskStatus.PENDING: [TaskStatus.ASSIGNED, TaskStatus.RUNNING, TaskStatus.WAITING_ACK, TaskStatus.FAILED, TaskStatus.CLOSED, TaskStatus.CANCELLED],
+    TaskStatus.ASSIGNED: [TaskStatus.RUNNING, TaskStatus.FAILED, TaskStatus.CANCELLED],
+    TaskStatus.RUNNING: [TaskStatus.WAITING_ACK, TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CANCELLED],
+    TaskStatus.WAITING_ACK: [TaskStatus.DONE, TaskStatus.CLOSED, TaskStatus.REWORK, TaskStatus.CANCELLED],
+    TaskStatus.REWORK: [TaskStatus.RUNNING, TaskStatus.CANCELLED],
+}
+
+# Terminal states — no outgoing transitions allowed
+_TERMINAL_STATES = {TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CLOSED, TaskStatus.CANCELLED}
 
 
 class Task(BaseModel):
@@ -68,11 +83,16 @@ class TaskManager:
         """태스크 상태 업데이트."""
         async with self._lock:
             task = self._tasks[task_id]
+            if task.status in _TERMINAL_STATES:
+                raise ValueError(f"Invalid transition: {task.status.value} -> {status.value}")
+            valid = VALID_TRANSITIONS.get(task.status, [])
+            if valid and status not in valid:
+                raise ValueError(f"Invalid transition: {task.status.value} -> {status.value}")
             task.status = status
             now = datetime.utcnow().isoformat()
             if status == TaskStatus.RUNNING:
                 task.started_at = now
-            elif status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CLOSED):
+            elif status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CLOSED, TaskStatus.CANCELLED):
                 task.completed_at = now
             if result:
                 task.result = result
@@ -97,4 +117,5 @@ class TaskManager:
         return list(self._tasks.values())
 
     def get_active_tasks(self) -> list[Task]:
-        return [t for t in self._tasks.values() if t.status not in (TaskStatus.CLOSED, TaskStatus.FAILED)]
+        return [t for t in self._tasks.values()
+                if t.status not in (TaskStatus.CLOSED, TaskStatus.FAILED, TaskStatus.CANCELLED)]

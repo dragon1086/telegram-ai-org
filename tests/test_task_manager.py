@@ -107,3 +107,96 @@ async def test_get_active_excludes_failed():
     active = tm.get_active_tasks()
     assert len(active) == 1
     assert active[0].id == t1.id
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: 상태 전이 규칙 테스트
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_valid_transition_pending_to_assigned():
+    tm = TaskManager()
+    task = await tm.create_task("test", ["@bot1"])
+    updated = await tm.update_status(task.id, TaskStatus.ASSIGNED)
+    assert updated.status == TaskStatus.ASSIGNED
+
+
+@pytest.mark.asyncio
+async def test_valid_transition_pending_to_running_backward_compat():
+    """기존 코드 호환: PENDING->RUNNING 직접 전이 허용."""
+    tm = TaskManager()
+    task = await tm.create_task("test", ["@bot1"])
+    updated = await tm.update_status(task.id, TaskStatus.RUNNING)
+    assert updated.status == TaskStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_invalid_transition_done_to_running():
+    tm = TaskManager()
+    task = await tm.create_task("test", ["@bot1"])
+    await tm.update_status(task.id, TaskStatus.RUNNING)
+    await tm.update_status(task.id, TaskStatus.WAITING_ACK)
+    await tm.update_status(task.id, TaskStatus.DONE)
+    with pytest.raises(ValueError, match="Invalid transition"):
+        await tm.update_status(task.id, TaskStatus.RUNNING)
+
+
+@pytest.mark.asyncio
+async def test_invalid_transition_closed_to_running():
+    tm = TaskManager()
+    task = await tm.create_task("test", ["@bot1"])
+    await tm.update_status(task.id, TaskStatus.RUNNING)
+    await tm.update_status(task.id, TaskStatus.WAITING_ACK)
+    await tm.update_status(task.id, TaskStatus.CLOSED)
+    with pytest.raises(ValueError, match="Invalid transition"):
+        await tm.update_status(task.id, TaskStatus.RUNNING)
+
+
+@pytest.mark.asyncio
+async def test_rework_cycle():
+    """WAITING_ACK -> REWORK -> RUNNING -> WAITING_ACK."""
+    tm = TaskManager()
+    task = await tm.create_task("test", ["@bot1"])
+    await tm.update_status(task.id, TaskStatus.RUNNING)
+    await tm.update_status(task.id, TaskStatus.WAITING_ACK)
+    await tm.update_status(task.id, TaskStatus.REWORK)
+    assert tm.get_task(task.id).status == TaskStatus.REWORK
+    await tm.update_status(task.id, TaskStatus.RUNNING)
+    assert tm.get_task(task.id).status == TaskStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_cancel_from_any_non_terminal():
+    tm = TaskManager()
+    task = await tm.create_task("test", ["@bot1"])
+    await tm.update_status(task.id, TaskStatus.CANCELLED)
+    assert tm.get_task(task.id).status == TaskStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_cancel_from_running():
+    tm = TaskManager()
+    task = await tm.create_task("test", ["@bot1"])
+    await tm.update_status(task.id, TaskStatus.RUNNING)
+    await tm.update_status(task.id, TaskStatus.CANCELLED)
+    assert tm.get_task(task.id).status == TaskStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_cancelled_is_terminal():
+    tm = TaskManager()
+    task = await tm.create_task("test", ["@bot1"])
+    await tm.update_status(task.id, TaskStatus.CANCELLED)
+    with pytest.raises(ValueError, match="Invalid transition"):
+        await tm.update_status(task.id, TaskStatus.RUNNING)
+
+
+@pytest.mark.asyncio
+async def test_get_active_excludes_cancelled():
+    tm = TaskManager()
+    t1 = await tm.create_task("ok", ["@bot1"])
+    t2 = await tm.create_task("cancel", ["@bot2"])
+    await tm.update_status(t2.id, TaskStatus.CANCELLED)
+    active = tm.get_active_tasks()
+    assert len(active) == 1
+    assert active[0].id == t1.id
