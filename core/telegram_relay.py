@@ -45,6 +45,7 @@ from core.discussion_parser import is_discussion_message, parse_discussion_tags
 from core.discussion import ENABLE_DISCUSSION_PROTOCOL
 from core.dispatch_engine import ENABLE_AUTO_DISPATCH
 from core.verification import ENABLE_CROSS_VERIFICATION
+from core.goal_tracker import ENABLE_GOAL_TRACKER
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
@@ -148,6 +149,17 @@ class TelegramRelay:
             self._verifier = CrossModelVerifier(
                 context_db=context_db,
                 telegram_send_func=self._pm_send_message,
+            )
+
+        # GoalTracker — ENABLE_GOAL_TRACKER + PM org + context_db + orchestrator 필요
+        self._goal_tracker = None
+        if ENABLE_GOAL_TRACKER and self._is_pm_org and context_db is not None and self._pm_orchestrator is not None:
+            from core.goal_tracker import GoalTracker
+            self._goal_tracker = GoalTracker(
+                context_db=context_db,
+                orchestrator=self._pm_orchestrator,
+                telegram_send_func=self._pm_send_message,
+                org_id=org_id,
             )
 
     async def _pm_send_message(self, chat_id: int, text: str) -> None:
