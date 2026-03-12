@@ -150,7 +150,7 @@ class TelegramRelay:
         if score < DEFAULT_CONFIDENCE_THRESHOLD and not is_default:
             return
 
-        wait_time = max(0.0, (10 - score) * 0.3) if (not is_default or score >= DEFAULT_CONFIDENCE_THRESHOLD) else ClaimManager.CLAIM_TIMEOUT - 0.1
+        wait_time = max(0.0, (10 - score) * 0.3) if (not is_default or score >= DEFAULT_CONFIDENCE_THRESHOLD) else 8.0
         await asyncio.sleep(wait_time)
 
         if not self.claim_manager.try_claim(message_id, self.org_id):
