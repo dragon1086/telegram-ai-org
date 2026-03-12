@@ -1,0 +1,6 @@
+# PM 오케스트레이터 봇 설정 — 총괄PM
+username: "aiorg_pm_bot"
+org_id: "aiorg_pm_bot"
+token_env: "BOT_TOKEN_AIORG_PM_BOT"
+chat_id: -5203707291
+engine: "claude-code"
