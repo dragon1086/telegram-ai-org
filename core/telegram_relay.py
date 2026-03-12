@@ -25,6 +25,7 @@ from telegram.ext import (
     filters,
 )
 
+from core.message_bus import MessageBus, Event, EventType
 from core.session_manager import SessionManager
 from core.memory_manager import MemoryManager
 from core.pm_identity import PMIdentity
@@ -59,6 +60,7 @@ class TelegramRelay:
         memory_manager: MemoryManager,
         org_id: str = "global",
         engine: str = "claude-code",
+        bus: MessageBus | None = None,
     ) -> None:
         self.token = token
         self.allowed_chat_id = allowed_chat_id
@@ -66,6 +68,7 @@ class TelegramRelay:
         self.memory_manager = memory_manager
         self.org_id = org_id
         self.engine = engine
+        self.bus = bus
         self.app: Application | None = None
         self._message_count: int = 0
 
@@ -273,6 +276,12 @@ class TelegramRelay:
                 await self.display.send_reply(update.message, chunk)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
             await runner._auto_upload(response, self.token, self.allowed_chat_id)
+            if self.bus:
+                await self.bus.publish(Event(
+                    type=EventType.TASK_RESULT,
+                    source=self.org_id,
+                    data={"response": response[:500], "message_id": message_id},
+                ))
 
     # ── 첨부파일 처리 ──────────────────────────────────────────────────────
 
