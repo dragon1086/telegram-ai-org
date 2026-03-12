@@ -1,6 +1,7 @@
 """PM 오케스트레이터 — 사용자 요청을 부서별 태스크로 분해·배분."""
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass, field
 from typing import Callable, Awaitable
@@ -11,6 +12,7 @@ from core.context_db import ContextDB
 from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
 from core.memory_manager import MemoryManager
+from core.llm_provider import get_provider
 
 
 # 알려진 부서 봇 목록
@@ -214,25 +216,46 @@ class PMOrchestrator:
 
     # ── Discussion Integration ────────────────────────────────────────────
 
-    # 토론이 필요한 키워드 패턴 — 여러 부서가 동시에 관여하고 방향 결정이 필요할 때
-    _DISCUSSION_KEYWORDS = ["어떤 방식", "어떻게 할까", "선택", "비교", "vs", "논의", "토론", "결정"]
+    # 키워드 fallback용 (LLM 실패 시)
+    _DISCUSSION_KEYWORDS = [
+        "어떤 방식", "어떻게 할까", "선택", "비교", "vs", "논의", "토론", "결정",
+        "정해", "골라", "택해", "뭐가 나을", "뭐가 좋을", "어떤 걸", "추천",
+        "장단점", "트레이드오프", "tradeoff", "trade-off", "compare", "choose", "decide",
+    ]
 
-    def detect_discussion_needs(self, user_message: str, subtasks: list[SubTask]) -> list[DiscussionNeeded]:
-        """분해 결과에서 토론이 필요한 항목을 감지.
+    _LLM_DISCUSSION_PROMPT = (
+        "You are a project manager. Given a user request and a list of departments involved, "
+        "determine if this request requires a DISCUSSION between departments before execution.\n\n"
+        "A discussion is needed when:\n"
+        "- Multiple departments need to AGREE on an approach before starting work\n"
+        "- There are trade-offs or alternatives that departments should debate\n"
+        "- A technology/design/strategy choice affects multiple departments\n"
+        "- The request implies comparison, selection, or decision-making\n\n"
+        "A discussion is NOT needed when:\n"
+        "- Each department can work independently on their part\n"
+        "- The request is straightforward with no ambiguity\n"
+        "- Tasks are sequential but don't require agreement\n\n"
+        "Reply with ONLY 'YES' or 'NO'. Nothing else.\n\n"
+        "User request: {message}\n"
+        "Departments involved: {departments}"
+    )
 
-        조건: 2개 이상 부서가 관여하고, 메시지에 결정 키워드가 포함될 때.
+    async def detect_discussion_needs(self, user_message: str, subtasks: list[SubTask]) -> list[DiscussionNeeded]:
+        """분해 결과에서 토론이 필요한 항목을 LLM으로 감지.
+
+        LLM 판단 실패 시 키워드 fallback.
+        조건: 2개 이상 부서가 관여해야 함.
         """
         if len(subtasks) < 2:
             return []
 
-        msg_lower = user_message.lower()
-        has_decision_keyword = any(kw in msg_lower for kw in self._DISCUSSION_KEYWORDS)
-        if not has_decision_keyword:
-            return []
-
-        # 관여 부서 목록
         participants = list({st.assigned_dept for st in subtasks})
         if len(participants) < 2:
+            return []
+
+        needs_discussion = await self._llm_detect_discussion(user_message, participants)
+
+        if not needs_discussion:
             return []
 
         return [DiscussionNeeded(
@@ -240,6 +263,37 @@ class PMOrchestrator:
             proposal=user_message[:300],
             participants=participants,
         )]
+
+    async def _llm_detect_discussion(self, user_message: str, participants: list[str]) -> bool:
+        """LLM으로 토론 필요 여부 판단. 실패 시 키워드 fallback."""
+        provider = get_provider()
+        if provider is None:
+            logger.debug("[PM] LLM provider 없음 — 키워드 fallback")
+            return self._keyword_detect_discussion(user_message)
+
+        dept_names = [KNOWN_DEPTS.get(p, p) for p in participants]
+        prompt = self._LLM_DISCUSSION_PROMPT.format(
+            message=user_message[:500],
+            departments=", ".join(dept_names),
+        )
+
+        try:
+            response = await asyncio.wait_for(
+                provider.complete(prompt, timeout=10.0),
+                timeout=12.0,
+            )
+            answer = response.strip().upper()
+            result = answer.startswith("YES")
+            logger.info(f"[PM] LLM 토론 감지: {answer} → {result}")
+            return result
+        except Exception as e:
+            logger.warning(f"[PM] LLM 토론 감지 실패, 키워드 fallback: {e}")
+            return self._keyword_detect_discussion(user_message)
+
+    def _keyword_detect_discussion(self, user_message: str) -> bool:
+        """키워드 기반 토론 필요 여부 판단 (fallback)."""
+        msg_lower = user_message.lower()
+        return any(kw in msg_lower for kw in self._DISCUSSION_KEYWORDS)
 
     async def start_discussions(
         self, discussions: list[DiscussionNeeded],
