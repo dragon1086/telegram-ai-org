@@ -40,7 +40,7 @@ class CompletionProtocol:
     async def receive_ack(self, task_id: str, bot_handle: str) -> bool:
         """봇의 ACK 수신. 모두 완료되면 True 반환."""
         task = await self.task_manager.record_ack(task_id, bot_handle)
-        if task.all_acked():
+        if task.all_acked() and task.status != TaskStatus.CLOSED:
             await self.task_manager.update_status(task_id, TaskStatus.CLOSED)
             msg = (
                 f"[TO: ALL | FROM: @pm_bot | TASK: {task_id} | TYPE: complete]\n"
