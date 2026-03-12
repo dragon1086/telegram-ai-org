@@ -57,6 +57,31 @@ class ContextDB:
                     ON context_slots(project_id);
                 CREATE INDEX IF NOT EXISTS idx_task_history_task
                     ON task_history(task_id);
+
+                CREATE TABLE IF NOT EXISTS pm_tasks (
+                    id TEXT PRIMARY KEY,
+                    parent_id TEXT,
+                    description TEXT NOT NULL,
+                    assigned_dept TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    result TEXT,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    metadata TEXT DEFAULT '{}'
+                );
+
+                CREATE TABLE IF NOT EXISTS pm_task_dependencies (
+                    task_id TEXT NOT NULL,
+                    depends_on TEXT NOT NULL,
+                    PRIMARY KEY (task_id, depends_on),
+                    FOREIGN KEY (task_id) REFERENCES pm_tasks(id),
+                    FOREIGN KEY (depends_on) REFERENCES pm_tasks(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_pm_tasks_parent ON pm_tasks(parent_id);
+                CREATE INDEX IF NOT EXISTS idx_pm_tasks_status ON pm_tasks(status);
+                CREATE INDEX IF NOT EXISTS idx_pm_tasks_dept ON pm_tasks(assigned_dept);
             """)
             await db.commit()
 
@@ -123,3 +148,85 @@ class ContextDB:
                 {"id": r[0], "slot_type": r[1], "content": r[2], "version": r[3], "updated_at": r[4]}
                 for r in rows
             ]
+
+    async def create_pm_task(self, task_id: str, description: str, assigned_dept: str | None,
+                             created_by: str, parent_id: str | None = None,
+                             metadata: dict | None = None) -> dict:
+        """PM 태스크 생성 (크로스 프로세스 공유)."""
+        now = datetime.utcnow().isoformat()
+        meta = json.dumps(metadata or {})
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """INSERT INTO pm_tasks (id, parent_id, description, assigned_dept, status,
+                   created_by, created_at, updated_at, metadata)
+                   VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
+                (task_id, parent_id, description, assigned_dept, created_by, now, now, meta),
+            )
+            await db.commit()
+        return {"id": task_id, "parent_id": parent_id, "description": description,
+                "assigned_dept": assigned_dept, "status": "pending",
+                "created_by": created_by, "created_at": now, "updated_at": now}
+
+    async def update_pm_task_status(self, task_id: str, status: str,
+                                     result: str | None = None) -> dict | None:
+        """PM 태스크 상태 업데이트."""
+        now = datetime.utcnow().isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            if result is not None:
+                await db.execute(
+                    "UPDATE pm_tasks SET status=?, result=?, updated_at=? WHERE id=?",
+                    (status, result, now, task_id),
+                )
+            else:
+                await db.execute(
+                    "UPDATE pm_tasks SET status=?, updated_at=? WHERE id=?",
+                    (status, now, task_id),
+                )
+            await db.commit()
+        return await self.get_pm_task(task_id)
+
+    async def get_pm_task(self, task_id: str) -> dict | None:
+        """PM 태스크 조회."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT * FROM pm_tasks WHERE id=?", (task_id,))
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            return dict(row)
+
+    async def get_subtasks(self, parent_id: str) -> list[dict]:
+        """부모 태스크의 자식 태스크들 조회."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM pm_tasks WHERE parent_id=? ORDER BY created_at",
+                (parent_id,),
+            )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def add_dependency(self, task_id: str, depends_on: str) -> None:
+        """태스크 의존성 추가."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO pm_task_dependencies (task_id, depends_on) VALUES (?, ?)",
+                (task_id, depends_on),
+            )
+            await db.commit()
+
+    async def get_ready_tasks(self, parent_id: str) -> list[dict]:
+        """의존성이 모두 완료된 실행 가능 태스크 조회."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("""
+                SELECT t.* FROM pm_tasks t
+                WHERE t.parent_id = ? AND t.status = 'pending'
+                AND NOT EXISTS (
+                    SELECT 1 FROM pm_task_dependencies d
+                    JOIN pm_tasks dep ON dep.id = d.depends_on
+                    WHERE d.task_id = t.id AND dep.status != 'done'
+                )
+            """, (parent_id,))
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
