@@ -32,18 +32,21 @@ def send_fn():
 
 
 class TestDetectDiscussionNeeds:
+    """LLM provider 없는 테스트 환경에서는 키워드 fallback으로 동작."""
 
-    def test_no_discussion_single_dept(self, send_fn):
+    @pytest.mark.asyncio
+    async def test_no_discussion_single_dept(self, send_fn):
         orch = PMOrchestrator(
             context_db=AsyncMock(), task_graph=AsyncMock(),
             claim_manager=ClaimManager(), memory=MemoryManager("pm"),
             org_id="pm", telegram_send_func=send_fn,
         )
         subtasks = [SubTask("개발", "aiorg_engineering_bot")]
-        result = orch.detect_discussion_needs("API 개발", subtasks)
+        result = await orch.detect_discussion_needs("API 개발", subtasks)
         assert result == []
 
-    def test_no_discussion_without_keywords(self, send_fn):
+    @pytest.mark.asyncio
+    async def test_no_discussion_without_keywords(self, send_fn):
         orch = PMOrchestrator(
             context_db=AsyncMock(), task_graph=AsyncMock(),
             claim_manager=ClaimManager(), memory=MemoryManager("pm"),
@@ -53,10 +56,11 @@ class TestDetectDiscussionNeeds:
             SubTask("기획", "aiorg_product_bot"),
             SubTask("개발", "aiorg_engineering_bot"),
         ]
-        result = orch.detect_discussion_needs("기획하고 개발하자", subtasks)
+        result = await orch.detect_discussion_needs("기획하고 개발하자", subtasks)
         assert result == []
 
-    def test_discussion_detected_with_keywords(self, send_fn):
+    @pytest.mark.asyncio
+    async def test_discussion_detected_with_keywords(self, send_fn):
         orch = PMOrchestrator(
             context_db=AsyncMock(), task_graph=AsyncMock(),
             claim_manager=ClaimManager(), memory=MemoryManager("pm"),
@@ -66,12 +70,13 @@ class TestDetectDiscussionNeeds:
             SubTask("기획", "aiorg_product_bot"),
             SubTask("개발", "aiorg_engineering_bot"),
         ]
-        result = orch.detect_discussion_needs("어떤 방식으로 기획하고 개발할까 논의", subtasks)
+        result = await orch.detect_discussion_needs("어떤 방식으로 기획하고 개발할까 논의", subtasks)
         assert len(result) == 1
         assert isinstance(result[0], DiscussionNeeded)
         assert len(result[0].participants) == 2
 
-    def test_discussion_vs_keyword(self, send_fn):
+    @pytest.mark.asyncio
+    async def test_discussion_vs_keyword(self, send_fn):
         orch = PMOrchestrator(
             context_db=AsyncMock(), task_graph=AsyncMock(),
             claim_manager=ClaimManager(), memory=MemoryManager("pm"),
@@ -81,8 +86,25 @@ class TestDetectDiscussionNeeds:
             SubTask("디자인", "aiorg_design_bot"),
             SubTask("개발", "aiorg_engineering_bot"),
         ]
-        result = orch.detect_discussion_needs("React vs Vue 비교해서 결정", subtasks)
+        result = await orch.detect_discussion_needs("React vs Vue 비교해서 결정", subtasks)
         assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_expanded_keywords(self, send_fn):
+        """확장된 키워드도 감지."""
+        orch = PMOrchestrator(
+            context_db=AsyncMock(), task_graph=AsyncMock(),
+            claim_manager=ClaimManager(), memory=MemoryManager("pm"),
+            org_id="pm", telegram_send_func=send_fn,
+        )
+        subtasks = [
+            SubTask("기획", "aiorg_product_bot"),
+            SubTask("개발", "aiorg_engineering_bot"),
+        ]
+        # 기존에 감지 못했던 케이스들
+        for msg in ["프론트엔드 기술스택 정해줘", "두 가지 중 골라줘", "장단점 분석해줘"]:
+            result = await orch.detect_discussion_needs(msg, subtasks)
+            assert len(result) == 1, f"'{msg}'에서 토론 감지 실패"
 
 
 class TestStartDiscussions:
