@@ -254,8 +254,12 @@ class PMOrchestrator:
                 dept = task["assigned_dept"]
                 dept_name = KNOWN_DEPTS.get(dept, dept)
                 msg = f"[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정: {task['description'][:300]}"
-                await self._send(chat_id, msg)
+                # DB 먼저 업데이트 — send 실패해도 task_poller가 감지 가능
                 await self._db.update_pm_task_status(tid, "assigned")
+                try:
+                    await self._send(chat_id, msg)
+                except Exception as _e:
+                    logger.warning(f"[PM] 태스크 {tid} 알림 전송 실패 (태스크는 assigned 상태): {_e}")
                 logger.info(f"[PM] 태스크 발송: {tid} → {dept}")
 
         return task_ids
@@ -273,8 +277,11 @@ class PMOrchestrator:
                 dept = task["assigned_dept"]
                 dept_name = KNOWN_DEPTS.get(dept, dept)
                 msg = f"[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정: {task['description'][:300]}"
-                await self._send(chat_id, msg)
                 await self._db.update_pm_task_status(tid, "assigned")
+                try:
+                    await self._send(chat_id, msg)
+                except Exception as _e:
+                    logger.warning(f"[PM] 태스크 {tid} 알림 전송 실패 (태스크는 assigned 상태): {_e}")
 
         # 모든 서브태스크 완료 확인
         task_info = await self._db.get_pm_task(task_id)
