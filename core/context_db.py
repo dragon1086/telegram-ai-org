@@ -433,13 +433,31 @@ class ContextDB:
             return result
 
     async def get_tasks_for_dept(self, dept_id: str, status: str = "assigned") -> list[dict]:
-        """특정 부서에 배정된 태스크 조회 (TaskPoller용)."""
+        """특정 부서에 배정된 태스크 조회 (TaskPoller용).
+
+        'assigned' 태스크 + 의존성이 모두 완료된 'pending' 태스크도 함께 반환.
+        pm_orchestrator 알림 없이도 의존성 체인이 자동 해제된다.
+        """
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM pm_tasks WHERE assigned_dept=? AND status=? ORDER BY created_at",
-                (dept_id, status),
-            )
+            cursor = await db.execute("""
+                SELECT * FROM pm_tasks t
+                WHERE t.assigned_dept = ?
+                  AND t.status NOT IN ('done', 'failed', 'running')
+                  AND (
+                      t.status = 'assigned'
+                      OR (
+                          t.status = 'pending'
+                          AND NOT EXISTS (
+                              SELECT 1 FROM pm_task_dependencies d
+                              JOIN pm_tasks dep ON dep.id = d.depends_on
+                              WHERE d.task_id = t.id
+                                AND dep.status != 'done'
+                          )
+                      )
+                  )
+                ORDER BY t.created_at
+            """, (dept_id,))
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
