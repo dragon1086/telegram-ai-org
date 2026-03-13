@@ -26,9 +26,12 @@ class CodexRunner:
         self.workdir = workdir or str(Path.home() / ".ai-org" / "workspace")
         Path(self.workdir).mkdir(parents=True, exist_ok=True)
 
-    async def run(self, prompt: str, model: str = "codex-davinci-002") -> str:
+    async def run(self, prompt: str, model: str | None = None) -> str:
         """Codex 실행 후 결과 반환."""
-        cmd = [self.cli_path, "--prompt", prompt, "--model", model]
+        # codex exec <PROMPT> — 비인터랙티브 모드, --prompt 플래그 없음
+        cmd = [self.cli_path, "exec", prompt]
+        if model:
+            cmd += ["-c", f"model={model}"]
 
         logger.debug(f"Codex 실행: 프롬프트 {len(prompt)}자")
 
