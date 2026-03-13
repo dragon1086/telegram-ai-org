@@ -13,16 +13,9 @@ from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
 from core.memory_manager import MemoryManager
 from core.llm_provider import get_provider
-
-
-# 알려진 부서 봇 목록
-KNOWN_DEPTS: dict[str, str] = {
-    "aiorg_product_bot": "기획실",
-    "aiorg_engineering_bot": "개발실",
-    "aiorg_design_bot": "디자인실",
-    "aiorg_growth_bot": "성장실",
-    "aiorg_ops_bot": "운영실",
-}
+from core.constants import KNOWN_DEPTS, DEPT_INSTRUCTIONS, DEPT_ROLES
+from core.result_synthesizer import ResultSynthesizer, SynthesisJudgment
+from core.structured_prompt import StructuredPromptGenerator
 
 ENABLE_PM_ORCHESTRATOR = os.environ.get("ENABLE_PM_ORCHESTRATOR", "0") == "1"
 
@@ -64,31 +57,36 @@ class PMOrchestrator:
         self._send = telegram_send_func
         self._discussion = discussion_manager
         self._task_counter = 0
+        self._synthesizer = ResultSynthesizer()
+        self._prompt_gen = StructuredPromptGenerator()
 
     def _next_task_id(self) -> str:
         """프로세스 내 고유 태스크 ID 생성."""
         self._task_counter += 1
         return f"T-{self._org_id}-{self._task_counter:03d}"
 
-    _LLM_DECOMPOSE_PROMPT = (
-        "You are the PM of an AI organization with these departments:\n"
-        "- aiorg_product_bot (기획실): planning, specs, PRD, requirements\n"
-        "- aiorg_engineering_bot (개발실): development, coding, API, bug fixes\n"
-        "- aiorg_design_bot (디자인실): UI/UX design, layouts, visual design\n"
-        "- aiorg_growth_bot (성장실): growth, marketing, analytics, metrics\n"
-        "- aiorg_ops_bot (운영실): operations, deployment, infra, monitoring\n\n"
-        "Break the user's request into specific subtasks for each relevant department.\n"
-        "Each subtask should be a CONCRETE, ACTIONABLE instruction (not the user's raw message).\n\n"
-        "Reply in this exact format (one line per subtask):\n"
-        "DEPT:aiorg_xxx_bot|TASK:specific task description|DEPENDS:comma-separated indices or none\n\n"
-        "Rules:\n"
-        "- Only include departments that are actually needed\n"
-        "- Write task descriptions in Korean, specific to each department's role\n"
-        "- DEPENDS uses 0-based index of prior subtasks (e.g., '0' or '0,1')\n"
-        "- Planning usually comes first, design before engineering, engineering before ops\n"
-        "- If only one department is needed, output just one line\n\n"
-        "User request: {message}"
-    )
+    @staticmethod
+    def _build_decompose_prompt(message: str) -> str:
+        """KNOWN_DEPTS + DEPT_ROLES에서 동적으로 LLM 분해 프롬프트 생성."""
+        dept_lines = "\n".join(
+            f"- {org_id} ({dept_name}): {DEPT_ROLES.get(org_id, dept_name)}"
+            for org_id, dept_name in KNOWN_DEPTS.items()
+        )
+        return (
+            f"You are the PM of an AI organization with these departments:\n"
+            f"{dept_lines}\n\n"
+            f"Break the user's request into specific subtasks for each relevant department.\n"
+            f"Each subtask should be a CONCRETE, ACTIONABLE instruction (not the user's raw message).\n\n"
+            f"Reply in this exact format (one line per subtask):\n"
+            f"DEPT:<org_id>|TASK:specific task description|DEPENDS:comma-separated indices or none\n\n"
+            f"Rules:\n"
+            f"- Only include departments that are actually needed\n"
+            f"- Write task descriptions in Korean, specific to each department's role\n"
+            f"- DEPENDS uses 0-based index of prior subtasks (e.g., '0' or '0,1')\n"
+            f"- Planning usually comes first, design before engineering, engineering before ops\n"
+            f"- If only one department is needed, output just one line\n\n"
+            f"User request: {message[:500]}"
+        )
 
     async def decompose(self, user_message: str) -> list[SubTask]:
         """사용자 메시지를 부서별 서브태스크로 분해.
@@ -110,7 +108,7 @@ class PMOrchestrator:
         if provider is None:
             return []
 
-        prompt = self._LLM_DECOMPOSE_PROMPT.format(message=user_message[:500])
+        prompt = self._build_decompose_prompt(user_message)
         try:
             response = await asyncio.wait_for(
                 provider.complete(prompt, timeout=15.0),
@@ -156,75 +154,65 @@ class PMOrchestrator:
             ))
         return subtasks
 
-    # 부서별 역할 특화 지시 템플릿 (키워드 fallback용)
-    _DEPT_INSTRUCTIONS: dict[str, str] = {
-        "aiorg_product_bot": "다음 요청에 대해 기획/요구사항 관점에서 분석하고 PRD 또는 스펙 문서를 작성하세요",
-        "aiorg_engineering_bot": "다음 요청에 대해 기술적 관점에서 분석하고 코드 구현 계획 또는 구현을 수행하세요",
-        "aiorg_design_bot": "다음 요청에 대해 UI/UX 관점에서 분석하고 디자인 방안을 제시하세요",
-        "aiorg_growth_bot": "다음 요청에 대해 성장/마케팅 관점에서 분석하고 전략을 수립하세요",
-        "aiorg_ops_bot": "다음 요청에 대해 운영/인프라 관점에서 분석하고 배포 및 모니터링 계획을 수립하세요",
+    # 부서별 키워드 매핑 — 키워드 기반 fallback 분해용
+    _DEPT_KEYWORDS: dict[str, list[str]] = {
+        "aiorg_product_bot": ["기획", "스펙", "요구사항", "prd", "plan"],
+        "aiorg_engineering_bot": ["개발", "구현", "코딩", "코드", "api", "build", "fix", "버그"],
+        "aiorg_design_bot": ["디자인", "ui", "ux", "화면", "레이아웃", "design"],
+        "aiorg_growth_bot": ["성장", "마케팅", "분석", "지표", "growth", "marketing"],
+        "aiorg_ops_bot": ["운영", "배포", "인프라", "모니터링", "deploy", "ops"],
     }
+
+    # 부서 간 의존 순서 (index가 낮을수록 먼저)
+    _DEPT_ORDER = [
+        "aiorg_product_bot",
+        "aiorg_design_bot",
+        "aiorg_engineering_bot",
+        "aiorg_growth_bot",
+        "aiorg_ops_bot",
+    ]
 
     def _keyword_decompose(self, user_message: str) -> list[SubTask]:
         """키워드 기반 태스크 분해 (fallback).
 
-        각 부서에 역할 특화 지시문 + 사용자 원문을 전달.
+        KNOWN_DEPTS + DEPT_INSTRUCTIONS에서 동적으로 부서를 매칭.
         """
         subtasks: list[SubTask] = []
         msg_lower = user_message.lower()
         short_msg = user_message[:200]
 
-        needs_product = any(kw in msg_lower for kw in ["기획", "스펙", "요구사항", "prd", "plan"])
-        needs_engineering = any(kw in msg_lower for kw in ["개발", "구현", "코딩", "코드", "api", "build", "fix", "버그"])
-        needs_design = any(kw in msg_lower for kw in ["디자인", "ui", "ux", "화면", "레이아웃", "design"])
-        needs_growth = any(kw in msg_lower for kw in ["성장", "마케팅", "분석", "지표", "growth", "marketing"])
-        needs_ops = any(kw in msg_lower for kw in ["운영", "배포", "인프라", "모니터링", "deploy", "ops"])
+        # 키워드 매칭으로 필요한 부서 탐지
+        matched_depts: list[str] = []
+        for dept in self._DEPT_ORDER:
+            if dept not in KNOWN_DEPTS:
+                continue
+            keywords = self._DEPT_KEYWORDS.get(dept, [])
+            if any(kw in msg_lower for kw in keywords):
+                matched_depts.append(dept)
 
-        if needs_product:
+        # 매칭된 부서별 서브태스크 생성 (순서에 따른 의존성)
+        for dept in matched_depts:
+            instruction = DEPT_INSTRUCTIONS.get(dept, f"{KNOWN_DEPTS[dept]} 업무를 수행하세요")
+            deps: list[str] = []
+            # 앞 순서 부서에 의존
+            for i, prev in enumerate(subtasks):
+                prev_order = self._DEPT_ORDER.index(prev.assigned_dept) if prev.assigned_dept in self._DEPT_ORDER else 99
+                curr_order = self._DEPT_ORDER.index(dept) if dept in self._DEPT_ORDER else 99
+                if prev_order < curr_order:
+                    deps.append(str(i))
             subtasks.append(SubTask(
-                description=f"{self._DEPT_INSTRUCTIONS['aiorg_product_bot']}: {short_msg}",
-                assigned_dept="aiorg_product_bot",
-            ))
-        if needs_design:
-            deps = ["0"] if needs_product else []
-            subtasks.append(SubTask(
-                description=f"{self._DEPT_INSTRUCTIONS['aiorg_design_bot']}: {short_msg}",
-                assigned_dept="aiorg_design_bot",
-                depends_on=deps,
-            ))
-        if needs_engineering:
-            deps = []
-            if needs_product:
-                deps.append("0")
-            if needs_design:
-                deps.append(str(len(subtasks) - 1) if needs_design else "")
-            deps = [d for d in deps if d]
-            subtasks.append(SubTask(
-                description=f"{self._DEPT_INSTRUCTIONS['aiorg_engineering_bot']}: {short_msg}",
-                assigned_dept="aiorg_engineering_bot",
-                depends_on=deps,
-            ))
-        if needs_growth:
-            subtasks.append(SubTask(
-                description=f"{self._DEPT_INSTRUCTIONS['aiorg_growth_bot']}: {short_msg}",
-                assigned_dept="aiorg_growth_bot",
-            ))
-        if needs_ops:
-            eng_idx = None
-            for i, st in enumerate(subtasks):
-                if st.assigned_dept == "aiorg_engineering_bot":
-                    eng_idx = str(i)
-            deps = [eng_idx] if eng_idx else []
-            subtasks.append(SubTask(
-                description=f"{self._DEPT_INSTRUCTIONS['aiorg_ops_bot']}: {short_msg}",
-                assigned_dept="aiorg_ops_bot",
+                description=f"{instruction}: {short_msg}",
+                assigned_dept=dept,
                 depends_on=deps,
             ))
 
+        # 매칭 없으면 첫 번째 부서(기획)로 fallback
         if not subtasks:
+            first_dept = next(iter(KNOWN_DEPTS))
+            instruction = DEPT_INSTRUCTIONS.get(first_dept, "요청을 분석하세요")
             subtasks.append(SubTask(
-                description=f"{self._DEPT_INSTRUCTIONS['aiorg_product_bot']}: {user_message[:500]}",
-                assigned_dept="aiorg_product_bot",
+                description=f"{instruction}: {user_message[:500]}",
+                assigned_dept=first_dept,
             ))
 
         return subtasks
@@ -234,12 +222,19 @@ class PMOrchestrator:
         """서브태스크를 ContextDB에 생성하고 TaskGraph 구성 후 첫 번째 웨이브 발송."""
         task_ids: list[str] = []
 
-        # 1. 서브태스크 생성
+        # 1. 서브태스크 생성 (구조화 프롬프트 적용)
         for st in subtasks:
             tid = self._next_task_id()
+            # 구조화 프롬프트 생성
+            structured = await self._prompt_gen.generate(
+                description=st.description,
+                dept=st.assigned_dept,
+            )
+            full_description = structured.render()
+
             await self._db.create_pm_task(
                 task_id=tid,
-                description=st.description,
+                description=full_description,
                 assigned_dept=st.assigned_dept,
                 created_by=self._org_id,
                 parent_id=parent_task_id,
@@ -287,19 +282,63 @@ class PMOrchestrator:
             parent_id = task_info["parent_id"]
             siblings = await self._db.get_subtasks(parent_id)
             if all(s["status"] == "done" for s in siblings):
-                summary = await self.consolidate_results(parent_id)
-                await self._send(chat_id, f"✅ 모든 부서 작업 완료!\n\n{summary}")
-                await self._db.update_pm_task_status(parent_id, "done", result=summary)
+                await self._synthesize_and_act(parent_id, siblings, chat_id)
 
-    async def consolidate_results(self, parent_task_id: str) -> str:
-        """서브태스크 결과를 하나의 요약으로 통합."""
-        subtasks = await self._db.get_subtasks(parent_task_id)
-        lines: list[str] = []
-        for st in subtasks:
-            dept_name = KNOWN_DEPTS.get(st.get("assigned_dept", ""), st.get("assigned_dept", "?"))
-            result = st.get("result", "(결과 없음)")
-            lines.append(f"**{dept_name}**: {result[:200]}")
-        return "\n".join(lines)
+    async def _synthesize_and_act(
+        self, parent_task_id: str, subtasks: list[dict], chat_id: int,
+    ) -> None:
+        """부서 결과를 합성하고 판단에 따라 후속 조치."""
+        # 원래 요청 복원
+        parent = await self._db.get_pm_task(parent_task_id)
+        original_request = parent["description"][:500] if parent else ""
+
+        synthesis = await self._synthesizer.synthesize(original_request, subtasks)
+        logger.info(
+            f"[PM] 결과 합성: {parent_task_id} → {synthesis.judgment.value}"
+        )
+
+        if synthesis.judgment == SynthesisJudgment.SUFFICIENT:
+            report = synthesis.unified_report or synthesis.summary
+            await self._send(chat_id, f"✅ 모든 부서 작업 완료!\n\n{report}")
+            await self._db.update_pm_task_status(
+                parent_task_id, "done", result=report,
+            )
+        elif synthesis.judgment == SynthesisJudgment.INSUFFICIENT:
+            await self._send(
+                chat_id,
+                f"⚠️ 결과 부족 — 추가 작업 배분 중...\n"
+                f"사유: {synthesis.reasoning}\n\n{synthesis.summary}",
+            )
+            if synthesis.follow_up_tasks:
+                follow_ups = [
+                    SubTask(
+                        description=ft["description"],
+                        assigned_dept=ft["dept"],
+                    )
+                    for ft in synthesis.follow_up_tasks
+                ]
+                await self.dispatch(parent_task_id, follow_ups, chat_id)
+            else:
+                # LLM이 follow-up을 안 줬으면 보고만
+                await self._db.update_pm_task_status(
+                    parent_task_id, "done", result=synthesis.summary,
+                )
+        elif synthesis.judgment == SynthesisJudgment.CONFLICTING:
+            await self._send(
+                chat_id,
+                f"⚠️ 부서 간 결과 충돌 감지\n"
+                f"사유: {synthesis.reasoning}\n\n{synthesis.summary}\n\n"
+                f"조율이 필요합니다.",
+            )
+            await self._db.update_pm_task_status(
+                parent_task_id, "needs_review", result=synthesis.summary,
+            )
+        else:  # NEEDS_INTEGRATION
+            report = synthesis.unified_report or synthesis.summary
+            await self._send(chat_id, f"📋 결과 통합 보고서:\n\n{report}")
+            await self._db.update_pm_task_status(
+                parent_task_id, "done", result=report,
+            )
 
     # ── Discussion Integration ────────────────────────────────────────────
 
