@@ -519,23 +519,27 @@ class TelegramRelay:
         if update.message is None:
             return
 
-        sess_status = self.session_manager.status()
-        mem_stats = self.memory_manager.stats()
-        specialties = self.identity.get_specialty_text() or "없음"
+        try:
+            sess_status = self.session_manager.status()
+            mem_stats = self.memory_manager.stats()
+            specialties = self.identity.get_specialty_text() or "없음"
 
-        text = (
-            f"**세션 상태**\n"
-            f"  tmux 사용 가능: {sess_status.get('tmux', False)}\n"
-            f"  활성 세션: {', '.join(sess_status.get('sessions', [])) or '없음'}\n\n"
-            f"**PM 정체성 [{self.org_id}]**\n"
-            f"  전문분야: {specialties}\n\n"
-            f"**메모리 ({mem_stats['scope']})**\n"
-            f"  CORE: {mem_stats['core']}개\n"
-            f"  SUMMARY: {mem_stats['summary']}개\n"
-            f"  LOG: {mem_stats['log']}개\n\n"
-            f"메시지 카운터: {self._message_count}"
-        )
-        await update.message.reply_text(text, parse_mode="Markdown")
+            text = (
+                f"📊 *세션 상태*\n"
+                f"  tmux 사용 가능: {sess_status.get('tmux', False)}\n"
+                f"  활성 세션: {', '.join(sess_status.get('sessions', [])) or '없음'}\n\n"
+                f"*PM 정체성* [{self.org_id}]\n"
+                f"  전문분야: {specialties}\n\n"
+                f"*메모리* ({mem_stats['scope']})\n"
+                f"  CORE: {mem_stats['core']}개\n"
+                f"  SUMMARY: {mem_stats['summary']}개\n"
+                f"  LOG: {mem_stats['log']}개\n\n"
+                f"메시지 카운터: {self._message_count}"
+            )
+            await update.message.reply_text(text, parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"/status 처리 실패: {e}")
+            await update.message.reply_text(f"⚠️ 상태 조회 실패: {e}")
 
     async def on_command_reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """세션 writeback + 리셋."""
@@ -583,7 +587,7 @@ class TelegramRelay:
                 f"전문분야: {', '.join(d.get('specialties', [])) or '미설정'}\n"
                 f"방향성: {d.get('direction', '미설정')}\n\n"
                 f"*설정 변경 명령어*\n"
-                f"`/pm set@{bot_name} 역할|전문분야1,분야2|방향성`\n"
+                f"`/org@{bot_name} 역할|전문분야1,분야2|방향성`\n"
                 f"`/org add@{bot_name} <이름> [engine]`\n\n"
                 f"💡 그룹방에서는 `/명령어@{bot_name}` 형식으로 사용하세요."
             )
@@ -995,7 +999,7 @@ class TelegramRelay:
                 me = await context.bot.get_me()
                 bot_name = me.username or "봇이름"
                 msg = (
-                    f"🏢 **{self.org_id} 조직 정체성**\n\n"
+                    f"🏢 *{self.org_id} 조직 정체성*\n\n"
                     f"현재 설정:\n"
                     f"• 역할: {d.get('role','미설정')}\n"
                     f"• 전문분야: {', '.join(d.get('specialties', [])) or '미설정'}\n"
@@ -1024,7 +1028,7 @@ class TelegramRelay:
                 self.identity.update(new_data)
                 d = self.identity._data
                 msg = (
-                    f"✅ **{self.org_id} 정체성 업데이트!**\n\n"
+                    f"✅ *{self.org_id} 정체성 업데이트!*\n\n"
                     f"역할: {d.get('role','')}\n"
                     f"전문분야: {', '.join(d.get('specialties', []))}\n"
                     f"방향성: {d.get('direction','')}\n\n"
@@ -1113,56 +1117,65 @@ class TelegramRelay:
             await update.message.reply_text("🔄 PM 세션 초기화됨")
             return
 
-        # /pm — 다중 PM 관리
+        # /pm — /org 로 통합 (하위 호환 리다이렉트)
         if cmd == "/pm":
             parts = arg.split(None, 1)
-            sub = parts[0].lower() if parts else "list"
+            sub = parts[0].lower() if parts else ""
             sub_arg = parts[1] if len(parts) > 1 else ""
 
-            if not arg or sub == "list":
-                me = await context.bot.get_me()
-                bot_name = me.username or "봇이름"
-                d = self.identity._data
-                msg = (
-                    f"🤖 **PM 정체성**\n\n"
-                    f"현재 설정:\n"
-                    f"• 역할: {d.get('role','미설정')}\n"
-                    f"• 전문분야: {', '.join(d.get('specialties', [])) or '미설정'}\n"
-                    f"• 방향성: {d.get('direction','미설정')}\n\n"
-                    f"⚙️ 설정 방법:\n"
-                    f"`/pm set@{bot_name} 역할|전문분야|방향성`\n\n"
-                    f"예시:\n"
-                    f"  • `/pm set@{bot_name} 시니어PM|모바일,앱|린스타트업`\n"
-                    f"  • `/pm set@{bot_name} 주니어PM|기획,분석|데이터드리븐`\n\n"
-                    f"_여러 PM이 있으면 각 봇마다 이 명령어가 표시됩니다_"
-                )
-                await update.message.reply_text(msg, parse_mode="Markdown")
-
-            elif sub == "set":
-                # /pm set 역할|전문분야|방향성
-                fields = [f.strip() for f in sub_arg.split("|")]
-                new_data: dict = {}
-                if len(fields) >= 1 and fields[0]: new_data["role"] = fields[0]
-                if len(fields) >= 2 and fields[1]: new_data["specialties"] = [s.strip() for s in fields[1].split(",")]
-                if len(fields) >= 3 and fields[2]: new_data["direction"] = fields[2]
-                if new_data:
-                    self.identity.update(new_data)
-                    d = self.identity._data
-                    await update.message.reply_text(
-                        f"✅ **{self.org_id} 업데이트!**\n"
-                        f"역할: {d.get('role','')}\n"
-                        f"전문분야: {', '.join(d.get('specialties',[]))}\n"
-                        f"방향성: {d.get('direction','')}",
-                        parse_mode="Markdown"
-                    )
-                else:
-                    await update.message.reply_text("사용법: `/pm set 역할|전문분야1,분야2|방향성`", parse_mode="Markdown")
-
-            elif sub == "delete":
+            if sub == "delete":
                 await update.message.reply_text(
                     f"⚠️ PM 삭제는 봇을 그룹에서 내보내고\n"
                     f"`~/.ai-org/memory/pm_{self.org_id}.md` 삭제 후\n"
                     f"봇을 재시작하면 됩니다."
+                )
+                return
+
+            # /pm set 역할|... → /org 로 위임하여 처리
+            if sub == "set" and sub_arg:
+                identity_arg = sub_arg
+            else:
+                identity_arg = ""
+
+            if identity_arg:
+                # 정체성 업데이트 (빈 필드 skip)
+                id_parts = [p.strip() for p in identity_arg.split("|")]
+                new_data: dict = {}
+                if len(id_parts) >= 1 and id_parts[0]:
+                    new_data["role"] = id_parts[0]
+                if len(id_parts) >= 2 and id_parts[1]:
+                    new_data["specialties"] = [s.strip() for s in id_parts[1].split(",") if s.strip()]
+                if len(id_parts) >= 3 and id_parts[2]:
+                    new_data["direction"] = id_parts[2]
+                if new_data:
+                    self.identity.update(new_data)
+                    d = self.identity._data
+                    await update.message.reply_text(
+                        f"✅ *{self.org_id} 정체성 업데이트!*\n\n"
+                        f"역할: {d.get('role','')}\n"
+                        f"전문분야: {', '.join(d.get('specialties',[]))}\n"
+                        f"방향성: {d.get('direction','')}\n\n"
+                        f"💡 앞으로는 `/org` 명령어를 사용해주세요.",
+                        parse_mode="Markdown"
+                    )
+                else:
+                    await update.message.reply_text(
+                        "사용법: `/org@봇이름 역할|전문분야1,분야2|방향성`",
+                        parse_mode="Markdown"
+                    )
+            else:
+                # 현재 상태 + 리다이렉트 안내
+                me = await context.bot.get_me()
+                bot_name = me.username or "봇이름"
+                d = self.identity._data
+                await update.message.reply_text(
+                    f"ℹ️ `/pm` 명령어는 `/org`로 통합되었습니다.\n\n"
+                    f"현재 설정:\n"
+                    f"• 역할: {d.get('role','미설정')}\n"
+                    f"• 전문분야: {', '.join(d.get('specialties', [])) or '미설정'}\n"
+                    f"• 방향성: {d.get('direction','미설정')}\n\n"
+                    f"⚙️ 설정: `/org@{bot_name} 역할|전문분야|방향성`",
+                    parse_mode="Markdown"
                 )
             return
 
@@ -1225,8 +1238,7 @@ class TelegramRelay:
                 f"🔧 **설정**\n"
                 f"`/org` — 조직 정체성 조회·설정\n"
                 f"  예) `/org@{bot_name} 프로덕트PM|기획,UX|사용자중심`\n"
-                f"`/pm` — PM 정체성 조회·설정\n"
-                f"  예) `/pm set@{bot_name} 시니어PM|모바일|린스타트업`\n\n"
+                f"`/pm` — `/org`와 동일 (하위 호환)\n\n"
                 f"📊 **조회**\n"
                 f"`/status` — 봇 상태 확인\n"
                 f"`/team` — 전체 팀 현황\n"
@@ -1288,20 +1300,31 @@ def _append_env_var(key: str, value: str) -> None:
     env_path.write_text("\n".join(new_lines) + "\n")
 
 
-def _create_bot_config(username: str, token_env: str, org_id: str, chat_id: int, engine: str = "claude-code") -> None:
+def _create_bot_config(
+    username: str, token_env: str, org_id: str, chat_id: int,
+    engine: str = "claude-code",
+    dept_name: str = "", role: str = "", instruction: str = "",
+) -> None:
     """bots/ 디렉토리에 봇 설정 YAML 파일을 생성한다."""
     import datetime
     bots_dir = Path(__file__).parent.parent / "bots"
     bots_dir.mkdir(exist_ok=True)
     config_path = bots_dir / f"{username}.yaml"
-    config_path.write_text(
-        f"# 자동 생성 봇 설정 — {datetime.datetime.now().isoformat()}\n"
-        f"username: \"{username}\"\n"
-        f"org_id: \"{org_id}\"\n"
-        f"token_env: \"{token_env}\"\n"
-        f"chat_id: {chat_id}\n"
-        f"engine: \"{engine}\"\n"
-    )
+    lines = [
+        f"# 자동 생성 봇 설정 — {datetime.datetime.now().isoformat()}",
+        f'username: "{username}"',
+        f'org_id: "{org_id}"',
+        f'token_env: "{token_env}"',
+        f"chat_id: {chat_id}",
+        f'engine: "{engine}"',
+    ]
+    if dept_name:
+        lines.append(f'dept_name: "{dept_name}"')
+    if role:
+        lines.append(f'role: "{role}"')
+    if instruction:
+        lines.append(f'instruction: "{instruction}"')
+    config_path.write_text("\n".join(lines) + "\n")
 
 
 def _launch_bot_subprocess(token: str, org_id: str, chat_id: int) -> int:
