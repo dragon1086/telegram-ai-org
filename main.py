@@ -86,7 +86,7 @@ if __name__ == "__main__":
         import asyncio as _aio
         from core.context_db import ContextDB
         context_db = ContextDB()
-        _aio.get_event_loop().run_until_complete(context_db.initialize())
+        _aio.run(context_db.initialize())
 
     relay = TelegramRelay(
         token=token,
@@ -113,7 +113,7 @@ if __name__ == "__main__":
                 # Application 완전 종료 후 충분히 대기
                 try:
                     import asyncio
-                    asyncio.get_event_loop().run_until_complete(app.shutdown())
+                    asyncio.run(app.shutdown())
                 except Exception:
                     pass
                 print(f'[CONFLICT] Telegram 서버 연결 만료 대기 ({CONFLICT_WAIT}초)...', flush=True)
