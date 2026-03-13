@@ -9,7 +9,6 @@ role: "프로젝트 총괄/부서 조율/진행 관리"
 is_pm: true
 
 team_config:
-  preferred_agents: ["analyst", "planner", "executor"]
   avoid_agents: []
   max_team_size: 5
   guidance: "태스크 분해 후 적절한 부서에 위임. 크로스-팀 협업 우선."

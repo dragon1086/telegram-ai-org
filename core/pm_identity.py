@@ -112,13 +112,13 @@ class PMIdentity:
             "solo": "단독 실행",
         }
 
-        # 전문분야 기반 추천 에이전트 (최대 5개)
+        # 전문분야 기반 추천 에이전트 (최대 5개, LLM 기반)
         recommend_line = ""
         try:
-            from tools.agent_catalog_v2 import recommend_agents
-            recommended = recommend_agents(spec_text, max_agents=5)
+            from tools.agent_catalog_v2 import recommend_agents_llm_sync
+            recommended = recommend_agents_llm_sync(role, spec_text, max_agents=5)
             if recommended:
-                recommend_line = f"\n추천 (전문분야 기반): {', '.join(recommended)}"
+                recommend_line = f"\n추천 (태스크+전문분야 기반): {', '.join(recommended)}"
         except Exception:
             pass
 
@@ -129,14 +129,11 @@ class PMIdentity:
         team_cfg = self._load_team_config()
         team_config_section = ""
         if team_cfg:
-            preferred = team_cfg.get("preferred_agents", [])
             avoid = team_cfg.get("avoid_agents", [])
             max_size = team_cfg.get("max_team_size", 5)
             escalate = team_cfg.get("escalate_to", "")
             guidance = team_cfg.get("guidance", "")
             lines = []
-            if preferred:
-                lines.append(f"- 선호 에이전트: {', '.join(preferred)}")
             if avoid:
                 lines.append(f"- 제외 에이전트: {', '.join(avoid)}")
             if max_size:
@@ -174,6 +171,7 @@ class PMIdentity:
 
 ## 에이전트
 전체 목록: ~/.claude/agents/ (팀 구성 전 ls로 확인 후 실제 존재하는 에이전트만 사용){recommend_line}
+- 에이전트 선택 원칙: 태스크 수신 시 ~/.claude/agents/ 를 ls로 확인 후, 태스크에 가장 적합한 에이전트 파일만 개별 Read해서 팀 구성. 전체 목록을 한번에 읽지 말 것 (토큰 낭비).
 {colleague_section}{team_config_section}
 ## 팀 구성 원칙 (필수 준수)
 
