@@ -29,7 +29,7 @@ class CodexRunner:
     async def run(self, prompt: str, model: str | None = None) -> str:
         """Codex 실행 후 결과 반환."""
         # codex exec <PROMPT> — 비인터랙티브 모드, --prompt 플래그 없음
-        cmd = [self.cli_path, "exec", prompt]
+        cmd = [self.cli_path, "exec", "--skip-git-repo-check", prompt]
         if model:
             cmd += ["-c", f"model={model}"]
 
