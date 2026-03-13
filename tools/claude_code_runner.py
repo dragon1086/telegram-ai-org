@@ -12,8 +12,6 @@ from loguru import logger
 
 from core.session_store import SessionStore
 from core.global_context import GlobalContext
-from tools.team_strategy import get_strategy
-from tools.agent_catalog_v2 import recommend_agents
 
 FILE_PATTERN = re.compile(r"(?:저장[됨했]|생성[됨했]|작성[됨했]):?\s*([~/\w\-\.]+\.\w+)")
 
@@ -93,7 +91,7 @@ class ClaudeCodeRunner:
 
         # 글로벌 맥락 주입
         if global_context:
-            ctx_prompt = global_context.build_system_prompt(org_id)
+            ctx_prompt = await global_context.build_system_prompt(org_id, task)
             if ctx_prompt:
                 cmd.extend(["--append-system-prompt", ctx_prompt])
 
@@ -102,7 +100,7 @@ class ClaudeCodeRunner:
 
         # 작업 완료 후 핵심 내용 추출 → global_context 저장
         if global_context and result:
-            global_context.extract_and_save(org_id, task, result)
+            await global_context.extract_and_save(org_id, task, result)
 
         return result
 
@@ -166,7 +164,7 @@ class ClaudeCodeRunner:
 
         # 글로벌 맥락 주입
         if global_context:
-            ctx_prompt = global_context.build_system_prompt(org_id)
+            ctx_prompt = await global_context.build_system_prompt(org_id, task)
             if ctx_prompt:
                 cmd.extend(["--append-system-prompt", ctx_prompt])
 
@@ -175,7 +173,7 @@ class ClaudeCodeRunner:
 
         # 작업 완료 후 핵심 내용 추출 → global_context 저장
         if global_context and result:
-            global_context.extract_and_save(org_id, task, result)
+            await global_context.extract_and_save(org_id, task, result)
 
         return result
 
@@ -251,25 +249,19 @@ class ClaudeCodeRunner:
             "--print",
         ]
 
+        # system_prompt + global_context → 단일 --append-system-prompt
+        parts: list[str] = []
         if system_prompt:
-            cmd.extend(["--append-system-prompt", system_prompt])
-
+            parts.append(system_prompt)
+        parts.append("팀 구성 여부는 태스크 복잡도에 따라 당신이 판단하세요.")
         if global_context:
-            ctx = global_context.build_system_prompt(org_id)
+            ctx = await global_context.build_system_prompt(org_id, task)
             if ctx:
-                cmd.extend(["--append-system-prompt", ctx])
+                parts.append(ctx)
+        combined = "\n\n".join(parts)
+        cmd.extend(["--append-system-prompt", combined])
 
-        # TEAM_REQUEST 감지용 프리패스 (빠른 키워드 체크)
-        needs_team = len(task) > 30 or any(
-            k in task for k in ["분석", "개발", "작성", "기획", "전략", "구현", "보고서", "평가"]
-        )
-
-        if needs_team:
-            agents = recommend_agents(task)
-            strategy = get_strategy()
-            cmd = strategy.build_cmd(task, agents, cmd)
-        else:
-            cmd.append(task)
+        cmd.append(task)
 
         logger.info(f"[run_task] org_id={org_id}, task={task[:60]}")
         result = await self._run_stream_json(
@@ -279,7 +271,7 @@ class ClaudeCodeRunner:
         )
 
         if global_context and result:
-            global_context.extract_and_save(org_id, task, result)
+            await global_context.extract_and_save(org_id, task, result)
 
         return result
 
