@@ -46,6 +46,7 @@ from core.discussion import ENABLE_DISCUSSION_PROTOCOL
 from core.dispatch_engine import ENABLE_AUTO_DISPATCH
 from core.verification import ENABLE_CROSS_VERIFICATION
 from core.goal_tracker import ENABLE_GOAL_TRACKER
+from core.task_poller import TaskPoller
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
@@ -160,6 +161,15 @@ class TelegramRelay:
                 orchestrator=self._pm_orchestrator,
                 telegram_send_func=self._pm_send_message,
                 org_id=org_id,
+            )
+
+        # TaskPoller — 부서 봇이 ContextDB를 폴링하여 PM 배정 태스크 수신
+        self._task_poller: TaskPoller | None = None
+        if self._is_dept_org and context_db is not None:
+            self._task_poller = TaskPoller(
+                context_db=context_db,
+                org_id=org_id,
+                on_task=self._execute_polled_task,
             )
 
     async def _pm_send_message(self, chat_id: int, text: str) -> None:
@@ -694,11 +704,20 @@ class TelegramRelay:
 
     # ── 앱 빌드 ───────────────────────────────────────────────────────────
 
+    async def _post_init(self, application: Application) -> None:
+        """Application 초기화 후 백그라운드 작업 시작."""
+        if self._task_poller is not None:
+            self._task_poller.start()
+            logger.info(f"[{self.org_id}] TaskPoller 시작됨")
+
     def build(self) -> Application:
         """텔레그램 Application 빌드."""
         from telegram.request import HTTPXRequest
         req = HTTPXRequest(connection_pool_size=1)
-        self.app = Application.builder().token(self.token).request(req).build()
+        builder = Application.builder().token(self.token).request(req)
+        if self._task_poller is not None:
+            builder = builder.post_init(self._post_init)
+        self.app = builder.build()
 
         # /setup 마법사 — ConversationHandler로 다단계 대화 처리
         setup_conv = ConversationHandler(
@@ -764,7 +783,11 @@ class TelegramRelay:
     async def _handle_pm_task(
         self, text: str, update, context
     ) -> None:
-        """PM 오케스트레이터가 배정한 [PM_TASK:task_id|dept:org_id] 처리."""
+        """PM 오케스트레이터가 배정한 [PM_TASK:task_id|dept:org_id] 처리.
+
+        Telegram bot-to-bot 메시지용 핸들러 (fallback).
+        주요 경로는 TaskPoller를 통한 _execute_polled_task.
+        """
         import re as _re
         match = _re.search(r'\[PM_TASK:([^|]+)\|dept:([^\]]+)\]', text)
         if not match:
@@ -787,10 +810,48 @@ class TelegramRelay:
             logger.warning(f"[{self.org_id}] PM_TASK {task_id} ContextDB에 없음")
             return
 
+        await self._execute_pm_task(task_info)
+
+    async def _execute_polled_task(self, task_info: dict) -> None:
+        """TaskPoller 콜백 — ContextDB에서 감지된 태스크 실행."""
+        await self._execute_pm_task(task_info)
+
+    async def _execute_pm_task(self, task_info: dict) -> None:
+        """PM 배정 태스크 실행 (공통 로직).
+
+        Telegram 핸들러와 TaskPoller 양쪽에서 호출.
+        """
+        task_id = task_info["id"]
         description = task_info.get("description", "")
-        logger.info(f"[{self.org_id}] PM_TASK 수신: {task_id} — {description[:80]}")
+        dept_name = KNOWN_DEPTS.get(self.org_id, self.org_id)
+
+        logger.info(f"[{self.org_id}] PM_TASK 실행 시작: {task_id} — {description[:80]}")
+
+        if self.context_db is None:
+            return
 
         await self.context_db.update_pm_task_status(task_id, "running")
+
+        # 진행 상태 알림 전송
+        progress_msg = f"🔄 {dept_name}: 작업 시작 — {description[:100]}"
+        if self.app and self.app.bot:
+            await self.display.send_to_chat(self.app.bot, self.allowed_chat_id, progress_msg)
+
+        # 진행 콜백: Claude Code 스트리밍 출력을 텔레그램으로 중계
+        last_progress_time = [0.0]  # mutable for closure
+
+        async def on_progress(line: str) -> None:
+            now = time.time()
+            # 5초 간격으로 진행 상태 전송 (도배 방지)
+            if now - last_progress_time[0] < 5.0:
+                return
+            last_progress_time[0] = now
+            short = line.strip()[:150]
+            if short and self.app and self.app.bot:
+                await self.display.send_to_chat(
+                    self.app.bot, self.allowed_chat_id,
+                    f"🔄 {dept_name}: {short}",
+                )
 
         # Claude Code / Codex로 태스크 실행
         try:
@@ -801,7 +862,7 @@ class TelegramRelay:
             response = await runner.run_task(
                 task=description,
                 system_prompt=system_prompt,
-                progress_callback=None,
+                progress_callback=on_progress,
                 session_store=self.session_store,
                 global_context=self.global_context,
                 org_id=self.org_id,
@@ -812,13 +873,19 @@ class TelegramRelay:
             logger.info(f"[{self.org_id}] PM_TASK {task_id} 완료")
 
             # 결과를 채팅방에 공유
-            summary = f"✅ [{self.org_id}] 태스크 {task_id} 완료\n{result[:300]}"
+            summary = f"✅ [{dept_name}] 태스크 {task_id} 완료\n{result[:300]}"
             if self.app and self.app.bot:
                 await self.display.send_to_chat(self.app.bot, self.allowed_chat_id, summary)
 
         except Exception as e:
             logger.error(f"[{self.org_id}] PM_TASK {task_id} 실행 실패: {e}")
             await self.context_db.update_pm_task_status(task_id, "failed", result=str(e))
+            # 실패 알림
+            if self.app and self.app.bot:
+                await self.display.send_to_chat(
+                    self.app.bot, self.allowed_chat_id,
+                    f"❌ [{dept_name}] 태스크 {task_id} 실패: {e}",
+                )
 
     async def _handle_collab_request(
         self, text: str, update, context
