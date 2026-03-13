@@ -56,12 +56,31 @@ class PMOrchestrator:
         self._org_id = org_id
         self._send = telegram_send_func
         self._discussion = discussion_manager
-        self._task_counter = 0
+        self._task_counter: int | None = None  # DB에서 지연 초기화
         self._synthesizer = ResultSynthesizer()
         self._prompt_gen = StructuredPromptGenerator()
 
-    def _next_task_id(self) -> str:
-        """프로세스 내 고유 태스크 ID 생성."""
+    async def _next_task_id(self) -> str:
+        """DB 최대값 기반 고유 태스크 ID 생성 (재시작 후 중복 방지)."""
+        if self._task_counter is None:
+            # DB에서 현재 org의 최대 counter 값 로드
+            try:
+                import aiosqlite, re
+                async with aiosqlite.connect(self._db.db_path) as db:
+                    prefix = f"T-{self._org_id}-"
+                    cursor = await db.execute(
+                        "SELECT id FROM pm_tasks WHERE id LIKE ? ORDER BY id DESC LIMIT 1",
+                        (prefix + "%",),
+                    )
+                    row = await cursor.fetchone()
+                if row:
+                    m = re.search(r"-(\d+)$", row[0])
+                    self._task_counter = int(m.group(1)) if m else 0
+                else:
+                    self._task_counter = 0
+                logger.debug(f"[PM] task_counter 초기화: {self._task_counter}")
+            except Exception:
+                self._task_counter = 0
         self._task_counter += 1
         return f"T-{self._org_id}-{self._task_counter:03d}"
 
@@ -224,7 +243,7 @@ class PMOrchestrator:
 
         # 1. 서브태스크 생성 (구조화 프롬프트 적용)
         for st in subtasks:
-            tid = self._next_task_id()
+            tid = await self._next_task_id()
             # 구조화 프롬프트 생성
             structured = await self._prompt_gen.generate(
                 description=st.description,

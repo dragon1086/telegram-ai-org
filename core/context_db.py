@@ -222,7 +222,7 @@ class ContextDB:
         meta = json.dumps(metadata or {})
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
-                """INSERT INTO pm_tasks (id, parent_id, description, assigned_dept, status,
+                """INSERT OR IGNORE INTO pm_tasks (id, parent_id, description, assigned_dept, status,
                    created_by, created_at, updated_at, metadata)
                    VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
                 (task_id, parent_id, description, assigned_dept, created_by, now, now, meta),
