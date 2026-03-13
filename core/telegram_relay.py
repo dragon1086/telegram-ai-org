@@ -103,6 +103,7 @@ class TelegramRelay:
 
         # PM 오케스트레이터 모드 — ENABLE_PM_ORCHESTRATOR + context_db 필요
         self._pm_orchestrator = None
+        self._synthesizing: set = set()  # 합성 중복 방지 (이벤트 드리븐 + 폴러 공유)
         self._is_pm_org = ENABLE_PM_ORCHESTRATOR and org_id not in KNOWN_DEPTS
         self._is_dept_org = ENABLE_PM_ORCHESTRATOR and org_id in KNOWN_DEPTS
         if self._is_pm_org and context_db is not None:
@@ -756,12 +757,20 @@ class TelegramRelay:
             if not task_info or not task_info.get("parent_id"):
                 return
             parent_id = task_info["parent_id"]
+            # 이중 합성 방지 — SynthesisPoller와 공유 가드
+            if parent_id in self._synthesizing:
+                logger.debug(f"[PM_DONE 이벤트] {parent_id} 이미 합성 중 — 스킵")
+                return
             siblings = await self.context_db.get_subtasks(parent_id)
             if siblings and all(s["status"] == "done" for s in siblings):
+                self._synthesizing.add(parent_id)
                 logger.info(f"[PM_DONE 이벤트] {parent_id} 전체 완료 → 즉시 합성")
-                await self._pm_orchestrator._synthesize_and_act(
-                    parent_id, siblings, self.allowed_chat_id
-                )
+                try:
+                    await self._pm_orchestrator._synthesize_and_act(
+                        parent_id, siblings, self.allowed_chat_id
+                    )
+                finally:
+                    self._synthesizing.discard(parent_id)
             else:
                 pending = [s["id"] for s in siblings if s["status"] != "done"]
                 logger.info(f"[PM_DONE 이벤트] {parent_id} 아직 미완료: {pending}")
@@ -775,8 +784,6 @@ class TelegramRelay:
         자동으로 _synthesize_and_act()를 트리거한다.
         """
         import asyncio as _asyncio
-        _synthesizing: set = set()  # 중복 방지
-
         while True:
             try:
                 await _asyncio.sleep(30)  # fallback only; primary via PM_DONE event
@@ -800,11 +807,11 @@ class TelegramRelay:
                     candidates = [r[0] async for r in cursor]
 
                 for parent_id in candidates:
-                    if parent_id in _synthesizing:
+                    if parent_id in self._synthesizing:
                         continue
                     siblings = await self.context_db.get_subtasks(parent_id)
                     if siblings and all(s["status"] == "done" for s in siblings):
-                        _synthesizing.add(parent_id)
+                        self._synthesizing.add(parent_id)
                         logger.info(f"[SynthesisPoller] {parent_id} 전체 완료 감지 → 합성 시작")
                         try:
                             await self._pm_orchestrator._synthesize_and_act(
@@ -813,7 +820,7 @@ class TelegramRelay:
                         except Exception as _e:
                             logger.error(f"[SynthesisPoller] 합성 실패 {parent_id}: {_e}")
                         finally:
-                            _synthesizing.discard(parent_id)
+                            self._synthesizing.discard(parent_id)
             except Exception as _e:
                 logger.warning(f"[SynthesisPoller] 폴링 오류: {_e}")
 
@@ -979,10 +986,13 @@ class TelegramRelay:
             await self.context_db.update_pm_task_status(task_id, "done", result=result)
             logger.info(f"[{self.org_id}] PM_TASK {task_id} 완료")
 
-            # 결과를 채팅방에 공유 + PM_DONE 이벤트 전송 (pm_bot 즉시 트리거)
-            summary = f"✅ [{dept_name}] 태스크 {task_id} 완료\n[PM_DONE:{task_id}|dept:{self.org_id}]\n{result[:300]}"
+            # 결과를 채팅방에 공유
+            summary = f"✅ [{dept_name}] 태스크 {task_id} 완료\n{result[:300]}"
             if self.app and self.app.bot:
                 await self.display.send_to_chat(self.app.bot, self.allowed_chat_id, summary)
+                # PM_DONE 이벤트 — 사용자에게 안 보이는 별도 메시지로 전송
+                event_msg = f"\u200b[PM_DONE:{task_id}|dept:{self.org_id}]"
+                await self.display.send_to_chat(self.app.bot, self.allowed_chat_id, event_msg)
 
         except Exception as e:
             logger.error(f"[{self.org_id}] PM_TASK {task_id} 실행 실패: {e}")
