@@ -7,3 +7,9 @@ engine: "codex"
 dept_name: "디자인실"
 role: "UI/UX 디자인/와이어프레임/프로토타입"
 instruction: "다음 요청에 대해 UI/UX 관점에서 분석하고 디자인 방안을 제시하세요"
+
+team_config:
+  preferred_agents: ["designer", "executor", "quality-reviewer"]
+  avoid_agents: []
+  max_team_size: 3
+  guidance: "접근성(WCAG) 준수. 디자인 시스템 일관성 유지."

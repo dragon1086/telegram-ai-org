@@ -44,6 +44,19 @@ class PMIdentity:
         specialties = self._data.get("specialties", [])
         return ", ".join(specialties)
 
+    def _load_team_config(self) -> dict:
+        """봇 yaml의 team_config 섹션 로드. 없으면 빈 dict."""
+        try:
+            import yaml  # type: ignore
+            bot_yaml = Path(__file__).parent.parent / "bots" / f"{self.org_id}.yaml"
+            if bot_yaml.exists():
+                with bot_yaml.open(encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+                return cfg.get("team_config", {})
+        except Exception:
+            pass
+        return {}
+
     def _load_colleagues(self) -> list[dict]:
         """동료 팀 목록 로드 (self.org_id 제외, global은 모두 포함)."""
         colleagues = []
@@ -112,6 +125,29 @@ class PMIdentity:
         direction = data.get("direction", "")
         direction_line = f"- 방향성: {direction}" if direction else "- 방향성: 조직의 정체성에 맞게 판단"
 
+        # 팀 구성 설정 (bots/{org_id}.yaml team_config 섹션)
+        team_cfg = self._load_team_config()
+        team_config_section = ""
+        if team_cfg:
+            preferred = team_cfg.get("preferred_agents", [])
+            avoid = team_cfg.get("avoid_agents", [])
+            max_size = team_cfg.get("max_team_size", 5)
+            escalate = team_cfg.get("escalate_to", "")
+            guidance = team_cfg.get("guidance", "")
+            lines = []
+            if preferred:
+                lines.append(f"- 선호 에이전트: {', '.join(preferred)}")
+            if avoid:
+                lines.append(f"- 제외 에이전트: {', '.join(avoid)}")
+            if max_size:
+                lines.append(f"- 최대 팀 크기: {max_size}명")
+            if escalate:
+                lines.append(f"- 에스컬레이션: {escalate} (태스크가 너무 크면 위임)")
+            if guidance:
+                lines.append(f"- 지침: {guidance}")
+            if lines:
+                team_config_section = "\n## 팀 구성 설정 (config 기반)\n" + "\n".join(lines)
+
         # 동료 팀 섹션
         colleagues = self._load_colleagues()
         if colleagues:
@@ -138,7 +174,7 @@ class PMIdentity:
 
 ## 에이전트
 전체 목록: ~/.claude/agents/ (팀 구성 전 ls로 확인 후 실제 존재하는 에이전트만 사용){recommend_line}
-{colleague_section}
+{colleague_section}{team_config_section}
 ## 팀 구성 원칙 (필수 준수)
 
 기본 판단 기준: **실행이 수반되는가?**

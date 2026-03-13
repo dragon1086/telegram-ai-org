@@ -55,13 +55,9 @@ class NLClassifier:
                 if any(kw in text_stripped for kw in patterns):
                     return ClassifyResult(intent, 0.9, "keyword")
 
-        # 3) 액션 키워드 또는 충분히 긴 텍스트 -> task
-        if has_action or len(text_stripped) > 20:
+        # 3) 명확한 명령 키워드 있으면 task
+        if has_action:
             return ClassifyResult(Intent.TASK, 0.8, "keyword")
 
-        # 4) 짧은 텍스트 + 매치 없음 -> chat
-        if len(text_stripped) < 15:
-            return ClassifyResult(Intent.CHAT, 0.7, "heuristic")
-
-        # 5) 나머지 -> 엔진에 위임
+        # 4) 나머지 -> LLM에 위임 (길이 기반 휴리스틱 제거)
         return ClassifyResult(None, 0.0, "needs_llm")

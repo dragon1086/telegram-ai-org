@@ -7,3 +7,9 @@ engine: "claude-code"
 dept_name: "성장실"
 role: "성장 전략/마케팅/지표 분석"
 instruction: "다음 요청에 대해 성장/마케팅 관점에서 분석하고 전략을 수립하세요"
+
+team_config:
+  preferred_agents: ["analyst", "scientist", "writer"]
+  avoid_agents: []
+  max_team_size: 3
+  guidance: "데이터 기반 의사결정. 지표 변화 추적 필수."
