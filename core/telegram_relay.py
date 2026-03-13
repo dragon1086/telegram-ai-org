@@ -228,6 +228,17 @@ class TelegramRelay:
             await self._handle_command(text, update, context)
             return
 
+        # 봇 메시지에 답장 → 해당 태스크 재시도 (pm_bot 전용)
+        if (self._pm_orchestrator is not None
+                and update.message.reply_to_message
+                and update.message.reply_to_message.from_user
+                and update.message.reply_to_message.from_user.is_bot):
+            replied_text = update.message.reply_to_message.text or ""
+            retry_keywords = ["다시", "재시도", "retry", "다시해", "안됐", "실패", "고쳐", "다시해줘", "이거", "fix"]
+            if any(kw in text for kw in retry_keywords):
+                await self._handle_retry_request(text, replied_text, update)
+                return
+
         # 1. 대화형 vs 작업 분류
         if USE_NL_CLASSIFIER:
             _result = self._nl_classifier.classify(text)
@@ -743,6 +754,35 @@ class TelegramRelay:
             import asyncio as _asyncio
             _asyncio.create_task(self._synthesis_poll_loop())
             logger.info(f"[{self.org_id}] SynthesisPoller 시작됨")
+
+    async def _handle_retry_request(self, user_text: str, replied_text: str, update) -> None:
+        """봇 메시지에 답장 + 재시도 키워드 → 해당 태스크만 재실행 (pm_bot 전용)."""
+        import re as _re
+        # replied_text에서 task_id 추출
+        m = _re.search(r"태스크\s+(T-[A-Za-z0-9_]+-\d+)", replied_text)
+        if not m:
+            # task_id 못 찾으면 사용자 지시를 새 태스크로 처리
+            await self.display.send_reply(update.message, "⚠️ 답장한 메시지에서 태스크를 찾지 못했어요. 새 요청으로 처리할게요.")
+            return
+
+        task_id = m.group(1)
+        logger.info(f"[재시도 요청] {task_id} — 사용자: {user_text[:50]}")
+
+        task_info = await self.context_db.get_pm_task(task_id)
+        if not task_info:
+            await self.display.send_reply(update.message, f"⚠️ {task_id} 태스크 정보를 찾을 수 없어요.")
+            return
+
+        dept = task_info.get("assigned_dept", "")
+        dept_name = __import__("core.telegram_relay", fromlist=["KNOWN_DEPTS"]).KNOWN_DEPTS.get(dept, dept)
+
+        # 상태 초기화 → assigned 재배정
+        await self.context_db.update_pm_task_status(task_id, "assigned")
+        await self.display.send_reply(
+            update.message,
+            f"🔄 {dept_name} 태스크 {task_id} 재시도 중..."
+        )
+        logger.info(f"[재시도] {task_id} → assigned 재설정, {dept} 폴러가 픽업 예정")
 
     async def _handle_pm_done_event(self, text: str) -> None:
         """[PM_DONE:task_id|dept:xxx] 이벤트 수신 시 즉시 합성 트리거 (pm_bot 전용)."""
