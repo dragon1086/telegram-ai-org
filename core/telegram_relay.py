@@ -228,20 +228,23 @@ class TelegramRelay:
             await self._handle_command(text, update, context)
             return
 
-        # 봇 메시지에 답장 → 해당 태스크 재시도 (pm_bot 전용)
+        # 봇 메시지에 답장 처리 (pm_bot 전용)
+        _replied_context = ""
         if (self._pm_orchestrator is not None
                 and update.message.reply_to_message
                 and update.message.reply_to_message.from_user
                 and update.message.reply_to_message.from_user.is_bot):
             replied_text = update.message.reply_to_message.text or ""
-            # 명확한 재시도 명령어만 허용 (오탐 방지)
+            # 명확한 재시도 명령어 → 태스크 재시도
             retry_keywords = ["다시해줘", "재시도", "retry", "다시 해줘", "다시해", "fix this"]
             if any(kw in text.lower() for kw in retry_keywords):
-                # claim으로 중복 처리 방지 (다른 봇 진입 차단)
                 if not self.claim_manager.try_claim(message_id, self.org_id):
                     return
                 await self._handle_retry_request(text, replied_text, update)
                 return
+            # 재시도 아닌 답장 → 답장한 메시지 내용을 context로 주입
+            if replied_text:
+                _replied_context = f"\n\n[답장 대상 메시지]\n{replied_text[:300]}"
 
         # 1. 대화형 vs 작업 분류
         if USE_NL_CLASSIFIER:
@@ -292,7 +295,7 @@ class TelegramRelay:
                 "/Users/rocky/.local/bin/claude",
                 "--permission-mode", "bypassPermissions", "-p",
                 "--system-prompt", system_prompt,
-                text,
+                text + _replied_context,
                 stdout=_aio.subprocess.PIPE, stderr=_aio.subprocess.DEVNULL,
                 env=_env, cwd="/Users/rocky/telegram-ai-org",
             )
@@ -348,7 +351,7 @@ class TelegramRelay:
                     assigned_dept=self.org_id,
                     created_by=self.org_id,
                 )
-                subtasks = await self._pm_orchestrator.decompose(text)
+                subtasks = await self._pm_orchestrator.decompose(text + _replied_context)
                 task_ids = await self._pm_orchestrator.dispatch(parent_id, subtasks, self.allowed_chat_id)
                 dept_list = ", ".join(KNOWN_DEPTS.get(st.assigned_dept, st.assigned_dept) for st in subtasks)
                 await self.display.send_reply(
