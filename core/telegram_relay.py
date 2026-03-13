@@ -734,6 +734,61 @@ class TelegramRelay:
             self._task_poller.start()
             logger.info(f"[{self.org_id}] TaskPoller 시작됨")
 
+        # pm_bot(global)에서만 완료 감지 폴러 시작 — 최종 합성 보장
+        if self._pm_orchestrator is not None and self.context_db is not None:
+            import asyncio as _asyncio
+            _asyncio.create_task(self._synthesis_poll_loop())
+            logger.info(f"[{self.org_id}] SynthesisPoller 시작됨")
+
+    async def _synthesis_poll_loop(self) -> None:
+        """완료된 parent 태스크의 합성을 보장하는 백그라운드 폴러 (pm_bot 전용).
+
+        모든 서브태스크가 done이지만 parent가 아직 pending/assigned 상태인 경우
+        자동으로 _synthesize_and_act()를 트리거한다.
+        """
+        import asyncio as _asyncio
+        _synthesizing: set = set()  # 중복 방지
+
+        while True:
+            try:
+                await _asyncio.sleep(10)
+                if self.context_db is None or self._pm_orchestrator is None:
+                    continue
+
+                import aiosqlite as _aiosqlite
+                async with _aiosqlite.connect(self.context_db.db_path) as _db:
+                    _db.row_factory = _aiosqlite.Row
+                    # 서브태스크가 있고, 아직 완료 처리 안 된 parent 조회
+                    cursor = await _db.execute("""
+                        SELECT DISTINCT t.parent_id FROM pm_tasks t
+                        WHERE t.parent_id IS NOT NULL
+                          AND t.status = 'done'
+                        AND EXISTS (
+                            SELECT 1 FROM pm_tasks p
+                            WHERE p.id = t.parent_id
+                              AND p.status NOT IN ('done','failed')
+                        )
+                    """)
+                    candidates = [r[0] async for r in cursor]
+
+                for parent_id in candidates:
+                    if parent_id in _synthesizing:
+                        continue
+                    siblings = await self.context_db.get_subtasks(parent_id)
+                    if siblings and all(s["status"] == "done" for s in siblings):
+                        _synthesizing.add(parent_id)
+                        logger.info(f"[SynthesisPoller] {parent_id} 전체 완료 감지 → 합성 시작")
+                        try:
+                            await self._pm_orchestrator._synthesize_and_act(
+                                parent_id, siblings, self.allowed_chat_id
+                            )
+                        except Exception as _e:
+                            logger.error(f"[SynthesisPoller] 합성 실패 {parent_id}: {_e}")
+                        finally:
+                            _synthesizing.discard(parent_id)
+            except Exception as _e:
+                logger.warning(f"[SynthesisPoller] 폴링 오류: {_e}")
+
     def build(self) -> Application:
         """텔레그램 Application 빌드."""
         from telegram.request import HTTPXRequest
