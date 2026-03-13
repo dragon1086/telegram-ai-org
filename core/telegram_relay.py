@@ -263,20 +263,42 @@ class TelegramRelay:
                 return
             if not self.claim_manager.try_claim(message_id, self.org_id):
                 return
-            # claude --print로 인사 응답 (Anthropic API 키 불필요)
+            # pm_bot이면 DB 현재 태스크 상태를 컨텍스트에 주입해서 답변
             import asyncio as _aio, subprocess as _sp
             _env = {**os.environ, "CLAUDECODE": "", "ANTHROPIC_API_KEY": ""}
+
+            db_context = ""
+            if self._pm_orchestrator is not None and self.context_db is not None:
+                try:
+                    import aiosqlite as _sq
+                    async with _sq.connect(self.context_db.db_path) as _db:
+                        _db.row_factory = _sq.Row
+                        cur = await _db.execute(
+                            "SELECT id, assigned_dept, status, description FROM pm_tasks "
+                            "WHERE status NOT IN ('done','failed') ORDER BY created_at DESC LIMIT 10"
+                        )
+                        rows = await cur.fetchall()
+                        if rows:
+                            lines = [f"- {r['id']} [{r['assigned_dept']}] {r['status']}: {r['description'][:60]}" for r in rows]
+                            db_context = "\n\n현재 진행 중인 태스크:\n" + "\n".join(lines)
+                except Exception:
+                    pass
+
+            system_prompt = (
+                "당신은 총괄 PM입니다. 친근하게 짧게 한국어로 대화. 이모지 1개. 두 문장 이내."
+                + db_context
+            )
             _proc = await _aio.create_subprocess_exec(
                 "/Users/rocky/.local/bin/claude",
                 "--permission-mode", "bypassPermissions", "-p",
-                "--system-prompt", "친근하게 아주 짧게 한국어로 대화. 이모지 1개. 두 문장 이내.",
+                "--system-prompt", system_prompt,
                 text,
                 stdout=_aio.subprocess.PIPE, stderr=_aio.subprocess.DEVNULL,
                 env=_env, cwd="/Users/rocky/telegram-ai-org",
             )
             _out, _ = await _aio.wait_for(_proc.communicate(), timeout=15)
             reply = (_out.decode().strip() if _out else "") or "안녕하세요! 😊"
-            await self.display.send_reply(update.message, reply[:300])
+            await self.display.send_reply(update.message, reply[:400])
             return
 
         # PM 오케스트레이터 모드: 부서 봇은 사용자 메시지에 자율 입찰 안함
