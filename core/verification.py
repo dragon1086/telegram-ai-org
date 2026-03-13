@@ -11,17 +11,9 @@ from typing import Callable, Awaitable, Literal
 from loguru import logger
 
 from core.context_db import ContextDB
+from core.constants import BOT_ENGINE_MAP
 
 ENABLE_CROSS_VERIFICATION = os.environ.get("ENABLE_CROSS_VERIFICATION", "0") == "1"
-
-# 봇별 엔진 매핑 (yaml config에서도 확인 가능)
-BOT_ENGINE_MAP: dict[str, str] = {
-    "aiorg_engineering_bot": "codex",
-    "aiorg_design_bot": "codex",
-    "aiorg_product_bot": "claude-code",
-    "aiorg_growth_bot": "claude-code",
-    "aiorg_ops_bot": "claude-code",
-}
 
 
 @dataclass
