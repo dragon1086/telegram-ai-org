@@ -1,11 +1,13 @@
-"""150개 에이전트 중 태스크에 맞는 것 추천 (LLM 없이 키워드 기반)."""
+"""150개 에이전트 중 태스크에 맞는 것 추천 (LLM 기반 + 키워드 fallback)."""
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 
 AGENTS_DIR = Path.home() / ".claude" / "agents"
 
-# 카테고리-키워드 매핑
+# 카테고리-키워드 매핑 (fallback용)
 CATEGORY_KEYWORDS: dict[str, list[str]] = {
     "engineering": ["개발", "코드", "구현", "버그", "api", "서버", "백엔드", "프론트", "모바일"],
     "marketing": ["마케팅", "sns", "콘텐츠", "광고", "채널", "캠페인", "브랜드"],
@@ -19,7 +21,7 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
 
 
 def recommend_agents(task: str, max_agents: int = 3) -> list[str]:
-    """태스크 키워드 기반으로 적합한 에이전트 추천."""
+    """태스크 키워드 기반으로 적합한 에이전트 추천 (fallback)."""
     task_lower = task.lower()
     scores: dict[str, int] = {}
 
@@ -48,6 +50,65 @@ def recommend_agents(task: str, max_agents: int = 3) -> list[str]:
 
     sorted_agents = sorted(scores.items(), key=lambda x: -x[1])
     return [name for name, _ in sorted_agents[:max_agents]]
+
+
+async def recommend_agents_llm(task: str, specialties: str, max_agents: int = 5) -> list[str]:
+    """LLM으로 태스크+전문분야 기반 에이전트 추천.
+    fallback: 기존 키워드 방식"""
+    try:
+        # 에이전트 이름 목록만 가져옴 (파일 내용 X, 이름만)
+        agent_names = sorted(f.stem for f in AGENTS_DIR.glob("*.md"))
+        if not agent_names:
+            return recommend_agents(task or specialties, max_agents)
+
+        from core.llm_provider import get_provider
+        provider = get_provider()
+
+        prompt = (
+            f"다음 에이전트 목록에서 주어진 태스크와 전문분야에 가장 적합한 에이전트 {max_agents}개를 선택하세요.\n\n"
+            f"에이전트 목록:\n{chr(10).join(agent_names)}\n\n"
+            f"태스크: {task}\n"
+            f"전문분야: {specialties}\n\n"
+            f"응답 형식: JSON 배열만. 예: [\"agent-a\", \"agent-b\"]\n"
+            f"반드시 위 목록에 있는 이름만 사용하세요."
+        )
+
+        response = await asyncio.wait_for(provider.complete(prompt), timeout=5.0)
+
+        # JSON 배열 추출
+        text = response.strip()
+        start = text.find("[")
+        end = text.rfind("]") + 1
+        if start >= 0 and end > start:
+            candidates = json.loads(text[start:end])
+            # 실제 존재하는 에이전트만 필터링
+            agent_set = set(agent_names)
+            valid = [a for a in candidates if a in agent_set]
+            if valid:
+                return valid[:max_agents]
+    except Exception:
+        pass
+
+    return recommend_agents(task or specialties, max_agents)
+
+
+def recommend_agents_llm_sync(task: str, specialties: str, max_agents: int = 5) -> list[str]:
+    """recommend_agents_llm의 동기 wrapper."""
+    try:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(asyncio.run, recommend_agents_llm(task, specialties, max_agents))
+                return future.result(timeout=6)
+        else:
+            return asyncio.run(recommend_agents_llm(task, specialties, max_agents))
+    except Exception:
+        return recommend_agents(task or specialties, max_agents)
 
 
 def list_agents_by_category() -> dict[str, list[str]]:
