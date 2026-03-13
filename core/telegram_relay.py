@@ -300,7 +300,7 @@ class TelegramRelay:
         if self._pm_orchestrator is not None:
             await self.display.send_reply(update.message, f"📋 {self.org_id} PM 오케스트레이터 — 태스크 분해 중...")
             try:
-                parent_id = self._pm_orchestrator._next_task_id()
+                parent_id = await self._pm_orchestrator._next_task_id()
                 await self.context_db.create_pm_task(
                     task_id=parent_id,
                     description=text[:500],
@@ -523,13 +523,18 @@ class TelegramRelay:
             sess_status = self.session_manager.status()
             mem_stats = self.memory_manager.stats()
             specialties = self.identity.get_specialty_text() or "없음"
+            # Markdown 특수문자 이스케이프 (파싱 오류 방지)
+            def _esc(t: str) -> str:
+                for ch in r"\_*[]()~`>#+-=|{}.!":
+                    t = t.replace(ch, f"\\{ch}")
+                return t
 
             text = (
                 f"📊 *세션 상태*\n"
                 f"  tmux 사용 가능: {sess_status.get('tmux', False)}\n"
                 f"  활성 세션: {', '.join(sess_status.get('sessions', [])) or '없음'}\n\n"
                 f"*PM 정체성* [{self.org_id}]\n"
-                f"  전문분야: {specialties}\n\n"
+                f"  전문분야: {_esc(specialties)}\n\n"
                 f"*메모리* ({mem_stats['scope']})\n"
                 f"  CORE: {mem_stats['core']}개\n"
                 f"  SUMMARY: {mem_stats['summary']}개\n"
