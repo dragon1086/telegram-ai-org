@@ -210,6 +210,9 @@ class TelegramRelay:
                 await self._handle_pm_task(text, update, context)
             elif self._discussion_manager and is_discussion_message(text):
                 await self._handle_discussion_message(text, update, context)
+            # pm_bot: 워커봇 완료 이벤트 즉시 처리 (이벤트 드리븐)
+            elif self._pm_orchestrator is not None and "[PM_DONE:" in text:
+                await self._handle_pm_done_event(text)
             return
 
         message_id = str(update.message.message_id)
@@ -740,6 +743,31 @@ class TelegramRelay:
             _asyncio.create_task(self._synthesis_poll_loop())
             logger.info(f"[{self.org_id}] SynthesisPoller 시작됨")
 
+    async def _handle_pm_done_event(self, text: str) -> None:
+        """[PM_DONE:task_id|dept:xxx] 이벤트 수신 시 즉시 합성 트리거 (pm_bot 전용)."""
+        import re as _re
+        m = _re.search(r"\[PM_DONE:([^|\]]+)", text)
+        if not m:
+            return
+        task_id = m.group(1).strip()
+        logger.info(f"[PM_DONE 이벤트] {task_id} 완료 수신 → 합성 체크")
+        try:
+            task_info = await self.context_db.get_pm_task(task_id)
+            if not task_info or not task_info.get("parent_id"):
+                return
+            parent_id = task_info["parent_id"]
+            siblings = await self.context_db.get_subtasks(parent_id)
+            if siblings and all(s["status"] == "done" for s in siblings):
+                logger.info(f"[PM_DONE 이벤트] {parent_id} 전체 완료 → 즉시 합성")
+                await self._pm_orchestrator._synthesize_and_act(
+                    parent_id, siblings, self.allowed_chat_id
+                )
+            else:
+                pending = [s["id"] for s in siblings if s["status"] != "done"]
+                logger.info(f"[PM_DONE 이벤트] {parent_id} 아직 미완료: {pending}")
+        except Exception as e:
+            logger.error(f"[PM_DONE 이벤트] 처리 오류: {e}")
+
     async def _synthesis_poll_loop(self) -> None:
         """완료된 parent 태스크의 합성을 보장하는 백그라운드 폴러 (pm_bot 전용).
 
@@ -751,7 +779,7 @@ class TelegramRelay:
 
         while True:
             try:
-                await _asyncio.sleep(10)
+                await _asyncio.sleep(30)  # fallback only; primary via PM_DONE event
                 if self.context_db is None or self._pm_orchestrator is None:
                     continue
 
@@ -951,8 +979,8 @@ class TelegramRelay:
             await self.context_db.update_pm_task_status(task_id, "done", result=result)
             logger.info(f"[{self.org_id}] PM_TASK {task_id} 완료")
 
-            # 결과를 채팅방에 공유
-            summary = f"✅ [{dept_name}] 태스크 {task_id} 완료\n{result[:300]}"
+            # 결과를 채팅방에 공유 + PM_DONE 이벤트 전송 (pm_bot 즉시 트리거)
+            summary = f"✅ [{dept_name}] 태스크 {task_id} 완료\n[PM_DONE:{task_id}|dept:{self.org_id}]\n{result[:300]}"
             if self.app and self.app.bot:
                 await self.display.send_to_chat(self.app.bot, self.allowed_chat_id, summary)
 

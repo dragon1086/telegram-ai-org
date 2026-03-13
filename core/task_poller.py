@@ -18,7 +18,7 @@ from loguru import logger
 from core.context_db import ContextDB
 
 # 기본 폴링 간격 (초)
-DEFAULT_POLL_INTERVAL = 5.0
+DEFAULT_POLL_INTERVAL = 30.0  # 이벤트 드리븐 전환 후 fallback 용도
 
 
 class TaskPoller:
