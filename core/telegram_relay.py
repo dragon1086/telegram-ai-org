@@ -40,6 +40,7 @@ from core.collab_request import (
 from core.keywords import GREETING_KW, ACTION_KW
 from core.display_limiter import DisplayLimiter, MessagePriority
 from core.nl_classifier import NLClassifier, Intent
+from core.pm_router import PMRouter, PMRoute
 from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR, KNOWN_DEPTS
 from core.discussion_parser import is_discussion_message, parse_discussion_tags
 from core.discussion import ENABLE_DISCUSSION_PROTOCOL
@@ -105,6 +106,7 @@ class TelegramRelay:
         self._pm_orchestrator = None
         self._synthesizing: set = set()  # 합성 중복 방지 (이벤트 드리븐 + 폴러 공유)
         self._pending_confirmation: dict = {}  # {chat_id: {action, task_ids, expires}}
+        self._router = PMRouter()
         self._is_pm_org = ENABLE_PM_ORCHESTRATOR and org_id not in KNOWN_DEPTS
         self._is_dept_org = ENABLE_PM_ORCHESTRATOR and org_id in KNOWN_DEPTS
         if self._is_pm_org and context_db is not None:
@@ -229,34 +231,47 @@ class TelegramRelay:
             await self._handle_command(text, update, context)
             return
 
-        # 긍정 응답 → pending_confirmation 실행 (pm_bot 전용)
+        # LLM 기반 라우팅 (pm_bot 전용)
+        _replied_context = ""
         if self._pm_orchestrator is not None:
-            _affirm_kw = ["응", "ㅇㅇ", "네", "예", "그래", "해줘", "맞아", "좋아", "ok", "yes", "응 해줘", "그렇게 해", "해"]
-            _is_short_affirm = len(text.strip()) <= 15 and any(kw in text.lower() for kw in _affirm_kw)
-            if _is_short_affirm:
+            _route_ctx = {
+                "pending_confirmation": self._pending_confirmation.get(self.allowed_chat_id),
+                "replied_to": None,
+            }
+            # replied_to 컨텍스트 미리 수집
+            if (update.message.reply_to_message
+                    and update.message.reply_to_message.from_user
+                    and update.message.reply_to_message.from_user.is_bot):
+                _pre_replied = update.message.reply_to_message.text or ""
+                if _pre_replied:
+                    _route_ctx["replied_to"] = _pre_replied[:200]
+            _route = await self._router.route(text, _route_ctx)
+
+            if _route.action == "confirm_pending":
                 _conf = self._pending_confirmation.get(self.allowed_chat_id)
                 if _conf and _conf.get("expires", 0) > __import__("time").time():
-                    if not self.claim_manager.try_claim(message_id, self.org_id):
-                        pass
-                    else:
+                    if self.claim_manager.try_claim(message_id, self.org_id):
                         await self._execute_pending_confirmation(_conf, update)
                         del self._pending_confirmation[self.allowed_chat_id]
                         return
 
+            elif _route.action == "retry_task":
+                if (update.message.reply_to_message and
+                        update.message.reply_to_message.from_user and
+                        update.message.reply_to_message.from_user.is_bot):
+                    if self.claim_manager.try_claim(message_id, self.org_id):
+                        await self._handle_retry_request(text, _route_ctx.get("replied_to") or "", update, task_id_hint=_route.task_id)
+                        return
+
+            elif _route.action == "status_query":
+                pass  # fall through to normal NL classifier / task handling
+
         # 봇 메시지에 답장 처리 (pm_bot 전용)
-        _replied_context = ""
         if (self._pm_orchestrator is not None
                 and update.message.reply_to_message
                 and update.message.reply_to_message.from_user
                 and update.message.reply_to_message.from_user.is_bot):
             replied_text = update.message.reply_to_message.text or ""
-            # 명확한 재시도 명령어 → 태스크 재시도
-            retry_keywords = ["다시해줘", "재시도", "retry", "다시 해줘", "다시해", "fix this"]
-            if any(kw in text.lower() for kw in retry_keywords):
-                if not self.claim_manager.try_claim(message_id, self.org_id):
-                    return
-                await self._handle_retry_request(text, replied_text, update)
-                return
             # 재시도 아닌 답장 → 답장한 메시지 내용을 context로 주입
             if replied_text:
                 _replied_context = f"\n\n[답장 대상 메시지]\n{replied_text[:300]}"
@@ -271,8 +286,8 @@ class TelegramRelay:
             is_greeting = is_greeting or _intent == Intent.CHAT
             is_task = _intent in (Intent.TASK, Intent.APPROVE, Intent.REJECT, Intent.CANCEL, Intent.STATUS)
         else:
-            is_greeting = any(kw in text for kw in GREETING_KW) and len(text) < 15
-            is_task = not is_greeting and (any(kw in text for kw in ACTION_KW) or len(text) > 20)
+            is_greeting = False
+            is_task = len(text) > 5
 
         # 2. 인사 → default PM만 claim 후 응답
         if is_greeting:
@@ -843,20 +858,22 @@ class TelegramRelay:
         else:
             await self.display.send_reply(update.message, "✅ 알겠어요, 진행할게요!")
 
-    async def _handle_retry_request(self, user_text: str, replied_text: str, update) -> None:
-        """봇 메시지에 답장 + 재시도 키워드 → 해당 태스크만 재실행 (pm_bot 전용)."""
+    async def _handle_retry_request(self, user_text: str, replied_text: str, update, task_id_hint: str | None = None) -> None:
+        """봇 메시지에 답장 + 재시도 → 해당 태스크만 재실행 (pm_bot 전용)."""
         import re as _re
-        # replied_text에서 task_id 추출
+        # replied_text에서 task_id 추출, 없으면 task_id_hint 사용
         m = _re.search(r"태스크\s+(T-[A-Za-z0-9_]+-\d+)", replied_text)
-        if not m:
+        if m:
+            task_id = m.group(1)
+        elif task_id_hint:
+            task_id = task_id_hint
+        else:
             await self.display.send_reply(
                 update.message,
                 "⚠️ 답장한 메시지에서 태스크 ID를 찾지 못했어요.\n"
                 "봇이 완료/실패 메시지에 직접 답장해 주세요."
             )
             return
-
-        task_id = m.group(1)
         logger.info(f"[재시도 요청] {task_id} — 사용자: {user_text[:50]}")
 
         task_info = await self.context_db.get_pm_task(task_id)

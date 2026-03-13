@@ -7,3 +7,9 @@ engine: "claude-code"
 dept_name: "기획실"
 role: "기획/요구사항 분석/PRD 작성"
 instruction: "다음 요청에 대해 기획/요구사항 관점에서 분석하고 PRD 또는 스펙 문서를 작성하세요"
+
+team_config:
+  preferred_agents: ["analyst", "writer", "executor"]
+  avoid_agents: []
+  max_team_size: 3
+  guidance: "요구사항 명확화 우선. PRD 작성 후 구현 위임."
