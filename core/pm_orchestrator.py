@@ -70,28 +70,108 @@ class PMOrchestrator:
         self._task_counter += 1
         return f"T-{self._org_id}-{self._task_counter:03d}"
 
+    _LLM_DECOMPOSE_PROMPT = (
+        "You are the PM of an AI organization with these departments:\n"
+        "- aiorg_product_bot (기획실): planning, specs, PRD, requirements\n"
+        "- aiorg_engineering_bot (개발실): development, coding, API, bug fixes\n"
+        "- aiorg_design_bot (디자인실): UI/UX design, layouts, visual design\n"
+        "- aiorg_growth_bot (성장실): growth, marketing, analytics, metrics\n"
+        "- aiorg_ops_bot (운영실): operations, deployment, infra, monitoring\n\n"
+        "Break the user's request into specific subtasks for each relevant department.\n"
+        "Each subtask should be a CONCRETE, ACTIONABLE instruction (not the user's raw message).\n\n"
+        "Reply in this exact format (one line per subtask):\n"
+        "DEPT:aiorg_xxx_bot|TASK:specific task description|DEPENDS:comma-separated indices or none\n\n"
+        "Rules:\n"
+        "- Only include departments that are actually needed\n"
+        "- Write task descriptions in Korean, specific to each department's role\n"
+        "- DEPENDS uses 0-based index of prior subtasks (e.g., '0' or '0,1')\n"
+        "- Planning usually comes first, design before engineering, engineering before ops\n"
+        "- If only one department is needed, output just one line\n\n"
+        "User request: {message}"
+    )
+
     async def decompose(self, user_message: str) -> list[SubTask]:
         """사용자 메시지를 부서별 서브태스크로 분해.
 
-        현재는 규칙 기반. 향후 LLM 기반으로 확장 가능.
+        LLM 기반 분해를 시도하고, 실패 시 키워드 기반 fallback.
         """
+        subtasks = await self._llm_decompose(user_message)
+        if subtasks:
+            logger.info(f"[PM] LLM 분해 결과: {len(subtasks)}개 서브태스크")
+            return subtasks
+
+        subtasks = self._keyword_decompose(user_message)
+        logger.info(f"[PM] 키워드 분해 결과: {len(subtasks)}개 서브태스크")
+        return subtasks
+
+    async def _llm_decompose(self, user_message: str) -> list[SubTask]:
+        """LLM으로 태스크 분해. 실패 시 빈 리스트 반환."""
+        provider = get_provider()
+        if provider is None:
+            return []
+
+        prompt = self._LLM_DECOMPOSE_PROMPT.format(message=user_message[:500])
+        try:
+            response = await asyncio.wait_for(
+                provider.complete(prompt, timeout=15.0),
+                timeout=18.0,
+            )
+            return self._parse_decompose(response)
+        except Exception as e:
+            logger.warning(f"[PM] LLM 분해 실패, 키워드 fallback: {e}")
+            return []
+
+    @staticmethod
+    def _parse_decompose(response: str) -> list[SubTask]:
+        """LLM 분해 응답 파싱.
+
+        형식: DEPT:aiorg_xxx_bot|TASK:description|DEPENDS:0,1
+        """
+        subtasks: list[SubTask] = []
+        for line in response.strip().split("\n"):
+            line = line.strip()
+            if not line or "DEPT:" not in line or "TASK:" not in line:
+                continue
+            parts = {}
+            for segment in line.split("|"):
+                if ":" in segment:
+                    key, val = segment.split(":", 1)
+                    parts[key.strip().upper()] = val.strip()
+
+            dept = parts.get("DEPT", "")
+            task_desc = parts.get("TASK", "")
+            depends_str = parts.get("DEPENDS", "none").lower()
+
+            if not dept or dept not in KNOWN_DEPTS or not task_desc:
+                continue
+
+            deps: list[str] = []
+            if depends_str and depends_str != "none":
+                deps = [d.strip() for d in depends_str.split(",") if d.strip().isdigit()]
+
+            subtasks.append(SubTask(
+                description=task_desc,
+                assigned_dept=dept,
+                depends_on=deps,
+            ))
+        return subtasks
+
+    def _keyword_decompose(self, user_message: str) -> list[SubTask]:
+        """키워드 기반 태스크 분해 (fallback)."""
         subtasks: list[SubTask] = []
         msg_lower = user_message.lower()
 
-        # 규칙 기반 분해 — 키워드로 관련 부서 판단
         needs_product = any(kw in msg_lower for kw in ["기획", "스펙", "요구사항", "prd", "plan"])
         needs_engineering = any(kw in msg_lower for kw in ["개발", "구현", "코딩", "코드", "api", "build", "fix", "버그"])
         needs_design = any(kw in msg_lower for kw in ["디자인", "ui", "ux", "화면", "레이아웃", "design"])
         needs_growth = any(kw in msg_lower for kw in ["성장", "마케팅", "분석", "지표", "growth", "marketing"])
         needs_ops = any(kw in msg_lower for kw in ["운영", "배포", "인프라", "모니터링", "deploy", "ops"])
 
-        # 기획은 보통 선행
         if needs_product:
             subtasks.append(SubTask(
                 description=f"기획/스펙 작성: {user_message[:200]}",
                 assigned_dept="aiorg_product_bot",
             ))
-
         if needs_design:
             deps = ["0"] if needs_product else []
             subtasks.append(SubTask(
@@ -99,7 +179,6 @@ class PMOrchestrator:
                 assigned_dept="aiorg_design_bot",
                 depends_on=deps,
             ))
-
         if needs_engineering:
             deps = []
             if needs_product:
@@ -112,15 +191,12 @@ class PMOrchestrator:
                 assigned_dept="aiorg_engineering_bot",
                 depends_on=deps,
             ))
-
         if needs_growth:
             subtasks.append(SubTask(
                 description=f"성장/마케팅 전략: {user_message[:200]}",
                 assigned_dept="aiorg_growth_bot",
             ))
-
         if needs_ops:
-            # 운영은 개발 후
             eng_idx = None
             for i, st in enumerate(subtasks):
                 if st.assigned_dept == "aiorg_engineering_bot":
@@ -132,14 +208,12 @@ class PMOrchestrator:
                 depends_on=deps,
             ))
 
-        # 키워드 매칭이 없으면 기본으로 기획실에 전체 위임
         if not subtasks:
             subtasks.append(SubTask(
                 description=user_message[:500],
                 assigned_dept="aiorg_product_bot",
             ))
 
-        logger.info(f"[PM] 분해 결과: {len(subtasks)}개 서브태스크")
         return subtasks
 
     async def dispatch(self, parent_task_id: str, subtasks: list[SubTask],
