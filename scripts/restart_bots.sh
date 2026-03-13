@@ -70,18 +70,22 @@ for pid_file in "${PID_FILES[@]}"; do
     fi
 
     # 메타데이터(토큰, chat_id) 읽기: json 우선, 없으면 yaml 폴백
+    # venv python3 사용 (aiosqlite 등 의존성 포함)
+    VENV_PY="$BOT_DIR/.venv/bin/python3"
+    [ ! -x "$VENV_PY" ] && VENV_PY="python3"
+
     if [ -f "$meta_json" ]; then
-        TOKEN=$(python3 -c "import json; d=json.load(open('$meta_json')); print(d['token'])")
-        CHAT_ID=$(python3 -c "import json; d=json.load(open('$meta_json')); print(d['chat_id'])")
+        TOKEN=$("$VENV_PY" -c "import json; d=json.load(open('$meta_json')); print(d['token'])")
+        CHAT_ID=$("$VENV_PY" -c "import json; d=json.load(open('$meta_json')); print(d['chat_id'])")
     elif [ -f "$meta_yaml" ]; then
-        TOKEN_ENV=$(python3 -c "
+        TOKEN_ENV=$("$VENV_PY" -c "
 import re
 content = open('$meta_yaml').read()
 m = re.search(r'token_env:\s*[\"\\']?([^\"\\'\\n]+)[\"\\']?', content)
 print(m.group(1).strip() if m else '')
 ")
         TOKEN="${!TOKEN_ENV}"
-        CHAT_ID=$(python3 -c "
+        CHAT_ID=$("$VENV_PY" -c "
 import re
 content = open('$meta_yaml').read()
 m = re.search(r'chat_id:\s*(-?[0-9]+)', content)
@@ -97,7 +101,9 @@ print(m.group(1) if m else '')
     fi
 
     echo "▶ $org_id 재시작 중..."
-    NEW_PID=$(cd "$BOT_DIR" && python3 scripts/bot_manager.py start "$TOKEN" "$org_id" "$CHAT_ID" 2>/dev/null | grep -oE 'PID=[0-9]+' | cut -d= -f2 || echo "")
+    VENV_PYTHON="$BOT_DIR/.venv/bin/python3"
+    [ ! -x "$VENV_PYTHON" ] && VENV_PYTHON="python3"
+    NEW_PID=$(cd "$BOT_DIR" && "$VENV_PYTHON" scripts/bot_manager.py start "$TOKEN" "$org_id" "$CHAT_ID" 2>/dev/null | grep -oE 'PID=[0-9]+' | cut -d= -f2 || echo "")
 
     if [ -n "$NEW_PID" ]; then
         echo "  ✅ $org_id 시작됨 (PID: $NEW_PID)"
