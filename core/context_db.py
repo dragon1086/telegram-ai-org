@@ -432,6 +432,17 @@ class ContextDB:
                 result.append(d)
             return result
 
+    async def get_tasks_for_dept(self, dept_id: str, status: str = "assigned") -> list[dict]:
+        """특정 부서에 배정된 태스크 조회 (TaskPoller용)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM pm_tasks WHERE assigned_dept=? AND status=? ORDER BY created_at",
+                (dept_id, status),
+            )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
     # ── Auto-Dispatch 헬퍼 ────────────────────────────────────────────────
 
     async def get_stalled_tasks(self, stall_minutes: int = 30) -> list[str]:
