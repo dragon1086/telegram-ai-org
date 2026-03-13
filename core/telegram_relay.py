@@ -715,6 +715,21 @@ class TelegramRelay:
 
     async def _post_init(self, application: Application) -> None:
         """Application 초기화 후 백그라운드 작업 시작."""
+        # 재시작 시 stale 'running' 태스크 → 'assigned' 리셋
+        if self.context_db is not None:
+            try:
+                import aiosqlite as _aiosqlite
+                async with _aiosqlite.connect(self.context_db.db_path) as _db:
+                    result = await _db.execute(
+                        "UPDATE pm_tasks SET status='assigned' WHERE status='running' AND assigned_dept=?",
+                        (self.org_id,),
+                    )
+                    await _db.commit()
+                    if result.rowcount:
+                        logger.info(f"[{self.org_id}] stale running 태스크 {result.rowcount}개 → assigned 리셋")
+            except Exception as _e:
+                logger.warning(f"[{self.org_id}] stale 리셋 실패: {_e}")
+
         if self._task_poller is not None:
             self._task_poller.start()
             logger.info(f"[{self.org_id}] TaskPoller 시작됨")
