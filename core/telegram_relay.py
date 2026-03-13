@@ -794,7 +794,7 @@ class TelegramRelay:
         from telegram.request import HTTPXRequest
         req = HTTPXRequest(connection_pool_size=1)
         builder = Application.builder().token(self.token).request(req)
-        if self._task_poller is not None:
+        if self._task_poller is not None or self._pm_orchestrator is not None:
             builder = builder.post_init(self._post_init)
         self.app = builder.build()
 
