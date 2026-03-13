@@ -211,8 +211,8 @@ class TelegramRelay:
                 await self._handle_pm_task(text, update, context)
             elif self._discussion_manager and is_discussion_message(text):
                 await self._handle_discussion_message(text, update, context)
-            # pm_bot: 워커봇 완료 이벤트 즉시 처리 (이벤트 드리븐)
-            elif self._pm_orchestrator is not None and "[PM_DONE:" in text:
+            # pm_bot: 워커봇 완료 메시지 감지 → 즉시 합성 트리거 (이벤트 드리븐)
+            elif self._pm_orchestrator is not None and "태스크" in text and "완료" in text:
                 await self._handle_pm_done_event(text)
             return
 
@@ -747,7 +747,8 @@ class TelegramRelay:
     async def _handle_pm_done_event(self, text: str) -> None:
         """[PM_DONE:task_id|dept:xxx] 이벤트 수신 시 즉시 합성 트리거 (pm_bot 전용)."""
         import re as _re
-        m = _re.search(r"\[PM_DONE:([^|\]]+)", text)
+        # "✅ [X] 태스크 T-xxx-NNN 완료" 패턴에서 task_id 추출
+        m = _re.search(r"태스크\s+(T-[A-Za-z0-9_]+-\d+)\s+완료", text)
         if not m:
             return
         task_id = m.group(1).strip()
@@ -987,12 +988,10 @@ class TelegramRelay:
             logger.info(f"[{self.org_id}] PM_TASK {task_id} 완료")
 
             # 결과를 채팅방에 공유
+            # pm_bot은 "✅ [X] 태스크 T-xxx 완료" 패턴을 파싱해서 on_task_complete 트리거
             summary = f"✅ [{dept_name}] 태스크 {task_id} 완료\n{result[:300]}"
             if self.app and self.app.bot:
                 await self.display.send_to_chat(self.app.bot, self.allowed_chat_id, summary)
-                # PM_DONE 이벤트 — 사용자에게 안 보이는 별도 메시지로 전송
-                event_msg = f"\u200b[PM_DONE:{task_id}|dept:{self.org_id}]"
-                await self.display.send_to_chat(self.app.bot, self.allowed_chat_id, event_msg)
 
         except Exception as e:
             logger.error(f"[{self.org_id}] PM_TASK {task_id} 실행 실패: {e}")
