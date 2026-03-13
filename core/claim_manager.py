@@ -17,7 +17,7 @@ class ClaimManager:
 
     CLAIM_FILE_DIR = Path.home() / ".ai-org" / "claims"
     CLAIM_TIMEOUT = 3.0   # 3초 내 claim 없으면 기본 PM 담당
-    CLAIM_TTL = 3600       # 1시간 후 자동 삭제
+    CLAIM_TTL = int(os.environ.get("CLAIM_TTL_SEC", "600"))  # 기본 10분 후 만료 (환경변수로 조정 가능)
 
     def __init__(self) -> None:
         self.CLAIM_FILE_DIR.mkdir(parents=True, exist_ok=True)
@@ -34,12 +34,21 @@ class ClaimManager:
                 f.write(payload)
             return True
         except FileExistsError:
+            # 만료 여부 확인 — TTL 초과 시 삭제 후 재선점
             try:
                 data = json.loads(hash_lock.read_text(encoding="utf-8"))
                 owner = data.get("claimed_by", "unknown")
+                age = time.time() - data.get("ts", 0)
+                if age > self.CLAIM_TTL:
+                    hash_lock.unlink(missing_ok=True)
+                    logger.info(f"[claim] text_hash {text_hash[:8]} 만료 ({age:.0f}초 경과) — 재선점 허용")
+                    # 재귀 호출로 재시도
+                    return self.try_claim_text_hash(text_hash, org_id)
             except Exception:
                 owner = "unknown"
-            logger.debug(f"[claim] 중복 내용 감지 — 이미 {owner}이 처리 중 (text_hash={text_hash[:8]})")
+                hash_lock.unlink(missing_ok=True)
+                return self.try_claim_text_hash(text_hash, org_id)
+            logger.debug(f"[claim] 중복 내용 감지 — 이미 {owner}이 처리 중 (text_hash={text_hash[:8]}, {age:.0f}초 경과)")
             return False
 
     def try_claim(self, message_id: str, org_id: str, text_hash: str | None = None) -> bool:
