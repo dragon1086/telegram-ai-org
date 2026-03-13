@@ -104,6 +104,7 @@ class TelegramRelay:
         # PM 오케스트레이터 모드 — ENABLE_PM_ORCHESTRATOR + context_db 필요
         self._pm_orchestrator = None
         self._synthesizing: set = set()  # 합성 중복 방지 (이벤트 드리븐 + 폴러 공유)
+        self._pending_confirmation: dict = {}  # {chat_id: {action, task_ids, expires}}
         self._is_pm_org = ENABLE_PM_ORCHESTRATOR and org_id not in KNOWN_DEPTS
         self._is_dept_org = ENABLE_PM_ORCHESTRATOR and org_id in KNOWN_DEPTS
         if self._is_pm_org and context_db is not None:
@@ -228,6 +229,20 @@ class TelegramRelay:
             await self._handle_command(text, update, context)
             return
 
+        # 긍정 응답 → pending_confirmation 실행 (pm_bot 전용)
+        if self._pm_orchestrator is not None:
+            _affirm_kw = ["응", "ㅇㅇ", "네", "예", "그래", "해줘", "맞아", "좋아", "ok", "yes", "응 해줘", "그렇게 해", "해"]
+            _is_short_affirm = len(text.strip()) <= 15 and any(kw in text.lower() for kw in _affirm_kw)
+            if _is_short_affirm:
+                _conf = self._pending_confirmation.get(self.allowed_chat_id)
+                if _conf and _conf.get("expires", 0) > __import__("time").time():
+                    if not self.claim_manager.try_claim(message_id, self.org_id):
+                        pass
+                    else:
+                        await self._execute_pending_confirmation(_conf, update)
+                        del self._pending_confirmation[self.allowed_chat_id]
+                        return
+
         # 봇 메시지에 답장 처리 (pm_bot 전용)
         _replied_context = ""
         if (self._pm_orchestrator is not None
@@ -284,6 +299,13 @@ class TelegramRelay:
                         if rows:
                             lines = [f"- {r['id']} [{r['assigned_dept']}] {r['status']}: {r['description'][:60]}" for r in rows]
                             db_context = "\n\n현재 진행 중인 태스크:\n" + "\n".join(lines)
+                            # 실패/미완 태스크를 pending_confirmation에 저장 → 사용자 긍정 응답 시 재시도 가능
+                            retry_ids = [r['id'] for r in rows if r['status'] in ('failed', 'pending', 'assigned')]
+                            if retry_ids:
+                                import asyncio as _asyncio2
+                                _asyncio2.create_task(self._store_pending_confirmation(
+                                    "retry_tasks", retry_ids, db_context
+                                ))
                 except Exception:
                     pass
 
@@ -783,6 +805,43 @@ class TelegramRelay:
             import asyncio as _asyncio
             _asyncio.create_task(self._synthesis_poll_loop())
             logger.info(f"[{self.org_id}] SynthesisPoller 시작됨")
+
+    async def _store_pending_confirmation(self, action: str, task_ids: list, description: str = "") -> None:
+        """pm_bot 제안 상태 저장 (5분 유효). 사용자 긍정 응답 시 _execute_pending_confirmation 실행."""
+        import time as _time
+        self._pending_confirmation[self.allowed_chat_id] = {
+            "action": action,
+            "task_ids": task_ids,
+            "description": description,
+            "expires": _time.time() + 300,  # 5분
+        }
+        logger.info(f"[pending] 확인 대기 저장: {action} {task_ids}")
+
+    async def _execute_pending_confirmation(self, conf: dict, update) -> None:
+        """pending_confirmation 실행."""
+        action = conf.get("action")
+        task_ids = conf.get("task_ids", [])
+        description = conf.get("description", "")
+
+        if action == "retry_tasks" and task_ids:
+            reset_count = 0
+            for tid in task_ids:
+                task_info = await self.context_db.get_pm_task(tid)
+                if task_info and task_info.get("status") not in ("running",):
+                    await self.context_db.update_pm_task_status(tid, "assigned")
+                    reset_count += 1
+            dept_names = []
+            for tid in task_ids:
+                t = await self.context_db.get_pm_task(tid)
+                if t:
+                    dept_names.append(KNOWN_DEPTS.get(t.get("assigned_dept",""), t.get("assigned_dept","")))
+            await self.display.send_reply(
+                update.message,
+                f"✅ {', '.join(dept_names)} 태스크 {reset_count}개 재시도 예약됨!"
+            )
+            logger.info(f"[pending] retry 실행: {task_ids}")
+        else:
+            await self.display.send_reply(update.message, "✅ 알겠어요, 진행할게요!")
 
     async def _handle_retry_request(self, user_text: str, replied_text: str, update) -> None:
         """봇 메시지에 답장 + 재시도 키워드 → 해당 태스크만 재실행 (pm_bot 전용)."""
