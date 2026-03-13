@@ -326,9 +326,24 @@ class PMOrchestrator:
         if synthesis.judgment == SynthesisJudgment.SUFFICIENT:
             report = synthesis.unified_report or synthesis.summary
             await self._send(chat_id, f"✅ 모든 부서 작업 완료!\n\n{report}")
-            await self._db.update_pm_task_status(
-                parent_task_id, "done", result=report,
-            )
+            # 향후 계획/추가 작업이 있으면 자동 실행 (LLM이 FOLLOW_UP으로 추출한 것)
+            if synthesis.follow_up_tasks:
+                follow_ups = [
+                    SubTask(
+                        description=ft["description"],
+                        assigned_dept=ft["dept"],
+                    )
+                    for ft in synthesis.follow_up_tasks
+                ]
+                await self._send(
+                    chat_id,
+                    f"📋 향후 계획 {len(follow_ups)}건 자동 실행 중..."
+                )
+                await self.dispatch(parent_task_id, follow_ups, chat_id)
+            else:
+                await self._db.update_pm_task_status(
+                    parent_task_id, "done", result=report,
+                )
         elif synthesis.judgment == SynthesisJudgment.INSUFFICIENT:
             await self._send(
                 chat_id,

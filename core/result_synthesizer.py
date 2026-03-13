@@ -53,6 +53,10 @@ _SYNTHESIS_PROMPT = (
     "- CONFLICTING: departments contradict each other\n"
     "- NEEDS_INTEGRATION: results are good but need to be combined into one coherent output\n"
     "- Write in Korean\n"
+  "- IMPORTANT: Even when SUFFICIENT, scan all reports for future plans\n"
+  "  (향후 계획/다음 단계/추가 작업/진행 예정/예정 등) and add them as FOLLOW_UP tasks.\n"
+  "  Assign each to the most relevant dept (aiorg_design_bot/aiorg_engineering_bot/\n"
+  "  aiorg_growth_bot/aiorg_ops_bot/aiorg_product_bot). If truly none, write FOLLOW_UP: none\n"
 )
 
 
