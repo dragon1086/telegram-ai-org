@@ -156,10 +156,23 @@ class PMOrchestrator:
             ))
         return subtasks
 
+    # 부서별 역할 특화 지시 템플릿 (키워드 fallback용)
+    _DEPT_INSTRUCTIONS: dict[str, str] = {
+        "aiorg_product_bot": "다음 요청에 대해 기획/요구사항 관점에서 분석하고 PRD 또는 스펙 문서를 작성하세요",
+        "aiorg_engineering_bot": "다음 요청에 대해 기술적 관점에서 분석하고 코드 구현 계획 또는 구현을 수행하세요",
+        "aiorg_design_bot": "다음 요청에 대해 UI/UX 관점에서 분석하고 디자인 방안을 제시하세요",
+        "aiorg_growth_bot": "다음 요청에 대해 성장/마케팅 관점에서 분석하고 전략을 수립하세요",
+        "aiorg_ops_bot": "다음 요청에 대해 운영/인프라 관점에서 분석하고 배포 및 모니터링 계획을 수립하세요",
+    }
+
     def _keyword_decompose(self, user_message: str) -> list[SubTask]:
-        """키워드 기반 태스크 분해 (fallback)."""
+        """키워드 기반 태스크 분해 (fallback).
+
+        각 부서에 역할 특화 지시문 + 사용자 원문을 전달.
+        """
         subtasks: list[SubTask] = []
         msg_lower = user_message.lower()
+        short_msg = user_message[:200]
 
         needs_product = any(kw in msg_lower for kw in ["기획", "스펙", "요구사항", "prd", "plan"])
         needs_engineering = any(kw in msg_lower for kw in ["개발", "구현", "코딩", "코드", "api", "build", "fix", "버그"])
@@ -169,13 +182,13 @@ class PMOrchestrator:
 
         if needs_product:
             subtasks.append(SubTask(
-                description=f"기획/스펙 작성: {user_message[:200]}",
+                description=f"{self._DEPT_INSTRUCTIONS['aiorg_product_bot']}: {short_msg}",
                 assigned_dept="aiorg_product_bot",
             ))
         if needs_design:
             deps = ["0"] if needs_product else []
             subtasks.append(SubTask(
-                description=f"디자인/UX: {user_message[:200]}",
+                description=f"{self._DEPT_INSTRUCTIONS['aiorg_design_bot']}: {short_msg}",
                 assigned_dept="aiorg_design_bot",
                 depends_on=deps,
             ))
@@ -187,13 +200,13 @@ class PMOrchestrator:
                 deps.append(str(len(subtasks) - 1) if needs_design else "")
             deps = [d for d in deps if d]
             subtasks.append(SubTask(
-                description=f"개발/구현: {user_message[:200]}",
+                description=f"{self._DEPT_INSTRUCTIONS['aiorg_engineering_bot']}: {short_msg}",
                 assigned_dept="aiorg_engineering_bot",
                 depends_on=deps,
             ))
         if needs_growth:
             subtasks.append(SubTask(
-                description=f"성장/마케팅 전략: {user_message[:200]}",
+                description=f"{self._DEPT_INSTRUCTIONS['aiorg_growth_bot']}: {short_msg}",
                 assigned_dept="aiorg_growth_bot",
             ))
         if needs_ops:
@@ -203,14 +216,14 @@ class PMOrchestrator:
                     eng_idx = str(i)
             deps = [eng_idx] if eng_idx else []
             subtasks.append(SubTask(
-                description=f"운영/배포: {user_message[:200]}",
+                description=f"{self._DEPT_INSTRUCTIONS['aiorg_ops_bot']}: {short_msg}",
                 assigned_dept="aiorg_ops_bot",
                 depends_on=deps,
             ))
 
         if not subtasks:
             subtasks.append(SubTask(
-                description=user_message[:500],
+                description=f"{self._DEPT_INSTRUCTIONS['aiorg_product_bot']}: {user_message[:500]}",
                 assigned_dept="aiorg_product_bot",
             ))
 

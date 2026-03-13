@@ -48,6 +48,7 @@ if __name__ == "__main__":
 
     pm_org_name = os.environ.get("PM_ORG_NAME")
     if pm_org_name:
+        # 1) organizations.yaml에서 시도
         try:
             from pathlib import Path as _Path
             from core.org_registry import OrgRegistry
@@ -59,6 +60,21 @@ if __name__ == "__main__":
         except Exception as _e:
             import logging as _logging
             _logging.warning(f"organizations.yaml에서 engine 로드 실패: {_e}")
+
+        # 2) organizations.yaml에 없으면 bots/{org_id}.yaml에서 engine 읽기
+        if engine == "claude-code":
+            try:
+                from pathlib import Path as _Path
+                _bot_yaml = _Path(__file__).parent / "bots" / f"{pm_org_name}.yaml"
+                if _bot_yaml.exists():
+                    import yaml as _yaml
+                    with open(_bot_yaml) as _f:
+                        _bot_cfg = _yaml.safe_load(_f) or {}
+                    if _bot_cfg.get("engine"):
+                        engine = _bot_cfg["engine"]
+            except Exception as _e2:
+                import logging as _logging
+                _logging.warning(f"bots/{pm_org_name}.yaml에서 engine 로드 실패: {_e2}")
 
     session_manager = SessionManager()
     memory_manager = MemoryManager(org_id)
