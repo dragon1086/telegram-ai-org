@@ -4,3 +4,6 @@ org_id: "aiorg_pm_bot"
 token_env: "PM_BOT_TOKEN"
 chat_id: -5203707291
 engine: "claude-code"
+dept_name: "PM"
+role: "프로젝트 총괄/부서 조율/진행 관리"
+is_pm: true
