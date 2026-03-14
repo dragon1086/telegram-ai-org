@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Callable, Awaitable
+from pathlib import Path
 
 from loguru import logger
 
@@ -26,6 +28,7 @@ class SubTask:
     description: str
     assigned_dept: str  # org_id (e.g., "aiorg_engineering_bot")
     depends_on: list[str] = field(default_factory=list)  # 다른 subtask의 인덱스 (0-based)
+    workdir: str | None = None
 
 
 @dataclass
@@ -112,14 +115,38 @@ class PMOrchestrator:
 
         LLM 기반 분해를 시도하고, 실패 시 키워드 기반 fallback.
         """
+        workdir = self._extract_workdir(user_message)
         subtasks = await self._llm_decompose(user_message)
         if subtasks:
+            for subtask in subtasks:
+                subtask.workdir = workdir
             logger.info(f"[PM] LLM 분해 결과: {len(subtasks)}개 서브태스크")
             return subtasks
 
         subtasks = self._keyword_decompose(user_message)
+        for subtask in subtasks:
+            subtask.workdir = workdir
         logger.info(f"[PM] 키워드 분해 결과: {len(subtasks)}개 서브태스크")
         return subtasks
+
+    @staticmethod
+    def _extract_workdir(user_message: str) -> str | None:
+        for raw in re.findall(r"(?:(?<=\s)|^)(~?/[^ \t\r\n'\"`]+)", user_message):
+            candidate = Path(raw).expanduser()
+            if not candidate.exists():
+                continue
+            target = candidate if candidate.is_dir() else candidate.parent
+            repo_root = PMOrchestrator._find_repo_root(target)
+            return str(repo_root or target)
+        return None
+
+    @staticmethod
+    def _find_repo_root(path: Path) -> Path | None:
+        current = path.resolve()
+        for candidate in [current, *current.parents]:
+            if (candidate / ".git").exists():
+                return candidate
+        return None
 
     async def _llm_decompose(self, user_message: str) -> list[SubTask]:
         """LLM으로 태스크 분해. 실패 시 빈 리스트 반환."""
@@ -227,7 +254,10 @@ class PMOrchestrator:
 
         # 매칭 없으면 첫 번째 부서(기획)로 fallback
         if not subtasks:
-            first_dept = next(iter(KNOWN_DEPTS))
+            first_dept = next(
+                (dept for dept in self._DEPT_ORDER if dept in KNOWN_DEPTS),
+                next(iter(KNOWN_DEPTS)),
+            )
             instruction = DEPT_INSTRUCTIONS.get(first_dept, "요청을 분석하세요")
             subtasks.append(SubTask(
                 description=f"{instruction}: {user_message[:500]}",
@@ -274,6 +304,7 @@ class PMOrchestrator:
                 assigned_dept=st.assigned_dept,
                 created_by=self._org_id,
                 parent_id=parent_task_id,
+                metadata={"workdir": st.workdir} if st.workdir else None,
             )
             task_ids.append(tid)
 
@@ -327,6 +358,17 @@ class PMOrchestrator:
             if all(s["status"] == "done" for s in siblings):
                 await self._synthesize_and_act(parent_id, siblings, chat_id)
 
+    async def consolidate_results(self, parent_task_id: str) -> str:
+        """부모 태스크의 완료된 서브태스크 결과를 단순 요약 문자열로 합친다."""
+        subtasks = await self._db.get_subtasks(parent_task_id)
+        lines: list[str] = []
+        for task in subtasks:
+            dept = task.get("assigned_dept") or "unknown"
+            dept_name = KNOWN_DEPTS.get(dept, dept)
+            result = (task.get("result") or "").strip() or "(결과 없음)"
+            lines.append(f"[{dept_name}] {result}")
+        return "\n".join(lines)
+
     async def _synthesize_and_act(
         self, parent_task_id: str, subtasks: list[dict], chat_id: int,
     ) -> None:
@@ -339,6 +381,8 @@ class PMOrchestrator:
         logger.info(
             f"[PM] 결과 합성: {parent_task_id} → {synthesis.judgment.value}"
         )
+        parent_meta = parent.get("metadata", {}) if parent else {}
+        parent_workdir = parent_meta.get("workdir")
 
         if synthesis.judgment == SynthesisJudgment.SUFFICIENT:
             report = synthesis.unified_report or synthesis.summary
@@ -349,6 +393,7 @@ class PMOrchestrator:
                     SubTask(
                         description=ft["description"],
                         assigned_dept=ft["dept"],
+                        workdir=parent_workdir,
                     )
                     for ft in synthesis.follow_up_tasks
                 ]
@@ -372,6 +417,7 @@ class PMOrchestrator:
                     SubTask(
                         description=ft["description"],
                         assigned_dept=ft["dept"],
+                        workdir=parent_workdir,
                     )
                     for ft in synthesis.follow_up_tasks
                 ]

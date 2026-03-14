@@ -1144,6 +1144,7 @@ class TelegramRelay:
                 session_store=self.session_store,
                 global_context=self.global_context,
                 org_id=self.org_id,
+                workdir=task_info.get("metadata", {}).get("workdir"),
             )
 
             result = (response or "(완료)")[:1000]
@@ -1640,9 +1641,10 @@ class _CodexRunnerAdapter:
         session_store=None,
         global_context=None,
         org_id: str = "global",
+        workdir: str | None = None,
     ) -> str:
         full_prompt = f"{system_prompt}\n\n{task}".strip() if system_prompt else task
-        result = await self._runner.run(full_prompt)
+        result = await self._runner.run(full_prompt, workdir=workdir)
         if progress_callback:
             await progress_callback(result[:200])
         return result

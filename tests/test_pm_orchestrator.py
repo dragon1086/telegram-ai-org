@@ -92,6 +92,26 @@ async def test_dispatch_only_sends_ready_tasks(setup):
 
 
 @pytest.mark.asyncio
+async def test_dispatch_persists_subtask_workdir_metadata(setup):
+    orch, db, send_fn = setup
+    parent_id = "T-pm-root"
+    await db.create_pm_task(parent_id, "root", None, "aiorg_pm_bot")
+    subtasks = [
+        SubTask(
+            description="외부 리포 수정",
+            assigned_dept="aiorg_engineering_bot",
+            workdir="/tmp/openclaw",
+        ),
+    ]
+
+    task_ids = await orch.dispatch(parent_id, subtasks, chat_id=-123)
+    task = await db.get_pm_task(task_ids[0])
+
+    assert task is not None
+    assert task["metadata"]["workdir"] == "/tmp/openclaw"
+
+
+@pytest.mark.asyncio
 async def test_on_task_complete_triggers_next(setup):
     orch, db, send_fn = setup
     parent_id = "T-pm-root"
@@ -128,8 +148,8 @@ async def test_all_complete_consolidates(setup):
 @pytest.mark.asyncio
 async def test_task_id_namespacing(setup):
     orch, db, send_fn = setup
-    tid1 = orch._next_task_id()
-    tid2 = orch._next_task_id()
+    tid1 = await orch._next_task_id()
+    tid2 = await orch._next_task_id()
     assert tid1.startswith("T-aiorg_pm_bot-")
     assert tid1 != tid2
 

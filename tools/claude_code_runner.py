@@ -236,6 +236,7 @@ class ClaudeCodeRunner:
         session_store: "SessionStore | None" = None,
         global_context: "GlobalContext | None" = None,
         org_id: str = "global",
+        workdir: str | None = None,
     ) -> str:
         """PM 자율 판단으로 태스크 실행. 팀 구성 여부는 Claude Code가 결정.
 
@@ -267,6 +268,7 @@ class ClaudeCodeRunner:
         result = await self._run_stream_json(
             cmd,
             progress_callback=progress_callback,
+            workdir=workdir,
             session_store=session_store,
         )
 

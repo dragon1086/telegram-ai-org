@@ -83,3 +83,20 @@ async def test_create_pm_task_with_parent(db):
     await db.create_pm_task("T-pm-001", "parent", None, "pm")
     child = await db.create_pm_task("T-pm-002", "child", "eng", "pm", parent_id="T-pm-001")
     assert child["parent_id"] == "T-pm-001"
+
+
+@pytest.mark.asyncio
+async def test_create_pm_task_persists_metadata(db):
+    created = await db.create_pm_task(
+        "T-pm-010",
+        "child",
+        "eng",
+        "pm",
+        metadata={"workdir": "/tmp/openclaw"},
+    )
+
+    assert created["metadata"]["workdir"] == "/tmp/openclaw"
+
+    fetched = await db.get_pm_task("T-pm-010")
+    assert fetched is not None
+    assert fetched["metadata"]["workdir"] == "/tmp/openclaw"
