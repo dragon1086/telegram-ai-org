@@ -236,9 +236,26 @@ class PMOrchestrator:
 
         return subtasks
 
+    async def _send_plan_preview(self, subtasks: list[SubTask], chat_id: int) -> None:
+        """태스크 분배 전 계획을 먼저 텔레그램에 보여준다."""
+        lines = ["📋 **PM 실행 계획**\n"]
+        for i, st in enumerate(subtasks):
+            dept_name = KNOWN_DEPTS.get(st.assigned_dept, st.assigned_dept)
+            desc_short = st.description[:100].replace("\n", " ")
+            deps = f" (의존: {','.join(st.depends_on)})" if st.depends_on else ""
+            lines.append(f"{i+1}. **{dept_name}**: {desc_short}{deps}")
+        lines.append(f"\n총 {len(subtasks)}개 서브태스크 → 실행 시작합니다.")
+        try:
+            await self._send(chat_id, "\n".join(lines))
+        except Exception as e:
+            logger.warning(f"[PM] 계획 미리보기 전송 실패: {e}")
+
     async def dispatch(self, parent_task_id: str, subtasks: list[SubTask],
                        chat_id: int) -> list[str]:
         """서브태스크를 ContextDB에 생성하고 TaskGraph 구성 후 첫 번째 웨이브 발송."""
+        # 0. 계획 미리보기 전송
+        await self._send_plan_preview(subtasks, chat_id)
+
         task_ids: list[str] = []
 
         # 1. 서브태스크 생성 (구조화 프롬프트 적용)
