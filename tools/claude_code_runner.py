@@ -221,7 +221,13 @@ class ClaudeCodeRunner:
 
         # Codex는 git repo 안에서만 실행 가능 → 프로젝트 루트 사용
         codex_workdir = str(Path(__file__).parent.parent)  # ~/telegram-ai-org
-        cmd = [codex_cli, "exec", "--full-auto", "--skip-git-repo-check", full_task]
+        cmd = [
+            codex_cli,
+            "exec",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--skip-git-repo-check",
+            full_task,
+        ]
         logger.info(f"[codex] task={task[:60]}, workdir={codex_workdir}")
         return await self._run_subprocess(cmd, workdir=codex_workdir, progress_callback=progress_callback)
 

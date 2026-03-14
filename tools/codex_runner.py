@@ -185,7 +185,13 @@ class CodexRunner:
         resolved_workdir = workdir or self._resolve_workdir(full_prompt)
 
         # codex exec <PROMPT> — 비인터랙티브 모드, --prompt 플래그 없음
-        cmd = [self.cli_path, "exec", "--skip-git-repo-check", full_prompt]
+        cmd = [
+            self.cli_path,
+            "exec",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--skip-git-repo-check",
+            full_prompt,
+        ]
         if model:
             cmd += ["-c", f"model={model}"]
 
