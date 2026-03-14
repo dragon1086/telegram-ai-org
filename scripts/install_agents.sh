@@ -24,16 +24,21 @@ find "$TMP_DIR/agency-agents" -maxdepth 2 -name "*.md" \
 AGENT_COUNT=$(ls "$AGENTS_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
 echo "✅ $AGENT_COUNT 에이전트 설치됨 → $AGENTS_DIR"
 
-# 2. Claude Code 심볼릭 링크 (엔진이 claude-code 또는 both일 때만)
+# 2. Claude Code 에이전트 복사 (엔진이 claude-code 또는 both일 때만)
+# 심볼릭 링크 대신 복사 — 사용자가 나중에 Claude Code 설치 후
+# ~/.claude/agents/에 직접 에이전트를 추가해도 충돌 없음
 if [[ "$ENGINE" == "claude-code" || "$ENGINE" == "both" ]]; then
   CLAUDE_AGENTS="$HOME/.claude/agents"
-  if [[ -d "$CLAUDE_AGENTS" ]]; then
-    echo "ℹ️  ~/.claude/agents/ 이미 존재 — 심볼릭 링크 스킵"
-  else
-    mkdir -p "$(dirname "$CLAUDE_AGENTS")"
-    ln -sf "$AGENTS_DIR" "$CLAUDE_AGENTS"
-    echo "🔗 ~/.claude/agents → $AGENTS_DIR 심볼릭 링크 생성"
-  fi
+  mkdir -p "$CLAUDE_AGENTS"
+  # 기존 파일은 덮어쓰지 않음 (사용자 커스텀 보호)
+  for md in "$AGENTS_DIR"/*.md; do
+    fname="$(basename "$md")"
+    if [[ ! -f "$CLAUDE_AGENTS/$fname" ]]; then
+      cp "$md" "$CLAUDE_AGENTS/$fname"
+    fi
+  done
+  NEW_COUNT=$(ls "$CLAUDE_AGENTS"/*.md 2>/dev/null | wc -l | tr -d ' ')
+  echo "📂 ~/.claude/agents/ 에 $NEW_COUNT 에이전트 (기존 파일 보존)"
 fi
 
 # 3. Cleanup
