@@ -3,12 +3,16 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aiosqlite
 
 DEFAULT_DB_PATH = Path(os.environ.get("CONTEXT_DB_PATH", "~/.ai-org/context.db")).expanduser()
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 class ContextDB:
@@ -152,7 +156,7 @@ class ContextDB:
 
     async def create_project(self, project_id: str, name: str, description: str = "") -> None:
         """프로젝트 생성."""
-        now = datetime.utcnow().isoformat()
+        now = _utcnow_iso()
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "INSERT OR IGNORE INTO projects (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -164,7 +168,7 @@ class ContextDB:
         self, slot_id: str, project_id: str, slot_type: str, content: str
     ) -> None:
         """컨텍스트 슬롯 저장 (PM만 호출해야 함)."""
-        now = datetime.utcnow().isoformat()
+        now = _utcnow_iso()
         async with aiosqlite.connect(self.db_path) as db:
             existing = await db.execute(
                 "SELECT version FROM context_slots WHERE id = ?", (slot_id,)
@@ -218,7 +222,7 @@ class ContextDB:
                              created_by: str, parent_id: str | None = None,
                              metadata: dict | None = None) -> dict:
         """PM 태스크 생성 (크로스 프로세스 공유)."""
-        now = datetime.utcnow().isoformat()
+        now = _utcnow_iso()
         meta = json.dumps(metadata or {})
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
@@ -230,12 +234,13 @@ class ContextDB:
             await db.commit()
         return {"id": task_id, "parent_id": parent_id, "description": description,
                 "assigned_dept": assigned_dept, "status": "pending",
-                "created_by": created_by, "created_at": now, "updated_at": now}
+                "created_by": created_by, "created_at": now, "updated_at": now,
+                "metadata": metadata or {}}
 
     async def update_pm_task_status(self, task_id: str, status: str,
                                      result: str | None = None) -> dict | None:
         """PM 태스크 상태 업데이트."""
-        now = datetime.utcnow().isoformat()
+        now = _utcnow_iso()
         async with aiosqlite.connect(self.db_path) as db:
             if result is not None:
                 await db.execute(
@@ -258,7 +263,7 @@ class ContextDB:
             row = await cursor.fetchone()
             if not row:
                 return None
-            return dict(row)
+            return self._decode_pm_task_row(row)
 
     async def get_subtasks(self, parent_id: str) -> list[dict]:
         """부모 태스크의 자식 태스크들 조회."""
@@ -269,7 +274,7 @@ class ContextDB:
                 (parent_id,),
             )
             rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
+            return [self._decode_pm_task_row(r) for r in rows]
 
     async def add_dependency(self, task_id: str, depends_on: str) -> None:
         """태스크 의존성 추가."""
@@ -294,7 +299,20 @@ class ContextDB:
                 )
             """, (parent_id,))
             rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
+            return [self._decode_pm_task_row(r) for r in rows]
+
+    @staticmethod
+    def _decode_pm_task_row(row: aiosqlite.Row) -> dict:
+        data = dict(row)
+        raw_meta = data.get("metadata")
+        if isinstance(raw_meta, str):
+            try:
+                data["metadata"] = json.loads(raw_meta)
+            except json.JSONDecodeError:
+                data["metadata"] = {}
+        elif raw_meta is None:
+            data["metadata"] = {}
+        return data
 
     # ── Discussion CRUD ───────────────────────────────────────────────────
 
@@ -304,7 +322,7 @@ class ContextDB:
                                  max_rounds: int = 3,
                                  round_timeout_sec: float = 120.0) -> dict:
         """토론 생성."""
-        now = datetime.utcnow().isoformat()
+        now = _utcnow_iso()
         parts_json = json.dumps(participants)
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
@@ -325,7 +343,7 @@ class ContextDB:
                                       topic: str, content: str,
                                       from_dept: str, round_num: int) -> dict:
         """토론 메시지 추가."""
-        now = datetime.utcnow().isoformat()
+        now = _utcnow_iso()
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 """INSERT INTO pm_discussion_messages
@@ -390,7 +408,7 @@ class ContextDB:
     async def update_discussion_status(self, discussion_id: str, status: str,
                                         decision: str | None = None) -> dict | None:
         """토론 상태 업데이트."""
-        now = datetime.utcnow().isoformat()
+        now = _utcnow_iso()
         async with aiosqlite.connect(self.db_path) as db:
             if decision is not None:
                 await db.execute(
@@ -407,7 +425,7 @@ class ContextDB:
 
     async def advance_discussion_round(self, discussion_id: str) -> int:
         """토론 라운드 진행. 새 라운드 번호 반환."""
-        now = datetime.utcnow().isoformat()
+        now = _utcnow_iso()
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "UPDATE pm_discussions SET current_round=current_round+1, updated_at=? WHERE id=?",
@@ -465,8 +483,7 @@ class ContextDB:
 
     async def get_stalled_tasks(self, stall_minutes: int = 30) -> list[str]:
         """지정 시간 이상 진행 없는 태스크 ID 목록 반환."""
-        from datetime import datetime, timedelta
-        cutoff = (datetime.utcnow() - timedelta(minutes=stall_minutes)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(minutes=stall_minutes)).isoformat()
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 """SELECT id FROM pm_tasks
@@ -489,7 +506,7 @@ class ContextDB:
         verifier_model: str,
     ) -> str:
         """교차 검증 요청 생성. 자동 생성된 ID 반환."""
-        now = datetime.utcnow().isoformat()
+        now = _utcnow_iso()
         # 고유 ID: V-{task_id}-{counter}
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
@@ -534,7 +551,7 @@ class ContextDB:
         suggestions: list[str] | None = None,
     ) -> dict | None:
         """검증 결과 업데이트."""
-        now = datetime.utcnow().isoformat()
+        now = _utcnow_iso()
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """UPDATE pm_verifications
@@ -569,7 +586,7 @@ class ContextDB:
                           created_by: str, chat_id: int,
                           max_iterations: int = 10) -> dict:
         """PM 목표 생성."""
-        now = datetime.utcnow().isoformat()
+        now = _utcnow_iso()
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """INSERT INTO pm_goals
@@ -630,7 +647,7 @@ class ContextDB:
 
     async def update_goal(self, goal_id: str, **kwargs) -> dict | None:
         """PM 목표 업데이트. milestones, status, iteration, stagnation_count, last_progress 지원."""
-        now = datetime.utcnow().isoformat()
+        now = _utcnow_iso()
 
         # 각 컬럼을 명시적으로 처리 (SQL injection 방지)
         set_parts: list[str] = []

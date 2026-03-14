@@ -99,11 +99,90 @@ class CodexRunner:
         self.workdir = workdir or str(Path.home() / ".ai-org" / "workspace")
         Path(self.workdir).mkdir(parents=True, exist_ok=True)
 
-    async def run(self, prompt: str, model: str | None = None) -> str:
+    def _resolve_workdir(self, prompt: str) -> str:
+        """프롬프트에서 외부 로컬 리포지토리/디렉토리를 찾아 작업 디렉토리로 사용한다."""
+        explicit = self._extract_explicit_path(prompt)
+        if explicit is not None:
+            logger.info(f"Codex 작업 디렉토리 선택(명시 경로): {explicit}")
+            return str(explicit)
+
+        repo_dir = self._find_repo_from_prompt(prompt)
+        if repo_dir is not None:
+            logger.info(f"Codex 작업 디렉토리 선택(로컬 리포지토리): {repo_dir}")
+            return str(repo_dir)
+
+        return self.workdir
+
+    def _extract_explicit_path(self, prompt: str) -> Path | None:
+        for raw in re.findall(r"(?:(?<=\s)|^)(~?/[^ \t\r\n'\"`]+)", prompt):
+            candidate = Path(raw).expanduser()
+            if not candidate.exists():
+                continue
+            target = candidate if candidate.is_dir() else candidate.parent
+            repo_root = self._find_repo_root(target)
+            return repo_root or target
+        return None
+
+    def _find_repo_from_prompt(self, prompt: str) -> Path | None:
+        names = self._extract_repo_names(prompt)
+        if not names:
+            return None
+
+        for search_root in self._iter_search_roots():
+            for repo_name in names:
+                for candidate in search_root.glob(f"**/{repo_name}"):
+                    if not candidate.is_dir():
+                        continue
+                    repo_root = self._find_repo_root(candidate)
+                    if repo_root is not None:
+                        return repo_root
+        return None
+
+    def _extract_repo_names(self, prompt: str) -> list[str]:
+        names: list[str] = []
+        for match in re.findall(r"\b[a-zA-Z0-9._-]{2,}\b", prompt):
+            lowered = match.lower()
+            if lowered in {"repo", "repository", "directory", "dir", "path", "local", "git"}:
+                continue
+            if lowered not in names:
+                names.append(lowered)
+        return names
+
+    def _iter_search_roots(self) -> list[Path]:
+        configured = os.environ.get("CODEX_REPO_SEARCH_ROOTS", "")
+        if configured:
+            roots = [Path(part).expanduser() for part in configured.split(os.pathsep) if part.strip()]
+        else:
+            home = Path.home()
+            roots = [
+                home / "Downloads",
+                home / "Desktop",
+                home / "Documents",
+                home / "workspace",
+                home / "code",
+                home / "src",
+            ]
+        return [root for root in roots if root.is_dir()]
+
+    def _find_repo_root(self, path: Path) -> Path | None:
+        current = path.resolve()
+        for candidate in [current, *current.parents]:
+            git_dir = candidate / ".git"
+            if git_dir.exists():
+                return candidate
+        return None
+
+    async def _run(
+        self,
+        prompt: str,
+        model: str | None = None,
+        workdir: str | None = None,
+    ) -> str:
         """Codex 실행 후 결과 반환. 에이전트 프롬프트 자동 주입."""
         # 에이전트 프롬프트 주입
         agent_context = _select_agent_prompts(prompt)
         full_prompt = f"{agent_context}\n\n{prompt}" if agent_context else prompt
+        resolved_workdir = workdir or self._resolve_workdir(full_prompt)
 
         # codex exec <PROMPT> — 비인터랙티브 모드, --prompt 플래그 없음
         cmd = [self.cli_path, "exec", "--skip-git-repo-check", full_prompt]
@@ -117,7 +196,7 @@ class CodexRunner:
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=self.workdir,
+                cwd=resolved_workdir,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.timeout)
 
@@ -133,3 +212,7 @@ class CodexRunner:
             return f"❌ Codex CLI 없음: {self.cli_path}"
         except Exception as e:
             return f"❌ 예외: {e}"
+
+    async def run(self, prompt: str, model: str | None = None, workdir: str | None = None) -> str:
+        """Codex 실행 후 결과 반환. 에이전트 프롬프트 자동 주입."""
+        return await self._run(prompt, model=model, workdir=workdir)

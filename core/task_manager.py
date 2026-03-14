@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Callable
 
@@ -50,7 +50,7 @@ class Task(BaseModel):
 
     def model_post_init(self, __context: object) -> None:
         if not self.created_at:
-            self.created_at = datetime.utcnow().isoformat()
+            self.created_at = datetime.now(UTC).isoformat()
 
     def all_acked(self) -> bool:
         """모든 할당 봇이 완료를 확인했는지."""
@@ -90,7 +90,7 @@ class TaskManager:
             if valid and status not in valid:
                 raise ValueError(f"Invalid transition: {task.status.value} -> {status.value}")
             task.status = status
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(UTC).isoformat()
             if status == TaskStatus.RUNNING:
                 task.started_at = now
             elif status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.CLOSED, TaskStatus.CANCELLED):

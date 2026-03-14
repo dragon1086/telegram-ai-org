@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from loguru import logger
 
@@ -55,8 +55,8 @@ class CompletionProtocol:
 
     async def wait_for_completion(self, task_id: str, timeout: int = ACK_TIMEOUT_SECONDS) -> bool:
         """타임아웃까지 완료 대기."""
-        deadline = datetime.utcnow() + timedelta(seconds=timeout)
-        while datetime.utcnow() < deadline:
+        deadline = datetime.now(UTC) + timedelta(seconds=timeout)
+        while datetime.now(UTC) < deadline:
             task = self.task_manager.get_task(task_id)
             if task and task.status == TaskStatus.CLOSED:
                 return True
