@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 from loguru import logger
+from core.orchestration_config import load_orchestration_config
 
 
 class PMIdentity:
@@ -19,20 +20,34 @@ class PMIdentity:
 
     def load(self) -> dict:
         """정체성 로드. {"role": ..., "specialties": [...], "bot_name": ...}"""
+        cfg = None
+        try:
+            cfg = load_orchestration_config().get_org(self.org_id)
+        except Exception:
+            cfg = None
+
+        file_data = self._load_file_overrides()
+
+        if cfg is not None:
+            self._data = {
+                "org_id": self.org_id,
+                "bot_name": f"@{cfg.username}" if cfg.username and not cfg.username.startswith("@") else cfg.username,
+                "role": cfg.role,
+                "specialties": cfg.specialties,
+                "direction": cfg.direction,
+                "preferred_agents": list(cfg.team.get("preferred_agents", [])),
+                "default_handler": cfg.default_handler,
+            }
+            self._apply_file_overrides(file_data)
+            return self._data
+
         if not self.path.exists():
             logger.warning(f"PM 정체성 파일 없음: {self.path}")
             return self._defaults()
 
-        text = self.path.read_text(encoding="utf-8")
-        core_section = self._extract_core_section(text)
-
         self._data = {
             "org_id": self.org_id,
-            "bot_name": self._parse_field(core_section, "봇명"),
-            "role": self._parse_field(core_section, "역할"),
-            "specialties": self._parse_specialties(core_section),
-            "direction": self._parse_field(core_section, "방향성"),
-            "default_handler": self.org_id == "global" or "어떤 PM도 자신없을 때 기본 담당" in core_section or "default_handler: true" in core_section,
+            **file_data,
         }
         logger.debug(f"PM 정체성 로드: {self.org_id} → {self._data['role']}")
         return self._data
@@ -47,6 +62,18 @@ class PMIdentity:
     def _load_team_config(self) -> dict:
         """봇 yaml의 team_config 섹션 로드. 없으면 빈 dict."""
         try:
+            cfg = load_orchestration_config().get_org(self.org_id)
+            if cfg is not None:
+                return {
+                    "preferred_agents": list(cfg.team.get("preferred_agents", [])),
+                    "avoid_agents": list(cfg.team.get("avoid_agents", [])),
+                    "preferred_skills": list(cfg.team.get("preferred_skills", [])),
+                    "max_team_size": cfg.team.get("max_team_size", 3),
+                    "guidance": cfg.team.get("guidance", ""),
+                }
+        except Exception:
+            pass
+        try:
             import yaml  # type: ignore
             bot_yaml = Path(__file__).parent.parent / "bots" / f"{self.org_id}.yaml"
             if bot_yaml.exists():
@@ -59,6 +86,26 @@ class PMIdentity:
 
     def _load_colleagues(self) -> list[dict]:
         """동료 팀 목록 로드 (self.org_id 제외, global은 모두 포함)."""
+        try:
+            cfg = load_orchestration_config()
+            current = cfg.get_org(self.org_id)
+            if current is not None:
+                colleagues = []
+                for org in cfg.list_orgs():
+                    if org.id == self.org_id:
+                        continue
+                    if not current.default_handler and org.default_handler:
+                        continue
+                    colleagues.append({
+                        "org_id": org.id,
+                        "bot_name": f"@{org.username}" if org.username and not org.username.startswith("@") else org.username,
+                        "role": org.role,
+                        "specialties": org.specialties,
+                    })
+                if colleagues:
+                    return colleagues
+        except Exception:
+            pass
         colleagues = []
         is_global = self._data.get("default_handler", False)
         for path in sorted(self.MEMORY_DIR.glob("pm_*.md")):
@@ -92,6 +139,21 @@ class PMIdentity:
                 pass
         return colleagues
 
+    def get_team_preferences(self) -> dict:
+        """실행 엔진/팀 구성에 필요한 조직 선호값 반환."""
+        if not self._data:
+            self.load()
+        team_cfg = self._load_team_config()
+        return {
+            "role": self._data.get("role", ""),
+            "specialties": self._data.get("specialties", []),
+            "direction": self._data.get("direction", ""),
+            "preferred_agents": self._data.get("preferred_agents", []),
+            "avoid_agents": team_cfg.get("avoid_agents", []),
+            "max_team_size": team_cfg.get("max_team_size", 3),
+            "guidance": team_cfg.get("guidance", ""),
+        }
+
     def build_system_prompt(self) -> str:
         """Claude --append-system-prompt에 주입할 전체 시스템 프롬프트."""
         if not self._data:
@@ -121,6 +183,11 @@ class PMIdentity:
                 recommend_line = f"\n추천 (태스크+전문분야 기반): {', '.join(recommended)}"
         except Exception:
             pass
+        preferred_agents = data.get("preferred_agents", [])
+        preferred_line = (
+            f"\n우선 고려할 에이전트: {', '.join(preferred_agents)}"
+            if preferred_agents else ""
+        )
 
         direction = data.get("direction", "")
         direction_line = f"- 방향성: {direction}" if direction else "- 방향성: 조직의 정체성에 맞게 판단"
@@ -155,7 +222,7 @@ class PMIdentity:
             colleague_section = f"""
 ## 동료 팀 (협업 가능)
 {colleague_lines}
-→ 위 팀이 더 적합한 업무가 있으면 [COLLAB:태스크|맥락:ctx] 태그로 위임 요청
+→ 위 팀이 더 적합한 업무가 있으면 아래 "협업 요청" 규칙의 COLLAB 태그로 위임 요청
 """
         else:
             colleague_section = ""
@@ -170,8 +237,11 @@ class PMIdentity:
 ## 팀 구성 전략: {strategy_desc.get(strategy_name, strategy_name)}
 
 ## 에이전트
-전체 목록: ~/.claude/agents/ (팀 구성 전 ls로 확인 후 실제 존재하는 에이전트만 사용){recommend_line}
-- 에이전트 선택 원칙: 태스크 수신 시 ~/.claude/agents/ 를 ls로 확인 후, 태스크에 가장 적합한 에이전트 파일만 개별 Read해서 팀 구성. 전체 목록을 한번에 읽지 말 것 (토큰 낭비).
+전체 목록: ~/.claude/agents/ (팀 구성 전 ls로 확인 후 실제 존재하는 에이전트만 사용){recommend_line}{preferred_line}
+- 에이전트 선택 원칙:
+  태스크 수신 시 ~/.claude/agents/ 를 ls로 확인 후,
+  태스크에 가장 적합한 에이전트 파일만 개별 Read해서 팀 구성.
+  전체 목록을 한번에 읽지 말 것 (토큰 낭비).
 {colleague_section}{team_config_section}
 ## 팀 구성 원칙 (필수 준수)
 
@@ -215,7 +285,6 @@ class PMIdentity:
 ## 협업 요청
 작업 중 다른 조직의 도움이 필요할 때:
 → 응답에 [COLLAB:구체적 작업 설명|맥락: 현재 작업 요약] 태그를 포함하세요
-→ 예: [COLLAB:출시 홍보 카피 3개 필요|맥락: Python JWT 로그인 라이브러리 v1.0, B2B 타겟]
 → 태그는 한 번에 최대 1개, 정말 필요할 때만 사용
 → 협업 결과는 채팅방에서 자동으로 전달됩니다
 
@@ -241,14 +310,54 @@ class PMIdentity:
             return []
         return [s.strip() for s in raw.split(",") if s.strip()]
 
+    def _parse_list_field(self, text: str, field: str) -> list[str]:
+        raw = self._parse_field(text, field)
+        if not raw:
+            return []
+        return [item.strip() for item in raw.split(",") if item.strip()]
+
     def _defaults(self) -> dict:
         return {
             "org_id": self.org_id,
             "bot_name": f"@{self.org_id}_bot",
             "role": "일반 PM",
             "specialties": [],
+            "preferred_agents": [],
             "default_handler": self.org_id == "global",
         }
+
+    def _load_file_overrides(self) -> dict:
+        """pm_{org}.md 값을 읽어 config 위에 덮어쓸 override를 만든다."""
+        if not self.path.exists():
+            return self._defaults()
+
+        text = self.path.read_text(encoding="utf-8")
+        core_section = self._extract_core_section(text)
+        return {
+            "org_id": self.org_id,
+            "bot_name": self._parse_field(core_section, "봇명"),
+            "role": self._parse_field(core_section, "역할"),
+            "specialties": self._parse_specialties(core_section),
+            "direction": self._parse_field(core_section, "방향성"),
+            "preferred_agents": self._parse_list_field(core_section, "선호 에이전트"),
+            "default_handler": (
+                self.org_id == "global"
+                or "어떤 PM도 자신없을 때 기본 담당" in core_section
+                or "default_handler: true" in core_section
+            ),
+        }
+
+    def _apply_file_overrides(self, file_data: dict) -> None:
+        """config 기반 기본값 위에 사용자가 /org 로 저장한 값을 덮어쓴다."""
+        for key in ("bot_name", "role", "direction"):
+            if file_data.get(key):
+                self._data[key] = file_data[key]
+
+        if file_data.get("specialties"):
+            self._data["specialties"] = file_data["specialties"]
+
+        if file_data.get("preferred_agents"):
+            self._data["preferred_agents"] = file_data["preferred_agents"]
 
     def update(self, new_data: dict) -> None:
         """정체성 업데이트 후 파일 저장."""
