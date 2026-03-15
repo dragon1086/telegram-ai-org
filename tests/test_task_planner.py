@@ -19,6 +19,16 @@ WORKERS = [
 ]
 
 
+class _FakeDecisionClient:
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+        self.calls = 0
+
+    async def complete(self, prompt: str, *, system_prompt: str = "", workdir: str | None = None) -> str:
+        self.calls += 1
+        return json.dumps(self.payload, ensure_ascii=False)
+
+
 def _make_planner() -> TaskPlanner:
     with patch("core.task_planner.AsyncOpenAI"):
         return TaskPlanner()
@@ -145,6 +155,26 @@ async def test_plan_llm_failure_uses_fallback():
     assert len(plan.phases) == 1
     assert plan.phases[0].parallel is False
     assert plan.phases[0].tasks[0].worker_name == WORKERS[0]["name"]
+
+
+@pytest.mark.asyncio
+async def test_plan_prefers_decision_client():
+    payload = {
+        "summary": "decision client 계획",
+        "estimated_workers": ["researcher"],
+        "phases": [
+            {
+                "parallel": False,
+                "tasks": [{"worker_name": "researcher", "instruction": "조사", "depends_on": []}],
+            }
+        ],
+    }
+    planner = TaskPlanner(decision_client=_FakeDecisionClient(payload))
+
+    plan = await planner.plan("조사해줘", WORKERS)
+
+    assert plan.summary == "decision client 계획"
+    assert plan.phases[0].tasks[0].worker_name == "researcher"
 
 
 # ---------------------------------------------------------------------------

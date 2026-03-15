@@ -72,7 +72,7 @@ class TestParseDecompose:
             lines.append(f"DEPT:{dept}|TASK:{dept} 작업|DEPENDS:none")
         response = "\n".join(lines)
         result = PMOrchestrator._parse_decompose(response)
-        assert len(result) == 5
+        assert len(result) == len(KNOWN_DEPTS)
 
 
 class TestKeywordDecompose:

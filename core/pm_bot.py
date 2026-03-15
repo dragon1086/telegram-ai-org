@@ -20,6 +20,7 @@ from core.task_manager import TaskManager, TaskStatus
 from core.worker_registry import WorkerRegistry
 from core.agent_catalog import AgentCatalog
 from core.dynamic_team_builder import DynamicTeamBuilder
+from core.pm_decision import PMDecisionClient
 from tools.claude_code_runner import ClaudeCodeRunner
 
 
@@ -36,6 +37,7 @@ class PMBot:
     def __init__(self) -> None:
         self.token = os.environ["PM_BOT_TOKEN"]
         self.group_chat_id = int(os.environ["TELEGRAM_GROUP_CHAT_ID"])
+        self.org_id = os.environ.get("PM_ORG_NAME", "global")
         self.task_manager = TaskManager()
         self.context_db = ContextDB()
         self.app: Application | None = None
@@ -44,8 +46,9 @@ class PMBot:
         # 동적 워커 레지스트리
         self.registry = WorkerRegistry()
         self.workers = self.registry.load()
-        self.router = LLMRouter()
-        self.planner = TaskPlanner()
+        self._decision_client = PMDecisionClient(org_id=self.org_id)
+        self.router = LLMRouter(decision_client=self._decision_client)
+        self.planner = TaskPlanner(decision_client=self._decision_client)
         self.health = WorkerHealthMonitor()
         # 워커 상태 모니터에 등록
         for w in self.workers:
@@ -54,7 +57,10 @@ class PMBot:
         # 동적 팀 빌더 (새 아키텍처)
         self.agent_catalog = AgentCatalog()
         self.agent_catalog.load()
-        self.team_builder = DynamicTeamBuilder(catalog=self.agent_catalog)
+        self.team_builder = DynamicTeamBuilder(
+            catalog=self.agent_catalog,
+            decision_client=self._decision_client,
+        )
         self.runner = ClaudeCodeRunner()
         # 태스크별 실행 계획 및 Phase 상태 추적
         self._plans: dict[str, ExecutionPlan] = {}
@@ -75,8 +81,8 @@ class PMBot:
             logger.info(f"[pm_bot] 엔진=codex → run_codex()")
             return await self.runner.run_codex(task, org_id=self.org_id, agents=agent_names)
 
-        if team_config.execution_mode == ExecutionMode.omc_team:
-            return await self.runner.run_omc_team(task, agent_names)
+        if team_config.execution_mode == ExecutionMode.structured_team:
+            return await self.runner.run_structured_team(task, agent_names)
         elif team_config.execution_mode == ExecutionMode.agent_teams:
             return await self.runner.run_agent_teams(task, agent_names)
         else:

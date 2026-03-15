@@ -18,6 +18,16 @@ SAMPLE_WORKERS = [
 ]
 
 
+class _FakeDecisionClient:
+    def __init__(self, response: str) -> None:
+        self.response = response
+        self.calls = 0
+
+    async def complete(self, prompt: str, *, system_prompt: str = "", workdir: str | None = None) -> str:
+        self.calls += 1
+        return self.response
+
+
 def _make_router() -> LLMRouter:
     with patch("core.llm_router.AsyncOpenAI"):
         return LLMRouter()
@@ -88,3 +98,15 @@ async def test_route_simple_no_workers_returns_empty():
 
     assert result == []
     router.client.chat.completions.create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_route_simple_prefers_decision_client():
+    payload = '{"analysis":"ok","assignments":[{"worker_name":"researcher","instruction":"research","priority":"high"}],"completion_criteria":"done"}'
+    client = _FakeDecisionClient(payload)
+    router = LLMRouter(decision_client=client)
+
+    result = await router.route_simple("리서치 해줘", SAMPLE_WORKERS)
+
+    assert result == ["researcher"]
+    assert client.calls == 1

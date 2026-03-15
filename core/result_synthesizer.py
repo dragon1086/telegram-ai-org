@@ -15,6 +15,7 @@ from loguru import logger
 
 from core.llm_provider import get_provider
 from core.constants import KNOWN_DEPTS
+from core.pm_decision import DecisionClientProtocol
 
 
 class SynthesisJudgment(str, Enum):
@@ -63,6 +64,9 @@ _SYNTHESIS_PROMPT = (
 class ResultSynthesizer:
     """부서 결과를 LLM으로 분석·판단하는 합성기."""
 
+    def __init__(self, decision_client: DecisionClientProtocol | None = None) -> None:
+        self._decision_client = decision_client
+
     async def synthesize(
         self, original_request: str, subtasks: list[dict],
     ) -> SynthesisResult:
@@ -76,8 +80,8 @@ class ResultSynthesizer:
         self, original_request: str, subtasks: list[dict],
     ) -> SynthesisResult | None:
         """LLM 기반 합성. 실패 시 None."""
-        provider = get_provider()
-        if provider is None:
+        provider = None if self._decision_client is not None else get_provider()
+        if self._decision_client is None and provider is None:
             return None
 
         dept_results = "\n".join(
@@ -92,10 +96,16 @@ class ResultSynthesizer:
         )
 
         try:
-            response = await asyncio.wait_for(
-                provider.complete(prompt, timeout=20.0),
-                timeout=25.0,
-            )
+            if self._decision_client is not None:
+                response = await asyncio.wait_for(
+                    self._decision_client.complete(prompt),
+                    timeout=45.0,
+                )
+            else:
+                response = await asyncio.wait_for(
+                    provider.complete(prompt, timeout=20.0),
+                    timeout=25.0,
+                )
             return self._parse_synthesis(response)
         except Exception as e:
             logger.warning(f"[Synthesizer] LLM 합성 실패, fallback: {e}")
