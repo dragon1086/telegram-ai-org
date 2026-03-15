@@ -453,7 +453,7 @@ class ClaudeCodeRunner:
             proc = await asyncio.create_subprocess_exec(
                 *stream_cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
                 cwd=workdir or self.workdir,
                 env=env,
                 limit=1024 * 1024 * 10,  # 10MB — 기본 64KB 한도 초과 방지
@@ -600,6 +600,25 @@ class ClaudeCodeRunner:
             msg = f"❌ 실행 중 오류: {exc}"
             logger.exception(msg)
             return msg
+
+        # stderr 읽기 (디버깅용)
+        stderr_text = ""
+        if proc.stderr is not None:
+            try:
+                stderr_raw = await proc.stderr.read()
+                stderr_text = stderr_raw.decode("utf-8", errors="replace").strip()
+                if stderr_text:
+                    logger.debug(f"[stream_json] stderr: {stderr_text[:300]}")
+            except Exception:
+                pass
+
+        # 에러 반환코드 시 ERROR: 접두사 추가
+        if proc.returncode and proc.returncode != 0:
+            if final_result:
+                return f"ERROR: {final_result}"
+            if stderr_text:
+                return f"ERROR: {stderr_text[:1000]}"
+            return f"ERROR: 프로세스 오류 (code={proc.returncode})"
 
         # stream-json이 아무 JSON도 못 파싱했으면 raw 텍스트 반환
         if not final_result and raw_lines:

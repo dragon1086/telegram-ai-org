@@ -191,13 +191,17 @@ class DynamicTeamBuilder:
                     system_prompt=_TEAM_SYSTEM_PROMPT,
                 )
             else:
-                resp = await self._client.messages.create(
-                    model=self._model,
-                    max_tokens=512,
-                    system=_TEAM_SYSTEM_PROMPT,
-                    messages=[
-                        {"role": "user", "content": task_context},
-                    ],
+                import asyncio as _asyncio
+                resp = await _asyncio.wait_for(
+                    self._client.messages.create(
+                        model=self._model,
+                        max_tokens=512,
+                        system=_TEAM_SYSTEM_PROMPT,
+                        messages=[
+                            {"role": "user", "content": task_context},
+                        ],
+                    ),
+                    timeout=30.0,
                 )
                 content = resp.content[0].text if resp.content else "{}"
             data = json.loads(content)
@@ -245,14 +249,22 @@ class DynamicTeamBuilder:
 
         personas: list[AgentPersona] = []
         for spec in agents_spec:
-            name = spec.get("name", "")
-            count = max(1, min(3, int(spec.get("count", 1))))
-            persona = self._catalog.get_persona(name)
-            if persona is None:
-                from core.agent_catalog import AgentPersona, DEFAULT_MODEL
-                persona = AgentPersona(name=name, description=f"{name} agent", model=DEFAULT_MODEL)
-            for _ in range(count):
-                personas.append(persona)
+            try:
+                name = spec.get("name", "")
+                raw_count = spec.get("count", 1)
+                try:
+                    count = max(1, min(3, int(raw_count)))
+                except (ValueError, TypeError):
+                    logger.warning("Invalid agent count '{}', defaulting to 1", raw_count)
+                    count = 1
+                persona = self._catalog.get_persona(name)
+                if persona is None:
+                    from core.agent_catalog import AgentPersona, DEFAULT_MODEL
+                    persona = AgentPersona(name=name, description=f"{name} agent", model=DEFAULT_MODEL)
+                for _ in range(count):
+                    personas.append(persona)
+            except Exception as spec_err:
+                logger.warning("Failed to parse agent spec {}: {}", spec, spec_err)
 
         # Engine: from LLM response, validated
         engine_raw = data.get("engine", "")

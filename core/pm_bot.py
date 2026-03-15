@@ -2,6 +2,7 @@
 """PM Bot — 오케스트레이터."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 
@@ -66,6 +67,8 @@ class PMBot:
         self._plans: dict[str, ExecutionPlan] = {}
         self._phase_idx: dict[str, int] = {}
         self._phase_pending: dict[str, set[str]] = {}
+        self._phase_results: dict[str, dict[str, str]] = {}  # task_id → {sub_id: result}
+        self._phase_failures: dict[str, int] = {}  # task_id → failure count
 
     async def _execute_with_dynamic_team(self, task: str) -> str:
         """DynamicTeamBuilder로 팀 구성 → ClaudeCodeRunner로 실행."""
@@ -76,13 +79,20 @@ class PMBot:
         from core.dynamic_team_builder import ExecutionMode
         agent_names = [p.name for p in team_config.agents]
 
+        # 에이전트별 카운트 계산
+        agent_counts: dict[str, int] = {}
+        for p in team_config.agents:
+            agent_counts[p.name] = agent_counts.get(p.name, 0) + 1
+        unique_names = list(agent_counts.keys())
+        counts = [agent_counts[n] for n in unique_names]
+
         # 엔진 우선 분기: codex가 명시되면 Codex CLI로 라우팅
         if team_config.engine == "codex":
             logger.info(f"[pm_bot] 엔진=codex → run_codex()")
             return await self.runner.run_codex(task, org_id=self.org_id, agents=agent_names)
 
         if team_config.execution_mode == ExecutionMode.structured_team:
-            return await self.runner.run_structured_team(task, agent_names)
+            return await self.runner.run_structured_team(task, unique_names, counts=counts)
         elif team_config.execution_mode == ExecutionMode.agent_teams:
             return await self.runner.run_agent_teams(task, agent_names)
         else:
@@ -259,8 +269,14 @@ class PMBot:
                     duration_sec=0.0,
                 ))
 
+            # 결과 누적
+            if root_task_id not in self._phase_results:
+                self._phase_results[root_task_id] = {}
+            self._phase_results[root_task_id][sub_id] = org_msg.content or ""
+
             # 실패 시 리트라이 또는 DLQ
             if not is_success:
+                self._phase_failures[root_task_id] = self._phase_failures.get(root_task_id, 0) + 1
                 self.health.record_attempt(sub_id)
                 if self.health.should_retry(sub_id):
                     delay = self.health.get_retry_delay(sub_id)
@@ -345,7 +361,7 @@ class PMBot:
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if update.message:
-            agents = self.catalog.list_agents() if hasattr(self, "catalog") else []
+            agents = self.agent_catalog.list_agents() if hasattr(self, "agent_catalog") else []
             agent_names = ", ".join(a.name for a in agents[:8])
             more = f" 외 {len(agents)-8}개" if len(agents) > 8 else ""
             await update.message.reply_text(
