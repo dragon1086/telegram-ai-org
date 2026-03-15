@@ -1,6 +1,7 @@
 """Task 1.5 + 1.6 테스트 — PM Intercept Mechanism + TelegramRelay 통합."""
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import re
@@ -275,6 +276,41 @@ class TestDeptBotIgnoreUserTraffic:
             await relay.on_attachment(update, context)
 
             context.bot.get_file.assert_not_called()
+
+
+class TestAttachmentGrouping:
+    @pytest.mark.asyncio
+    async def test_attachment_group_flushes_once(self):
+        from core.telegram_relay import TelegramRelay
+        from core.attachment_manager import AttachmentContext
+
+        relay = TelegramRelay(
+            token="fake",
+            allowed_chat_id=123,
+            session_manager=MagicMock(),
+            memory_manager=MagicMock(),
+            org_id="global",
+        )
+        relay._process_attachment_bundle = AsyncMock()
+
+        msg = MagicMock()
+        msg.message_id = 1
+        msg.reply_text = AsyncMock()
+
+        a1 = MagicMock(spec=AttachmentContext)
+        a1.caption = "분석해줘"
+        a1.local_path = Path("/tmp/a.png")
+        a2 = MagicMock(spec=AttachmentContext)
+        a2.caption = ""
+        a2.local_path = Path("/tmp/b.png")
+
+        await relay._queue_attachment_group(123, "grp1", a1, msg)
+        await relay._queue_attachment_group(123, "grp1", a2, msg)
+        await asyncio.sleep(1.4)
+
+        relay._process_attachment_bundle.assert_awaited_once()
+        bundle = relay._process_attachment_bundle.await_args.args[0]
+        assert len(bundle.items) == 2
 
 
 # ── _handle_pm_task 단위 테스트 ───────────────────────────────────────────

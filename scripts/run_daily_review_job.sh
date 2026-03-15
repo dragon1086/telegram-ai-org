@@ -10,6 +10,17 @@ PYTHON_BIN="./.venv/bin/python"
 
 mkdir -p "$HOME/.ai-org"
 
+if [ -f "$HOME/.ai-org/config.yaml" ]; then
+  set -a
+  source "$HOME/.ai-org/config.yaml"
+  set +a
+fi
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
 "$PYTHON_BIN" tools/orchestration_cli.py review-recent \
   --hours 24 \
   --engine claude-code \

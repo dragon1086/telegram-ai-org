@@ -12,6 +12,7 @@ import os
 import re
 import time
 from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from loguru import logger
@@ -46,7 +47,7 @@ from core.pm_router import PMRouter, PMRoute
 from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR, KNOWN_DEPTS
 from core.orchestration_config import load_orchestration_config
 from core.orchestration_runbook import OrchestrationRunbook
-from core.attachment_manager import AttachmentContext
+from core.attachment_manager import AttachmentContext, AttachmentBundle
 from core.attachment_analysis import AttachmentAnalyzer
 from core.artifact_pipeline import prepare_upload_bundle
 from core.builtin_surfaces import recommend_builtin_surfaces
@@ -66,6 +67,15 @@ AUTO_UPLOAD_FILE_RE = re.compile(r"(?:(?<=\s)|^)(~?/[^ \t\r\n'\"`]+\.\w+)")
 
 # /setup 마법사 ConversationHandler 상태
 SETUP_MENU, SETUP_AWAIT_TOKEN, SETUP_AWAIT_ENGINE = range(3)
+ATTACHMENT_GROUP_DEBOUNCE_SEC = 1.2
+
+
+@dataclass
+class _AttachmentGroupState:
+    items: list[AttachmentContext] = field(default_factory=list)
+    caption: str = ""
+    message: object | None = None
+    task: asyncio.Task | None = None
 
 
 class TelegramRelay:
@@ -115,6 +125,7 @@ class TelegramRelay:
             enabled=os.getenv("USE_DISPLAY_LIMITER", "true").lower() == "true",
         )
         self._nl_classifier = NLClassifier()
+        self._attachment_groups: dict[tuple[int, str], _AttachmentGroupState] = {}
 
         # PM 오케스트레이터 모드 — ENABLE_PM_ORCHESTRATOR + context_db 필요
         self._pm_orchestrator = None
@@ -1243,41 +1254,78 @@ class TelegramRelay:
         save_dir = Path.home() / ".ai-org" / "uploads"
         save_dir.mkdir(parents=True, exist_ok=True)
 
+        attachment = await self._download_attachment_context(msg, context, save_dir)
+        if attachment is None:
+            return
+
+        attachment.analysis_text = await self._attachment_analyzer.analyze(attachment)
+
+        media_group_id = getattr(msg, "media_group_id", None)
+        if media_group_id:
+            await self._queue_attachment_group(update.effective_chat.id, media_group_id, attachment, msg)
+            return
+
+        await self._process_attachment_bundle(AttachmentBundle(items=[attachment], caption=attachment.caption), msg)
+
+    async def _download_attachment_context(self, msg, context, save_dir: Path) -> AttachmentContext | None:
         if msg.document:
             tg_file = await context.bot.get_file(msg.document.file_id)
             filename = msg.document.file_name or f"doc_{msg.message_id}"
             save_path = save_dir / filename
             await tg_file.download_to_drive(save_path)
             caption = msg.caption or f"{filename} 파일을 분석해줘"
-            attachment = AttachmentContext.from_local_file(
+            return AttachmentContext.from_local_file(
                 kind="document",
                 local_path=save_path,
                 caption=caption,
                 original_filename=filename,
                 mime_type=msg.document.mime_type or "",
             )
-        elif msg.photo:
+        if msg.photo:
             photo = msg.photo[-1]
             tg_file = await context.bot.get_file(photo.file_id)
             save_path = save_dir / f"photo_{msg.message_id}.jpg"
             await tg_file.download_to_drive(save_path)
             caption = msg.caption or "이 이미지를 분석해줘"
-            attachment = AttachmentContext.from_local_file(
+            return AttachmentContext.from_local_file(
                 kind="photo",
                 local_path=save_path,
                 caption=caption,
                 original_filename=save_path.name,
                 mime_type="image/jpeg",
             )
-        else:
+        return None
+
+    async def _queue_attachment_group(self, chat_id: int, media_group_id: str, attachment: AttachmentContext, msg) -> None:
+        key = (chat_id, media_group_id)
+        state = self._attachment_groups.setdefault(key, _AttachmentGroupState())
+        state.items.append(attachment)
+        if attachment.caption and not state.caption:
+            state.caption = attachment.caption
+        if state.message is None:
+            state.message = msg
+        if state.task and not state.task.done():
+            state.task.cancel()
+        state.task = asyncio.create_task(self._flush_attachment_group_after_delay(key))
+
+    async def _flush_attachment_group_after_delay(self, key: tuple[int, str]) -> None:
+        try:
+            await asyncio.sleep(ATTACHMENT_GROUP_DEBOUNCE_SEC)
+        except asyncio.CancelledError:
             return
+        state = self._attachment_groups.pop(key, None)
+        if state is None or not state.items or state.message is None:
+            return
+        bundle = AttachmentBundle(items=state.items, caption=state.caption)
+        await self._process_attachment_bundle(bundle, state.message)
 
-        attachment.analysis_text = await self._attachment_analyzer.analyze(attachment)
+    async def _process_attachment_bundle(self, bundle: AttachmentBundle, msg) -> None:
+        attachment_names = ", ".join(item.local_path.name for item in bundle.items)
 
-        await msg.reply_text(f"📎 파일 수신: {save_path.name}\n처리 중...")
-        logger.info(f"[on_attachment] 저장: {save_path}")
+        await msg.reply_text(f"📎 파일 수신: {attachment_names}\n처리 중...")
+        logger.info(f"[on_attachment] 저장: {attachment_names}")
 
-        task = attachment.build_task_prompt()
+        task = bundle.build_task_prompt()
         score = await self.confidence_scorer.score(task, self.identity)
         is_default = self.identity._data.get("default_handler", False)
         if score < DEFAULT_CONFIDENCE_THRESHOLD and not is_default:

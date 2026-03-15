@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.attachment_manager import AttachmentContext
 from core.artifact_pipeline import prepare_upload_bundle
+from core.attachment_analysis import AttachmentAnalyzer
 
 
 def test_attachment_context_includes_preview(tmp_path: Path) -> None:
@@ -40,3 +41,42 @@ def test_prepare_upload_bundle_generates_html_and_slides(tmp_path: Path) -> None
     assert "report.md" in names
     assert "report.telegram-preview.html" in names
     assert "report.telegram-slides.html" in names
+
+
+def test_attachment_bundle_prompt(tmp_path: Path) -> None:
+    a = tmp_path / "a.txt"
+    b = tmp_path / "b.txt"
+    a.write_text("alpha", encoding="utf-8")
+    b.write_text("beta", encoding="utf-8")
+    from core.attachment_manager import AttachmentBundle
+
+    bundle = AttachmentBundle(
+        items=[
+            AttachmentContext.from_local_file(kind="document", local_path=a, caption="A"),
+            AttachmentContext.from_local_file(kind="document", local_path=b, caption="B"),
+        ],
+        caption="두 파일을 함께 비교해줘",
+    )
+
+    prompt = bundle.build_task_prompt()
+    assert "총 2개" in prompt
+    assert "alpha" in prompt
+    assert "beta" in prompt
+
+
+def test_attachment_analyzer_bridge(monkeypatch, tmp_path: Path) -> None:
+    image = tmp_path / "image.jpg"
+    image.write_bytes(b"fake")
+    ctx = AttachmentContext.from_local_file(kind="photo", local_path=image, caption="img", mime_type="image/jpeg")
+    analyzer = AttachmentAnalyzer()
+
+    class _Proc:
+        returncode = 0
+        stdout = "bridge summary"
+
+    monkeypatch.setenv("ATTACHMENT_VISION_BRIDGE_CMD", "/usr/bin/printf")
+    monkeypatch.setattr("subprocess.run", lambda *args, **kwargs: _Proc())
+
+    summary = analyzer._analyze_image_with_bridge(image, "image/jpeg")
+
+    assert summary == "bridge summary"
