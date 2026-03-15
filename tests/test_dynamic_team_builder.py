@@ -73,3 +73,23 @@ async def test_build_team_prefers_decision_client(tmp_path: Path) -> None:
     assert [persona.name for persona in config.agents] == ["analyst"]
     assert config.engine == "codex"
     assert client.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_fallback_team_uses_multimodal_lane(tmp_path: Path) -> None:
+    agents_dir = tmp_path / "agents"
+    agents_dir.mkdir()
+    _write_agent(agents_dir, "designer", "Understands visuals")
+    _write_agent(agents_dir, "analyst", "Analyzes requirements")
+    _write_agent(agents_dir, "document-specialist", "Reads documents well")
+
+    catalog = AgentCatalog(agents_dir=agents_dir)
+    catalog.load()
+    builder = DynamicTeamBuilder(catalog=catalog)
+    builder._llm_available = False
+    builder._client = None
+
+    config = await builder.build_team("[첨부 입력]\n- 종류: photo\n- MIME: image/jpeg", preferred_engine="claude-code")
+
+    assert config.execution_mode.value == "agent_teams"
+    assert {persona.name for persona in config.agents} & {"designer", "analyst", "document-specialist"}

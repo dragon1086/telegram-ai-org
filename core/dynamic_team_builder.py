@@ -399,8 +399,14 @@ class DynamicTeamBuilder:
             "리서치", "비교", "분석", "조사",
         }
         question_keywords = {"?", "설명", "요약", "질문", "알려줘", "왜", "어떻게"}
+        multimodal_keywords = {
+            "[첨부 입력]", "[첨부 묶음]", "image/jpeg", "video/mp4", "audio/", "photo", "voice",
+            "이미지", "사진", "첨부", "문서", "pdf", "비디오", "오디오", "음성",
+        }
 
-        if any(kw in lower for kw in dev_keywords):
+        if any(kw in lower for kw in multimodal_keywords):
+            execution_mode = ExecutionMode.agent_teams
+        elif any(kw in lower for kw in dev_keywords):
             execution_mode = ExecutionMode.structured_team
         elif any(kw in lower for kw in research_keywords):
             execution_mode = ExecutionMode.agent_teams
@@ -410,6 +416,22 @@ class DynamicTeamBuilder:
             execution_mode = ExecutionMode.sequential
 
         team_format = self._build_team_format_from_personas(recommended)
+
+        if any(kw in lower for kw in multimodal_keywords):
+            preferred_names = ["designer", "analyst", "document-specialist"]
+            multimodal_personas: list[AgentPersona] = []
+            for name in preferred_names:
+                persona = self._catalog.get_persona(name)
+                if persona is not None:
+                    multimodal_personas.append(persona)
+            if multimodal_personas:
+                recommended = self._apply_preferences(
+                    multimodal_personas + recommended,
+                    preferred_agents=preferred_agents or preferred_names,
+                    avoid_agents=avoid_agents,
+                    max_team_size=max_team_size,
+                )
+                team_format = self._build_team_format_from_personas(recommended)
 
         # Determine engine from hints or mode defaults
         if preferred_engine in ("claude-code", "codex"):

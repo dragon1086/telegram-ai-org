@@ -1294,6 +1294,44 @@ class TelegramRelay:
                 original_filename=save_path.name,
                 mime_type="image/jpeg",
             )
+        if msg.video:
+            tg_file = await context.bot.get_file(msg.video.file_id)
+            filename = msg.video.file_name or f"video_{msg.message_id}.mp4"
+            save_path = save_dir / filename
+            await tg_file.download_to_drive(save_path)
+            caption = msg.caption or f"{filename} 비디오를 분석해줘"
+            return AttachmentContext.from_local_file(
+                kind="video",
+                local_path=save_path,
+                caption=caption,
+                original_filename=filename,
+                mime_type=msg.video.mime_type or "video/mp4",
+            )
+        if msg.audio:
+            tg_file = await context.bot.get_file(msg.audio.file_id)
+            filename = msg.audio.file_name or f"audio_{msg.message_id}.mp3"
+            save_path = save_dir / filename
+            await tg_file.download_to_drive(save_path)
+            caption = msg.caption or f"{filename} 오디오를 분석해줘"
+            return AttachmentContext.from_local_file(
+                kind="audio",
+                local_path=save_path,
+                caption=caption,
+                original_filename=filename,
+                mime_type=msg.audio.mime_type or "audio/mpeg",
+            )
+        if msg.voice:
+            tg_file = await context.bot.get_file(msg.voice.file_id)
+            save_path = save_dir / f"voice_{msg.message_id}.ogg"
+            await tg_file.download_to_drive(save_path)
+            caption = msg.caption or "이 음성 메시지를 분석해줘"
+            return AttachmentContext.from_local_file(
+                kind="voice",
+                local_path=save_path,
+                caption=caption,
+                original_filename=save_path.name,
+                mime_type="audio/ogg",
+            )
         return None
 
     async def _queue_attachment_group(self, chat_id: int, media_group_id: str, attachment: AttachmentContext, msg) -> None:
@@ -1889,6 +1927,9 @@ class TelegramRelay:
         )
         self.app.add_handler(MessageHandler(filters.Document.ALL, self.on_attachment))
         self.app.add_handler(MessageHandler(filters.PHOTO, self.on_attachment))
+        self.app.add_handler(MessageHandler(filters.VIDEO, self.on_attachment))
+        self.app.add_handler(MessageHandler(filters.AUDIO, self.on_attachment))
+        self.app.add_handler(MessageHandler(filters.VOICE, self.on_attachment))
 
         return self.app
 
