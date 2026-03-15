@@ -5,6 +5,8 @@ import asyncio
 import json
 from pathlib import Path
 
+from core.pm_decision import PMDecisionClient
+
 AGENTS_DIR = Path.home() / ".claude" / "agents"
 
 # 카테고리-키워드 매핑 (fallback용)
@@ -52,7 +54,13 @@ def recommend_agents(task: str, max_agents: int = 3) -> list[str]:
     return [name for name, _ in sorted_agents[:max_agents]]
 
 
-async def recommend_agents_llm(task: str, specialties: str, max_agents: int = 5) -> list[str]:
+async def recommend_agents_llm(
+    task: str,
+    specialties: str,
+    max_agents: int = 5,
+    *,
+    org_id: str = "global",
+) -> list[str]:
     """LLM으로 태스크+전문분야 기반 에이전트 추천.
     fallback: 기존 키워드 방식"""
     try:
@@ -61,8 +69,7 @@ async def recommend_agents_llm(task: str, specialties: str, max_agents: int = 5)
         if not agent_names:
             return recommend_agents(task or specialties, max_agents)
 
-        from core.llm_provider import get_provider
-        provider = get_provider()
+        client = PMDecisionClient(org_id=org_id, engine="auto", session_store=None)
 
         prompt = (
             f"다음 에이전트 목록에서 주어진 태스크와 전문분야에 가장 적합한 에이전트 {max_agents}개를 선택하세요.\n\n"
@@ -73,7 +80,7 @@ async def recommend_agents_llm(task: str, specialties: str, max_agents: int = 5)
             f"반드시 위 목록에 있는 이름만 사용하세요."
         )
 
-        response = await asyncio.wait_for(provider.complete(prompt), timeout=5.0)
+        response = await asyncio.wait_for(client.complete(prompt), timeout=12.0)
 
         # JSON 배열 추출
         text = response.strip()
@@ -92,7 +99,13 @@ async def recommend_agents_llm(task: str, specialties: str, max_agents: int = 5)
     return recommend_agents(task or specialties, max_agents)
 
 
-def recommend_agents_llm_sync(task: str, specialties: str, max_agents: int = 5) -> list[str]:
+def recommend_agents_llm_sync(
+    task: str,
+    specialties: str,
+    max_agents: int = 5,
+    *,
+    org_id: str = "global",
+) -> list[str]:
     """recommend_agents_llm의 동기 wrapper."""
     try:
         try:
@@ -103,10 +116,13 @@ def recommend_agents_llm_sync(task: str, specialties: str, max_agents: int = 5) 
         if loop and loop.is_running():
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(asyncio.run, recommend_agents_llm(task, specialties, max_agents))
+                future = pool.submit(
+                    asyncio.run,
+                    recommend_agents_llm(task, specialties, max_agents, org_id=org_id),
+                )
                 return future.result(timeout=6)
         else:
-            return asyncio.run(recommend_agents_llm(task, specialties, max_agents))
+            return asyncio.run(recommend_agents_llm(task, specialties, max_agents, org_id=org_id))
     except Exception:
         return recommend_agents(task or specialties, max_agents)
 

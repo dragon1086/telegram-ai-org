@@ -52,7 +52,10 @@ from core.attachment_analysis import AttachmentAnalyzer
 from core.artifact_pipeline import prepare_upload_bundle
 from core.builtin_surfaces import recommend_builtin_surfaces
 from core.telegram_delivery import resolve_delivery_target
-from core.telegram_user_guardrail import ensure_user_friendly_output
+from core.telegram_user_guardrail import (
+    ensure_user_friendly_output,
+    extract_local_artifact_paths,
+)
 from core.session_registry import SessionRegistry
 from core.discussion_parser import is_discussion_message, parse_discussion_tags
 from core.discussion import ENABLE_DISCUSSION_PROTOCOL
@@ -283,6 +286,7 @@ class TelegramRelay:
             "첫 문단에서 사용자의 질문이나 불만에 직접 답한다.",
             "파일 경로·링크·문서 위치만 나열하지 말고 핵심 내용을 먼저 설명한다.",
             "확인한 내용, 바뀐 점, 다음 조치를 구체적으로 적는다.",
+            "응답이 길어지면 결론, 핵심 변경점, 첨부 안내 순으로 정리한다.",
         ]
         if any(token in lower for token in ("불친절", "친절", "불편")):
             expectations.append("톤은 정중하고 협업적으로 유지하되, 모호한 표현은 줄인다.")
@@ -297,6 +301,34 @@ class TelegramRelay:
             if item not in deduped:
                 deduped.append(item)
         return deduped[:6]
+
+    def _telegram_verbosity(self) -> int:
+        try:
+            return self.session_store.get_telegram_verbosity()
+        except Exception:
+            return 1
+
+    def _progress_interval(self, *, delegated: bool = False) -> float:
+        level = self._telegram_verbosity()
+        if level <= 0:
+            return float("inf")
+        if delegated:
+            return 2.0 if level >= 2 else float("inf")
+        return 0.9 if level >= 2 else 1.5
+
+    def _progress_history_limit(self, *, delegated: bool = False) -> int:
+        level = self._telegram_verbosity()
+        if delegated:
+            return 4 if level >= 2 else 0
+        return 6 if level >= 2 else 4
+
+    def _show_progress(self, *, delegated: bool = False) -> bool:
+        level = self._telegram_verbosity()
+        if level <= 0:
+            return False
+        if delegated and level < 2:
+            return False
+        return True
 
     async def _build_conversation_context_packet(
         self,
@@ -622,20 +654,24 @@ class TelegramRelay:
         progress_msg = await self.display.send_reply(update.message, "🧠 확인 중...")
         history: list[str] = []
         last_edit = 0.0
+        progress_interval = self._progress_interval()
+        history_limit = self._progress_history_limit()
 
         async def on_progress(line: str) -> None:
             nonlocal last_edit
+            if not self._show_progress():
+                return
             cleaned = self._clean_progress_line(line)
             if not cleaned:
                 return
             history.append(cleaned)
-            if time.time() - last_edit < 1.5:
+            if time.time() - last_edit < progress_interval:
                 return
             last_edit = time.time()
             try:
                 await self.display.edit_progress(
                     progress_msg,
-                    "🧠 확인 중...\n\n" + "\n".join(history[-4:]),
+                    "🧠 확인 중...\n\n" + "\n".join(history[-history_limit:]),
                     agent_id=f"{self.org_id}-chat",
                 )
             except Exception:
@@ -1026,7 +1062,7 @@ class TelegramRelay:
             logger.warning(f"[auto_upload:{self.org_id}] 전달 대상 불일치 감지, configured target 사용")
 
         seen: set[str] = set()
-        for raw in AUTO_UPLOAD_FILE_RE.findall(response or ""):
+        for raw in extract_local_artifact_paths(response or ""):
             path_text = os.path.expanduser(raw.strip())
             if path_text in seen:
                 continue
@@ -1316,7 +1352,7 @@ class TelegramRelay:
                 self._append_runbook(
                     run_id,
                     "Planning rationale",
-                    f"route={plan.route}\ncomplexity={plan.complexity}\nrationale={plan.rationale}\ndept_hints={', '.join(plan.dept_hints)}",
+                    f"lane={plan.lane}\nroute={plan.route}\ncomplexity={plan.complexity}\nrationale={plan.rationale}\ndept_hints={', '.join(plan.dept_hints)}",
                     phase_name="planning",
                 )
                 parent_id = await self._pm_orchestrator._next_task_id()
@@ -1327,6 +1363,7 @@ class TelegramRelay:
                     created_by=self.org_id,
                     metadata={
                         "route": plan.route,
+                        "lane": plan.lane,
                         "complexity": plan.complexity,
                         "rationale": plan.rationale,
                         "run_id": run_id,
@@ -1403,15 +1440,19 @@ class TelegramRelay:
         progress_msg = await self.display.send_reply(update.message, "⚙️ 처리 중...")
         history: list[str] = []
         last_edit = time.time()
+        progress_interval = self._progress_interval()
+        history_limit = self._progress_history_limit()
 
         async def on_progress(line: str) -> None:
             nonlocal last_edit
+            if not self._show_progress():
+                return
             stripped = self._clean_progress_line(line)
             if not stripped:
                 return
             history.append(stripped)
-            if time.time() - last_edit > 1.5:
-                display = "\n".join(history[-5:])
+            if time.time() - last_edit > progress_interval:
+                display = "\n".join(history[-history_limit:])
                 try:
                     await self.display.edit_progress(
                         progress_msg,
@@ -1429,6 +1470,7 @@ class TelegramRelay:
             progress_callback=on_progress,
             route_kind="local_execution",
         )
+        upload_candidates = extract_local_artifact_paths(response or "")
         self._append_runbook(
             run_id,
             "Implementation result",
@@ -1458,7 +1500,7 @@ class TelegramRelay:
             )
             for chunk in _split_message(response, 4000):
                 await self.display.send_reply(update.message, chunk)
-            await self._auto_upload(response, self.token, update.effective_chat.id)
+            await self._auto_upload("\n".join(upload_candidates), self.token, update.effective_chat.id)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
             if self.bus:
                 await self.bus.publish(Event(
@@ -2294,11 +2336,14 @@ class TelegramRelay:
 
         # 진행 콜백: Claude Code 스트리밍 출력을 텔레그램으로 중계
         last_progress_time = [0.0]  # mutable for closure
+        progress_interval = self._progress_interval(delegated=True)
 
         async def on_progress(line: str) -> None:
+            if not self._show_progress(delegated=True):
+                return
             now = time.time()
             # 2초 간격으로 진행 상태 전송 (도배 방지)
-            if now - last_progress_time[0] < 2.0:
+            if now - last_progress_time[0] < progress_interval:
                 return
             last_progress_time[0] = now
             short = self._clean_progress_line(line)[:150]
@@ -2328,6 +2373,7 @@ class TelegramRelay:
                 workdir=task_info.get("metadata", {}).get("workdir"),
                 route_kind="delegated_execution",
             )
+            upload_candidates = extract_local_artifact_paths(response or "")
             self._append_runbook(
                 run_id,
                 "Implementation result",
@@ -2363,7 +2409,7 @@ class TelegramRelay:
                     summary,
                     reply_to_message_id=reply_to_message_id,
                 )
-                await self._auto_upload(response or "", self.token, self.allowed_chat_id)
+                await self._auto_upload("\n".join(upload_candidates), self.token, self.allowed_chat_id)
             self._append_runbook(
                 run_id,
                 "Verification summary",
@@ -2453,18 +2499,22 @@ class TelegramRelay:
         progress_msg = await update.message.reply_text("⚙️ 협업 작업 중...")
         history: list[str] = []
         last_edit = 0.0
+        progress_interval = self._progress_interval()
+        history_limit = self._progress_history_limit()
 
         async def on_progress(line: str) -> None:
             nonlocal last_edit
+            if not self._show_progress():
+                return
             import time
             cleaned_line = self._clean_progress_line(line)
             if not cleaned_line:
                 return
             history.append(cleaned_line)
-            if time.time() - last_edit > 1.5:
+            if time.time() - last_edit > progress_interval:
                 try:
                     await progress_msg.edit_text(
-                        "🛰️ 협업 중간보고\n\n" + "\n".join(history[-5:])
+                        "🛰️ 협업 중간보고\n\n" + "\n".join(history[-history_limit:])
                     )
                     last_edit = time.time()
                 except Exception:
@@ -2681,6 +2731,39 @@ class TelegramRelay:
             await update.message.reply_text(text_out)
             return
 
+        # /verbose [0|1|2]
+        if cmd == "/verbose":
+            level_map = {
+                "quiet": 0,
+                "normal": 1,
+                "verbose": 2,
+            }
+            if not arg:
+                level = self._telegram_verbosity()
+                await update.message.reply_text(
+                    "🔈 현재 텔레그램 진행 노출 레벨: "
+                    f"{level}\n0=최종만, 1=요약 진행, 2=자세한 진행"
+                )
+                return
+            raw = arg.strip().lower()
+            if raw in level_map:
+                level = level_map[raw]
+            elif raw.isdigit():
+                level = int(raw)
+            else:
+                await update.message.reply_text("사용법: /verbose 0|1|2")
+                return
+            level = self.session_store.set_telegram_verbosity(level)
+            labels = {
+                0: "최종 응답만 보여줍니다.",
+                1: "중간 진행은 요약해서 보여줍니다.",
+                2: "중간 진행을 더 자세히 보여줍니다.",
+            }
+            await update.message.reply_text(
+                f"🔈 진행 노출 레벨을 {level}로 설정했습니다. {labels[level]}"
+            )
+            return
+
         # /context-budget — 조직별 세션 컨텍스트 예산 요약
         if cmd == "/context-budget":
             registry = self._session_registry()
@@ -2858,6 +2941,7 @@ class TelegramRelay:
                 f"⚙️ **관리 (총괄PM만)**\n"
                 f"`/setup` — 새 조직 봇 등록 마법사\n"
                 f"`/sessions [org]` — 세션 현황\n"
+                f"`/verbose 0|1|2` — 진행 노출 레벨\n"
                 f"`/context_budget` — 세션 예산 요약\n"
                 f"`/session_policy [org]` — 세션 정책 확인\n"
                 f"`/compact [org]` — 세션 압축/정리\n"
@@ -2876,8 +2960,35 @@ class TelegramRelay:
 
 
 def _split_message(text: str, max_len: int) -> list[str]:
-    """긴 메시지를 max_len 단위로 분할한다."""
-    return [text[i : i + max_len] for i in range(0, len(text), max_len)]
+    """긴 메시지를 문단/문장 경계를 우선으로 분할한다."""
+    body = (text or "").strip()
+    if not body:
+        return [""]
+    if len(body) <= max_len:
+        return [body]
+
+    def _find_breakpoint(chunk: str) -> int:
+        lower_bound = max(1, int(max_len * 0.55))
+        for token in ("\n\n", "\n- ", "\n• ", "\n", ". ", "? ", "! ", "; ", ", ", " "):
+            idx = chunk.rfind(token, lower_bound, max_len + 1)
+            if idx != -1:
+                return idx + len(token.rstrip())
+        return max_len
+
+    chunks: list[str] = []
+    remaining = body
+    while len(remaining) > max_len:
+        window = remaining[: max_len + 1]
+        cut = _find_breakpoint(window)
+        piece = remaining[:cut].rstrip()
+        if not piece:
+            piece = remaining[:max_len].rstrip()
+            cut = len(piece)
+        chunks.append(piece)
+        remaining = remaining[cut:].lstrip()
+    if remaining:
+        chunks.append(remaining)
+    return chunks
 
 
 # ── /setup 마법사 헬퍼 함수 ────────────────────────────────────────────────

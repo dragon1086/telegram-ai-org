@@ -61,26 +61,11 @@ class PMRouter:
 
     def __init__(self, decision_client: DecisionClientProtocol | None = None) -> None:
         self._decision_client = decision_client
-        self._provider = None
-        self._initialized = False
-
-    def _get_provider(self):
-        if not self._initialized:
-            try:
-                from core import llm_provider
-                self._provider = llm_provider.get_provider()
-            except Exception as e:
-                logger.warning(f"[pm_router] LLM provider 초기화 실패: {e}")
-                self._provider = None
-            self._initialized = True
-        return self._provider
 
     async def route(self, text: str, context: dict[str, Any] | None = None) -> PMRoute:
         """메시지를 라우팅. LLM 실패 시 new_task로 폴백."""
         ctx = context or {}
-        provider = None if self._decision_client is not None else self._get_provider()
-
-        if self._decision_client is None and provider is None:
+        if self._decision_client is None:
             return self._fallback(text, ctx)
 
         prompt = _PROMPT_TEMPLATE.format(
@@ -89,10 +74,7 @@ class PMRouter:
         )
 
         try:
-            if self._decision_client is not None:
-                raw = await self._decision_client.complete(prompt)
-                return self._parse(raw)
-            raw = await provider.complete(prompt, timeout=5.0)
+            raw = await self._decision_client.complete(prompt)
             return self._parse(raw)
         except Exception as e:
             logger.warning(f"[pm_router] LLM 라우팅 실패 ({e}), fallback 사용")

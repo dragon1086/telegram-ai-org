@@ -180,7 +180,7 @@ class PMIdentity:
         recommend_line = ""
         try:
             from tools.agent_catalog_v2 import recommend_agents_llm_sync
-            recommended = recommend_agents_llm_sync(role, spec_text, max_agents=5)
+            recommended = recommend_agents_llm_sync(role, spec_text, max_agents=5, org_id=org)
             if recommended:
                 recommend_line = f"\n추천 (태스크+전문분야 기반): {', '.join(recommended)}"
         except Exception:

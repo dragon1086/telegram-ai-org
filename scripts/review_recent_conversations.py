@@ -17,7 +17,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.telegram_delivery import resolve_delivery_target
 from core.pm_decision import PMDecisionClient
-from core.llm_provider import get_provider
 from tools.telegram_uploader import upload_file
 
 
@@ -118,16 +117,7 @@ async def build_report(org_id: str, transcript: str, hours: int, engine: str) ->
             return heuristic_review_markdown(transcript, hours)
         return report
     except Exception:
-        provider = get_provider()
-        if provider is None:
-            return heuristic_review_markdown(transcript, hours)
-        try:
-            report = await asyncio.wait_for(provider.complete(prompt, timeout=30.0), timeout=40.0)
-            if report.strip().startswith(("❌", "API Error")) or len(report.strip()) < 80:
-                return heuristic_review_markdown(transcript, hours)
-            return report
-        except Exception:
-            return heuristic_review_markdown(transcript, hours)
+        return heuristic_review_markdown(transcript, hours)
 
 
 def save_report(output_dir: Path, content: str) -> Path:

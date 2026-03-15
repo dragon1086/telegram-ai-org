@@ -14,7 +14,6 @@ from enum import Enum
 
 from loguru import logger
 
-from core.llm_provider import get_provider
 from core.constants import KNOWN_DEPTS, DEPT_ROLES
 from core.pm_decision import DecisionClientProtocol
 
@@ -132,8 +131,7 @@ class StructuredPromptGenerator:
         complexity: TaskComplexity, context: str,
     ) -> StructuredPrompt | None:
         """LLM 기반 프롬프트 생성."""
-        provider = None if self._decision_client is not None else get_provider()
-        if self._decision_client is None and provider is None:
+        if self._decision_client is None:
             return None
 
         dept_name = KNOWN_DEPTS.get(dept, dept)
@@ -147,16 +145,10 @@ class StructuredPromptGenerator:
         )
 
         try:
-            if self._decision_client is not None:
-                response = await asyncio.wait_for(
-                    self._decision_client.complete(prompt),
-                    timeout=35.0,
-                )
-            else:
-                response = await asyncio.wait_for(
-                    provider.complete(prompt, timeout=15.0),
-                    timeout=18.0,
-                )
+            response = await asyncio.wait_for(
+                self._decision_client.complete(prompt),
+                timeout=35.0,
+            )
             phases = self._parse_phases(response)
             if not phases:
                 return None

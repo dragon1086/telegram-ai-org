@@ -53,7 +53,6 @@ async def test_decompose_multi_dept(setup):
 
 @pytest.mark.asyncio
 async def test_decompose_no_keyword_defaults_to_product(setup, monkeypatch):
-    monkeypatch.setattr("core.pm_orchestrator.get_provider", lambda: None)
     orch, db, send_fn = setup
     subtasks = await orch.decompose("이건 뭘까요?")
     assert len(subtasks) == 1
@@ -62,34 +61,53 @@ async def test_decompose_no_keyword_defaults_to_product(setup, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_plan_request_direct_reply_uses_fallback_strategy(setup, monkeypatch):
-    monkeypatch.setattr("core.pm_orchestrator.get_provider", lambda: None)
     orch, db, send_fn = setup
 
     plan = await orch.plan_request("이건 왜 이렇게 동작해?")
 
     assert plan.route == "direct_reply"
+    assert plan.lane == "direct_answer"
     assert plan.complexity == "low"
 
 
 @pytest.mark.asyncio
+async def test_plan_request_attachment_lane(setup):
+    orch, db, send_fn = setup
+
+    plan = await orch.plan_request("첨부한 이미지와 PDF를 같이 분석해줘")
+
+    assert plan.lane == "attachment_analysis"
+    assert plan.route in {"local_execution", "delegate"}
+
+
+@pytest.mark.asyncio
+async def test_plan_request_review_lane(setup):
+    orch, db, send_fn = setup
+
+    plan = await orch.plan_request("최근 변경사항을 리뷰하고 문제점을 정리해줘")
+
+    assert plan.lane == "review_or_audit"
+
+
+@pytest.mark.asyncio
 async def test_plan_request_local_execution_for_focused_task(setup, monkeypatch):
-    monkeypatch.setattr("core.pm_orchestrator.get_provider", lambda: None)
     orch, db, send_fn = setup
 
     plan = await orch.plan_request("로그인 API 버그 수정해줘")
 
     assert plan.route == "local_execution"
+    assert plan.lane == "single_org_execution"
     assert "aiorg_engineering_bot" in plan.dept_hints
 
 
 @pytest.mark.asyncio
 async def test_plan_request_delegate_for_multi_org_work(setup, monkeypatch):
-    monkeypatch.setattr("core.pm_orchestrator.get_provider", lambda: None)
     orch, db, send_fn = setup
 
     plan = await orch.plan_request("새 기능을 기획하고 디자인하고 개발해줘")
 
     assert plan.route == "delegate"
+    assert plan.lane == "multi_org_execution"
     assert set(plan.dept_hints) >= {
         "aiorg_product_bot",
         "aiorg_design_bot",
@@ -103,7 +121,6 @@ async def test_plan_request_single_org_forces_local_execution(setup, monkeypatch
         def list_specialist_orgs(self):
             return []
 
-    monkeypatch.setattr("core.pm_orchestrator.get_provider", lambda: None)
     monkeypatch.setattr("core.pm_orchestrator.load_orchestration_config", lambda force_reload=False: _EmptyConfig())
     orch, db, send_fn = setup
 
@@ -118,7 +135,6 @@ async def test_decompose_returns_empty_without_specialists(setup, monkeypatch):
         def list_specialist_orgs(self):
             return []
 
-    monkeypatch.setattr("core.pm_orchestrator.get_provider", lambda: None)
     monkeypatch.setattr("core.pm_orchestrator.load_orchestration_config", lambda force_reload=False: _EmptyConfig())
     orch, db, send_fn = setup
 

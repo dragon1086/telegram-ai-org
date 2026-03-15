@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -15,6 +14,17 @@ from core.structured_prompt import (
     StructuredPrompt,
     Phase,
 )
+
+
+class _FakeDecisionClient:
+    def __init__(self, response: str, fail: bool = False) -> None:
+        self.response = response
+        self.fail = fail
+
+    async def complete(self, prompt: str, *, system_prompt: str = "", workdir: str | None = None) -> str:
+        if self.fail:
+            raise RuntimeError("API error")
+        return self.response
 
 
 @pytest.fixture
@@ -144,42 +154,30 @@ class TestLLMGeneration:
             "PHASE:분석|INSTRUCTIONS:현재 코드를 분석하세요|DELIVERABLES:분석 보고서\n"
             "PHASE:구현|INSTRUCTIONS:기능을 구현하세요|DELIVERABLES:구현 코드,테스트"
         )
-        with patch("core.structured_prompt.get_provider") as mock_gp:
-            mock_provider = AsyncMock()
-            mock_provider.complete.return_value = llm_response
-            mock_gp.return_value = mock_provider
+        gen = StructuredPromptGenerator(decision_client=_FakeDecisionClient(llm_response))
 
-            result = await gen.generate("API 구현", "aiorg_engineering_bot")
-            assert len(result.phases) == 2
-            assert result.phases[0].name == "분석"
-            assert result.phases[1].name == "구현"
-            assert "테스트" in result.phases[1].deliverables
+        result = await gen.generate("API 구현", "aiorg_engineering_bot")
+        assert len(result.phases) == 2
+        assert result.phases[0].name == "분석"
+        assert result.phases[1].name == "구현"
+        assert "테스트" in result.phases[1].deliverables
 
     @pytest.mark.asyncio
     async def test_llm_failure_falls_back(self, gen):
-        with patch("core.structured_prompt.get_provider") as mock_gp:
-            mock_provider = AsyncMock()
-            mock_provider.complete.side_effect = RuntimeError("API error")
-            mock_gp.return_value = mock_provider
-
-            result = await gen.generate("API 구현", "aiorg_engineering_bot")
-            assert len(result.phases) >= 1  # fallback template
+        gen = StructuredPromptGenerator(decision_client=_FakeDecisionClient("", fail=True))
+        result = await gen.generate("API 구현", "aiorg_engineering_bot")
+        assert len(result.phases) >= 1  # fallback template
 
     @pytest.mark.asyncio
     async def test_no_provider_falls_back(self, gen):
-        with patch("core.structured_prompt.get_provider", return_value=None):
-            result = await gen.generate("디자인 작업", "aiorg_design_bot")
-            assert len(result.phases) >= 1
+        result = await gen.generate("디자인 작업", "aiorg_design_bot")
+        assert len(result.phases) >= 1
 
     @pytest.mark.asyncio
     async def test_llm_empty_response_falls_back(self, gen):
-        with patch("core.structured_prompt.get_provider") as mock_gp:
-            mock_provider = AsyncMock()
-            mock_provider.complete.return_value = "I don't understand"
-            mock_gp.return_value = mock_provider
-
-            result = await gen.generate("작업", "aiorg_product_bot")
-            assert len(result.phases) >= 1  # fallback
+        gen = StructuredPromptGenerator(decision_client=_FakeDecisionClient("I don't understand"))
+        result = await gen.generate("작업", "aiorg_product_bot")
+        assert len(result.phases) >= 1  # fallback
 
 
 class TestParsePhases:

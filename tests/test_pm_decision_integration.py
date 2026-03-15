@@ -40,10 +40,6 @@ class _FakeDecisionClient:
 
 @pytest.mark.asyncio
 async def test_pm_router_prefers_decision_client(monkeypatch):
-    monkeypatch.setattr(
-        "core.pm_router.PMRouter._get_provider",
-        lambda self: (_ for _ in ()).throw(AssertionError("provider should not be loaded")),
-    )
     client = _FakeDecisionClient('{"action":"status_query","task_id":null,"confidence":0.91}')
     router = PMRouter(decision_client=client)
 
@@ -55,10 +51,6 @@ async def test_pm_router_prefers_decision_client(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_pm_orchestrator_plan_request_uses_decision_client(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(
-        "core.pm_orchestrator.get_provider",
-        lambda: (_ for _ in ()).throw(AssertionError("provider should not be loaded")),
-    )
     db = ContextDB(tmp_path / "test.db")
     await db.initialize()
     client = _FakeDecisionClient(
@@ -82,10 +74,6 @@ async def test_pm_orchestrator_plan_request_uses_decision_client(tmp_path: Path,
 
 @pytest.mark.asyncio
 async def test_pm_orchestrator_decompose_uses_decision_client(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(
-        "core.pm_orchestrator.get_provider",
-        lambda: (_ for _ in ()).throw(AssertionError("provider should not be loaded")),
-    )
     db = ContextDB(tmp_path / "test.db")
     await db.initialize()
     client = _FakeDecisionClient(

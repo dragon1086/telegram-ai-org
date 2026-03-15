@@ -46,7 +46,7 @@ class TestDetectDiscussionNeeds:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_no_discussion_without_keywords(self, send_fn):
+    async def test_no_discussion_without_keywords(self, send_fn, monkeypatch):
         orch = PMOrchestrator(
             context_db=AsyncMock(), task_graph=AsyncMock(),
             claim_manager=ClaimManager(), memory=MemoryManager("pm"),
@@ -60,7 +60,7 @@ class TestDetectDiscussionNeeds:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_discussion_detected_with_keywords(self, send_fn):
+    async def test_discussion_detected_with_keywords(self, send_fn, monkeypatch):
         orch = PMOrchestrator(
             context_db=AsyncMock(), task_graph=AsyncMock(),
             claim_manager=ClaimManager(), memory=MemoryManager("pm"),
@@ -72,11 +72,11 @@ class TestDetectDiscussionNeeds:
         ]
         result = await orch.detect_discussion_needs("어떤 방식으로 기획하고 개발할까 논의", subtasks)
         assert len(result) == 1
-        assert isinstance(result[0], DiscussionNeeded)
+        assert type(result[0]).__name__ == "DiscussionNeeded"
         assert len(result[0].participants) == 2
 
     @pytest.mark.asyncio
-    async def test_discussion_vs_keyword(self, send_fn):
+    async def test_discussion_vs_keyword(self, send_fn, monkeypatch):
         orch = PMOrchestrator(
             context_db=AsyncMock(), task_graph=AsyncMock(),
             claim_manager=ClaimManager(), memory=MemoryManager("pm"),
@@ -90,7 +90,7 @@ class TestDetectDiscussionNeeds:
         assert len(result) == 1
 
     @pytest.mark.asyncio
-    async def test_expanded_keywords(self, send_fn):
+    async def test_expanded_keywords(self, send_fn, monkeypatch):
         """확장된 키워드도 감지."""
         orch = PMOrchestrator(
             context_db=AsyncMock(), task_graph=AsyncMock(),
