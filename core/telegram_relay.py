@@ -229,6 +229,16 @@ class TelegramRelay:
                 on_task=self._execute_polled_task,
             )
 
+        # OrgScheduler — pm_bot 내장 스케줄러 (회의·회고 자율 실행)
+        self._org_scheduler = None
+        if self._is_pm_org:
+            from core.scheduler import OrgScheduler
+
+            async def _sched_send(text: str) -> None:
+                await self._pm_send_message(self.allowed_chat_id, text)
+
+            self._org_scheduler = OrgScheduler(send_text=_sched_send)
+
     async def _pm_send_message(
         self,
         chat_id: int,
@@ -2218,6 +2228,10 @@ class TelegramRelay:
             _asyncio.create_task(register_all_bot_commands())
             logger.info(f"[{self.org_id}] 봇 명령어 등록 태스크 시작됨")
 
+        if self._org_scheduler is not None:
+            self._org_scheduler.start()
+            logger.info(f"[{self.org_id}] OrgScheduler 시작됨")
+
     async def _store_pending_confirmation(self, action: str, task_ids: list, description: str = "") -> None:
         """pm_bot 제안 상태 저장 (5분 유효). 사용자 긍정 응답 시 _execute_pending_confirmation 실행."""
         import time as _time
@@ -2390,7 +2404,7 @@ class TelegramRelay:
         from telegram.request import HTTPXRequest
         req = HTTPXRequest(connection_pool_size=1)
         builder = Application.builder().token(self.token).request(req)
-        if self._task_poller is not None or self._pm_orchestrator is not None:
+        if self._task_poller is not None or self._pm_orchestrator is not None or self._org_scheduler is not None:
             builder = builder.post_init(self._post_init)
         self.app = builder.build()
 
