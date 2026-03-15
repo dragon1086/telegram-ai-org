@@ -26,6 +26,56 @@ from core.setup_registration import (
     upsert_runtime_env_var,
 )
 
+try:
+    from scripts.setup_wizard_preflight import (
+        PreflightResult as _PreflightResult,
+        run_preflight as _run_preflight_impl,
+        step_install_tools as _step_install_tools_impl,
+    )
+    from scripts.setup_wizard_storage import (
+        print_final_summary as _print_final_summary_impl,
+        reset_config as _reset_config_impl,
+        save_all as _save_all_impl,
+    )
+except ImportError:
+    from setup_wizard_preflight import (
+        PreflightResult as _PreflightResult,
+        run_preflight as _run_preflight_impl,
+        step_install_tools as _step_install_tools_impl,
+    )
+    from setup_wizard_flow import (
+        EXEC_ENGINE_LABEL,
+        EXEC_MODE_LABEL,
+        step_pm_bot as _step_pm_bot_impl,
+        step_org_structure as _step_org_structure_impl,
+        step_agent_hints as _step_agent_hints_impl,
+        step_agency_agents as _step_agency_agents_impl,
+        step_exec_engine as _step_exec_engine_impl,
+        step_python_deps as _step_python_deps_impl,
+        step_simulation as _step_simulation_impl,
+        _show_engine_check as _show_engine_check_impl,
+        _auto_start_bots as _auto_start_bots_impl,
+    )
+    from setup_wizard_storage import (
+        print_final_summary as _print_final_summary_impl,
+        reset_config as _reset_config_impl,
+        save_all as _save_all_impl,
+    )
+else:
+    from scripts.setup_wizard_flow import (
+        EXEC_ENGINE_LABEL,
+        EXEC_MODE_LABEL,
+        step_pm_bot as _step_pm_bot_impl,
+        step_org_structure as _step_org_structure_impl,
+        step_agent_hints as _step_agent_hints_impl,
+        step_agency_agents as _step_agency_agents_impl,
+        step_exec_engine as _step_exec_engine_impl,
+        step_python_deps as _step_python_deps_impl,
+        step_simulation as _step_simulation_impl,
+        _show_engine_check as _show_engine_check_impl,
+        _auto_start_bots as _auto_start_bots_impl,
+    )
+
 # ─── 경로 상수 ────────────────────────────────────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -171,237 +221,17 @@ def load_existing_orgs() -> list[dict]:
     return orgs
 
 
-# ─── Step 0: Preflight Check ─────────────────────────────────────────────────
+# ─── Step 0/1: Preflight / 도구 설치 ─────────────────────────────────────────
 
-class PreflightResult:
-    def __init__(self) -> None:
-        self.python_ok = False
-        self.python_ver = ""
-        self.claude_ok = False
-        self.claude_path = ""
-        self.claude_ver = ""
-        self.codex_ok = False
-        self.codex_path = ""
-        self.codex_ver = ""
-        self.omc_ok = False
-        self.omc_ver = ""
-        self.omc_path = ""
-        self.team_mcp_ok = False
-        self.agent_teams_ok = False
-        self.agent_count = 0
-        self.agent_names: list[str] = []
-        self.config_ok = False
-        self.pm_token_ok = False
-        self.worker_token_ok = False
-        self.deps_ok = False
-        self.deps_missing: list[str] = []
-        self.issues: list[str] = []
+PreflightResult = _PreflightResult
 
 
 def run_preflight(verbose: bool = True) -> PreflightResult:
-    r = PreflightResult()
+    return _run_preflight_impl(sys.modules[__name__], verbose=verbose)
 
-    if verbose:
-        print(f"\n{bold('🔍 환경 점검 중...')}\n")
-
-    # Python 버전
-    v = sys.version_info
-    r.python_ver = f"Python {v.major}.{v.minor}.{v.micro}"
-    r.python_ok = (v.major, v.minor) >= (3, 11)
-    if verbose:
-        _pf_line("Python 3.11+", r.python_ok, r.python_ver, warn_not_fail=False)
-    if not r.python_ok:
-        r.issues.append("python")
-
-    # Claude Code
-    r.claude_path = shutil.which("claude") or ""
-    if r.claude_path:
-        rc, out = run_cmd(["claude", "--version"])
-        r.claude_ver = out.splitlines()[0] if out else "버전 미확인"
-        r.claude_ok = rc == 0
-    if verbose:
-        if r.claude_ok:
-            _pf_line("Claude Code", True, f"{r.claude_path} {r.claude_ver}")
-        else:
-            _pf_line("Claude Code", False, "미감지", warn_not_fail=False)
-    if not r.claude_ok:
-        r.issues.append("claude")
-
-    # Codex (선택)
-    r.codex_path = shutil.which("codex") or ""
-    if r.codex_path:
-        rc, out = run_cmd(["codex", "--version"])
-        r.codex_ver = out.splitlines()[0] if out else "버전 미확인"
-        r.codex_ok = rc == 0
-    if verbose:
-        if r.codex_ok:
-            _pf_line("Codex", True, f"{r.codex_path} {r.codex_ver}", optional=True)
-        else:
-            _pf_line("Codex", None, "미감지 (선택사항)", optional=True)
-
-    # omc 감지
-    omc_glob = str(Path.home() / ".claude/plugins/cache/omc/oh-my-claudecode/*/bridge/mcp-server.cjs")
-    omc_files = _glob.glob(omc_glob)
-    if omc_files:
-        omc_dir = Path(omc_files[0]).parent.parent
-        pkg_json = omc_dir / "package.json"
-        if pkg_json.exists():
-            try:
-                pkg = json.loads(pkg_json.read_text())
-                r.omc_ver = pkg.get("version", "?")
-            except Exception:
-                r.omc_ver = "?"
-        r.omc_path = str(omc_files[0])
-        r.omc_ok = True
-    if verbose:
-        if r.omc_ok:
-            _pf_line("oh-my-claudecode (omc)", True, f"v{r.omc_ver} 설치됨")
-        else:
-            _pf_line("oh-my-claudecode (omc)", False, "미감지")
-    if not r.omc_ok:
-        r.issues.append("omc")
-
-    # omc team MCP
-    team_glob = str(Path.home() / ".claude/plugins/cache/omc/oh-my-claudecode/*/bridge/team-mcp.cjs")
-    team_files = _glob.glob(team_glob)
-    r.team_mcp_ok = len(team_files) > 0
-    if verbose:
-        _pf_line("omc team MCP 서버", r.team_mcp_ok,
-                 "Connected" if r.team_mcp_ok else "미감지")
-    if not r.team_mcp_ok:
-        r.issues.append("team_mcp")
-
-    # AGENT_TEAMS 활성화
-    if CLAUDE_SETTINGS.exists():
-        try:
-            settings = json.loads(CLAUDE_SETTINGS.read_text())
-            env = settings.get("env", {})
-            val = env.get("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "")
-            r.agent_teams_ok = str(val).lower() in ("1", "true", "yes")
-        except Exception:
-            pass
-    if verbose:
-        _pf_line("Agent Teams 활성화", r.agent_teams_ok,
-                 "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1" if r.agent_teams_ok else "비활성화")
-    if not r.agent_teams_ok:
-        r.issues.append("agent_teams")
-
-    # 에이전트 페르소나
-    agent_files = list(CLAUDE_AGENTS_DIR.glob("*.md")) if CLAUDE_AGENTS_DIR.exists() else []
-    r.agent_count = len(agent_files)
-    r.agent_names = [f.stem for f in agent_files[:5]]
-    if r.agent_count > 5:
-        r.agent_names.append(f"... +{r.agent_count - 5}개")
-    agents_ok = r.agent_count > 0
-    if verbose:
-        names_str = ", ".join(r.agent_names) if r.agent_names else ""
-        _pf_line("에이전트 페르소나", agents_ok,
-                 f"{r.agent_count}개 ({names_str})" if agents_ok else "미감지")
-    if not agents_ok:
-        r.issues.append("agents")
-
-    # config.yaml 존재
-    r.config_ok = CONFIG_FILE.exists()
-    if verbose:
-        _pf_line("~/.ai-org/config.yaml", r.config_ok if r.config_ok else None,
-                 "존재" if r.config_ok else "미존재 → 이 마법사에서 생성")
-
-    # PM 봇 토큰
-    existing = load_existing_config()
-    r.pm_token_ok = bool(existing.get("PM_BOT_TOKEN") or os.environ.get("PM_BOT_TOKEN"))
-    if verbose:
-        _pf_line("PM 봇 토큰", r.pm_token_ok if r.pm_token_ok else None,
-                 "설정됨" if r.pm_token_ok else "미설정")
-
-    # 워커 봇 토큰 (organizations.yaml 또는 workers.yaml 기반)
-    r.worker_token_ok = WORKERS_FILE.exists() or ORGANIZATIONS_FILE.exists()
-    if verbose:
-        _pf_line("조직/워커 설정", r.worker_token_ok if r.worker_token_ok else None,
-                 "설정됨" if r.worker_token_ok else "미설정")
-
-    # Python 의존성
-    REQUIRED_PKGS = ["aiosqlite", "loguru", "telegram", "openai", "yaml"]
-    PKG_IMPORT_MAP = {"telegram": "telegram", "yaml": "yaml", "openai": "openai",
-                      "aiosqlite": "aiosqlite", "loguru": "loguru"}
-    for pkg in REQUIRED_PKGS:
-        import_name = PKG_IMPORT_MAP.get(pkg, pkg)
-        try:
-            __import__(import_name)
-        except ImportError:
-            r.deps_missing.append(pkg)
-    r.deps_ok = len(r.deps_missing) == 0
-    if verbose:
-        if r.deps_ok:
-            _pf_line("Python 의존성", True, "requirements.txt 설치됨")
-        else:
-            _pf_line("Python 의존성", None,
-                     f"미설치: {', '.join(r.deps_missing)}")
-    if not r.deps_ok:
-        r.issues.append("deps")
-
-    return r
-
-
-def _pf_line(label: str, status: bool | None, detail: str,
-             warn_not_fail: bool = True, optional: bool = False) -> None:
-    """Preflight 체크 라인 출력."""
-    label_padded = label.ljust(36, ".")
-    if status is True:
-        tag = green("[OK]  ")
-    elif status is False:
-        tag = (yellow("[WARN]") if warn_not_fail else red("[FAIL]"))
-    else:
-        # None = warning / optional
-        tag = yellow("[WARN]") if not optional else dim("[--]  ")
-
-    print(f"  {tag} {label_padded} {dim(detail)}")
-
-
-# ─── Step 1: 도구 설치 안내 ───────────────────────────────────────────────────
 
 def step_install_tools(r: PreflightResult) -> None:
-    """Preflight 실패 항목에 대해 설치 안내."""
-    actionable = [i for i in r.issues if i in ("claude", "omc", "agent_teams", "deps")]
-    if not actionable:
-        return
-
-    step_header(1, "필수 도구 설치 안내")
-
-    if "claude" in r.issues:
-        print(f"\n  {bold('Claude Code')} 미설치:")
-        print(f"    {cyan('npm install -g @anthropic-ai/claude-code')}")
-        _ = ask_yes("  Claude Code 설치 후 계속하시겠어요?")
-
-    if "omc" in r.issues:
-        print(f"\n  {bold('oh-my-claudecode')} 미설치:")
-        print(f"    {cyan('claude /plugin install oh-my-claudecode')}")
-        _ = ask_yes("  omc 설치 후 계속하시겠어요?")
-
-    if "agent_teams" in r.issues:
-        print(f"\n  {bold('Agent Teams')} 비활성화됨.")
-        if ask_yes("  자동으로 ~/.claude/settings.json에 활성화할까요?"):
-            _enable_agent_teams()
-
-    if "deps" in r.issues:
-        print(f"\n  {bold('Python 의존성')} 미설치: {', '.join(r.deps_missing)}")
-        print(f"  (Step 6에서 자동 설치 안내 예정)")
-
-
-def _enable_agent_teams() -> None:
-    """~/.claude/settings.json에 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 추가."""
-    try:
-        if CLAUDE_SETTINGS.exists():
-            settings = json.loads(CLAUDE_SETTINGS.read_text())
-        else:
-            settings = {}
-        if "env" not in settings:
-            settings["env"] = {}
-        settings["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"] = "1"
-        CLAUDE_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
-        CLAUDE_SETTINGS.write_text(json.dumps(settings, indent=2, ensure_ascii=False))
-        ok("Agent Teams 활성화 완료 (Claude Code 재시작 필요)")
-    except Exception as e:
-        warn(f"settings.json 수정 실패: {e}")
+    _step_install_tools_impl(sys.modules[__name__], r)
 
 
 # ─── Step 2: PM 봇 설정 ───────────────────────────────────────────────────────
@@ -1027,127 +857,29 @@ def step_simulation() -> None:
 
 # ─── 설정 저장 ────────────────────────────────────────────────────────────────
 
+step_pm_bot = lambda existing: _step_pm_bot_impl(sys.modules[__name__], existing)
+step_org_structure = lambda pm_token, pm_chat_id: _step_org_structure_impl(sys.modules[__name__], pm_token, pm_chat_id)
+step_agent_hints = lambda: _step_agent_hints_impl(sys.modules[__name__])
+step_agency_agents = lambda: _step_agency_agents_impl(sys.modules[__name__])
+step_exec_engine = lambda existing_cfg, preflight=None: _step_exec_engine_impl(sys.modules[__name__], existing_cfg, preflight)
+step_python_deps = lambda deps_missing: _step_python_deps_impl(sys.modules[__name__], deps_missing)
+step_simulation = lambda: _step_simulation_impl(sys.modules[__name__])
+_show_engine_check = lambda: _show_engine_check_impl(sys.modules[__name__])
+_auto_start_bots = lambda: _auto_start_bots_impl(sys.modules[__name__])
+
 def save_all(orgs: list[dict], exec_mode: str, binaries: dict, preferred_engine: str = "claude-code") -> None:
-    """config.yaml + canonical organizations/orchestration 저장."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    ensure_orchestration_config(PROJECT_ROOT)
+    _save_all_impl(sys.modules[__name__], orgs, exec_mode, binaries, preferred_engine)
 
-    first_org = orgs[0] if orgs else {}
-    if first_org:
-        upsert_runtime_env_var(PROJECT_ROOT, "PM_BOT_TOKEN", first_org.get("pm_token", ""))
-        upsert_runtime_env_var(PROJECT_ROOT, "TELEGRAM_GROUP_CHAT_ID", str(first_org.get("group_chat_id", "")))
-    upsert_runtime_env_var(PROJECT_ROOT, "DEFAULT_EXECUTION_MODE", exec_mode)
-    upsert_runtime_env_var(PROJECT_ROOT, "PREFERRED_ENGINE", preferred_engine)
-    if binaries.get("claude"):
-        upsert_runtime_env_var(PROJECT_ROOT, "CLAUDE_CLI_PATH", binaries["claude"])
-    if binaries.get("codex"):
-        upsert_runtime_env_var(PROJECT_ROOT, "CODEX_CLI_PATH", binaries["codex"])
-    upsert_runtime_env_var(PROJECT_ROOT, "CONTEXT_DB_PATH", "~/.ai-org/context.db")
-
-    for i, org in enumerate(orgs):
-        org_id = org["org_id"]
-        env_name = "PM_BOT_TOKEN" if i == 0 else f"BOT_TOKEN_{org_id.upper()}"
-        chat_key = "TELEGRAM_GROUP_CHAT_ID" if i == 0 else f"{org_id.upper()}_GROUP_CHAT_ID"
-        upsert_runtime_env_var(PROJECT_ROOT, env_name, org["pm_token"])
-        upsert_runtime_env_var(PROJECT_ROOT, chat_key, str(org["group_chat_id"]))
-        identity = org["identity"]
-        upsert_org_in_canonical_config(
-            PROJECT_ROOT,
-            username=org_id,
-            token_env=env_name,
-            chat_id=int(str(org["group_chat_id"])),
-            engine=org.get("engine", "claude-code"),
-            identity=parse_setup_identity(
-                org_id,
-                "|".join(
-                    [
-                        identity.get("role", ""),
-                        ",".join(identity.get("specialties", [])),
-                        identity.get("direction", ""),
-                    ]
-                ),
-            ),
-        )
-
-    refresh_legacy_bot_configs(PROJECT_ROOT)
-    refresh_pm_identity_files(PROJECT_ROOT)
-    ok(f"설정 저장: {CONFIG_FILE}")
-    ok(f"조직 설정 저장: {ORGANIZATIONS_FILE}")
-    ok(f"오케스트레이션 설정 저장: {PROJECT_ROOT / 'orchestration.yaml'}")
-
-
-# ─── 완료 화면 ────────────────────────────────────────────────────────────────
-
-def print_final_summary(r: PreflightResult, orgs: list[dict], exec_mode: str, preferred_engine: str = "claude-code") -> None:
-    banner("✅ telegram-ai-org 설정 완료!")
-
-    print(f"  {bold('환경:')}")
-    if r.claude_ok:
-        print(f"    • Claude Code: {r.claude_path} {r.claude_ver}")
-    if r.omc_ok:
-        team_str = "team MCP ✓" if r.team_mcp_ok else "team MCP ✗"
-        teams_str = "Agent Teams ✓" if r.agent_teams_ok else "Agent Teams ✗"
-        print(f"    • omc: v{r.omc_ver} ({team_str}, {teams_str})")
-    if r.agent_count > 0:
-        print(f"    • 에이전트: {r.agent_count}개 페르소나 로드됨")
-    print(f"    • 실행 모드: {EXEC_MODE_LABEL.get(exec_mode, exec_mode)}")
-    print(f"    • 기본 엔진: {EXEC_ENGINE_LABEL.get(preferred_engine, preferred_engine)}")
-
-    print(f"\n  {bold('조직:')}")
-    for org in orgs:
-        print(f"    • {bold(org['org_id'])} — {org['description']}")
-
-    print(f"\n  {bold('저장된 파일:')}")
-    print(f"    • {CONFIG_FILE}")
-    print(f"    • {ORGANIZATIONS_FILE}")
-    print(f"    • {PROJECT_ROOT / 'orchestration.yaml'}")
-    print(f"    • {AGENT_HINTS_FILE}")
-
-    print(f"\n  {bold('시작:')}")
-    print(f"    {cyan('cd ~/telegram-ai-org')}")
-    if (VENV_DIR / "bin" / "activate").exists():
-        print(f"    {cyan('source .venv/bin/activate')}")
-    print(f"    {cyan('bash scripts/start_all.sh')}")
-    print()
-
-
-# ─── 설정 초기화 ──────────────────────────────────────────────────────────────
 
 MEMORY_DIR = CONFIG_DIR / "memory"
 
 
+def print_final_summary(r: PreflightResult, orgs: list[dict], exec_mode: str, preferred_engine: str = "claude-code") -> None:
+    _print_final_summary_impl(sys.modules[__name__], r, orgs, exec_mode, preferred_engine)
+
+
 def reset_config(keep_memory: bool | None = None) -> None:
-    """--reset: 기존 설정 파일 초기화."""
-    files = [CONFIG_FILE, ORGANIZATIONS_FILE, PROJECT_ROOT / "orchestration.yaml", AGENT_HINTS_FILE, WORKERS_FILE]
-
-    print(f"\n{bold(red('⚠️  기존 설정을 초기화합니다.'))}")
-    print(f"삭제될 항목:")
-    for f in files:
-        if f.exists():
-            print(f"  • {f}")
-
-    if not ask_yes("정말 초기화하시겠어요?", default=False):
-        print("취소됨.")
-        sys.exit(0)
-
-    # 메모리 보존 여부
-    memory_exists = MEMORY_DIR.exists() and any(MEMORY_DIR.iterdir()) if MEMORY_DIR.exists() else False
-    if keep_memory is None and memory_exists:
-        keep_memory = ask_yes("메모리는 보존하시겠습니까?", default=True)
-
-    for f in files:
-        if f.exists():
-            f.unlink()
-            print(f"  {red('삭제:')} {f}")
-
-    if not keep_memory and memory_exists:
-        import shutil as _shutil
-        _shutil.rmtree(str(MEMORY_DIR), ignore_errors=True)
-        print(f"  {red('삭제:')} {MEMORY_DIR}")
-    elif memory_exists:
-        ok(f"메모리 보존: {MEMORY_DIR}")
-
-    ok("초기화 완료. 마법사를 다시 시작합니다.\n")
+    _reset_config_impl(sys.modules[__name__], keep_memory)
 
 
 # ─── 메인 ────────────────────────────────────────────────────────────────────
