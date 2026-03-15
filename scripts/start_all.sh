@@ -1,82 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_DIR"
+
 echo "=== telegram-ai-org 봇 시작 ==="
 
-# ~/.ai-org/config.yaml 또는 .env 로드
 CONFIG="$HOME/.ai-org/config.yaml"
+LOADED_SOURCES=()
 if [ -f "$CONFIG" ]; then
-    set -a
-    source "$CONFIG"
-    set +a
-    echo "✅ 설정 로드: $CONFIG"
-elif [ -f .env ]; then
-    set -a
-    source .env
-    set +a
-    echo "✅ 설정 로드: .env"
-else
-    echo "❌ 설정 파일 없음. 먼저 실행하세요:"
-    echo "   python scripts/setup_wizard.py"
-    exit 1
+  set -a
+  source "$CONFIG"
+  set +a
+  LOADED_SOURCES+=("$CONFIG")
 fi
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+  LOADED_SOURCES+=(".env")
+fi
+if [ ${#LOADED_SOURCES[@]} -eq 0 ]; then
+  echo "❌ 설정 파일 없음. 먼저 /setup 또는 scripts/setup_wizard.py 를 실행하세요."
+  exit 1
+fi
+echo "✅ 설정 로드: ${LOADED_SOURCES[*]}"
 
-# 필수 환경변수 확인
-required_vars=(PM_BOT_TOKEN TELEGRAM_GROUP_CHAT_ID)
-for var in "${required_vars[@]}"; do
-    if [ -z "${!var:-}" ]; then
-        echo "❌ $var가 설정되지 않았습니다."
-        exit 1
-    fi
-done
+PYTHON_BIN="./.venv/bin/python3"
+[ ! -x "$PYTHON_BIN" ] && PYTHON_BIN="python3"
 
-PIDS=()
+BOT_ROWS=$("$PYTHON_BIN" - <<'PY'
+from core.orchestration_config import load_orchestration_config
 
-# PM 봇 시작
-python3 -m core.pm_bot &
-PM_PID=$!
-PIDS+=($PM_PID)
-echo "✅ pm_bot 시작 (PID: $PM_PID)"
-
-# workers.yaml에서 워커 목록 읽어서 각 봇 시작
-WORKERS_FILE="workers.yaml"
-if [ -f "$WORKERS_FILE" ]; then
-    WORKER_NAMES=$(python3 - <<'EOF'
-import yaml, sys
-try:
-    with open("workers.yaml") as f:
-        cfg = yaml.safe_load(f) or {}
-    for w in cfg.get("workers", []):
-        print(w["name"])
-except Exception as e:
-    print(f"# error: {e}", file=sys.stderr)
-EOF
+cfg = load_orchestration_config(force_reload=True)
+for org in cfg.list_orgs():
+    token = org.token
+    chat_id = org.chat_id
+    if not token or chat_id is None:
+        continue
+    print(f"{org.id}\t{token}\t{chat_id}")
+PY
 )
-    for name in $WORKER_NAMES; do
-        python3 -m core.run_worker --name "$name" &
-        WORKER_PID=$!
-        PIDS+=($WORKER_PID)
-        echo "✅ ${name}_bot 시작 (PID: $WORKER_PID)"
-    done
-else
-    echo "⚠️  workers.yaml 없음 — 워커 봇 없이 PM만 실행"
+
+if [ -z "$BOT_ROWS" ]; then
+  echo "⚠️  시작 가능한 조직이 없습니다. organizations.yaml / orchestration.yaml 을 확인하세요."
+  exit 0
 fi
 
-echo "📝 글로벌 메모리: $(wc -l < ~/.ai-org/memory/global.md 2>/dev/null || echo 0)줄"
+while IFS=$'\t' read -r ORG_ID TOKEN CHAT_ID; do
+  [ -z "$ORG_ID" ] && continue
+  echo "▶ $ORG_ID 시작 중..."
+  "$PYTHON_BIN" scripts/bot_manager.py start "$TOKEN" "$ORG_ID" "$CHAT_ID"
+  sleep 2
+done <<< "$BOT_ROWS"
 
-echo ""
-echo "모든 봇 실행 중. Ctrl+C로 종료."
-echo "PIDs: ${PIDS[*]}"
-
-# 종료 시 모든 봇 종료
-cleanup() {
-    echo ""
-    echo "봇 종료 중..."
-    for pid in "${PIDS[@]}"; do
-        kill "$pid" 2>/dev/null || true
-    done
-    exit 0
-}
-trap cleanup SIGINT SIGTERM
-
-wait
+echo "=== 모든 조직 봇 시작 완료 ==="

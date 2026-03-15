@@ -1,54 +1,73 @@
-#!/bin/bash
-# PM봇 시작/종료/재시작 관리 (PID 파일 방식)
+#!/usr/bin/env bash
+set -euo pipefail
 
-PID_FILE="$HOME/.ai-org/pm_bot.pid"
-LOG_FILE="$HOME/.ai-org/pm_bot.log"
-BOT_DIR="$HOME/telegram-ai-org"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_DIR"
 
-start() {
-    # 기존 프로세스 확인
-    if [ -f "$PID_FILE" ]; then
-        OLD_PID=$(cat "$PID_FILE")
-        if ps -p "$OLD_PID" > /dev/null 2>&1; then
-            echo "이미 실행 중 (PID: $OLD_PID)"
-            return 0
-        fi
-    fi
+PYTHON_BIN="./.venv/bin/python3"
+[ ! -x "$PYTHON_BIN" ] && PYTHON_BIN="python3"
+TARGET="${2:-all}"
 
-    cd "$BOT_DIR"
-    nohup .venv/bin/python3 -u main.py > "$LOG_FILE" 2>&1 &
-    echo $! > "$PID_FILE"
-    echo "✅ PM봇 시작 (PID: $(cat $PID_FILE))"
+start_all() {
+  bash "$SCRIPT_DIR/start_all.sh"
 }
 
-stop() {
-    if [ -f "$PID_FILE" ]; then
-        PID=$(cat "$PID_FILE")
-        if ps -p "$PID" > /dev/null 2>&1; then
-            kill -9 "$PID" 2>/dev/null
-            echo "✅ PM봇 종료 (PID: $PID)"
-        fi
-        rm -f "$PID_FILE"
+stop_one() {
+  local org_id="$1"
+  "$PYTHON_BIN" scripts/bot_manager.py stop "$org_id" >/dev/null 2>&1 || true
+  echo "✅ 중지: $org_id"
+}
+
+stop_all() {
+  BOT_IDS=$("$PYTHON_BIN" - <<'PY'
+from core.orchestration_config import load_orchestration_config
+
+cfg = load_orchestration_config(force_reload=True)
+for org in cfg.list_orgs():
+    print(org.id)
+PY
+)
+  while IFS= read -r ORG_ID; do
+    [ -z "$ORG_ID" ] && continue
+    stop_one "$ORG_ID"
+  done <<< "$BOT_IDS"
+}
+
+status_all() {
+  "$PYTHON_BIN" scripts/bot_manager.py list
+}
+
+case "${1:-}" in
+  start)
+    if [ "$TARGET" = "all" ]; then
+      start_all
     else
-        pkill -9 -if "python.*main.py" 2>/dev/null
+      echo "개별 start는 start_all.sh 또는 bot_manager.py를 사용하세요."
+      exit 1
     fi
-    # 항상 잔여 좀비도 제거
-    pkill -9 -if "python.*main.py" 2>/dev/null; true
-    sleep 2
-}
-
-case "$1" in
-    start)   start ;;
-    stop)    stop ;;
-    restart) stop && start ;;
-    status)
-        if [ -f "$PID_FILE" ] && ps -p "$(cat $PID_FILE)" > /dev/null 2>&1; then
-            echo "✅ 실행 중 (PID: $(cat $PID_FILE))"
-        else
-            echo "❌ 정지됨"
-        fi
-        ;;
-    *)
-        echo "사용법: $0 {start|stop|restart|status}"
-        ;;
+    ;;
+  stop)
+    if [ "$TARGET" = "all" ]; then
+      stop_all
+    else
+      stop_one "$TARGET"
+    fi
+    ;;
+  restart)
+    if [ "$TARGET" = "all" ]; then
+      bash "$SCRIPT_DIR/restart_bots.sh"
+    else
+      stop_one "$TARGET"
+      sleep 1
+      bash "$SCRIPT_DIR/start_all.sh"
+    fi
+    ;;
+  status)
+    status_all
+    ;;
+  *)
+    echo "사용법: $0 {start|stop|restart|status} [all|org_id]"
+    exit 1
+    ;;
 esac
