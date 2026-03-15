@@ -37,6 +37,21 @@ from tools.telegram_uploader import upload_file
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / ".omx" / "auto-improve"
+MAX_FILES_PER_ACTION = 6
+MAX_CHANGED_FILES = 12
+MAX_DIFF_LINE_CHURN = 600
+SAFE_FILE_PREFIXES = ("core/", "scripts/", "tools/", "tests/", "docs/")
+SAFE_FILE_EXACT = {"README.md", "ARCHITECTURE.md", "AGENTS.md", "pyproject.toml"}
+FORBIDDEN_FILE_PREFIXES = ("bots/", ".ai-org/", ".omx/state/", ".omx/metrics", ".env")
+FORBIDDEN_FILE_EXACT = {"organizations.yaml", "agent_hints.yaml", "workers.yaml", "orchestration.yaml"}
+SAFE_VERIFY_PREFIXES = (
+    "pytest",
+    "./.venv/bin/pytest",
+    "python -m py_compile",
+    "./.venv/bin/python -m py_compile",
+    "ruff check",
+    "./.venv/bin/ruff check",
+)
 
 
 @dataclass
@@ -73,6 +88,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit-lines", type=int, default=500)
     parser.add_argument("--max-actions", type=int, default=1)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--base-ref", default="origin/main")
     parser.add_argument("--push-branch", action="store_true")
     parser.add_argument("--create-pr", action="store_true")
     parser.add_argument("--upload", action="store_true")
@@ -105,6 +121,52 @@ def _fallback_plan(review_report: str, *, stamp: str, max_actions: int) -> Impro
         branch_name=f"auto/review-{stamp}-{_slugify('conversation-ux')}",
         actions=[action][:max_actions],
         verify_commands=action.verify_commands,
+    )
+
+
+def _is_safe_repo_path(path: str) -> bool:
+    normalized = path.strip().lstrip("./")
+    if not normalized:
+        return False
+    if normalized in FORBIDDEN_FILE_EXACT:
+        return False
+    if any(normalized.startswith(prefix) for prefix in FORBIDDEN_FILE_PREFIXES):
+        return False
+    return normalized in SAFE_FILE_EXACT or normalized.startswith(SAFE_FILE_PREFIXES)
+
+
+def _is_safe_verify_command(command: str) -> bool:
+    stripped = command.strip()
+    return any(stripped.startswith(prefix) for prefix in SAFE_VERIFY_PREFIXES)
+
+
+def validate_plan(plan: ImprovementPlan, *, max_actions: int, stamp: str) -> ImprovementPlan:
+    actions = plan.actions[:max_actions]
+    if not actions:
+        raise ValueError("empty actions")
+    validated: list[ImprovementAction] = []
+    for action in actions:
+        files = [path.lstrip("./") for path in action.files if _is_safe_repo_path(path)]
+        if not files or len(files) > MAX_FILES_PER_ACTION:
+            raise ValueError(f"unsafe files for action: {action.title}")
+        verify_commands = [cmd for cmd in action.verify_commands if _is_safe_verify_command(cmd)]
+        validated.append(
+            ImprovementAction(
+                title=action.title,
+                rationale=action.rationale,
+                files=files,
+                implementation_prompt=action.implementation_prompt,
+                verify_commands=verify_commands,
+            )
+        )
+    verify_commands = [cmd for cmd in plan.verify_commands if _is_safe_verify_command(cmd)]
+    branch = plan.branch_name if plan.branch_name.startswith("auto/review-") else f"auto/review-{stamp}-{_slugify(plan.summary)}"
+    return ImprovementPlan(
+        summary=plan.summary,
+        pr_title=plan.pr_title,
+        branch_name=branch,
+        actions=validated,
+        verify_commands=verify_commands,
     )
 
 
@@ -156,15 +218,19 @@ async def build_action_plan(
         branch = str(data.get("branch_name", "")).strip()
         if not branch.startswith("auto/review-"):
             branch = f"auto/review-{stamp}-{_slugify(data.get('summary', 'maintenance'))}"
-        return ImprovementPlan(
+        return validate_plan(
+            ImprovementPlan(
             summary=str(data.get("summary", "")).strip() or "자동 개선",
             pr_title=str(data.get("pr_title", "")).strip() or "Auto-improve recent conversation issues",
             branch_name=branch,
             actions=actions,
             verify_commands=[str(cmd) for cmd in data.get("verify_commands", []) if str(cmd).strip()],
+            ),
+            max_actions=max_actions,
+            stamp=stamp,
         )
     except Exception:
-        return _fallback_plan(review_report, stamp=stamp, max_actions=max_actions)
+        return validate_plan(_fallback_plan(review_report, stamp=stamp, max_actions=max_actions), max_actions=max_actions, stamp=stamp)
 
 
 def _parse_json_block(raw: str) -> dict:
@@ -184,14 +250,18 @@ def _run(cmd: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True, check=True)
 
 
-def create_worktree(branch_name: str, *, output_root: Path) -> Path:
+def create_worktree(branch_name: str, *, output_root: Path, base_ref: str) -> tuple[Path, str]:
     worktrees_root = output_root / "worktrees"
     worktrees_root.mkdir(parents=True, exist_ok=True)
     worktree_dir = worktrees_root / branch_name.replace("/", "__")
     if worktree_dir.exists():
         shutil.rmtree(worktree_dir)
-    _run(["git", "worktree", "add", "-b", branch_name, str(worktree_dir), "HEAD"], cwd=PROJECT_ROOT)
-    return worktree_dir
+    final_branch = branch_name
+    probe = subprocess.run(["git", "show-ref", "--verify", f"refs/heads/{branch_name}"], cwd=str(PROJECT_ROOT), text=True, capture_output=True, check=False)
+    if probe.returncode == 0:
+        final_branch = f"{branch_name}-{datetime.now().strftime('%H%M%S')}"
+    _run(["git", "worktree", "add", "-b", final_branch, str(worktree_dir), base_ref], cwd=PROJECT_ROOT)
+    return worktree_dir, final_branch
 
 
 async def apply_actions(
@@ -215,6 +285,10 @@ async def apply_actions(
             f"Rationale: {action.rationale}\n"
             f"Prefer touching these files:\n{files_text}\n\n"
             f"Implementation instructions:\n{action.implementation_prompt}\n\n"
+            "Safety rules:\n"
+            "- Only edit the planned repo-relative files plus directly related tests/docs.\n"
+            "- Do not modify bot configs, org configs, secrets, cron settings, or deployment wiring.\n"
+            "- Keep the diff narrowly scoped and reviewable.\n\n"
             f"Source review report:\n{review_report[:6000]}"
         )
         if engine == "codex":
@@ -236,6 +310,9 @@ async def apply_actions(
 def run_verification(commands: list[str], *, cwd: Path) -> list[VerificationResult]:
     results: list[VerificationResult] = []
     for command in commands:
+        if not _is_safe_verify_command(command):
+            results.append(VerificationResult(command=command, exit_code=99, output="blocked by safety policy"))
+            continue
         proc = subprocess.run(
             ["bash", "-lc", command],
             cwd=str(cwd),
@@ -301,9 +378,71 @@ def write_run_artifacts(
     return review_path, summary_path
 
 
+def collect_changed_files(*, worktree_dir: Path) -> list[str]:
+    proc = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=str(worktree_dir),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    changed: list[str] = []
+    for raw in proc.stdout.splitlines():
+        if len(raw) < 4:
+            continue
+        path = raw[3:].strip()
+        if path:
+            changed.append(path)
+    return changed
+
+
+def diff_line_churn(*, worktree_dir: Path) -> int:
+    proc = subprocess.run(
+        ["git", "diff", "--numstat"],
+        cwd=str(worktree_dir),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    churn = 0
+    for raw in proc.stdout.splitlines():
+        parts = raw.split("\t")
+        if len(parts) < 3:
+            continue
+        added, deleted = parts[0], parts[1]
+        if added.isdigit():
+            churn += int(added)
+        if deleted.isdigit():
+            churn += int(deleted)
+    return churn
+
+
+def changed_files_are_safe(changed_files: list[str], planned_files: list[str]) -> bool:
+    if len(changed_files) > MAX_CHANGED_FILES:
+        return False
+    allowed = {path.lstrip("./") for path in planned_files}
+    for path in changed_files:
+        normalized = path.lstrip("./")
+        if not _is_safe_repo_path(normalized):
+            return False
+        if normalized in allowed:
+            continue
+        if normalized.startswith(("tests/", "docs/")):
+            continue
+        if normalized in {"README.md", "ARCHITECTURE.md"}:
+            continue
+        return False
+    return True
+
+
 def commit_branch(plan: ImprovementPlan, *, worktree_dir: Path) -> str | None:
-    status = subprocess.run(["git", "status", "--porcelain"], cwd=str(worktree_dir), text=True, capture_output=True, check=False)
-    if not status.stdout.strip():
+    changed_files = collect_changed_files(worktree_dir=worktree_dir)
+    if not changed_files:
+        return None
+    planned_files = [path for action in plan.actions for path in action.files]
+    if not changed_files_are_safe(changed_files, planned_files):
+        return None
+    if diff_line_churn(worktree_dir=worktree_dir) > MAX_DIFF_LINE_CHURN:
         return None
     _run(["git", "add", "-A"], cwd=worktree_dir)
     _run(["git", "commit", "-m", f"auto-improve: {plan.pr_title}"], cwd=worktree_dir)
@@ -367,7 +506,8 @@ async def run_cycle(args: argparse.Namespace) -> int:
         stamp=stamp,
     )
     run_dir = args.output_root / stamp
-    worktree_dir = create_worktree(plan.branch_name, output_root=args.output_root)
+    worktree_dir, final_branch = create_worktree(plan.branch_name, output_root=args.output_root, base_ref=args.base_ref)
+    plan.branch_name = final_branch
     try:
         apply_logs = await apply_actions(
             plan,
@@ -377,6 +517,8 @@ async def run_cycle(args: argparse.Namespace) -> int:
             review_report=review_report,
         )
         verify_commands = plan.verify_commands or [cmd for action in plan.actions for cmd in action.verify_commands]
+        if not verify_commands:
+            verify_commands = ["./.venv/bin/python -m py_compile core/telegram_relay.py"]
         verification = run_verification(verify_commands, cwd=worktree_dir)
         review_path, summary_path = write_run_artifacts(
             run_dir,
