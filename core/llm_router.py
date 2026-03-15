@@ -6,6 +6,8 @@ import os
 
 from openai import AsyncOpenAI
 
+from core.pm_decision import DecisionClientProtocol
+
 
 SYSTEM_PROMPT = """You are a PM (Project Manager) for an AI team operating over Telegram.
 
@@ -30,8 +32,9 @@ Respond ONLY with valid JSON in this exact format:
 class LLMRouter:
     """GPT/Claude로 태스크를 분석하고 워커에게 분배하는 라우터."""
 
-    def __init__(self) -> None:
-        self.client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+    def __init__(self, decision_client: DecisionClientProtocol | None = None) -> None:
+        self._decision_client = decision_client
+        self.client = None if decision_client is not None else AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
         self.model = os.environ.get("PM_MODEL", "gpt-4o")
 
     async def route(self, user_request: str, workers: list[dict]) -> dict:
@@ -64,17 +67,22 @@ User request:
 
 Analyze and assign tasks to the appropriate workers."""
 
-        resp = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            temperature=0.2,
-            response_format={"type": "json_object"},
-        )
-
-        content = resp.choices[0].message.content or "{}"
+        if self._decision_client is not None:
+            content = await self._decision_client.complete(
+                user_content,
+                system_prompt=SYSTEM_PROMPT,
+            )
+        else:
+            resp = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                temperature=0.2,
+                response_format={"type": "json_object"},
+            )
+            content = resp.choices[0].message.content or "{}"
         return json.loads(content)
 
     async def route_simple(self, user_request: str, workers: list[dict]) -> list[str]:

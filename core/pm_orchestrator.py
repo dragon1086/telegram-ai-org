@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Awaitable
+from typing import Callable, Awaitable, Literal, Any
 from pathlib import Path
 
 from loguru import logger
@@ -16,8 +17,12 @@ from core.claim_manager import ClaimManager
 from core.memory_manager import MemoryManager
 from core.llm_provider import get_provider
 from core.constants import KNOWN_DEPTS, DEPT_INSTRUCTIONS, DEPT_ROLES
+from core.orchestration_config import load_orchestration_config
+from core.orchestration_runbook import OrchestrationRunbook
 from core.result_synthesizer import ResultSynthesizer, SynthesisJudgment
 from core.structured_prompt import StructuredPromptGenerator
+from core.pm_decision import DecisionClientProtocol
+from core.pm_identity import PMIdentity
 
 ENABLE_PM_ORCHESTRATOR = os.environ.get("ENABLE_PM_ORCHESTRATOR", "0") == "1"
 
@@ -39,6 +44,17 @@ class DiscussionNeeded:
     participants: list[str] = field(default_factory=list)
 
 
+@dataclass
+class RequestPlan:
+    """유저 요청 처리 전략."""
+
+    route: Literal["direct_reply", "local_execution", "delegate"]
+    complexity: Literal["low", "medium", "high"]
+    rationale: str
+    dept_hints: list[str] = field(default_factory=list)
+    confidence: float = 0.0
+
+
 class PMOrchestrator:
     """사용자 요청을 부서별 태스크로 분해하고 배분하는 오케스트레이터."""
 
@@ -49,8 +65,9 @@ class PMOrchestrator:
         claim_manager: ClaimManager,
         memory: MemoryManager,
         org_id: str,
-        telegram_send_func: Callable[[int, str], Awaitable[None]],
+        telegram_send_func: Callable[..., Awaitable[Any]],
         discussion_manager: "DiscussionManager | None" = None,
+        decision_client: DecisionClientProtocol | None = None,
     ):
         self._db = context_db
         self._graph = task_graph
@@ -59,9 +76,234 @@ class PMOrchestrator:
         self._org_id = org_id
         self._send = telegram_send_func
         self._discussion = discussion_manager
+        self._decision_client = decision_client
         self._task_counter: int | None = None  # DB에서 지연 초기화
-        self._synthesizer = ResultSynthesizer()
-        self._prompt_gen = StructuredPromptGenerator()
+        self._synthesizer = ResultSynthesizer(decision_client=decision_client)
+        self._prompt_gen = StructuredPromptGenerator(decision_client=decision_client)
+
+    @property
+    def decision_client(self) -> DecisionClientProtocol | None:
+        return self._decision_client
+
+    async def plan_request(self, user_message: str) -> RequestPlan:
+        """유저 요청을 직접 답변/PM 직접 실행/조직 위임 중 어디로 보낼지 결정한다."""
+        dept_hints = self._detect_relevant_depts(user_message)
+        workdir = self._extract_workdir(user_message)
+        llm_plan = await self._llm_plan_request(user_message, dept_hints, workdir=workdir)
+        if llm_plan is not None:
+            return self._normalize_request_plan(llm_plan)
+        return self._normalize_request_plan(self._heuristic_plan_request(user_message, dept_hints))
+
+    _BASE_DEPT_KEYWORDS: dict[str, list[str]] = {
+        "aiorg_product_bot": ["기획", "스펙", "요구사항", "prd", "plan"],
+        "aiorg_research_bot": ["리서치", "research", "시장조사", "레퍼런스", "reference", "경쟁사", "벤치마크", "문서요약", "자료조사"],
+        "aiorg_engineering_bot": ["개발", "구현", "코딩", "코드", "api", "build", "fix", "버그"],
+        "aiorg_design_bot": ["디자인", "ui", "ux", "화면", "레이아웃", "design"],
+        "aiorg_growth_bot": ["성장", "마케팅", "분석", "지표", "growth", "marketing"],
+        "aiorg_ops_bot": ["운영", "배포", "인프라", "모니터링", "deploy", "ops"],
+    }
+
+    _BASE_DEPT_ORDER = [
+        "aiorg_product_bot",
+        "aiorg_research_bot",
+        "aiorg_design_bot",
+        "aiorg_engineering_bot",
+        "aiorg_growth_bot",
+        "aiorg_ops_bot",
+    ]
+
+    def _dept_profiles(self) -> dict[str, dict[str, Any]]:
+        try:
+            cfg = load_orchestration_config(force_reload=True)
+            profiles: dict[str, dict[str, Any]] = {}
+            for org in cfg.list_specialist_orgs():
+                identity = PMIdentity(org.id)
+                data = identity.load()
+                instruction = org.instruction or ""
+                if not instruction or instruction == "요청을 분석하고 처리하세요.":
+                    role_hint = data.get("role") or org.role or org.dept_name
+                    instruction = f"{role_hint} 관점에서 조사·분석·정리하세요."
+                profiles[org.id] = {
+                    "dept_name": org.dept_name,
+                    "role": data.get("role") or org.role or org.dept_name,
+                    "specialties": list(data.get("specialties") or org.specialties or []),
+                    "direction": data.get("direction") or org.direction or "",
+                    "instruction": instruction,
+                }
+            return profiles
+        except Exception as e:
+            logger.warning(f"[PM] live dept profile 로드 실패, 상수 fallback 사용: {e}")
+
+        return {
+            org_id: {
+                "dept_name": dept_name,
+                "role": DEPT_ROLES.get(org_id, dept_name),
+                "specialties": [],
+                "direction": "",
+                "instruction": DEPT_INSTRUCTIONS.get(org_id, f"{dept_name} 업무를 수행하세요"),
+            }
+            for org_id, dept_name in KNOWN_DEPTS.items()
+        }
+
+    def _dept_map(self) -> dict[str, str]:
+        return {
+            org_id: profile["dept_name"]
+            for org_id, profile in self._dept_profiles().items()
+        }
+
+    def _dept_order(self) -> list[str]:
+        dept_map = self._dept_map()
+        ordered = [dept for dept in self._BASE_DEPT_ORDER if dept in dept_map]
+        remaining = sorted(dept for dept in dept_map if dept not in ordered)
+        return ordered + remaining
+
+    def _dept_keywords(self, dept_id: str, profile: dict[str, Any]) -> list[str]:
+        keywords: list[str] = list(self._BASE_DEPT_KEYWORDS.get(dept_id, []))
+        for raw in [profile.get("dept_name", ""), profile.get("role", ""), *profile.get("specialties", [])]:
+            text = str(raw).strip().lower()
+            if text:
+                keywords.append(text)
+                keywords.extend(tok for tok in re.split(r"[\s,()/|]+", text) if len(tok) >= 2)
+        deduped: list[str] = []
+        for keyword in keywords:
+            keyword = keyword.strip().lower()
+            if len(keyword) < 2 or keyword in deduped:
+                continue
+            deduped.append(keyword)
+        return deduped
+
+    def _normalize_request_plan(self, plan: RequestPlan) -> RequestPlan:
+        """현재 조직 구성이 허용하는 범위로 실행 전략을 보정한다."""
+        if plan.route == "delegate" and not self._dept_map():
+            return RequestPlan(
+                route="local_execution",
+                complexity=plan.complexity,
+                rationale="현재는 총괄PM만 활성화되어 있어 조직 위임 대신 PM이 직접 처리합니다.",
+                dept_hints=[],
+                confidence=plan.confidence,
+            )
+        return plan
+
+    def _build_request_plan_prompt(self, message: str, dept_hints: list[str]) -> str:
+        dept_profiles = self._dept_profiles()
+        dept_lines = "\n".join(
+            f"- {dept} ({dept_profiles.get(dept, {}).get('dept_name', dept)}): {dept_profiles.get(dept, {}).get('role', '')}"
+            for dept in dept_hints
+        ) or "- currently no obvious specialist hints"
+        return (
+            "You are the chief PM for a Telegram-based AI organization.\n"
+            "Decide the lightest correct handling strategy for the user request.\n\n"
+            "Available routes:\n"
+            '- "direct_reply": answer or clarify directly. No execution or delegation.\n'
+            '- "local_execution": the PM should handle it like a single coding agent.\n'
+            '- "delegate": coordinate one or more specialist organizations.\n\n'
+            "Choose direct_reply for simple questions, confirmations, status checks, and lightweight explanations.\n"
+            "Choose local_execution for focused tasks that do not need cross-team coordination.\n"
+            "Choose delegate only when multi-discipline collaboration, explicit planning/brainstorming, or longer multi-step execution is needed.\n\n"
+            "Department hints:\n"
+            f"{dept_lines}\n\n"
+            "Return JSON only in this exact shape:\n"
+            '{"route":"direct_reply|local_execution|delegate","complexity":"low|medium|high","rationale":"short reason","confidence":0.0}\n\n'
+            f"User request: {message[:700]}"
+        )
+
+    async def _llm_plan_request(
+        self, user_message: str, dept_hints: list[str], workdir: str | None = None,
+    ) -> RequestPlan | None:
+        provider = None if self._decision_client is not None else get_provider()
+        if self._decision_client is None and provider is None:
+            return None
+        prompt = self._build_request_plan_prompt(user_message, dept_hints)
+        try:
+            if self._decision_client is not None:
+                response = await asyncio.wait_for(
+                    self._decision_client.complete(prompt, workdir=workdir),
+                    timeout=35.0,
+                )
+            else:
+                response = await asyncio.wait_for(
+                    provider.complete(prompt, timeout=8.0),
+                    timeout=10.0,
+                )
+            return self._parse_request_plan(response, dept_hints)
+        except Exception as e:
+            logger.warning(f"[PM] 요청 전략 LLM 판단 실패, 휴리스틱 fallback: {e}")
+            return None
+
+    def _parse_request_plan(self, response: str, dept_hints: list[str]) -> RequestPlan:
+        text = response.strip()
+        if "```" in text:
+            match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+            if match:
+                text = match.group(1).strip()
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start >= 0 and end > start:
+            text = text[start:end]
+        data = json.loads(text)
+        route = data.get("route", "delegate")
+        if route not in {"direct_reply", "local_execution", "delegate"}:
+            route = "delegate"
+        complexity = data.get("complexity", "medium")
+        if complexity not in {"low", "medium", "high"}:
+            complexity = "medium"
+        return RequestPlan(
+            route=route,
+            complexity=complexity,
+            rationale=str(data.get("rationale", "")).strip() or "LLM 전략 판단",
+            dept_hints=dept_hints,
+            confidence=float(data.get("confidence", 0.7)),
+        )
+
+    def _heuristic_plan_request(self, user_message: str, dept_hints: list[str]) -> RequestPlan:
+        text = user_message.strip()
+        lower = text.lower()
+
+        question_markers = (
+            "?", "왜", "뭐", "무엇", "어떻게", "맞아", "맞나요", "가능해", "가능한가",
+            "확인", "상태", "진행", "현황", "설명", "알려줘", "인가요",
+        )
+        action_markers = (
+            "만들", "작성", "구현", "개발", "설계", "수정", "고쳐", "분석", "정리",
+            "실행", "자동화", "배포", "기획", "브레인스토밍", "논의",
+        )
+        collaboration_markers = (
+            "협업", "조율", "각 조직", "여러 조직", "팀", "브레인스토밍", "토론",
+            "논의", "기획하고", "디자인하고", "개발하고", "마케팅", "영업", "재무",
+        )
+
+        is_question = any(marker in text for marker in question_markers)
+        action_hits = sum(1 for marker in action_markers if marker in lower)
+        needs_collaboration = len(dept_hints) >= 2 or any(
+            marker in lower for marker in collaboration_markers
+        )
+
+        if is_question and action_hits == 0:
+            return RequestPlan(
+                route="direct_reply",
+                complexity="low",
+                rationale="질문·확인 성격이 강해서 PM이 바로 답하는 편이 자연스럽습니다.",
+                dept_hints=dept_hints,
+                confidence=0.8,
+            )
+
+        if needs_collaboration or action_hits >= 3 or len(text) > 220:
+            complexity = "high" if needs_collaboration or len(dept_hints) >= 3 else "medium"
+            return RequestPlan(
+                route="delegate",
+                complexity=complexity,
+                rationale="복수 조직 협업 또는 다단계 실행이 필요해 보여 조직 오케스트레이션으로 보냅니다.",
+                dept_hints=dept_hints,
+                confidence=0.75,
+            )
+
+        return RequestPlan(
+            route="local_execution",
+            complexity="medium" if action_hits >= 2 or len(text) > 100 else "low",
+            rationale="집중된 단일 작업이라 PM이 직접 처리하는 편이 더 빠릅니다.",
+            dept_hints=dept_hints,
+            confidence=0.7,
+        )
 
     async def _next_task_id(self) -> str:
         """DB 최대값 기반 고유 태스크 ID 생성 (재시작 후 중복 방지)."""
@@ -87,22 +329,29 @@ class PMOrchestrator:
         self._task_counter += 1
         return f"T-{self._org_id}-{self._task_counter:03d}"
 
-    @staticmethod
-    def _build_decompose_prompt(message: str) -> str:
-        """KNOWN_DEPTS + DEPT_ROLES에서 동적으로 LLM 분해 프롬프트 생성."""
+    def _build_decompose_prompt(self, message: str, dept_hints: list[str]) -> str:
+        """현재 specialist 조직 프로필 기반 LLM 분해 프롬프트 생성."""
+        dept_profiles = self._dept_profiles()
         dept_lines = "\n".join(
-            f"- {org_id} ({dept_name}): {DEPT_ROLES.get(org_id, dept_name)}"
-            for org_id, dept_name in KNOWN_DEPTS.items()
+            f"- {org_id} ({profile['dept_name']}): {profile['role']} | specialties={', '.join(profile['specialties']) or '-'}"
+            for org_id, profile in dept_profiles.items()
         )
+        hint_lines = "\n".join(
+            f"- {dept} ({dept_profiles.get(dept, {}).get('dept_name', dept)})"
+            for dept in dept_hints
+        ) or "- none"
         return (
             f"You are the PM of an AI organization with these departments:\n"
             f"{dept_lines}\n\n"
+            f"Priority department hints (must be respected unless clearly irrelevant):\n"
+            f"{hint_lines}\n\n"
             f"Break the user's request into specific subtasks for each relevant department.\n"
             f"Each subtask should be a CONCRETE, ACTIONABLE instruction (not the user's raw message).\n\n"
             f"Reply in this exact format (one line per subtask):\n"
             f"DEPT:<org_id>|TASK:specific task description|DEPENDS:comma-separated indices or none\n\n"
             f"Rules:\n"
             f"- Only include departments that are actually needed\n"
+            f"- If the user explicitly asked for a department in the hints above, include it unless clearly unrelated\n"
             f"- Write task descriptions in Korean, specific to each department's role\n"
             f"- DEPENDS uses 0-based index of prior subtasks (e.g., '0' or '0,1')\n"
             f"- Planning usually comes first, design before engineering, engineering before ops\n"
@@ -115,8 +364,12 @@ class PMOrchestrator:
 
         LLM 기반 분해를 시도하고, 실패 시 키워드 기반 fallback.
         """
+        if not self._dept_map():
+            logger.info("[PM] 활성 specialist 조직이 없어 분해를 건너뜁니다.")
+            return []
         workdir = self._extract_workdir(user_message)
-        subtasks = await self._llm_decompose(user_message)
+        dept_hints = self._detect_relevant_depts(user_message)
+        subtasks = await self._llm_decompose(user_message, dept_hints, workdir=workdir)
         if subtasks:
             for subtask in subtasks:
                 subtask.workdir = workdir
@@ -148,18 +401,29 @@ class PMOrchestrator:
                 return candidate
         return None
 
-    async def _llm_decompose(self, user_message: str) -> list[SubTask]:
+    async def _llm_decompose(
+        self,
+        user_message: str,
+        dept_hints: list[str],
+        workdir: str | None = None,
+    ) -> list[SubTask]:
         """LLM으로 태스크 분해. 실패 시 빈 리스트 반환."""
-        provider = get_provider()
-        if provider is None:
+        provider = None if self._decision_client is not None else get_provider()
+        if self._decision_client is None and provider is None:
             return []
 
-        prompt = self._build_decompose_prompt(user_message)
+        prompt = self._build_decompose_prompt(user_message, dept_hints)
         try:
-            response = await asyncio.wait_for(
-                provider.complete(prompt, timeout=15.0),
-                timeout=18.0,
-            )
+            if self._decision_client is not None:
+                response = await asyncio.wait_for(
+                    self._decision_client.complete(prompt, workdir=workdir),
+                    timeout=45.0,
+                )
+            else:
+                response = await asyncio.wait_for(
+                    provider.complete(prompt, timeout=15.0),
+                    timeout=18.0,
+                )
             return self._parse_decompose(response)
         except Exception as e:
             logger.warning(f"[PM] LLM 분해 실패, 키워드 fallback: {e}")
@@ -171,6 +435,14 @@ class PMOrchestrator:
 
         형식: DEPT:aiorg_xxx_bot|TASK:description|DEPENDS:0,1
         """
+        try:
+            cfg = load_orchestration_config(force_reload=True)
+            known_depts = {
+                org.id: org.dept_name
+                for org in cfg.list_specialist_orgs()
+            }
+        except Exception:
+            known_depts = dict(KNOWN_DEPTS)
         subtasks: list[SubTask] = []
         for line in response.strip().split("\n"):
             line = line.strip()
@@ -186,7 +458,7 @@ class PMOrchestrator:
             task_desc = parts.get("TASK", "")
             depends_str = parts.get("DEPENDS", "none").lower()
 
-            if not dept or dept not in KNOWN_DEPTS or not task_desc:
+            if not dept or dept not in known_depts or not task_desc:
                 continue
 
             deps: list[str] = []
@@ -200,50 +472,49 @@ class PMOrchestrator:
             ))
         return subtasks
 
-    # 부서별 키워드 매핑 — 키워드 기반 fallback 분해용
-    _DEPT_KEYWORDS: dict[str, list[str]] = {
-        "aiorg_product_bot": ["기획", "스펙", "요구사항", "prd", "plan"],
-        "aiorg_engineering_bot": ["개발", "구현", "코딩", "코드", "api", "build", "fix", "버그"],
-        "aiorg_design_bot": ["디자인", "ui", "ux", "화면", "레이아웃", "design"],
-        "aiorg_growth_bot": ["성장", "마케팅", "분석", "지표", "growth", "marketing"],
-        "aiorg_ops_bot": ["운영", "배포", "인프라", "모니터링", "deploy", "ops"],
-    }
+    def _detect_relevant_depts(self, user_message: str) -> list[str]:
+        """요청에 바로 연관된 부서 후보만 추린다.
 
-    # 부서 간 의존 순서 (index가 낮을수록 먼저)
-    _DEPT_ORDER = [
-        "aiorg_product_bot",
-        "aiorg_design_bot",
-        "aiorg_engineering_bot",
-        "aiorg_growth_bot",
-        "aiorg_ops_bot",
-    ]
+        키워드가 하나도 없으면 기본 부서를 강제하지 않는다.
+        """
+        msg_lower = user_message.lower()
+        dept_profiles = self._dept_profiles()
+        matched: list[str] = []
+        for dept in self._dept_order():
+            keywords = self._dept_keywords(dept, dept_profiles.get(dept, {}))
+            if any(kw in msg_lower for kw in keywords):
+                matched.append(dept)
+        return matched
 
     def _keyword_decompose(self, user_message: str) -> list[SubTask]:
         """키워드 기반 태스크 분해 (fallback).
 
-        KNOWN_DEPTS + DEPT_INSTRUCTIONS에서 동적으로 부서를 매칭.
+        현재 specialist 조직 프로필에서 동적으로 부서를 매칭.
         """
+        dept_profiles = self._dept_profiles()
+        dept_map = {org_id: profile["dept_name"] for org_id, profile in dept_profiles.items()}
+        if not dept_map:
+            return []
         subtasks: list[SubTask] = []
         msg_lower = user_message.lower()
         short_msg = user_message[:200]
 
         # 키워드 매칭으로 필요한 부서 탐지
         matched_depts: list[str] = []
-        for dept in self._DEPT_ORDER:
-            if dept not in KNOWN_DEPTS:
-                continue
-            keywords = self._DEPT_KEYWORDS.get(dept, [])
+        dept_order = self._dept_order()
+        for dept in dept_order:
+            keywords = self._dept_keywords(dept, dept_profiles.get(dept, {}))
             if any(kw in msg_lower for kw in keywords):
                 matched_depts.append(dept)
 
         # 매칭된 부서별 서브태스크 생성 (순서에 따른 의존성)
         for dept in matched_depts:
-            instruction = DEPT_INSTRUCTIONS.get(dept, f"{KNOWN_DEPTS[dept]} 업무를 수행하세요")
+            instruction = dept_profiles.get(dept, {}).get("instruction") or f"{dept_map[dept]} 업무를 수행하세요"
             deps: list[str] = []
             # 앞 순서 부서에 의존
             for i, prev in enumerate(subtasks):
-                prev_order = self._DEPT_ORDER.index(prev.assigned_dept) if prev.assigned_dept in self._DEPT_ORDER else 99
-                curr_order = self._DEPT_ORDER.index(dept) if dept in self._DEPT_ORDER else 99
+                prev_order = dept_order.index(prev.assigned_dept) if prev.assigned_dept in dept_order else 99
+                curr_order = dept_order.index(dept) if dept in dept_order else 99
                 if prev_order < curr_order:
                     deps.append(str(i))
             subtasks.append(SubTask(
@@ -255,10 +526,10 @@ class PMOrchestrator:
         # 매칭 없으면 첫 번째 부서(기획)로 fallback
         if not subtasks:
             first_dept = next(
-                (dept for dept in self._DEPT_ORDER if dept in KNOWN_DEPTS),
-                next(iter(KNOWN_DEPTS)),
+                (dept for dept in dept_order if dept in dept_map),
+                next(iter(dept_map)),
             )
-            instruction = DEPT_INSTRUCTIONS.get(first_dept, "요청을 분석하세요")
+            instruction = dept_profiles.get(first_dept, {}).get("instruction") or "요청을 분석하세요"
             subtasks.append(SubTask(
                 description=f"{instruction}: {user_message[:500]}",
                 assigned_dept=first_dept,
@@ -266,25 +537,89 @@ class PMOrchestrator:
 
         return subtasks
 
-    async def _send_plan_preview(self, subtasks: list[SubTask], chat_id: int) -> None:
+    def _org_mention(self, org_id: str) -> str:
+        try:
+            org = load_orchestration_config().get_org(org_id)
+            if org and org.username:
+                return org.username if org.username.startswith("@") else f"@{org.username}"
+        except Exception:
+            pass
+        return f"@{org_id}"
+
+    def _requester_mention(self, metadata: dict[str, Any] | None) -> str:
+        metadata = metadata or {}
+        return (
+            metadata.get("requester_mention")
+            or metadata.get("source_org_mention")
+            or metadata.get("requester_org_mention")
+            or ""
+        )
+
+    def _reply_message_id(self, metadata: dict[str, Any] | None) -> int | None:
+        metadata = metadata or {}
+        raw = metadata.get("source_message_id") or metadata.get("reply_to_message_id")
+        try:
+            return int(raw) if raw is not None else None
+        except Exception:
+            return None
+
+    async def _send_plan_preview(
+        self,
+        subtasks: list[SubTask],
+        chat_id: int,
+        rationale: str | None = None,
+        parent_metadata: dict[str, Any] | None = None,
+    ) -> None:
         """태스크 분배 전 계획을 먼저 텔레그램에 보여준다."""
         lines = ["📋 **PM 실행 계획**\n"]
+        requester = self._requester_mention(parent_metadata)
+        if requester:
+            lines.append(f"요청자: {requester}")
+        if rationale:
+            lines.append(f"왜 이렇게 처리하나: {rationale}")
+            lines.append("")
         for i, st in enumerate(subtasks):
             dept_name = KNOWN_DEPTS.get(st.assigned_dept, st.assigned_dept)
+            dept_mention = self._org_mention(st.assigned_dept)
             desc_short = st.description[:100].replace("\n", " ")
             deps = f" (의존: {','.join(st.depends_on)})" if st.depends_on else ""
-            lines.append(f"{i+1}. **{dept_name}**: {desc_short}{deps}")
+            lines.append(f"{i+1}. {dept_mention} **{dept_name}**: {desc_short}{deps}")
         lines.append(f"\n총 {len(subtasks)}개 서브태스크 → 실행 시작합니다.")
         try:
-            await self._send(chat_id, "\n".join(lines))
+            await self._send(
+                chat_id,
+                "\n".join(lines),
+                reply_to_message_id=self._reply_message_id(parent_metadata),
+            )
         except Exception as e:
             logger.warning(f"[PM] 계획 미리보기 전송 실패: {e}")
 
-    async def dispatch(self, parent_task_id: str, subtasks: list[SubTask],
-                       chat_id: int) -> list[str]:
+    async def dispatch(
+        self,
+        parent_task_id: str,
+        subtasks: list[SubTask],
+        chat_id: int,
+        rationale: str | None = None,
+    ) -> list[str]:
         """서브태스크를 ContextDB에 생성하고 TaskGraph 구성 후 첫 번째 웨이브 발송."""
+        if not subtasks:
+            await self._send(
+                chat_id,
+                "ℹ️ 현재 활성 specialist 조직이 없어 총괄PM 직접 실행 경로로 처리해야 합니다.",
+                reply_to_message_id=self._reply_message_id(
+                    (await self._db.get_pm_task(parent_task_id) or {}).get("metadata")
+                ),
+            )
+            return []
+        parent_task = await self._db.get_pm_task(parent_task_id)
+        parent_metadata = parent_task.get("metadata", {}) if parent_task else {}
         # 0. 계획 미리보기 전송
-        await self._send_plan_preview(subtasks, chat_id)
+        await self._send_plan_preview(
+            subtasks,
+            chat_id,
+            rationale=rationale,
+            parent_metadata=parent_metadata,
+        )
 
         task_ids: list[str] = []
 
@@ -304,7 +639,10 @@ class PMOrchestrator:
                 assigned_dept=st.assigned_dept,
                 created_by=self._org_id,
                 parent_id=parent_task_id,
-                metadata={"workdir": st.workdir} if st.workdir else None,
+                metadata={
+                    **parent_metadata,
+                    **({"workdir": st.workdir} if st.workdir else {}),
+                } if parent_metadata or st.workdir else None,
             )
             task_ids.append(tid)
 
@@ -320,16 +658,52 @@ class PMOrchestrator:
             if task:
                 dept = task["assigned_dept"]
                 dept_name = KNOWN_DEPTS.get(dept, dept)
-                msg = f"[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정: {task['description'][:300]}"
+                dept_mention = self._org_mention(dept)
+                requester = self._requester_mention(task.get("metadata"))
+                prefix = f"{dept_mention} "
+                if requester:
+                    prefix += f"(요청자: {requester}) "
+                msg = f"{prefix}[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정: {task['description'][:300]}"
                 # DB 먼저 업데이트 — send 실패해도 task_poller가 감지 가능
                 await self._db.update_pm_task_status(tid, "assigned")
                 try:
-                    await self._send(chat_id, msg)
+                    await self._send(
+                        chat_id,
+                        msg,
+                        reply_to_message_id=self._reply_message_id(task.get("metadata")),
+                    )
                 except Exception as _e:
                     logger.warning(f"[PM] 태스크 {tid} 알림 전송 실패 (태스크는 assigned 상태): {_e}")
                 logger.info(f"[PM] 태스크 발송: {tid} → {dept}")
 
         return task_ids
+
+    async def build_status_snapshot(self, parent_task_id: str) -> str:
+        """부모 태스크 진행 상태를 사람이 읽기 쉽게 요약한다."""
+        subtasks = await self._db.get_subtasks(parent_task_id)
+        if not subtasks:
+            return "진행 중인 세부 태스크가 없습니다."
+
+        icons = {
+            "done": "✅",
+            "running": "🔄",
+            "assigned": "📨",
+            "pending": "⏳",
+            "failed": "❌",
+            "needs_review": "⚠️",
+        }
+        total = len(subtasks)
+        done = sum(1 for task in subtasks if task["status"] == "done")
+        running = sum(1 for task in subtasks if task["status"] in {"running", "assigned"})
+        lines = [f"📊 진행 상황: {done}/{total} 완료, {running}개 진행 중"]
+        for task in subtasks[:8]:
+            dept_name = KNOWN_DEPTS.get(task.get("assigned_dept") or "", task.get("assigned_dept") or "?")
+            icon = icons.get(task["status"], "•")
+            desc = task["description"][:60].replace("\n", " ")
+            lines.append(f"{icon} {dept_name}: {desc}")
+        if total > 8:
+            lines.append(f"… 외 {total - 8}개 태스크")
+        return "\n".join(lines)
 
     async def on_task_complete(self, task_id: str, result: str, chat_id: int) -> None:
         """부서 태스크 완료 처리. 새로 unblock된 태스크 발송."""
@@ -343,10 +717,19 @@ class PMOrchestrator:
             if task:
                 dept = task["assigned_dept"]
                 dept_name = KNOWN_DEPTS.get(dept, dept)
-                msg = f"[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정: {task['description'][:300]}"
+                dept_mention = self._org_mention(dept)
+                requester = self._requester_mention(task.get("metadata"))
+                prefix = f"{dept_mention} "
+                if requester:
+                    prefix += f"(요청자: {requester}) "
+                msg = f"{prefix}[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정: {task['description'][:300]}"
                 await self._db.update_pm_task_status(tid, "assigned")
                 try:
-                    await self._send(chat_id, msg)
+                    await self._send(
+                        chat_id,
+                        msg,
+                        reply_to_message_id=self._reply_message_id(task.get("metadata")),
+                    )
                 except Exception as _e:
                     logger.warning(f"[PM] 태스크 {tid} 알림 전송 실패 (태스크는 assigned 상태): {_e}")
 
@@ -357,6 +740,8 @@ class PMOrchestrator:
             siblings = await self._db.get_subtasks(parent_id)
             if all(s["status"] == "done" for s in siblings):
                 await self._synthesize_and_act(parent_id, siblings, chat_id)
+            else:
+                await self._send(chat_id, await self.build_status_snapshot(parent_id))
 
     async def consolidate_results(self, parent_task_id: str) -> str:
         """부모 태스크의 완료된 서브태스크 결과를 단순 요약 문자열로 합친다."""
@@ -383,10 +768,19 @@ class PMOrchestrator:
         )
         parent_meta = parent.get("metadata", {}) if parent else {}
         parent_workdir = parent_meta.get("workdir")
+        run_id = parent_meta.get("run_id")
+        runbook = OrchestrationRunbook(Path(__file__).resolve().parent.parent)
 
         if synthesis.judgment == SynthesisJudgment.SUFFICIENT:
             report = synthesis.unified_report or synthesis.summary
             await self._send(chat_id, f"✅ 모든 부서 작업 완료!\n\n{report}")
+            if run_id:
+                try:
+                    runbook.advance_phase(run_id, note="조직 협업 결과 통합 완료, verification phase 이동")
+                    runbook.advance_phase(run_id, note="피드백 phase 이동")
+                    runbook.advance_phase(run_id, note="delegated run 완료")
+                except Exception as e:
+                    logger.warning(f"[PM] runbook 완료 처리 실패 ({run_id}): {e}")
             # 향후 계획/추가 작업이 있으면 자동 실행 (LLM이 FOLLOW_UP으로 추출한 것)
             if synthesis.follow_up_tasks:
                 follow_ups = [
@@ -412,6 +806,11 @@ class PMOrchestrator:
                 f"⚠️ 결과 부족 — 추가 작업 배분 중...\n"
                 f"사유: {synthesis.reasoning}\n\n{synthesis.summary}",
             )
+            if run_id:
+                try:
+                    runbook.advance_phase(run_id, note="결과 부족으로 verification phase에서 추가 작업 필요")
+                except Exception as e:
+                    logger.warning(f"[PM] runbook 진행 실패 ({run_id}): {e}")
             if synthesis.follow_up_tasks:
                 follow_ups = [
                     SubTask(
@@ -434,12 +833,24 @@ class PMOrchestrator:
                 f"사유: {synthesis.reasoning}\n\n{synthesis.summary}\n\n"
                 f"조율이 필요합니다.",
             )
+            if run_id:
+                try:
+                    runbook.advance_phase(run_id, note="결과 충돌로 verification phase에서 정지")
+                except Exception as e:
+                    logger.warning(f"[PM] runbook 진행 실패 ({run_id}): {e}")
             await self._db.update_pm_task_status(
                 parent_task_id, "needs_review", result=synthesis.summary,
             )
         else:  # NEEDS_INTEGRATION
             report = synthesis.unified_report or synthesis.summary
             await self._send(chat_id, f"📋 결과 통합 보고서:\n\n{report}")
+            if run_id:
+                try:
+                    runbook.advance_phase(run_id, note="통합 보고서 작성 완료, verification phase 이동")
+                    runbook.advance_phase(run_id, note="피드백 phase 이동")
+                    runbook.advance_phase(run_id, note="delegated run 완료")
+                except Exception as e:
+                    logger.warning(f"[PM] runbook 완료 처리 실패 ({run_id}): {e}")
             await self._db.update_pm_task_status(
                 parent_task_id, "done", result=report,
             )
@@ -483,7 +894,11 @@ class PMOrchestrator:
         if len(participants) < 2:
             return []
 
-        needs_discussion = await self._llm_detect_discussion(user_message, participants)
+        needs_discussion = await self._llm_detect_discussion(
+            user_message,
+            participants,
+            workdir=self._extract_workdir(user_message),
+        )
 
         if not needs_discussion:
             return []
@@ -494,10 +909,15 @@ class PMOrchestrator:
             participants=participants,
         )]
 
-    async def _llm_detect_discussion(self, user_message: str, participants: list[str]) -> bool:
+    async def _llm_detect_discussion(
+        self,
+        user_message: str,
+        participants: list[str],
+        workdir: str | None = None,
+    ) -> bool:
         """LLM으로 토론 필요 여부 판단. 실패 시 키워드 fallback."""
-        provider = get_provider()
-        if provider is None:
+        provider = None if self._decision_client is not None else get_provider()
+        if self._decision_client is None and provider is None:
             logger.debug("[PM] LLM provider 없음 — 키워드 fallback")
             return self._keyword_detect_discussion(user_message)
 
@@ -508,10 +928,16 @@ class PMOrchestrator:
         )
 
         try:
-            response = await asyncio.wait_for(
-                provider.complete(prompt, timeout=10.0),
-                timeout=12.0,
-            )
+            if self._decision_client is not None:
+                response = await asyncio.wait_for(
+                    self._decision_client.complete(prompt, workdir=workdir),
+                    timeout=30.0,
+                )
+            else:
+                response = await asyncio.wait_for(
+                    provider.complete(prompt, timeout=10.0),
+                    timeout=12.0,
+                )
             answer = response.strip().upper()
             result = answer.startswith("YES")
             logger.info(f"[PM] LLM 토론 감지: {answer} → {result}")

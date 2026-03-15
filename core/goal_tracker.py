@@ -193,8 +193,9 @@ class GoalTracker:
     async def _llm_evaluate(self, goal: dict, subtasks: list[dict],
                             done: list[dict]) -> GoalStatus | None:
         """LLM으로 목표 달성 평가. 실패 시 None (fallback으로)."""
-        provider = get_provider()
-        if provider is None:
+        decision_client = self._orch.decision_client
+        provider = None if decision_client is not None else get_provider()
+        if decision_client is None and provider is None:
             return None
 
         results_text = "\n".join(
@@ -214,10 +215,16 @@ class GoalTracker:
         )
 
         try:
-            response = await asyncio.wait_for(
-                provider.complete(prompt, timeout=15.0),
-                timeout=18.0,
-            )
+            if decision_client is not None:
+                response = await asyncio.wait_for(
+                    decision_client.complete(prompt),
+                    timeout=35.0,
+                )
+            else:
+                response = await asyncio.wait_for(
+                    provider.complete(prompt, timeout=15.0),
+                    timeout=18.0,
+                )
             return self._parse_evaluation(response)
         except Exception as e:
             logger.warning(f"[GoalTracker] LLM 평가 실패, fallback 사용: {e}")

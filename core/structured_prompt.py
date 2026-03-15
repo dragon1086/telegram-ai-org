@@ -16,6 +16,7 @@ from loguru import logger
 
 from core.llm_provider import get_provider
 from core.constants import KNOWN_DEPTS, DEPT_ROLES
+from core.pm_decision import DecisionClientProtocol
 
 
 class TaskComplexity(str, Enum):
@@ -81,6 +82,9 @@ _MODERATE_KEYWORDS = [
 class StructuredPromptGenerator:
     """복잡도 기반 구조화 프롬프트 생성기."""
 
+    def __init__(self, decision_client: DecisionClientProtocol | None = None) -> None:
+        self._decision_client = decision_client
+
     def detect_complexity(self, description: str) -> TaskComplexity:
         """태스크 복잡도 감지 (키워드 기반)."""
         desc_lower = description.lower()
@@ -128,8 +132,8 @@ class StructuredPromptGenerator:
         complexity: TaskComplexity, context: str,
     ) -> StructuredPrompt | None:
         """LLM 기반 프롬프트 생성."""
-        provider = get_provider()
-        if provider is None:
+        provider = None if self._decision_client is not None else get_provider()
+        if self._decision_client is None and provider is None:
             return None
 
         dept_name = KNOWN_DEPTS.get(dept, dept)
@@ -143,10 +147,16 @@ class StructuredPromptGenerator:
         )
 
         try:
-            response = await asyncio.wait_for(
-                provider.complete(prompt, timeout=15.0),
-                timeout=18.0,
-            )
+            if self._decision_client is not None:
+                response = await asyncio.wait_for(
+                    self._decision_client.complete(prompt),
+                    timeout=35.0,
+                )
+            else:
+                response = await asyncio.wait_for(
+                    provider.complete(prompt, timeout=15.0),
+                    timeout=18.0,
+                )
             phases = self._parse_phases(response)
             if not phases:
                 return None

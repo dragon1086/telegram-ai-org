@@ -15,6 +15,8 @@ from typing import Literal, Any
 
 from loguru import logger
 
+from core.pm_decision import DecisionClientProtocol
+
 ROUTE_ACTIONS = Literal["new_task", "retry_task", "confirm_pending", "status_query", "chat"]
 
 _PROMPT_TEMPLATE = """\
@@ -57,7 +59,8 @@ class PMRoute:
 class PMRouter:
     """LLM-based message router. Falls back to 'new_task' if LLM is unavailable or fails."""
 
-    def __init__(self) -> None:
+    def __init__(self, decision_client: DecisionClientProtocol | None = None) -> None:
+        self._decision_client = decision_client
         self._provider = None
         self._initialized = False
 
@@ -75,9 +78,9 @@ class PMRouter:
     async def route(self, text: str, context: dict[str, Any] | None = None) -> PMRoute:
         """메시지를 라우팅. LLM 실패 시 new_task로 폴백."""
         ctx = context or {}
-        provider = self._get_provider()
+        provider = None if self._decision_client is not None else self._get_provider()
 
-        if provider is None:
+        if self._decision_client is None and provider is None:
             return self._fallback(text, ctx)
 
         prompt = _PROMPT_TEMPLATE.format(
@@ -86,6 +89,9 @@ class PMRouter:
         )
 
         try:
+            if self._decision_client is not None:
+                raw = await self._decision_client.complete(prompt)
+                return self._parse(raw)
             raw = await provider.complete(prompt, timeout=5.0)
             return self._parse(raw)
         except Exception as e:

@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 from openai import AsyncOpenAI
 
+from core.pm_decision import DecisionClientProtocol
+
 PLANNER_SYSTEM_PROMPT = """You are a PM (Project Manager) for an AI team.
 
 Your job: decompose the user's request into an execution plan with phases.
@@ -71,8 +73,9 @@ class ExecutionPlan:
 class TaskPlanner:
     """유저 요청 + 워커 목록 → ExecutionPlan (순차/병렬 Phase 분해)."""
 
-    def __init__(self) -> None:
-        self.client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+    def __init__(self, decision_client: DecisionClientProtocol | None = None) -> None:
+        self._decision_client = decision_client
+        self.client = None if decision_client is not None else AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
         self.model = os.environ.get("PM_MODEL", "gpt-4o")
 
     async def plan(self, user_request: str, workers: list[dict], context: str = "") -> ExecutionPlan:
@@ -104,17 +107,22 @@ User request:
 
 Create an execution plan with phases."""
 
-        resp = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            temperature=0.2,
-            response_format={"type": "json_object"},
-        )
-
-        content = resp.choices[0].message.content or "{}"
+        if self._decision_client is not None:
+            content = await self._decision_client.complete(
+                user_content,
+                system_prompt=PLANNER_SYSTEM_PROMPT,
+            )
+        else:
+            resp = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                temperature=0.2,
+                response_format={"type": "json_object"},
+            )
+            content = resp.choices[0].message.content or "{}"
         data = json.loads(content)
         return _parse_plan(data)
 

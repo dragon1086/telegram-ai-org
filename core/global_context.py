@@ -6,14 +6,20 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from core.pm_decision import DecisionClientProtocol
+
 CONTEXT_FILE = Path.home() / ".ai-org" / "global_context.md"
 MAX_ENTRIES = 50   # 최대 항목 수
 MAX_CHARS = 8000   # 파일 최대 크기 (바이트)
 
 
 class GlobalContext:
-    def __init__(self) -> None:
+    def __init__(self, decision_client: DecisionClientProtocol | None = None) -> None:
+        self._decision_client = decision_client
         CONTEXT_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    def set_decision_client(self, decision_client: DecisionClientProtocol | None) -> None:
+        self._decision_client = decision_client
 
     def read(self) -> str:
         """현재 글로벌 맥락 읽기."""
@@ -81,21 +87,27 @@ class GlobalContext:
                 "Example: [0,2,5]. Return only the JSON array, nothing else."
             )
             try:
-                from core.llm_provider import get_provider
-                provider = get_provider()
-                if provider:
+                if self._decision_client is not None:
+                    raw = await asyncio.wait_for(
+                        self._decision_client.complete(prompt), timeout=5.0
+                    )
+                else:
+                    from core.llm_provider import get_provider
+                    provider = get_provider()
+                    if not provider:
+                        raise RuntimeError("provider unavailable")
                     raw = await asyncio.wait_for(
                         provider.complete(prompt, timeout=3.0), timeout=3.0
                     )
-                    raw = raw.strip()
-                    start, end = raw.find("["), raw.rfind("]")
-                    if start >= 0 and end > start:
-                        indices = json.loads(raw[start : end + 1])
-                        selected = [
-                            candidates[i]
-                            for i in indices
-                            if isinstance(i, int) and 0 <= i < len(candidates)
-                        ]
+                raw = raw.strip()
+                start, end = raw.find("["), raw.rfind("]")
+                if start >= 0 and end > start:
+                    indices = json.loads(raw[start : end + 1])
+                    selected = [
+                        candidates[i]
+                        for i in indices
+                        if isinstance(i, int) and 0 <= i < len(candidates)
+                    ]
             except Exception:
                 pass
 
@@ -144,20 +156,29 @@ class GlobalContext:
         if summary:
             category = "작업"
             try:
-                from core.llm_provider import get_provider
-                provider = get_provider()
-                if provider:
+                if self._decision_client is not None:
+                    raw_cat = await asyncio.wait_for(
+                        self._decision_client.complete(
+                            f"Categorize in one word (개발/기획/분석/마케팅/운영/기타): {task[:100]}"
+                        ),
+                        timeout=5.0,
+                    )
+                else:
+                    from core.llm_provider import get_provider
+                    provider = get_provider()
+                    if not provider:
+                        raise RuntimeError("provider unavailable")
                     cat_prompt = (
                         f"Categorize in one word (개발/기획/분석/마케팅/운영/기타): {task[:100]}"
                     )
                     raw_cat = await asyncio.wait_for(
                         provider.complete(cat_prompt, timeout=3.0), timeout=3.0
                     )
-                    valid = {"개발", "기획", "분석", "마케팅", "운영", "기타"}
-                    for word in raw_cat.strip().split():
-                        if word in valid:
-                            category = word
-                            break
+                valid = {"개발", "기획", "분석", "마케팅", "운영", "기타"}
+                for word in raw_cat.strip().split():
+                    if word in valid:
+                        category = word
+                        break
             except Exception:
                 pass
 

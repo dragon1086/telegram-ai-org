@@ -112,9 +112,19 @@ class TelegramRelay:
         self._pm_orchestrator = None
         self._synthesizing: set = set()  # 합성 중복 방지 (이벤트 드리븐 + 폴러 공유)
         self._pending_confirmation: dict = {}  # {chat_id: {action, task_ids, expires}}
-        self._router = PMRouter()
         self._is_pm_org = ENABLE_PM_ORCHESTRATOR and org_id not in KNOWN_DEPTS
         self._is_dept_org = ENABLE_PM_ORCHESTRATOR and org_id in KNOWN_DEPTS
+        self._pm_decision_client = None
+        if self._is_pm_org:
+            from core.pm_decision import PMDecisionClient
+            self._pm_decision_client = PMDecisionClient(
+                org_id=org_id,
+                engine=self.engine,
+                session_store=self.session_store,
+            )
+            self._team_builder.set_decision_client(self._pm_decision_client)
+            self.global_context.set_decision_client(self._pm_decision_client)
+        self._router = PMRouter(decision_client=self._pm_decision_client)
         if self._is_pm_org and context_db is not None:
             from core.task_graph import TaskGraph
             from core.pm_orchestrator import PMOrchestrator
@@ -125,6 +135,7 @@ class TelegramRelay:
                 memory=self.memory_manager,
                 org_id=org_id,
                 telegram_send_func=self._pm_send_message,
+                decision_client=self._pm_decision_client,
             )
 
         # Discussion Protocol — ENABLE_DISCUSSION_PROTOCOL + context_db 필요
