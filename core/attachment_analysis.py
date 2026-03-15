@@ -22,6 +22,10 @@ class AttachmentAnalyzer:
             summary = self._analyze_image_with_gemini(attachment.local_path, attachment.mime_type)
             if summary:
                 return summary
+        if attachment.kind in {"video", "audio", "voice"}:
+            summary = self._analyze_media_with_bridge(attachment.local_path, attachment.mime_type)
+            if summary:
+                return summary
         if attachment.mime_type == "application/pdf":
             summary = self._extract_pdf_text(attachment.local_path)
             if summary:
@@ -30,10 +34,17 @@ class AttachmentAnalyzer:
 
     def _analyze_image_with_bridge(self, path: Path, mime_type: str) -> str:
         raw_cmd = os.environ.get("ATTACHMENT_VISION_BRIDGE_CMD", "").strip()
+        return self._run_bridge(raw_cmd, path, mime_type or "image/jpeg")
+
+    def _analyze_media_with_bridge(self, path: Path, mime_type: str) -> str:
+        raw_cmd = os.environ.get("ATTACHMENT_MULTIMODAL_BRIDGE_CMD", "").strip()
+        return self._run_bridge(raw_cmd, path, mime_type or "application/octet-stream")
+
+    def _run_bridge(self, raw_cmd: str, path: Path, mime_type: str) -> str:
         if not raw_cmd or not path.exists():
             return ""
         try:
-            cmd = shlex.split(raw_cmd) + [str(path), mime_type or "image/jpeg"]
+            cmd = shlex.split(raw_cmd) + [str(path), mime_type]
             proc = subprocess.run(
                 cmd,
                 capture_output=True,

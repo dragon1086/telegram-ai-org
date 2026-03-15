@@ -80,3 +80,20 @@ def test_attachment_analyzer_bridge(monkeypatch, tmp_path: Path) -> None:
     summary = analyzer._analyze_image_with_bridge(image, "image/jpeg")
 
     assert summary == "bridge summary"
+
+
+def test_attachment_analyzer_multimodal_bridge(monkeypatch, tmp_path: Path) -> None:
+    audio = tmp_path / "voice.ogg"
+    audio.write_bytes(b"fake")
+    analyzer = AttachmentAnalyzer()
+
+    class _Proc:
+        returncode = 0
+        stdout = "audio summary"
+
+    monkeypatch.setenv("ATTACHMENT_MULTIMODAL_BRIDGE_CMD", "/usr/bin/printf")
+    monkeypatch.setattr("subprocess.run", lambda *args, **kwargs: _Proc())
+
+    summary = analyzer._analyze_media_with_bridge(audio, "audio/ogg")
+
+    assert summary == "audio summary"
