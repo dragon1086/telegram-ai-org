@@ -1,18 +1,282 @@
-# AI 조직 설정
-# 각 조직은 독립된 PM봇 + 워커 그룹으로 운영됩니다.
-# 토큰은 ${ENV_VAR} 형식으로 환경변수에서 자동 주입됩니다.
-
+schema_version: 2
+source_of_truth:
+  docs_root: docs/orchestration-v2
+  orchestration_config: orchestration.yaml
 organizations:
-  - name: dev_team
-    description: "개발팀 — 코딩, 구현, 배포"
-    pm_token: "${DEV_PM_TOKEN}"
-    group_chat_id: "${DEV_GROUP_CHAT_ID}"
-    workers: [cokac, analyst]
-    # engine: claude-code  # 기본값, 생략 가능
-
-  - name: marketing_team
-    description: "마케팅팀 — 콘텐츠, 분석, 전략"
-    pm_token: "${MKT_PM_TOKEN}"
-    group_chat_id: "${MKT_GROUP_CHAT_ID}"
-    workers: [researcher, writer]
-    # engine: codex  # 예: codex 엔진 사용 시
+- id: aiorg_design_bot
+  enabled: true
+  kind: specialist
+  description: UI/UX 디자인/와이어프레임/프로토타입
+  telegram:
+    username: aiorg_design_bot
+    token_env: BOT_TOKEN_AIORG_DESIGN_BOT
+    chat_id: -5203707291
+  identity:
+    dept_name: 디자인실
+    display_name: 디자인실
+    role: UI/UX 디자인/와이어프레임/프로토타입
+    specialties: []
+    direction: 접근성(WCAG) 준수. 디자인 시스템 일관성 유지.
+    instruction: 다음 요청에 대해 UI/UX 관점에서 분석하고 디자인 방안을 제시하세요
+  routing:
+    default_handler: false
+    can_direct_reply: false
+    confidence_threshold: 5
+    orchestration_mode: skill_cli
+  execution:
+    preferred_engine: codex
+    fallback_engine: claude-code
+    team_profile: design_strategy
+    verification_profile: specialist_default
+    phase_policy: default
+    backend_policy: specialist_default
+    session_policy: specialist_default
+  team:
+    preferred_agents: []
+    avoid_agents: []
+    preferred_skills: []
+    max_team_size: 3
+    guidance: 접근성(WCAG) 준수. 디자인 시스템 일관성 유지.
+  collaboration:
+    peers: []
+    announce_plan: true
+    announce_progress: true
+    brainstorming_mode: structured
+- id: aiorg_engineering_bot
+  enabled: true
+  kind: specialist
+  description: 개발/코딩/API 구현/버그 수정
+  telegram:
+    username: aiorg_engineering_bot
+    token_env: BOT_TOKEN_AIORG_ENGINEERING_BOT
+    chat_id: -5203707291
+  identity:
+    dept_name: 개발실
+    display_name: 개발실
+    role: 개발/코딩/API 구현/버그 수정
+    specialties: []
+    direction: 항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호.
+    instruction: 다음 요청에 대해 기술적 관점에서 분석하고 코드 구현 계획 또는 구현을 수행하세요
+  routing:
+    default_handler: false
+    can_direct_reply: false
+    confidence_threshold: 5
+    orchestration_mode: skill_cli
+  execution:
+    preferred_engine: codex
+    fallback_engine: claude-code
+    team_profile: engineering_delivery
+    verification_profile: specialist_default
+    phase_policy: default
+    backend_policy: specialist_default
+    session_policy: specialist_default
+  team:
+    preferred_agents: []
+    avoid_agents: []
+    preferred_skills: []
+    max_team_size: 3
+    guidance: 항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호.
+  collaboration:
+    peers: []
+    announce_plan: true
+    announce_progress: true
+    brainstorming_mode: structured
+- id: aiorg_growth_bot
+  enabled: true
+  kind: specialist
+  description: 성장 전략/마케팅/지표 분석
+  telegram:
+    username: aiorg_growth_bot
+    token_env: BOT_TOKEN_AIORG_GROWTH_BOT
+    chat_id: -5203707291
+  identity:
+    dept_name: 성장실
+    display_name: 성장실
+    role: 성장 전략/마케팅/지표 분석
+    specialties: []
+    direction: 데이터 기반 의사결정. 지표 변화 추적 필수.
+    instruction: 다음 요청에 대해 성장/마케팅 관점에서 분석하고 전략을 수립하세요
+  routing:
+    default_handler: false
+    can_direct_reply: false
+    confidence_threshold: 5
+    orchestration_mode: skill_cli
+  execution:
+    preferred_engine: codex
+    fallback_engine: claude-code
+    team_profile: growth_strategy
+    verification_profile: specialist_default
+    phase_policy: default
+    backend_policy: specialist_default
+    session_policy: specialist_default
+  team:
+    preferred_agents: []
+    avoid_agents: []
+    preferred_skills: []
+    max_team_size: 3
+    guidance: 데이터 기반 의사결정. 지표 변화 추적 필수.
+  collaboration:
+    peers: []
+    announce_plan: true
+    announce_progress: true
+    brainstorming_mode: structured
+- id: aiorg_ops_bot
+  enabled: true
+  kind: specialist
+  description: 운영/배포/인프라/모니터링
+  telegram:
+    username: aiorg_ops_bot
+    token_env: BOT_TOKEN_AIORG_OPS_BOT
+    chat_id: -5203707291
+  identity:
+    dept_name: 운영실
+    display_name: 운영실
+    role: 운영/배포/인프라/모니터링
+    specialties: []
+    direction: 배포 전 항상 테스트. 인프라 변경은 단계적으로.
+    instruction: 다음 요청에 대해 운영/인프라 관점에서 분석하고 배포 및 모니터링 계획을 수립하세요
+  routing:
+    default_handler: false
+    can_direct_reply: false
+    confidence_threshold: 5
+    orchestration_mode: skill_cli
+  execution:
+    preferred_engine: codex
+    fallback_engine: claude-code
+    team_profile: ops_delivery
+    verification_profile: specialist_default
+    phase_policy: default
+    backend_policy: specialist_default
+    session_policy: specialist_default
+  team:
+    preferred_agents: []
+    avoid_agents: []
+    preferred_skills: []
+    max_team_size: 3
+    guidance: 배포 전 항상 테스트. 인프라 변경은 단계적으로.
+  collaboration:
+    peers: []
+    announce_plan: true
+    announce_progress: true
+    brainstorming_mode: structured
+- id: aiorg_pm_bot
+  enabled: true
+  kind: orchestrator
+  description: 프로젝트 총괄/부서 조율/진행 관리
+  telegram:
+    username: aiorg_pm_bot
+    token_env: PM_BOT_TOKEN
+    chat_id: -5203707291
+  identity:
+    dept_name: PM
+    display_name: PM
+    role: 프로젝트 총괄/부서 조율/진행 관리
+    specialties: []
+    direction: 태스크 분해 후 적절한 부서에 위임. 크로스-팀 협업 우선.
+    instruction: ''
+  routing:
+    default_handler: true
+    can_direct_reply: true
+    confidence_threshold: 5
+    orchestration_mode: skill_cli
+  execution:
+    preferred_engine: codex
+    fallback_engine: claude-code
+    team_profile: global_orchestrator
+    verification_profile: orchestrator_default
+    phase_policy: default
+    backend_policy: orchestrator_default
+    session_policy: orchestrator_default
+  team:
+    preferred_agents: []
+    avoid_agents: []
+    preferred_skills: []
+    max_team_size: 5
+    guidance: 태스크 분해 후 적절한 부서에 위임. 크로스-팀 협업 우선.
+  collaboration:
+    peers: []
+    announce_plan: true
+    announce_progress: true
+    brainstorming_mode: structured
+- id: aiorg_product_bot
+  enabled: true
+  kind: specialist
+  description: 기획/요구사항 분석/PRD 작성
+  telegram:
+    username: aiorg_product_bot
+    token_env: BOT_TOKEN_AIORG_PRODUCT_BOT
+    chat_id: -5203707291
+  identity:
+    dept_name: 기획실
+    display_name: 기획실
+    role: 기획/요구사항 분석/PRD 작성
+    specialties: []
+    direction: 요구사항 명확화 우선. PRD 작성 후 구현 위임.
+    instruction: 다음 요청에 대해 기획/요구사항 관점에서 분석하고 PRD 또는 스펙 문서를 작성하세요
+  routing:
+    default_handler: false
+    can_direct_reply: false
+    confidence_threshold: 5
+    orchestration_mode: skill_cli
+  execution:
+    preferred_engine: codex
+    fallback_engine: claude-code
+    team_profile: product_strategy
+    verification_profile: specialist_default
+    phase_policy: default
+    backend_policy: specialist_default
+    session_policy: specialist_default
+  team:
+    preferred_agents: []
+    avoid_agents: []
+    preferred_skills: []
+    max_team_size: 3
+    guidance: 요구사항 명확화 우선. PRD 작성 후 구현 위임.
+  collaboration:
+    peers: []
+    announce_plan: true
+    announce_progress: true
+    brainstorming_mode: structured
+- id: aiorg_research_bot
+  enabled: true
+  kind: specialist
+  description: aiorg_research_bot org
+  telegram:
+    username: aiorg_research_bot
+    token_env: BOT_TOKEN_AIORG_RESEARCH_BOT
+    chat_id: -5203707291
+  identity:
+    dept_name: 리서치실
+    display_name: Research
+    role: 시장조사/레퍼런스 조사/문서 요약/경쟁사 분석
+    specialties:
+    - 시장조사
+    - 레퍼런스조사
+    - 문서요약
+    - 경쟁사분석
+    direction: 출처 기반으로 비교하고 핵심 인사이트를 먼저 설명한다
+    instruction: 시장·레퍼런스·경쟁사 조사 결과를 출처 기반으로 구조화해 정리하세요.
+  routing:
+    default_handler: false
+    can_direct_reply: false
+    confidence_threshold: 5
+    orchestration_mode: skill_cli
+  execution:
+    preferred_engine: codex
+    fallback_engine: claude-code
+    team_profile: research_strategy
+    verification_profile: specialist_default
+    phase_policy: default
+    backend_policy: specialist_default
+    session_policy: specialist_default
+  team:
+    preferred_agents: []
+    avoid_agents: []
+    max_team_size: 3
+    preferred_skills: []
+    guidance: 조사 범위, 출처, 비교표, 핵심 인사이트를 반드시 남긴다.
+  collaboration:
+    peers: []
+    announce_plan: true
+    announce_progress: true
+    brainstorming_mode: structured

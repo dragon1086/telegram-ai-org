@@ -1,14 +1,18 @@
-# 자동 생성 봇 설정 — 2026-03-11T07:42:17.014246
-username: "aiorg_growth_bot"
-org_id: "aiorg_growth_bot"
-token_env: "BOT_TOKEN_AIORG_GROWTH_BOT"
+schema_version: 2
+organization_ref: aiorg_growth_bot
+username: aiorg_growth_bot
+org_id: aiorg_growth_bot
+token_env: BOT_TOKEN_AIORG_GROWTH_BOT
 chat_id: -5203707291
-engine: "codex"
-dept_name: "성장실"
-role: "성장 전략/마케팅/지표 분석"
-instruction: "다음 요청에 대해 성장/마케팅 관점에서 분석하고 전략을 수립하세요"
-
+engine: codex
+dept_name: 성장실
+role: 성장 전략/마케팅/지표 분석
+instruction: 다음 요청에 대해 성장/마케팅 관점에서 분석하고 전략을 수립하세요
+is_pm: false
 team_config:
+  preferred_agents: []
   avoid_agents: []
+  preferred_skills: []
   max_team_size: 3
-  guidance: "데이터 기반 의사결정. 지표 변화 추적 필수."
+  guidance: 데이터 기반 의사결정. 지표 변화 추적 필수.
+comment: generated from canonical orchestration config
