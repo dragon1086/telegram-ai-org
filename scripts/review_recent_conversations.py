@@ -15,8 +15,10 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from core.telegram_delivery import resolve_delivery_target
 from core.pm_decision import PMDecisionClient
 from core.llm_provider import get_provider
+from tools.telegram_uploader import upload_file
 
 
 LOG_DIR = Path.home() / ".ai-org"
@@ -30,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--engine", default="claude-code", choices=["claude-code", "codex"], help="Decision engine for review generation.")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--limit-lines", type=int, default=400)
+    parser.add_argument("--upload", action="store_true", help="Upload the generated report to the org's Telegram room.")
     return parser.parse_args()
 
 
@@ -135,11 +138,24 @@ def save_report(output_dir: Path, content: str) -> Path:
     return target
 
 
+async def maybe_upload_report(org_id: str, report_path: Path) -> bool:
+    target = resolve_delivery_target(org_id)
+    if target is None:
+        return False
+    caption = f"🧾 {org_id} daily conversation review: {report_path.name}"
+    return await upload_file(target.token, target.chat_id, str(report_path), caption)
+
+
 def main() -> int:
     args = parse_args()
     transcript = collect_recent_log_lines(args.hours, args.limit_lines)
     report = asyncio.run(build_report(args.org_id, transcript, args.hours, args.engine))
     target = save_report(args.output_dir, report)
+    if args.upload:
+        uploaded = asyncio.run(maybe_upload_report(args.org_id, target))
+        if not uploaded:
+            print(f"UPLOAD_FAILED {target}")
+            return 1
     print(target)
     return 0
 
