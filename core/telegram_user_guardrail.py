@@ -4,15 +4,32 @@ from __future__ import annotations
 import asyncio
 import re
 from pathlib import Path
+from typing import Protocol
 
-from core.pm_decision import DecisionClientProtocol
+
+class DecisionClientProtocol(Protocol):
+    async def complete(self, prompt: str) -> str: ...
 
 LOCAL_PATH_RE = re.compile(r"(?:(?<=\s)|^)(~?/[^ \t\r\n'\"`]+)")
+ARTIFACT_MARKER_RE = re.compile(r"\[ARTIFACT:([^\]]+)\]")
+
+
+def extract_local_artifact_paths(text: str) -> list[str]:
+    paths: list[str] = []
+    for raw in ARTIFACT_MARKER_RE.findall(text or ""):
+        candidate = raw.strip()
+        if candidate and candidate not in paths:
+            paths.append(candidate)
+    for raw in LOCAL_PATH_RE.findall(text or ""):
+        candidate = raw.strip()
+        if candidate and candidate not in paths:
+            paths.append(candidate)
+    return paths
 
 
 def extract_local_artifact_names(text: str) -> list[str]:
     names: list[str] = []
-    for raw in LOCAL_PATH_RE.findall(text or ""):
+    for raw in extract_local_artifact_paths(text):
         name = Path(raw).name
         if name and name not in names:
             names.append(name)
@@ -65,10 +82,12 @@ async def ensure_user_friendly_output(
 
 
 def _heuristic_cleanup(text: str, artifact_names: list[str]) -> str:
-    cleaned = LOCAL_PATH_RE.sub("", text or "").strip()
+    cleaned = ARTIFACT_MARKER_RE.sub("", text or "").strip()
+    cleaned = LOCAL_PATH_RE.sub("", cleaned).strip()
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     if artifact_names:
-        note = "첨부 예정 산출물: " + ", ".join(artifact_names)
+        note = "첨부 산출물: " + ", ".join(artifact_names)
         if note not in cleaned:
             cleaned = f"{cleaned}\n\n{note}".strip()
     return cleaned or "최종 전달본을 정리 중입니다."
