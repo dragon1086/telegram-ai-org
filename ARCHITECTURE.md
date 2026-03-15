@@ -25,6 +25,7 @@
   - 팀 구성 결과 텔레그램 발표
   - ClaudeCodeRunner로 실행 위임
   - 모든 작업 상태 추적 + 완료 판단
+  - answer-first rewrite, attachment-safe upload, smart chunking으로 Telegram 전달 품질 보정
 - **모델**: claude-sonnet-4-6
 
 ### 3.2 AgentCatalog (`core/agent_catalog.py`) — 신규
