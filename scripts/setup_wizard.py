@@ -17,6 +17,15 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from core.setup_registration import (
+    ensure_orchestration_config,
+    parse_setup_identity,
+    refresh_legacy_bot_configs,
+    refresh_pm_identity_files,
+    upsert_org_in_canonical_config,
+    upsert_runtime_env_var,
+)
+
 # ─── 경로 상수 ────────────────────────────────────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -144,18 +153,19 @@ def load_existing_config() -> dict[str, str]:
 
 
 def load_existing_orgs() -> list[dict]:
-    """organizations.yaml에서 기존 조직 목록 읽기 (yaml 없이 간단 파싱)."""
+    """organizations.yaml에서 기존 조직 목록 읽기."""
     orgs: list[dict] = []
     if not ORGANIZATIONS_FILE.exists():
         return orgs
     try:
-        import re
-        content = ORGANIZATIONS_FILE.read_text(encoding="utf-8")
-        # 단순 파싱: name: 값 추출
-        names = re.findall(r"^\s+- name:\s*(.+)$", content, re.MULTILINE)
-        descs = re.findall(r"^\s+description:\s*[\"']?(.+?)[\"']?$", content, re.MULTILINE)
-        for i, name in enumerate(names):
-            orgs.append({"name": name.strip(), "description": descs[i].strip() if i < len(descs) else ""})
+        import yaml
+
+        data = yaml.safe_load(ORGANIZATIONS_FILE.read_text(encoding="utf-8")) or {}
+        for entry in data.get("organizations", []):
+            org_id = entry.get("id") or entry.get("name")
+            if not org_id:
+                continue
+            orgs.append({"name": org_id, "description": entry.get("description", "")})
     except Exception:
         pass
     return orgs
@@ -457,8 +467,23 @@ def _ask_org_engine(prefix: str = "") -> str:
     return EXEC_ENGINE_MAP.get(choice, "claude-code")
 
 
+def _ask_identity(org_id: str, prefix: str = "") -> dict[str, Any]:
+    default = parse_setup_identity(org_id, "기본")
+    default_text = f"{default.role}|{','.join(default.specialties)}|{default.direction}"
+    raw = ask(
+        f"{prefix}조직 정체성 (역할|전문분야1,전문분야2|방향성)",
+        default=default_text,
+    )
+    parsed = parse_setup_identity(org_id, raw)
+    return {
+        "role": parsed.role,
+        "specialties": list(parsed.specialties),
+        "direction": parsed.direction,
+    }
+
+
 def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
-    """조직 목록 반환. [{name, description, pm_token, group_chat_id, engine}]"""
+    """조직 목록 반환. canonical 등록용 입력 모델."""
     step_header(3, "조직 구성 선택")
     print(f"""
   조직 구성 방식을 선택하세요:
@@ -469,25 +494,18 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
 
     if choice != "2":
         # 단일 조직
-        org_name = ask("조직 이름", default="dev_team")
-        org_desc = ask("조직 설명", default="개발팀 — 코딩, 구현, 배포")
-        specialties_raw = ask("이 PM의 전문분야를 입력하세요 (콤마 구분, 예: 코딩, 버그, API)", default="일반")
-        specialties = [s.strip() for s in specialties_raw.split(",") if s.strip()]
-        direction = ask(
-            "조직 방향성/문화를 자유롭게 설명해주세요",
-            default="빠른 실행, 결과 중심"
-        )
-        # 선호 에이전트는 PM(Claude Code)이 direction + specialties 보고 자동 선택
+        org_name = ask("조직 ID", default="global")
+        org_desc = ask("조직 설명", default="총괄 PM — 사용자 요청 조율 및 실행")
+        identity = _ask_identity(org_name)
         org_engine = _ask_org_engine()
-        _generate_pm_identity(
-            org_name, pm_token,
-            int(pm_chat_id) if pm_chat_id.lstrip("-").isdigit() else 0,
-            specialties, org_desc,
-            direction=direction, preferred_agents=None,
-        )
-        return [{"name": org_name, "description": org_desc,
-                 "pm_token": pm_token, "group_chat_id": pm_chat_id,
-                 "engine": org_engine}]
+        return [{
+            "org_id": org_name,
+            "description": org_desc,
+            "pm_token": pm_token,
+            "group_chat_id": pm_chat_id,
+            "engine": org_engine,
+            "identity": identity,
+        }]
 
     # 다중 조직
     while True:
@@ -502,7 +520,7 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
     orgs: list[dict] = []
     for i in range(count):
         print(f"\n  {bold(f'── 조직 {i+1}/{count} ──')}")
-        name = ask("  이름 (예: dev_team, marketing_team)")
+        name = ask("  조직 ID (예: aiorg_engineering_bot)")
         desc = ask("  설명", default=f"{name} 팀")
         if i == 0 and pm_token:
             print(f"  {dim('첫 번째 조직에 방금 입력한 PM 봇을 사용합니다.')}")
@@ -531,49 +549,39 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
                     break
                 warn("숫자만 입력하세요.")
 
-        specialties_raw = ask(f"  이 PM의 전문분야를 입력하세요 (콤마 구분, 예: 코딩, 버그, API)", default="일반")
-        specialties = [s.strip() for s in specialties_raw.split(",") if s.strip()]
-        direction = ask("  조직 방향성/문화를 자유롭게 설명해주세요", default="빠른 실행, 결과 중심")
+        identity = _ask_identity(name, prefix="  ")
         org_engine = _ask_org_engine(prefix="  ")
-        chat_id_int = int(chat_id) if chat_id.lstrip("-").isdigit() else 0
-        _generate_pm_identity(name, token, chat_id_int, specialties, desc,
-                              direction=direction, preferred_agents=None)
-        print(f"  ✅ pm_{name}.md 생성 완료")
-
-        orgs.append({"name": name, "description": desc,
-                     "pm_token": token, "group_chat_id": chat_id,
-                     "engine": org_engine})
+        orgs.append({
+            "org_id": name,
+            "description": desc,
+            "pm_token": token,
+            "group_chat_id": chat_id,
+            "engine": org_engine,
+            "identity": identity,
+        })
         ok(f"{name} 조직 추가됨 (engine: {EXEC_ENGINE_LABEL.get(org_engine, org_engine)})")
 
     return orgs
 
 
 def _auto_start_bots() -> None:
-    """설정 완료 후 bots/*.yaml 읽어서 bot_manager.py로 봇 기동."""
+    """설정 완료 후 canonical organizations를 읽어 봇 기동."""
     import subprocess, time
-    from pathlib import Path as _P
-    import yaml as _yaml
 
-    bots_dir = PROJECT_ROOT / "bots"
-    config_lines = CONFIG_FILE.read_text().splitlines() if CONFIG_FILE.exists() else []
-    config = {}
-    for line in config_lines:
-        if "=" in line and not line.startswith("#"):
-            k, _, v = line.partition("=")
-            config[k.strip()] = v.strip()
+    from core.orchestration_config import load_orchestration_config
 
-    if not bots_dir.exists():
-        print("ℹ️  bots/ 디렉토리 없음 — 봇 자동기동 건너뜀")
-        return
+    cfg = load_orchestration_config(
+        PROJECT_ROOT / "organizations.yaml",
+        PROJECT_ROOT / "orchestration.yaml",
+        force_reload=True,
+    )
 
     started = 0
-    for bot_yaml in sorted(bots_dir.glob("*.yaml")):
+    for org in cfg.list_orgs():
         try:
-            data = _yaml.safe_load(bot_yaml.read_text()) or {}
-            org_id = data.get("org_id", bot_yaml.stem)
-            token_env = data.get("token_env", "")
-            chat_id = str(data.get("chat_id", ""))
-            token = config.get(token_env, "")
+            org_id = org.id
+            token = org.token
+            chat_id = str(org.chat_id or "")
             if not token or not chat_id:
                 warn(f"  {org_id}: 토큰/chat_id 없음 — 건너뜀")
                 continue
@@ -588,49 +596,10 @@ def _auto_start_bots() -> None:
                 warn(f"  {org_id} 기동 실패: {r.stderr[:60]}")
             time.sleep(2)
         except Exception as e:
-            warn(f"  {bot_yaml.stem}: {e}")
+            warn(f"  {org_id}: {e}")
 
     if started:
         ok(f"총 {started}개 봇 자동 기동 완료")
-
-
-
-def _generate_pm_identity(org_id: str, bot_token: str, chat_id: int, specialties: list[str], role: str = "", direction: str = "", preferred_agents: list | None = None) -> None:
-    """pm_{org_id}.md 자동 생성."""
-    try:
-        sys.path.insert(0, str(PROJECT_ROOT))
-        from core.org_registry import OrgRegistry
-        registry = OrgRegistry()
-        registry.register_org(
-            org_id=org_id,
-            bot_token=bot_token,
-            chat_id=chat_id,
-            specialties=specialties,
-            role=role,
-        )
-        print(f"  ✅ pm_{org_id}.md 생성 완료")
-    except Exception as e:
-        # fallback: 직접 파일 생성
-        memory_dir = Path.home() / ".ai-org" / "memory"
-        memory_dir.mkdir(parents=True, exist_ok=True)
-        specialties_str = ", ".join(specialties) if specialties else "일반"
-        content = (
-            f"## [CORE] PM 정체성\n"
-            f"- 봇명: @aiorg_{org_id}_pm_bot ({org_id})\n"
-            f"- 역할: {role or org_id + ' PM'}\n"
-            f"- 전문분야: {specialties_str}\n\n"
-            f"## [CORE] 조직 목록\n"
-            f"- pm_global: 전체 조율, 일반 대화\n"
-            f"- pm_{org_id}: {specialties_str}\n"
-        )
-        # direction, preferred_agents 추가
-        if direction:
-            content += f"- 방향성: {direction}\n"
-        if preferred_agents:
-            content += f"- 선호 에이전트: {', '.join(preferred_agents)}\n"
-        (memory_dir / f"pm_{org_id}.md").write_text(content, encoding="utf-8")
-        warn(f"OrgRegistry 사용 불가 ({e}), 직접 파일 생성 완료")
-
 
 # ─── Step 4: Agent Hints 설정 ─────────────────────────────────────────────────
 
@@ -846,7 +815,7 @@ def step_agency_agents() -> None:
     if choice not in ("y", "yes", ""):
         info("건너뜀 — 나중에 수동으로 설치 가능:")
         print(f"  {dim('git clone https://github.com/msitarzewski/agency-agents /tmp/agency-agents')}")
-        print(f"  {dim('find /tmp/agency-agents -name "*.md" ! -path "*/examples/*" -exec cp {{}} ~/.claude/agents/ \;')}")
+        print("  " + dim(r'find /tmp/agency-agents -name "*.md" ! -path "*/examples/*" -exec cp {} ~/.claude/agents/ \;'))
         return
 
     import subprocess as _sp, tempfile, shutil
@@ -1059,54 +1028,52 @@ def step_simulation() -> None:
 # ─── 설정 저장 ────────────────────────────────────────────────────────────────
 
 def save_all(orgs: list[dict], exec_mode: str, binaries: dict, preferred_engine: str = "claude-code") -> None:
-    """config.yaml + organizations.yaml 저장."""
+    """config.yaml + canonical organizations/orchestration 저장."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_orchestration_config(PROJECT_ROOT)
 
-    # config.yaml
-    lines = ["# telegram-ai-org 설정 (setup_wizard.py v2 생성)\n\n"]
     first_org = orgs[0] if orgs else {}
-    lines.append(f"PM_BOT_TOKEN={first_org.get('pm_token', '')}\n")
-    lines.append(f"TELEGRAM_GROUP_CHAT_ID={first_org.get('group_chat_id', '')}\n")
-    lines.append(f"DEFAULT_EXECUTION_MODE={exec_mode}\n")
-    lines.append(f"PREFERRED_ENGINE={preferred_engine}\n")
+    if first_org:
+        upsert_runtime_env_var(PROJECT_ROOT, "PM_BOT_TOKEN", first_org.get("pm_token", ""))
+        upsert_runtime_env_var(PROJECT_ROOT, "TELEGRAM_GROUP_CHAT_ID", str(first_org.get("group_chat_id", "")))
+    upsert_runtime_env_var(PROJECT_ROOT, "DEFAULT_EXECUTION_MODE", exec_mode)
+    upsert_runtime_env_var(PROJECT_ROOT, "PREFERRED_ENGINE", preferred_engine)
     if binaries.get("claude"):
-        lines.append(f"CLAUDE_CLI_PATH={binaries['claude']}\n")
+        upsert_runtime_env_var(PROJECT_ROOT, "CLAUDE_CLI_PATH", binaries["claude"])
     if binaries.get("codex"):
-        lines.append(f"CODEX_CLI_PATH={binaries['codex']}\n")
-    lines.append("CONTEXT_DB_PATH=~/.ai-org/context.db\n")
+        upsert_runtime_env_var(PROJECT_ROOT, "CODEX_CLI_PATH", binaries["codex"])
+    upsert_runtime_env_var(PROJECT_ROOT, "CONTEXT_DB_PATH", "~/.ai-org/context.db")
 
-    # 다중 조직 토큰
-    if len(orgs) > 1:
-        lines.append("\n# 추가 조직 토큰\n")
-        for i, org in enumerate(orgs[1:], 2):
-            env_name = f"BOT_TOKEN_{org['name'].upper()}"
-            lines.append(f"{env_name}={org['pm_token']}\n")
-            lines.append(f"{org['name'].upper()}_GROUP_CHAT_ID={org['group_chat_id']}\n")
-
-    CONFIG_FILE.write_text("".join(lines), encoding="utf-8")
-    ok(f"설정 저장: {CONFIG_FILE}")
-
-    # organizations.yaml
-    org_lines = [
-        "# AI 조직 설정 (setup_wizard.py v2 생성)\n",
-        "# 각 조직은 독립된 PM봇 + 동적 에이전트팀으로 운영됩니다.\n\n",
-        "organizations:\n",
-    ]
     for i, org in enumerate(orgs):
-        env_name = org["name"].upper()
-        env_name_ref = f"BOT_TOKEN_{org['name'].upper()}"
-        token_ref = "${PM_BOT_TOKEN}" if i == 0 else f"${{{env_name_ref}}}"
-        chat_ref = "${TELEGRAM_GROUP_CHAT_ID}" if i == 0 else f"${{{env_name}_GROUP_CHAT_ID}}"
-        org_engine = org.get("engine", "claude-code")
-        org_lines += [
-            f"  - name: {org['name']}\n",
-            f"    description: \"{org['description']}\"\n",
-            f"    pm_token: \"{token_ref}\"\n",
-            f"    group_chat_id: \"{chat_ref}\"\n",
-            f"    engine: {org_engine}\n",
-        ]
-    ORGANIZATIONS_FILE.write_text("".join(org_lines), encoding="utf-8")
+        org_id = org["org_id"]
+        env_name = "PM_BOT_TOKEN" if i == 0 else f"BOT_TOKEN_{org_id.upper()}"
+        chat_key = "TELEGRAM_GROUP_CHAT_ID" if i == 0 else f"{org_id.upper()}_GROUP_CHAT_ID"
+        upsert_runtime_env_var(PROJECT_ROOT, env_name, org["pm_token"])
+        upsert_runtime_env_var(PROJECT_ROOT, chat_key, str(org["group_chat_id"]))
+        identity = org["identity"]
+        upsert_org_in_canonical_config(
+            PROJECT_ROOT,
+            username=org_id,
+            token_env=env_name,
+            chat_id=int(str(org["group_chat_id"])),
+            engine=org.get("engine", "claude-code"),
+            identity=parse_setup_identity(
+                org_id,
+                "|".join(
+                    [
+                        identity.get("role", ""),
+                        ",".join(identity.get("specialties", [])),
+                        identity.get("direction", ""),
+                    ]
+                ),
+            ),
+        )
+
+    refresh_legacy_bot_configs(PROJECT_ROOT)
+    refresh_pm_identity_files(PROJECT_ROOT)
+    ok(f"설정 저장: {CONFIG_FILE}")
     ok(f"조직 설정 저장: {ORGANIZATIONS_FILE}")
+    ok(f"오케스트레이션 설정 저장: {PROJECT_ROOT / 'orchestration.yaml'}")
 
 
 # ─── 완료 화면 ────────────────────────────────────────────────────────────────
@@ -1128,18 +1095,19 @@ def print_final_summary(r: PreflightResult, orgs: list[dict], exec_mode: str, pr
 
     print(f"\n  {bold('조직:')}")
     for org in orgs:
-        print(f"    • {bold(org['name'])} — {org['description']}")
+        print(f"    • {bold(org['org_id'])} — {org['description']}")
 
     print(f"\n  {bold('저장된 파일:')}")
     print(f"    • {CONFIG_FILE}")
     print(f"    • {ORGANIZATIONS_FILE}")
+    print(f"    • {PROJECT_ROOT / 'orchestration.yaml'}")
     print(f"    • {AGENT_HINTS_FILE}")
 
     print(f"\n  {bold('시작:')}")
     print(f"    {cyan('cd ~/telegram-ai-org')}")
     if (VENV_DIR / "bin" / "activate").exists():
         print(f"    {cyan('source .venv/bin/activate')}")
-    print(f"    {cyan('python main.py')}  {dim('# 또는 bash scripts/start_all.sh')}")
+    print(f"    {cyan('bash scripts/start_all.sh')}")
     print()
 
 
@@ -1150,7 +1118,7 @@ MEMORY_DIR = CONFIG_DIR / "memory"
 
 def reset_config(keep_memory: bool | None = None) -> None:
     """--reset: 기존 설정 파일 초기화."""
-    files = [CONFIG_FILE, ORGANIZATIONS_FILE, AGENT_HINTS_FILE, WORKERS_FILE]
+    files = [CONFIG_FILE, ORGANIZATIONS_FILE, PROJECT_ROOT / "orchestration.yaml", AGENT_HINTS_FILE, WORKERS_FILE]
 
     print(f"\n{bold(red('⚠️  기존 설정을 초기화합니다.'))}")
     print(f"삭제될 항목:")
