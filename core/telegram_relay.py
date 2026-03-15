@@ -57,6 +57,7 @@ from core.telegram_user_guardrail import (
     extract_local_artifact_paths,
 )
 from core.session_registry import SessionRegistry
+from core.p2p_messenger import P2PMessenger
 from core.discussion_parser import is_discussion_message, parse_discussion_tags
 from core.discussion import ENABLE_DISCUSSION_PROTOCOL
 from core.dispatch_engine import ENABLE_AUTO_DISPATCH
@@ -158,6 +159,8 @@ class TelegramRelay:
             self._team_builder.set_decision_client(self._pm_decision_client)
             self.global_context.set_decision_client(self._pm_decision_client)
         self._router = PMRouter(decision_client=self._pm_decision_client)
+        # P2P 봇 간 직접 통신
+        self._p2p = P2PMessenger(bus=self.bus)
         if self._is_pm_org and context_db is not None:
             from core.task_graph import TaskGraph
             from core.pm_orchestrator import PMOrchestrator
@@ -1352,6 +1355,8 @@ class TelegramRelay:
                         phase_name="feedback",
                     )
                     self._complete_runbook(run_id, "로컬 실행 완료 및 피드백 반영")
+                    if self.bus:
+                        asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
                     return
 
                 await self.display.send_reply(update.message, "📋 여러 조직 협업이 필요해 보여 오케스트레이션으로 넘깁니다.")
@@ -1535,6 +1540,8 @@ class TelegramRelay:
             phase_name="feedback",
         )
         self._complete_runbook(run_id, "조직 직접 실행 완료")
+        if self.bus:
+            asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
 
     # ── 첨부파일 처리 ──────────────────────────────────────────────────────
 
@@ -1775,6 +1782,8 @@ class TelegramRelay:
             phase_name="feedback",
         )
         self._complete_runbook(run_id, "첨부파일 실행 완료")
+        if self.bus:
+            asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", locals().get("response", "첨부파일 처리 완료")[:200] if locals().get("response") else "첨부파일 처리 완료"))
 
     # ── 명령 처리 ──────────────────────────────────────────────────────────
 
@@ -2631,6 +2640,8 @@ class TelegramRelay:
                 phase_name="feedback",
             )
             self._complete_runbook(run_id, "조직 위임 실행 완료")
+            if self.bus:
+                asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
 
         except Exception as e:
             logger.error(f"[{self.org_id}] PM_TASK {task_id} 실행 실패: {e}")
@@ -2772,6 +2783,8 @@ class TelegramRelay:
             phase_name="feedback",
         )
         self._complete_runbook(run_id, "협업 요청 처리 완료")
+        if self.bus:
+            asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
 
     async def _handle_command(
         self, text: str, update, context
