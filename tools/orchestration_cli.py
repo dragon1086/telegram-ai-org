@@ -23,6 +23,8 @@ from core.memory_manager import MemoryManager
 from core.orchestration_config import load_orchestration_config
 from core.orchestration_runbook import OrchestrationRunbook
 from core.pm_orchestrator import PMOrchestrator
+from core.telegram_delivery import resolve_delivery_target
+from tools.telegram_uploader import upload_file
 
 
 class _DummyDB:
@@ -39,6 +41,18 @@ class _DummyClaim:
 
 async def _noop_send(_chat_id: int, _text: str) -> None:
     return None
+
+
+def _load_runtime_env() -> None:
+    for path in (Path.home() / ".ai-org" / "config.yaml", PROJECT_ROOT / ".env"):
+        if not path.exists():
+            continue
+        for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip())
 
 
 def _write_yaml(path: Path, data: dict[str, Any]) -> None:
@@ -168,6 +182,16 @@ def cmd_review_recent(args: argparse.Namespace) -> int:
     return int(result.returncode)
 
 
+def cmd_send_file(args: argparse.Namespace) -> int:
+    target = resolve_delivery_target(args.org_id)
+    if target is None:
+        print(json.dumps({"error": f"unknown or unconfigured org: {args.org_id}"}, ensure_ascii=False))
+        return 1
+    ok = asyncio.run(upload_file(target.token, target.chat_id, args.path, args.caption or ""))
+    print(json.dumps({"ok": ok, "org_id": args.org_id, "path": args.path}, ensure_ascii=False))
+    return 0 if ok else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Orchestration control CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -214,10 +238,17 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--upload", action="store_true")
     review.set_defaults(func=cmd_review_recent)
 
+    send_file = sub.add_parser("send-file")
+    send_file.add_argument("--org-id", default="global")
+    send_file.add_argument("--caption", default="")
+    send_file.add_argument("path")
+    send_file.set_defaults(func=cmd_send_file)
+
     return parser
 
 
 def main() -> int:
+    _load_runtime_env()
     parser = build_parser()
     args = parser.parse_args()
     return args.func(args)

@@ -5,6 +5,8 @@ import base64
 import json
 import os
 from pathlib import Path
+import shlex
+import subprocess
 from typing import Any
 import urllib.request
 
@@ -14,6 +16,9 @@ from core.attachment_manager import AttachmentContext
 class AttachmentAnalyzer:
     async def analyze(self, attachment: AttachmentContext) -> str:
         if attachment.kind == "photo":
+            summary = self._analyze_image_with_bridge(attachment.local_path, attachment.mime_type)
+            if summary:
+                return summary
             summary = self._analyze_image_with_gemini(attachment.local_path, attachment.mime_type)
             if summary:
                 return summary
@@ -22,6 +27,25 @@ class AttachmentAnalyzer:
             if summary:
                 return summary
         return attachment.preview_text
+
+    def _analyze_image_with_bridge(self, path: Path, mime_type: str) -> str:
+        raw_cmd = os.environ.get("ATTACHMENT_VISION_BRIDGE_CMD", "").strip()
+        if not raw_cmd or not path.exists():
+            return ""
+        try:
+            cmd = shlex.split(raw_cmd) + [str(path), mime_type or "image/jpeg"]
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=int(os.environ.get("ATTACHMENT_VISION_BRIDGE_TIMEOUT_SEC", "60")),
+                check=False,
+            )
+            if proc.returncode != 0:
+                return ""
+            return (proc.stdout or "").strip()
+        except Exception:
+            return ""
 
     def _analyze_image_with_gemini(self, path: Path, mime_type: str) -> str:
         api_key = os.environ.get("GEMINI_API_KEY", "")
