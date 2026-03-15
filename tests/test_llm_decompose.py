@@ -4,13 +4,24 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.pm_orchestrator import PMOrchestrator, SubTask, KNOWN_DEPTS
+
+
+class _FakeDecisionClient:
+    def __init__(self, response: str, fail: bool = False) -> None:
+        self.response = response
+        self.fail = fail
+
+    async def complete(self, prompt: str, *, system_prompt: str = "", workdir: str | None = None) -> str:
+        if self.fail:
+            raise RuntimeError("API error")
+        return self.response
 
 
 class TestParseDecompose:
@@ -138,45 +149,59 @@ class TestDecomposeIntegration:
     @pytest.mark.asyncio
     async def test_llm_success(self, orch):
         """LLM이 성공하면 LLM 결과 사용."""
-        llm_response = "DEPT:aiorg_engineering_bot|TASK:LLM이 생성한 구체적 지시|DEPENDS:none"
-        with patch("core.pm_orchestrator.get_provider") as mock_gp:
-            mock_provider = AsyncMock()
-            mock_provider.complete.return_value = llm_response
-            mock_gp.return_value = mock_provider
+        orch = PMOrchestrator(
+            context_db=MagicMock(),
+            task_graph=MagicMock(),
+            claim_manager=MagicMock(),
+            memory=MagicMock(),
+            org_id="pm",
+            telegram_send_func=AsyncMock(),
+            decision_client=_FakeDecisionClient(
+                "DEPT:aiorg_engineering_bot|TASK:LLM이 생성한 구체적 지시|DEPENDS:none"
+            ),
+        )
 
-            result = await orch.decompose("코드 짜줘")
-            assert len(result) == 1
-            assert "LLM이 생성한 구체적 지시" in result[0].description
+        result = await orch.decompose("코드 짜줘")
+        assert len(result) == 1
+        assert "LLM이 생성한 구체적 지시" in result[0].description
 
     @pytest.mark.asyncio
     async def test_llm_failure_falls_back(self, orch):
         """LLM 실패 시 키워드 fallback."""
-        with patch("core.pm_orchestrator.get_provider") as mock_gp:
-            mock_provider = AsyncMock()
-            mock_provider.complete.side_effect = RuntimeError("API error")
-            mock_gp.return_value = mock_provider
+        orch = PMOrchestrator(
+            context_db=MagicMock(),
+            task_graph=MagicMock(),
+            claim_manager=MagicMock(),
+            memory=MagicMock(),
+            org_id="pm",
+            telegram_send_func=AsyncMock(),
+            decision_client=_FakeDecisionClient("", fail=True),
+        )
 
-            result = await orch.decompose("코드 개발해줘")
-            assert len(result) >= 1
-            assert result[0].assigned_dept == "aiorg_engineering_bot"
+        result = await orch.decompose("코드 개발해줘")
+        assert len(result) >= 1
+        assert result[0].assigned_dept == "aiorg_engineering_bot"
 
     @pytest.mark.asyncio
     async def test_no_provider_falls_back(self, orch):
         """LLM provider 없으면 키워드 fallback."""
-        with patch("core.pm_orchestrator.get_provider", return_value=None):
-            result = await orch.decompose("디자인 해줘")
-            assert len(result) >= 1
-            assert result[0].assigned_dept == "aiorg_design_bot"
+        result = await orch.decompose("디자인 해줘")
+        assert len(result) >= 1
+        assert result[0].assigned_dept == "aiorg_design_bot"
 
     @pytest.mark.asyncio
     async def test_llm_empty_response_falls_back(self, orch):
         """LLM이 빈 응답 → fallback."""
-        with patch("core.pm_orchestrator.get_provider") as mock_gp:
-            mock_provider = AsyncMock()
-            mock_provider.complete.return_value = "I don't understand"
-            mock_gp.return_value = mock_provider
+        orch = PMOrchestrator(
+            context_db=MagicMock(),
+            task_graph=MagicMock(),
+            claim_manager=MagicMock(),
+            memory=MagicMock(),
+            org_id="pm",
+            telegram_send_func=AsyncMock(),
+            decision_client=_FakeDecisionClient("I don't understand"),
+        )
 
-            result = await orch.decompose("기획서 써줘")
-            assert len(result) >= 1
-            # fallback이므로 keyword 기반
-            assert result[0].assigned_dept == "aiorg_product_bot"
+        result = await orch.decompose("기획서 써줘")
+        assert len(result) >= 1
+        assert result[0].assigned_dept == "aiorg_product_bot"

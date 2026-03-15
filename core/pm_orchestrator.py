@@ -15,7 +15,6 @@ from core.context_db import ContextDB
 from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
 from core.memory_manager import MemoryManager
-from core.llm_provider import get_provider
 from core.constants import KNOWN_DEPTS, DEPT_INSTRUCTIONS, DEPT_ROLES
 from core.orchestration_config import load_orchestration_config
 from core.orchestration_runbook import OrchestrationRunbook
@@ -49,6 +48,14 @@ class DiscussionNeeded:
 class RequestPlan:
     """유저 요청 처리 전략."""
 
+    lane: Literal[
+        "clarify",
+        "direct_answer",
+        "review_or_audit",
+        "attachment_analysis",
+        "single_org_execution",
+        "multi_org_execution",
+    ]
     route: Literal["direct_reply", "local_execution", "delegate"]
     complexity: Literal["low", "medium", "high"]
     rationale: str
@@ -90,10 +97,12 @@ class PMOrchestrator:
         """유저 요청을 직접 답변/PM 직접 실행/조직 위임 중 어디로 보낼지 결정한다."""
         dept_hints = self._detect_relevant_depts(user_message)
         workdir = self._extract_workdir(user_message)
+        lane = await self._classify_lane(user_message, dept_hints, workdir=workdir)
         llm_plan = await self._llm_plan_request(user_message, dept_hints, workdir=workdir)
         if llm_plan is not None:
+            llm_plan.lane = lane
             return self._normalize_request_plan(llm_plan)
-        return self._normalize_request_plan(self._heuristic_plan_request(user_message, dept_hints))
+        return self._normalize_request_plan(self._heuristic_plan_request(user_message, dept_hints, lane=lane))
 
     _BASE_DEPT_KEYWORDS: dict[str, list[str]] = {
         "aiorg_product_bot": ["기획", "스펙", "요구사항", "prd", "plan"],
@@ -177,6 +186,7 @@ class PMOrchestrator:
         """현재 조직 구성이 허용하는 범위로 실행 전략을 보정한다."""
         if plan.route == "delegate" and not self._dept_map():
             return RequestPlan(
+                lane="single_org_execution",
                 route="local_execution",
                 complexity=plan.complexity,
                 rationale="현재는 총괄PM만 활성화되어 있어 조직 위임 대신 PM이 직접 처리합니다.",
@@ -208,24 +218,83 @@ class PMOrchestrator:
             f"User request: {message[:700]}"
         )
 
+    async def _classify_lane(
+        self,
+        user_message: str,
+        dept_hints: list[str],
+        *,
+        workdir: str | None = None,
+    ) -> Literal[
+        "clarify",
+        "direct_answer",
+        "review_or_audit",
+        "attachment_analysis",
+        "single_org_execution",
+        "multi_org_execution",
+    ]:
+        if self._decision_client is None:
+            return self._heuristic_lane(user_message, dept_hints)
+        prompt = (
+            "Classify the user's request into exactly one lane.\n"
+            "Return only one token from:\n"
+            "clarify, direct_answer, review_or_audit, attachment_analysis, single_org_execution, multi_org_execution\n\n"
+            f"User request: {user_message[:800]}"
+        )
+        try:
+            response = await asyncio.wait_for(
+                self._decision_client.complete(prompt, workdir=workdir),
+                timeout=25.0,
+            )
+            lane = response.strip().split()[0].strip().lower()
+            if lane in {
+                "clarify",
+                "direct_answer",
+                "review_or_audit",
+                "attachment_analysis",
+                "single_org_execution",
+                "multi_org_execution",
+            }:
+                return lane  # type: ignore[return-value]
+        except Exception as e:
+            logger.warning(f"[PM] lane 분류 실패, heuristic fallback: {e}")
+        return self._heuristic_lane(user_message, dept_hints)
+
+    def _heuristic_lane(
+        self,
+        user_message: str,
+        dept_hints: list[str],
+    ) -> Literal[
+        "clarify",
+        "direct_answer",
+        "review_or_audit",
+        "attachment_analysis",
+        "single_org_execution",
+        "multi_org_execution",
+    ]:
+        text = user_message.lower().strip()
+        if any(token in text for token in ("첨부", "파일", "이미지", "pdf", "문서", "voice", "audio", "video")):
+            return "attachment_analysis"
+        if any(token in text for token in ("리뷰", "audit", "검토", "평가", "문제점", "코드리뷰")):
+            return "review_or_audit"
+        if any(token in text for token in ("뭐가 빠졌", "무응답", "왜 답이 없", "무슨 뜻", "명확히")):
+            return "clarify"
+        if len(dept_hints) >= 2 or any(token in text for token in ("여러 조직", "협업", "기획하고", "디자인하고", "개발하고", "조율")):
+            return "multi_org_execution"
+        if any(token in text for token in ("왜", "무엇", "어떻게", "설명", "상태", "현황", "가능해", "?")):
+            return "direct_answer"
+        return "single_org_execution"
+
     async def _llm_plan_request(
         self, user_message: str, dept_hints: list[str], workdir: str | None = None,
     ) -> RequestPlan | None:
-        provider = None if self._decision_client is not None else get_provider()
-        if self._decision_client is None and provider is None:
+        if self._decision_client is None:
             return None
         prompt = self._build_request_plan_prompt(user_message, dept_hints)
         try:
-            if self._decision_client is not None:
-                response = await asyncio.wait_for(
-                    self._decision_client.complete(prompt, workdir=workdir),
-                    timeout=35.0,
-                )
-            else:
-                response = await asyncio.wait_for(
-                    provider.complete(prompt, timeout=8.0),
-                    timeout=10.0,
-                )
+            response = await asyncio.wait_for(
+                self._decision_client.complete(prompt, workdir=workdir),
+                timeout=35.0,
+            )
             return self._parse_request_plan(response, dept_hints)
         except Exception as e:
             logger.warning(f"[PM] 요청 전략 LLM 판단 실패, 휴리스틱 fallback: {e}")
@@ -249,6 +318,7 @@ class PMOrchestrator:
         if complexity not in {"low", "medium", "high"}:
             complexity = "medium"
         return RequestPlan(
+            lane="single_org_execution",
             route=route,
             complexity=complexity,
             rationale=str(data.get("rationale", "")).strip() or "LLM 전략 판단",
@@ -256,7 +326,7 @@ class PMOrchestrator:
             confidence=float(data.get("confidence", 0.7)),
         )
 
-    def _heuristic_plan_request(self, user_message: str, dept_hints: list[str]) -> RequestPlan:
+    def _heuristic_plan_request(self, user_message: str, dept_hints: list[str], *, lane: str) -> RequestPlan:
         text = user_message.strip()
         lower = text.lower()
 
@@ -279,8 +349,57 @@ class PMOrchestrator:
             marker in lower for marker in collaboration_markers
         )
 
+        if lane == "clarify":
+            return RequestPlan(
+                lane="clarify",
+                route="direct_reply",
+                complexity="low",
+                rationale="요청 의도나 불만의 정확한 지점을 먼저 짚어 답하는 편이 맞습니다.",
+                dept_hints=dept_hints,
+                confidence=0.8,
+            )
+        if lane == "direct_answer":
+            return RequestPlan(
+                lane="direct_answer",
+                route="direct_reply",
+                complexity="low",
+                rationale="설명·현황·확인 성격이 강해 PM이 직접 답하는 것이 자연스럽습니다.",
+                dept_hints=dept_hints,
+                confidence=0.8,
+            )
+        if lane == "review_or_audit":
+            route = "delegate" if len(dept_hints) >= 2 else "local_execution"
+            return RequestPlan(
+                lane="review_or_audit",
+                route=route,
+                complexity="medium" if route == "local_execution" else "high",
+                rationale="리뷰/감사 성격이라 검토 중심 실행 lane으로 처리합니다.",
+                dept_hints=dept_hints,
+                confidence=0.78,
+            )
+        if lane == "attachment_analysis":
+            route = "delegate" if len(dept_hints) >= 2 else "local_execution"
+            return RequestPlan(
+                lane="attachment_analysis",
+                route=route,
+                complexity="medium",
+                rationale="첨부 기반 분석 요청이라 attachment lane으로 처리합니다.",
+                dept_hints=dept_hints,
+                confidence=0.76,
+            )
+        if lane == "multi_org_execution":
+            return RequestPlan(
+                lane="multi_org_execution",
+                route="delegate",
+                complexity="high",
+                rationale="복수 조직 협업이 필요한 execution lane입니다.",
+                dept_hints=dept_hints,
+                confidence=0.8,
+            )
+
         if is_question and action_hits == 0:
             return RequestPlan(
+                lane="direct_answer",
                 route="direct_reply",
                 complexity="low",
                 rationale="질문·확인 성격이 강해서 PM이 바로 답하는 편이 자연스럽습니다.",
@@ -291,6 +410,7 @@ class PMOrchestrator:
         if needs_collaboration or action_hits >= 3 or len(text) > 220:
             complexity = "high" if needs_collaboration or len(dept_hints) >= 3 else "medium"
             return RequestPlan(
+                lane="multi_org_execution",
                 route="delegate",
                 complexity=complexity,
                 rationale="복수 조직 협업 또는 다단계 실행이 필요해 보여 조직 오케스트레이션으로 보냅니다.",
@@ -299,6 +419,7 @@ class PMOrchestrator:
             )
 
         return RequestPlan(
+            lane="single_org_execution",
             route="local_execution",
             complexity="medium" if action_hits >= 2 or len(text) > 100 else "low",
             rationale="집중된 단일 작업이라 PM이 직접 처리하는 편이 더 빠릅니다.",
@@ -409,22 +530,15 @@ class PMOrchestrator:
         workdir: str | None = None,
     ) -> list[SubTask]:
         """LLM으로 태스크 분해. 실패 시 빈 리스트 반환."""
-        provider = None if self._decision_client is not None else get_provider()
-        if self._decision_client is None and provider is None:
+        if self._decision_client is None:
             return []
 
         prompt = self._build_decompose_prompt(user_message, dept_hints)
         try:
-            if self._decision_client is not None:
-                response = await asyncio.wait_for(
-                    self._decision_client.complete(prompt, workdir=workdir),
-                    timeout=45.0,
-                )
-            else:
-                response = await asyncio.wait_for(
-                    provider.complete(prompt, timeout=15.0),
-                    timeout=18.0,
-                )
+            response = await asyncio.wait_for(
+                self._decision_client.complete(prompt, workdir=workdir),
+                timeout=45.0,
+            )
             return self._parse_decompose(response)
         except Exception as e:
             logger.warning(f"[PM] LLM 분해 실패, 키워드 fallback: {e}")
@@ -1001,8 +1115,7 @@ class PMOrchestrator:
         workdir: str | None = None,
     ) -> bool:
         """LLM으로 토론 필요 여부 판단. 실패 시 키워드 fallback."""
-        provider = None if self._decision_client is not None else get_provider()
-        if self._decision_client is None and provider is None:
+        if self._decision_client is None:
             logger.debug("[PM] LLM provider 없음 — 키워드 fallback")
             return self._keyword_detect_discussion(user_message)
 
@@ -1013,16 +1126,10 @@ class PMOrchestrator:
         )
 
         try:
-            if self._decision_client is not None:
-                response = await asyncio.wait_for(
-                    self._decision_client.complete(prompt, workdir=workdir),
-                    timeout=30.0,
-                )
-            else:
-                response = await asyncio.wait_for(
-                    provider.complete(prompt, timeout=10.0),
-                    timeout=12.0,
-                )
+            response = await asyncio.wait_for(
+                self._decision_client.complete(prompt, workdir=workdir),
+                timeout=30.0,
+            )
             answer = response.strip().upper()
             result = answer.startswith("YES")
             logger.info(f"[PM] LLM 토론 감지: {answer} → {result}")

@@ -17,6 +17,17 @@ from core.result_synthesizer import (
 )
 
 
+class _FakeDecisionClient:
+    def __init__(self, response: str, fail: bool = False) -> None:
+        self.response = response
+        self.fail = fail
+
+    async def complete(self, prompt: str, *, system_prompt: str = "", workdir: str | None = None) -> str:
+        if self.fail:
+            raise RuntimeError("API error")
+        return self.response
+
+
 @pytest.fixture
 def synth():
     return ResultSynthesizer()
@@ -167,29 +178,22 @@ class TestSynthesizeIntegration:
             "FOLLOW_UP: none\n"
             "REPORT:\n최종 보고서\nEND_REPORT"
         )
-        with patch("core.result_synthesizer.get_provider") as mock_gp:
-            mock_provider = AsyncMock()
-            mock_provider.complete.return_value = llm_response
-            mock_gp.return_value = mock_provider
+        synth = ResultSynthesizer(decision_client=_FakeDecisionClient(llm_response))
 
-            subtasks = [_make_subtask("aiorg_engineering_bot", "완료")]
-            result = await synth.synthesize("코드 구현", subtasks)
-            assert result.judgment == SynthesisJudgment.SUFFICIENT
+        subtasks = [_make_subtask("aiorg_engineering_bot", "완료")]
+        result = await synth.synthesize("코드 구현", subtasks)
+        assert result.judgment == SynthesisJudgment.SUFFICIENT
 
     @pytest.mark.asyncio
     async def test_llm_failure_fallback(self, synth):
-        with patch("core.result_synthesizer.get_provider") as mock_gp:
-            mock_provider = AsyncMock()
-            mock_provider.complete.side_effect = RuntimeError("API error")
-            mock_gp.return_value = mock_provider
+        synth = ResultSynthesizer(decision_client=_FakeDecisionClient("", fail=True))
 
-            subtasks = [_make_subtask("aiorg_engineering_bot", "완료")]
-            result = await synth.synthesize("코드 구현", subtasks)
-            assert result.judgment == SynthesisJudgment.SUFFICIENT
+        subtasks = [_make_subtask("aiorg_engineering_bot", "완료")]
+        result = await synth.synthesize("코드 구현", subtasks)
+        assert result.judgment == SynthesisJudgment.SUFFICIENT
 
     @pytest.mark.asyncio
     async def test_no_provider_fallback(self, synth):
-        with patch("core.result_synthesizer.get_provider", return_value=None):
-            subtasks = [_make_subtask("aiorg_engineering_bot")]
-            result = await synth.synthesize("코드 구현", subtasks)
-            assert result.judgment == SynthesisJudgment.INSUFFICIENT
+        subtasks = [_make_subtask("aiorg_engineering_bot")]
+        result = await synth.synthesize("코드 구현", subtasks)
+        assert result.judgment == SynthesisJudgment.INSUFFICIENT

@@ -92,13 +92,7 @@ class GlobalContext:
                         self._decision_client.complete(prompt), timeout=5.0
                     )
                 else:
-                    from core.llm_provider import get_provider
-                    provider = get_provider()
-                    if not provider:
-                        raise RuntimeError("provider unavailable")
-                    raw = await asyncio.wait_for(
-                        provider.complete(prompt, timeout=3.0), timeout=3.0
-                    )
+                    raise RuntimeError("decision client unavailable")
                 raw = raw.strip()
                 start, end = raw.find("["), raw.rfind("]")
                 if start >= 0 and end > start:
@@ -164,16 +158,7 @@ class GlobalContext:
                         timeout=5.0,
                     )
                 else:
-                    from core.llm_provider import get_provider
-                    provider = get_provider()
-                    if not provider:
-                        raise RuntimeError("provider unavailable")
-                    cat_prompt = (
-                        f"Categorize in one word (개발/기획/분석/마케팅/운영/기타): {task[:100]}"
-                    )
-                    raw_cat = await asyncio.wait_for(
-                        provider.complete(cat_prompt, timeout=3.0), timeout=3.0
-                    )
+                    raise RuntimeError("decision client unavailable")
                 valid = {"개발", "기획", "분석", "마케팅", "운영", "기타"}
                 for word in raw_cat.strip().split():
                     if word in valid:

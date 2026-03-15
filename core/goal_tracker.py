@@ -19,7 +19,6 @@ from loguru import logger
 
 from core.context_db import ContextDB
 from core.pm_orchestrator import PMOrchestrator, KNOWN_DEPTS
-from core.llm_provider import get_provider
 
 ENABLE_GOAL_TRACKER = os.environ.get("ENABLE_GOAL_TRACKER", "0") == "1"
 
@@ -194,8 +193,7 @@ class GoalTracker:
                             done: list[dict]) -> GoalStatus | None:
         """LLM으로 목표 달성 평가. 실패 시 None (fallback으로)."""
         decision_client = self._orch.decision_client
-        provider = None if decision_client is not None else get_provider()
-        if decision_client is None and provider is None:
+        if decision_client is None:
             return None
 
         results_text = "\n".join(
@@ -215,16 +213,10 @@ class GoalTracker:
         )
 
         try:
-            if decision_client is not None:
-                response = await asyncio.wait_for(
-                    decision_client.complete(prompt),
-                    timeout=35.0,
-                )
-            else:
-                response = await asyncio.wait_for(
-                    provider.complete(prompt, timeout=15.0),
-                    timeout=18.0,
-                )
+            response = await asyncio.wait_for(
+                decision_client.complete(prompt),
+                timeout=35.0,
+            )
             return self._parse_evaluation(response)
         except Exception as e:
             logger.warning(f"[GoalTracker] LLM 평가 실패, fallback 사용: {e}")
