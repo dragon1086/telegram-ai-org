@@ -40,11 +40,11 @@ async def test_execute_pm_task_passes_workdir_to_runner() -> None:
         relay.display.send_to_chat = AsyncMock()
         relay.app = MagicMock()
         relay.app.bot = MagicMock()
+        relay._auto_upload = AsyncMock()
 
-        runner = MagicMock()
-        runner.run_task = AsyncMock(return_value="완료")
-        relay._make_runner = MagicMock(return_value=runner)
+        relay._execute_with_team_config = AsyncMock(return_value="완료")
+        relay._build_team_config = AsyncMock(return_value=MagicMock())
 
         await relay._execute_pm_task(task_info)
 
-        assert runner.run_task.await_args.kwargs["workdir"] == "/tmp/openclaw"
+        assert relay._execute_with_team_config.await_args.kwargs["workdir"] == "/tmp/openclaw"
