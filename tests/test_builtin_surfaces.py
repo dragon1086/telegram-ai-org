@@ -17,4 +17,4 @@ def test_recommend_builtin_surfaces_for_status_task() -> None:
 def test_recommend_builtin_surfaces_for_review_task() -> None:
     surfaces = recommend_builtin_surfaces("최근 대화 로그를 검토하고 평가해줘", org_id="global")
     commands = [surface.command for surface in surfaces]
-    assert any("tools/orchestration_cli.py review-recent" in command for command in commands)
+    assert any("tools/orchestration_cli.py auto-improve-recent" in command for command in commands)

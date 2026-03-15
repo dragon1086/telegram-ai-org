@@ -21,8 +21,11 @@ if [ -f .env ]; then
   set +a
 fi
 
-"$PYTHON_BIN" tools/orchestration_cli.py review-recent \
+"$PYTHON_BIN" tools/orchestration_cli.py auto-improve-recent \
   --hours 24 \
-  --engine claude-code \
+  --review-engine claude-code \
+  --apply-engine claude-code \
+  --push-branch \
+  --create-pr \
   --upload \
   >> "$HOME/.ai-org/daily-review.log" 2>&1
