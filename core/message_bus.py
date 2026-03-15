@@ -30,6 +30,7 @@ class EventType(Enum):
     VERIFICATION_REQUESTED = "verification_requested"
     VERIFICATION_COMPLETED = "verification_completed"
     AUTO_DISPATCH = "auto_dispatch"
+    P2P_MESSAGE = "p2p_message"
     GOAL_CREATED = "goal_created"
     GOAL_EVALUATED = "goal_evaluated"
     GOAL_ACHIEVED = "goal_achieved"
