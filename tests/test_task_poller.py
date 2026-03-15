@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import tempfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -12,6 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.context_db import ContextDB
+from core.task_graph import TaskGraph
 from core.task_poller import TaskPoller
 
 
@@ -79,11 +81,14 @@ class TestTaskPollerBasic:
         on_task.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_ignores_non_assigned_status(self, db, on_task):
-        """assigned가 아닌 상태는 무시."""
+    async def test_ignores_pending_with_unmet_dependencies(self, db, on_task):
+        """의존성이 남은 pending 태스크는 무시."""
         dept = "aiorg_engineering_bot"
+        tg = TaskGraph(db)
+        await db.create_pm_task("T-0", "선행 태스크", "aiorg_product_bot", "pm")
         await db.create_pm_task("T-1", "태스크", dept, "pm")
-        # pending 상태 — assigned가 아님
+        await tg.add_task("T-0")
+        await tg.add_task("T-1", depends_on=["T-0"])
 
         poller = TaskPoller(db, dept, on_task, poll_interval=0.05)
         poller.start()
@@ -162,3 +167,49 @@ class TestTaskPollerBasic:
         poller.stop()
 
         assert on_task.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_claims_stale_running_task(self, db, on_task):
+        dept = "aiorg_engineering_bot"
+        await db.create_pm_task(
+            "T-stale",
+            "stale task",
+            dept,
+            "pm",
+            metadata={
+                "lease_owner": "other",
+                "lease_expires_at": (datetime.now(UTC) - timedelta(minutes=5)).isoformat(),
+            },
+        )
+        await db.update_pm_task_status("T-stale", "running")
+
+        poller = TaskPoller(db, dept, on_task, poll_interval=0.05, heartbeat_interval_sec=0.05, lease_ttl_sec=0.2)
+        poller.start()
+        await asyncio.sleep(0.15)
+        poller.stop()
+
+        on_task.assert_called_once()
+        task = await db.get_pm_task("T-stale")
+        assert task is not None
+        assert task["metadata"].get("lease_owner") is None
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_keeps_lease_current(self, db, on_task):
+        dept = "aiorg_engineering_bot"
+        await db.create_pm_task("T-heartbeat", "heartbeat task", dept, "pm")
+        await db.update_pm_task_status("T-heartbeat", "assigned")
+
+        async def slow_callback(task):
+            await asyncio.sleep(0.22)
+
+        on_task.side_effect = slow_callback
+
+        poller = TaskPoller(db, dept, on_task, poll_interval=0.05, heartbeat_interval_sec=0.05, lease_ttl_sec=0.12)
+        poller.start()
+        await asyncio.sleep(0.18)
+        task = await db.get_pm_task("T-heartbeat")
+        poller.stop()
+
+        assert task is not None
+        assert task["metadata"].get("lease_owner")
+        assert on_task.call_count == 1

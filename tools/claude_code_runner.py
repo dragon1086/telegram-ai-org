@@ -1,10 +1,11 @@
-"""Claude Code 실행 래퍼 — omc_team / agent_teams / single 3가지 모드 지원."""
+"""Claude Code 실행 래퍼 — structured_team / agent_teams / single 3가지 모드 지원."""
 from __future__ import annotations
 
 import asyncio
 import json
 import os
 import re
+import shlex
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -33,7 +34,7 @@ TOOL_EMOJI = {
 
 CLAUDE_CLI = os.environ.get("CLAUDE_CLI_PATH", "/Users/rocky/.local/bin/claude")
 CODEX_CLI = os.environ.get("CODEX_CLI_PATH", "/opt/homebrew/bin/codex")
-DEFAULT_TIMEOUT = 7200  # 2시간
+DEFAULT_TIMEOUT = int(os.environ.get("CLAUDE_DEFAULT_TIMEOUT_SEC", "14400"))  # 4시간
 
 
 class ClaudeCodeRunner:
@@ -49,11 +50,49 @@ class ClaudeCodeRunner:
         self.timeout = timeout
         self.workdir = workdir or str(Path.home() / ".ai-org" / "workspace")
         Path(self.workdir).mkdir(parents=True, exist_ok=True)
+        self._last_run_metrics: dict[str, int | float | str] = {}
+
+    def get_last_run_metrics(self) -> dict[str, int | float | str]:
+        return dict(self._last_run_metrics)
+
+    def _reset_last_run_metrics(self) -> None:
+        self._last_run_metrics = {}
+
+    @staticmethod
+    def _extract_usage_metrics(event: dict) -> dict[str, int | float | str]:
+        metrics: dict[str, int | float | str] = {}
+        candidates = []
+        usage = event.get("usage")
+        if isinstance(usage, dict):
+            candidates.append(usage)
+        candidates.append(event)
+
+        for source in candidates:
+            for key in (
+                "input_tokens",
+                "output_tokens",
+                "cache_creation_input_tokens",
+                "cache_read_input_tokens",
+                "context_percent",
+                "context_usage_percent",
+            ):
+                value = source.get(key)
+                if isinstance(value, (int, float)):
+                    metrics[key] = int(value) if isinstance(value, int) or float(value).is_integer() else float(value)
+
+        if "total_tokens" in event and isinstance(event["total_tokens"], (int, float)):
+            metrics["total_tokens"] = int(event["total_tokens"])
+        elif "input_tokens" in metrics or "output_tokens" in metrics:
+            metrics["total_tokens"] = int(metrics.get("input_tokens", 0)) + int(metrics.get("output_tokens", 0))
+
+        if metrics:
+            metrics["usage_source"] = "runner_event"
+        return metrics
 
     # ------------------------------------------------------------------
-    # Mode 1: omc_team_mode
+    # Mode 1: structured_team_mode
     # ------------------------------------------------------------------
-    async def run_omc_team(
+    async def run_structured_team(
         self,
         task: str,
         agents: list[str],
@@ -62,8 +101,12 @@ class ClaudeCodeRunner:
         session_store: SessionStore | None = None,
         org_id: str = "global",
         global_context: GlobalContext | None = None,
+        system_prompt: str = "",
+        workdir: str | None = None,
+        shell_session_manager=None,
+        shell_team_id: str | None = None,
     ) -> str:
-        """omc /team 형식으로 다중 에이전트 실행.
+        """구조화된 팀 형식으로 다중 에이전트 실행.
 
         Args:
             task: 실행할 태스크 문자열.
@@ -89,20 +132,44 @@ class ClaudeCodeRunner:
             prompt,
         ]
 
-        # 글로벌 맥락 주입
+        # system_prompt + 글로벌 맥락 주입
+        prompt_parts: list[str] = []
+        if system_prompt:
+            prompt_parts.append(system_prompt)
         if global_context:
             ctx_prompt = await global_context.build_system_prompt(org_id, task)
             if ctx_prompt:
-                cmd.extend(["--append-system-prompt", ctx_prompt])
+                prompt_parts.append(ctx_prompt)
+        if prompt_parts:
+            cmd.extend(["--append-system-prompt", "\n\n".join(prompt_parts)])
 
-        logger.info(f"[omc_team] team_spec={team_spec}")
-        result = await self._run_stream_json(cmd, progress_callback=progress_callback, session_store=session_store)
+        logger.info(f"[structured_team] team_spec={team_spec}")
+        if shell_session_manager and shell_team_id:
+            result = await self._run_subprocess(
+                cmd,
+                progress_callback=progress_callback,
+                workdir=workdir,
+                shell_session_manager=shell_session_manager,
+                shell_team_id=shell_team_id,
+                shell_purpose="claude-team",
+            )
+        else:
+            result = await self._run_stream_json(
+                cmd,
+                progress_callback=progress_callback,
+                session_store=session_store,
+                workdir=workdir,
+            )
 
         # 작업 완료 후 핵심 내용 추출 → global_context 저장
         if global_context and result:
             await global_context.extract_and_save(org_id, task, result)
 
         return result
+
+    async def run_omc_team(self, *args, **kwargs) -> str:
+        """Legacy alias for structured team execution."""
+        return await self.run_structured_team(*args, **kwargs)
 
     # ------------------------------------------------------------------
     # Mode 2: agent_teams_mode
@@ -112,6 +179,10 @@ class ClaudeCodeRunner:
         task: str,
         agent_personas: list[str],
         progress_callback: Callable[[str], Awaitable[None]] | None = None,
+        system_prompt: str = "",
+        workdir: str | None = None,
+        shell_session_manager=None,
+        shell_team_id: str | None = None,
     ) -> str:
         """CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 환경변수로 에이전트 팀 실행.
 
@@ -127,9 +198,19 @@ class ClaudeCodeRunner:
             "--print",
             full_task,
         ]
+        if system_prompt:
+            cmd.extend(["--append-system-prompt", system_prompt])
         extra_env = {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"}
         logger.info(f"[agent_teams] personas={agent_personas}")
-        return await self._run_subprocess(cmd, extra_env=extra_env, progress_callback=progress_callback)
+        return await self._run_subprocess(
+            cmd,
+            extra_env=extra_env,
+            progress_callback=progress_callback,
+            workdir=workdir,
+            shell_session_manager=shell_session_manager,
+            shell_team_id=shell_team_id,
+            shell_purpose="claude-agent-team",
+        )
 
     # ------------------------------------------------------------------
     # Mode 3: single_agent_mode
@@ -142,6 +223,10 @@ class ClaudeCodeRunner:
         session_store: SessionStore | None = None,
         org_id: str = "global",
         global_context: GlobalContext | None = None,
+        system_prompt: str = "",
+        workdir: str | None = None,
+        shell_session_manager=None,
+        shell_team_id: str | None = None,
     ) -> str:
         """단일 에이전트 실행.
 
@@ -162,14 +247,34 @@ class ClaudeCodeRunner:
             full_task,
         ]
 
-        # 글로벌 맥락 주입
+        # system_prompt + 글로벌 맥락 주입
+        prompt_parts: list[str] = []
+        if system_prompt:
+            prompt_parts.append(system_prompt)
         if global_context:
             ctx_prompt = await global_context.build_system_prompt(org_id, task)
             if ctx_prompt:
-                cmd.extend(["--append-system-prompt", ctx_prompt])
+                prompt_parts.append(ctx_prompt)
+        if prompt_parts:
+            cmd.extend(["--append-system-prompt", "\n\n".join(prompt_parts)])
 
         logger.info(f"[single] persona={persona}")
-        result = await self._run_stream_json(cmd, progress_callback=progress_callback, session_store=session_store)
+        if shell_session_manager and shell_team_id:
+            result = await self._run_subprocess(
+                cmd,
+                progress_callback=progress_callback,
+                workdir=workdir,
+                shell_session_manager=shell_session_manager,
+                shell_team_id=shell_team_id,
+                shell_purpose="claude-single",
+            )
+        else:
+            result = await self._run_stream_json(
+                cmd,
+                progress_callback=progress_callback,
+                session_store=session_store,
+                workdir=workdir,
+            )
 
         # 작업 완료 후 핵심 내용 추출 → global_context 저장
         if global_context and result:
@@ -313,6 +418,7 @@ class ClaudeCodeRunner:
 
         stream-json 실패 시 _run_subprocess로 fallback.
         """
+        self._reset_last_run_metrics()
         # --resume 삽입 (기존 session_id 있으면 이전 대화 이어받기)
         if session_store:
             existing_id = session_store.get_session_id()
@@ -456,6 +562,7 @@ class ClaudeCodeRunner:
                 elif etype == "result":
                     if event.get("subtype") == "success":
                         final_result = event.get("result", "")
+                        self._last_run_metrics = self._extract_usage_metrics(event)
                         # session_id 저장 (다음 실행 시 --resume으로 재사용)
                         if session_store and current_session_id:
                             session_store.save_session_id(current_session_id)
@@ -474,6 +581,9 @@ class ClaudeCodeRunner:
                                 pass
                     elif event.get("subtype") == "error":
                         final_result = event.get("result", "")
+                        usage_metrics = self._extract_usage_metrics(event)
+                        if usage_metrics:
+                            self._last_run_metrics = usage_metrics
 
         try:
             await asyncio.wait_for(_read_stream(), timeout=self.timeout)
@@ -504,6 +614,9 @@ class ClaudeCodeRunner:
         extra_env: dict[str, str] | None = None,
         progress_callback: Callable[[str], Awaitable[None]] | None = None,
         workdir: str | None = None,
+        shell_session_manager=None,
+        shell_team_id: str | None = None,
+        shell_purpose: str = "claude-batch",
     ) -> str:
         """subprocess 실행 후 stdout 스트림 → 결과 반환.
 
@@ -515,6 +628,7 @@ class ClaudeCodeRunner:
         Returns:
             전체 stdout 문자열. 오류 시 ❌ 접두사 문자열.
         """
+        self._reset_last_run_metrics()
         env = os.environ.copy()
 
         # CLAUDE_CODE_OAUTH_TOKEN 자동 주입
@@ -529,6 +643,33 @@ class ClaudeCodeRunner:
         env.pop("CLAUDECODE", None)
 
         logger.debug(f"Running cmd: {' '.join(cmd[:3])}...")
+
+        if shell_session_manager and shell_team_id:
+            shell_cmd = self._build_shell_command(cmd, env, workdir or self.workdir)
+            try:
+                output, exit_code = await shell_session_manager.run_shell_command(
+                    shell_team_id,
+                    shell_cmd,
+                    purpose=shell_purpose,
+                    timeout=self.timeout,
+                )
+                if progress_callback is not None and output:
+                    for line in output.splitlines()[-10:]:
+                        try:
+                            await progress_callback(line)
+                        except Exception as cb_err:
+                            logger.warning(f"progress_callback 오류: {cb_err}")
+                self._last_run_metrics = {
+                    "output_chars": len(output or ""),
+                    "usage_source": "subprocess_no_usage",
+                }
+                if exit_code != 0 and not output:
+                    return f"❌ 프로세스 오류 (code={exit_code})"
+                return output or "(결과 없음)"
+            except asyncio.TimeoutError:
+                msg = f"❌ 타임아웃 ({self.timeout}s) 초과: {' '.join(cmd[:3])}"
+                logger.error(msg)
+                return msg
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -574,6 +715,10 @@ class ClaudeCodeRunner:
             return msg
 
         full_output = "\n".join(output_lines)
+        self._last_run_metrics = {
+            "output_chars": len(full_output or ""),
+            "usage_source": "subprocess_no_usage",
+        }
 
         if proc.returncode != 0:
             assert proc.stderr is not None
@@ -586,6 +731,14 @@ class ClaudeCodeRunner:
                 return f"❌ 프로세스 오류 (code={proc.returncode}): {stderr}"
 
         return full_output or "(결과 없음)"
+
+    def _build_shell_command(self, cmd: list[str], env: dict[str, str], workdir: str) -> str:
+        env_parts: list[str] = []
+        for key in ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"):
+            if key in env:
+                env_parts.append(f"{key}={shlex.quote(env[key])}")
+        env_prefix = f"env {' '.join(env_parts)} " if env_parts else "env "
+        return f"cd {shlex.quote(workdir)} && {env_prefix}{shlex.join(cmd)}"
 
     async def _auto_upload(self, response: str, bot_token: str, chat_id: int) -> None:
         """응답에서 생성된 파일 경로 감지 → 자동 텔레그램 업로드."""
