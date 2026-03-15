@@ -6,6 +6,7 @@ from pathlib import Path
 
 from loguru import logger
 from core.orchestration_config import load_orchestration_config
+from core.builtin_surfaces import recommend_builtin_surfaces
 
 
 class PMIdentity:
@@ -149,6 +150,7 @@ class PMIdentity:
             "specialties": self._data.get("specialties", []),
             "direction": self._data.get("direction", ""),
             "preferred_agents": self._data.get("preferred_agents", []),
+            "preferred_skills": team_cfg.get("preferred_skills", []),
             "avoid_agents": team_cfg.get("avoid_agents", []),
             "max_team_size": team_cfg.get("max_team_size", 3),
             "guidance": team_cfg.get("guidance", ""),
@@ -195,6 +197,7 @@ class PMIdentity:
         # 팀 구성 설정 (bots/{org_id}.yaml team_config 섹션)
         team_cfg = self._load_team_config()
         team_config_section = ""
+        preferred_skills = team_cfg.get("preferred_skills", [])
         if team_cfg:
             avoid = team_cfg.get("avoid_agents", [])
             max_size = team_cfg.get("max_team_size", 5)
@@ -209,6 +212,8 @@ class PMIdentity:
                 lines.append(f"- 에스컬레이션: {escalate} (태스크가 너무 크면 위임)")
             if guidance:
                 lines.append(f"- 지침: {guidance}")
+            if preferred_skills:
+                lines.append(f"- 선호 스킬/워크플로: {', '.join(preferred_skills)}")
             if lines:
                 team_config_section = "\n## 팀 구성 설정 (config 기반)\n" + "\n".join(lines)
 
@@ -227,6 +232,12 @@ class PMIdentity:
         else:
             colleague_section = ""
 
+        builtin_surfaces = recommend_builtin_surfaces(f"{role} {' '.join(specialties)} {direction}", org_id=org)
+        builtin_lines = "\n".join(
+            f"- `{surface.command}`: {surface.purpose}"
+            for surface in builtin_surfaces
+        )
+
         return f"""당신은 {org} 조직의 PM입니다.
 
 ## 조직 정체성
@@ -242,6 +253,11 @@ class PMIdentity:
   태스크 수신 시 ~/.claude/agents/ 를 ls로 확인 후,
   태스크에 가장 적합한 에이전트 파일만 개별 Read해서 팀 구성.
   전체 목록을 한번에 읽지 말 것 (토큰 낭비).
+
+## 내장 Control Surface 우선 사용
+- 이 리포지토리에 이미 있는 scripts/tools/CLI를 먼저 검토하고 재사용할 것
+- ad-hoc 스크립트 작성보다 기존 제어면을 우선 사용하고, 정말 없을 때만 새 코드를 만들 것
+{builtin_lines}
 {colleague_section}{team_config_section}
 ## 팀 구성 원칙 (필수 준수)
 

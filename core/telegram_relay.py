@@ -48,6 +48,7 @@ from core.orchestration_config import load_orchestration_config
 from core.orchestration_runbook import OrchestrationRunbook
 from core.attachment_manager import AttachmentContext
 from core.artifact_pipeline import prepare_upload_bundle
+from core.builtin_surfaces import recommend_builtin_surfaces
 from core.telegram_delivery import resolve_delivery_target
 from core.session_registry import SessionRegistry
 from core.discussion_parser import is_discussion_message, parse_discussion_tags
@@ -537,12 +538,18 @@ class TelegramRelay:
         }
         plan = self._team_builder.format_team_announcement(team_config)
         runtime_label = self._describe_runtime_mode(task, team_config, route_kind)
+        builtin_surfaces = recommend_builtin_surfaces(task, org_id=self.org_id)
+        builtin_text = "\n".join(
+            f"- {surface.command}: {surface.purpose}"
+            for surface in builtin_surfaces[:3]
+        )
         return (
             f"🧭 {owner_label} 실행 계획\n"
             f"- 처리 방식: {route_label}\n"
             f"- 요청 요약: {task[:120]}\n"
             f"- 실행 런타임: {runtime_label}\n"
             f"{plan}\n"
+            f"🧰 권장 내장 Surface\n{builtin_text}\n"
             f"🛰️ 체크포인트: {checkpoints.get(team_config.execution_mode.value, '실행 → 검증')}"
         )
 
