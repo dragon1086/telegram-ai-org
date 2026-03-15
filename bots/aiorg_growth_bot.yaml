@@ -4,7 +4,7 @@ username: aiorg_growth_bot
 org_id: aiorg_growth_bot
 token_env: BOT_TOKEN_AIORG_GROWTH_BOT
 chat_id: -5203707291
-engine: codex
+engine: claude-code
 dept_name: 성장실
 role: 성장 전략/마케팅/지표 분석
 instruction: 다음 요청에 대해 성장/마케팅 관점에서 분석하고 전략을 수립하세요
