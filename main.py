@@ -15,6 +15,20 @@ PROJECT_ROOT = Path(__file__).parent
 def _load_env_file(path: Path) -> None:
     if not path.exists():
         return
+    # .yaml/.yml 파일은 yaml.safe_load로 파싱
+    if path.suffix in (".yaml", ".yml"):
+        try:
+            import yaml  # type: ignore[import]
+            data = yaml.safe_load(path.read_text())
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    if isinstance(v, dict):
+                        # 중첩 딕셔너리는 건너뜀
+                        continue
+                    os.environ.setdefault(str(k).strip(), str(v).strip())
+        except Exception:
+            pass
+        return
     for line in path.read_text().splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
@@ -62,7 +76,8 @@ if __name__ == "__main__":
     _lock_fh = open(_pid_file, "w")
     try:
         fcntl.flock(_lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        _pid_file.write_text(str(os.getpid()))
+        _lock_fh.write(str(os.getpid()))
+        _lock_fh.flush()
     except IOError:
         existing = _pid_file.read_text().strip() if _pid_file.exists() else "?"
         print(f"[ABORT] 이미 실행 중인 인스턴스 있음 (PID {existing}). 종료.", flush=True)

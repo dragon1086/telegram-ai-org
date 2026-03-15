@@ -95,7 +95,60 @@ def save_to_shared_memory(retro_data: dict) -> None:
 
 # ── 메시지 생성 ───────────────────────────────────────────────────────────
 
-def build_retro(tasks: list[dict]) -> tuple[str, str, dict]:
+async def _llm_insights(tasks: list[dict]) -> str | None:
+    """anthropic SDK로 태스크 분석 → 3가지 인사이트 생성."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        print("[retro] ANTHROPIC_API_KEY 없음 — LLM 인사이트 건너뜀")
+        return None
+
+    try:
+        import anthropic
+    except ImportError:
+        print("[retro] anthropic SDK 없음 — LLM 인사이트 건너뜀")
+        return None
+
+    completed = [t for t in tasks if t.get("status") == "completed"]
+    failed = [t for t in tasks if t.get("status") == "failed"]
+
+    task_summary = ""
+    for t in completed[:15]:
+        desc = t.get("description") or t.get("task_id", "")
+        task_summary += f"- [completed] {desc[:100]}\n"
+    for t in failed[:10]:
+        desc = t.get("description") or t.get("task_id", "")
+        result = t.get("result", "")[:100]
+        task_summary += f"- [failed] {desc[:100]} | reason: {result}\n"
+
+    if not task_summary:
+        return None
+
+    prompt = (
+        f"오늘 AI 에이전트 팀이 수행한 태스크 목록:\n\n{task_summary}\n\n"
+        "위 내용을 분석해서 정확히 3가지를 한국어로 간결하게 답해줘:\n"
+        "1. 오늘 가장 잘한 것 (한 줄)\n"
+        "2. 실패 원인 & 패턴 (한 줄, 실패가 없으면 '실패 없음')\n"
+        "3. 내일 실험할 것 (한 줄)\n\n"
+        "각 항목은 번호와 함께 한 줄로 답해."
+    )
+
+    try:
+        client = anthropic.AsyncAnthropic(api_key=api_key)
+        resp = await asyncio.wait_for(
+            client.messages.create(
+                model=os.environ.get("PM_MODEL", "claude-haiku-4-5"),
+                max_tokens=300,
+                messages=[{"role": "user", "content": prompt}],
+            ),
+            timeout=30.0,
+        )
+        return resp.content[0].text if resp.content else None
+    except Exception as e:
+        print(f"[retro] LLM 인사이트 생성 실패: {e}")
+        return None
+
+
+def build_retro(tasks: list[dict], llm_insight: str | None = None) -> tuple[str, str, dict]:
     now = datetime.now(UTC)
     date_str = now.strftime("%Y-%m-%d")
 
@@ -110,6 +163,8 @@ def build_retro(tasks: list[dict]) -> tuple[str, str, dict]:
         "failed": len(failed),
         "tasks": tasks[:20],  # 최대 20개 저장
     }
+    if llm_insight:
+        retro_data["llm_insight"] = llm_insight
 
     lines_tg = [
         f"🌙 *일일 회고 — {date_str}*",
@@ -145,6 +200,20 @@ def build_retro(tasks: list[dict]) -> tuple[str, str, dict]:
 
     if not tasks:
         lines_tg.append("_(오늘 완료된 태스크 없음)_")
+
+    # LLM 인사이트 추가
+    if llm_insight:
+        lines_tg += [
+            "",
+            "🧠 *AI 인사이트*",
+            llm_insight,
+        ]
+        lines_md += [
+            "",
+            "## AI 인사이트",
+            "",
+            llm_insight,
+        ]
 
     lines_tg += ["", "내일도 화이팅! 💪"]
     lines_md += [
@@ -192,7 +261,12 @@ async def main() -> None:
     tasks = get_today_tasks()
     print(f"[retro] 오늘 태스크: {len(tasks)}건")
 
-    tg_msg, md_content, retro_data = build_retro(tasks)
+    # LLM 인사이트 생성
+    llm_insight = await _llm_insights(tasks)
+    if llm_insight:
+        print(f"[retro] LLM 인사이트 생성 완료")
+
+    tg_msg, md_content, retro_data = build_retro(tasks, llm_insight=llm_insight)
     save_to_shared_memory(retro_data)
     save_markdown(md_content)
 
