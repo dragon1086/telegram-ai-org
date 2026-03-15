@@ -41,7 +41,7 @@ from core.collab_request import (
     make_collab_done, parse_collab_request, is_placeholder_collab,
 )
 from core.keywords import GREETING_KW, ACTION_KW
-from core.display_limiter import DisplayLimiter, MessagePriority
+from core.display_limiter import DisplayLimiter
 from core.nl_classifier import NLClassifier, Intent
 from core.pm_router import PMRouter, PMRoute
 from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR, KNOWN_DEPTS
@@ -63,11 +63,11 @@ from core.dispatch_engine import ENABLE_AUTO_DISPATCH
 from core.verification import ENABLE_CROSS_VERIFICATION
 from core.goal_tracker import ENABLE_GOAL_TRACKER
 from core.task_poller import TaskPoller
+from core.telegram_formatting import split_message
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
 USE_NL_CLASSIFIER = True  # 2-tier NLClassifier 활성화 플래그 (False 시 기존 키워드 로직 사용)
-AUTO_UPLOAD_FILE_RE = re.compile(r"(?:(?<=\s)|^)(~?/[^ \t\r\n'\"`]+\.\w+)")
 ARTIFACT_MARKER_RE = re.compile(r"\[ARTIFACT:([^\]]+)\]")
 PM_CHAT_REPLY_TIMEOUT_SEC = int(os.environ.get("PM_CHAT_REPLY_TIMEOUT_SEC", "120"))
 
@@ -735,7 +735,7 @@ class TelegramRelay:
 
         await self.memory_manager.add_log(f"PM 응답: {reply[:200]}")
 
-        chunks = _split_message(reply.strip() or "알겠습니다.", 4000)
+        chunks = split_message(reply.strip() or "알겠습니다.", 4000)
         first = chunks[0]
         try:
             await progress_msg.edit_text(first)
@@ -1272,15 +1272,19 @@ class TelegramRelay:
                     progress_msg = await self.display.send_reply(update.message, "⚙️ 처리 중...")
                     history: list[str] = []
                     last_edit = time.time()
+                    progress_interval = self._progress_interval()
+                    history_limit = self._progress_history_limit()
 
                     async def on_progress(line: str) -> None:
                         nonlocal last_edit
+                        if not self._show_progress():
+                            return
                         stripped = self._clean_progress_line(line)
                         if not stripped:
                             return
                         history.append(stripped)
-                        if time.time() - last_edit > 1.5:
-                            display = "\n".join(history[-5:])
+                        if time.time() - last_edit > progress_interval:
+                            display = "\n".join(history[-history_limit:])
                             try:
                                 await self.display.edit_progress(
                                     progress_msg,
@@ -1298,6 +1302,7 @@ class TelegramRelay:
                         progress_callback=on_progress,
                         route_kind="local_execution",
                     )
+                    upload_candidates = extract_local_artifact_paths(response or "")
                     self._append_runbook(
                         run_id,
                         "Implementation result",
@@ -1322,9 +1327,9 @@ class TelegramRelay:
                             original_request=request_text,
                             decision_client=self._pm_decision_client,
                         )
-                        for chunk in _split_message(response, 4000):
+                        for chunk in split_message(response, 4000):
                             await self.display.send_reply(update.message, chunk)
-                        await self._auto_upload(response, self.token, update.effective_chat.id)
+                        await self._auto_upload("\n".join(upload_candidates), self.token, update.effective_chat.id)
                     self._append_runbook(
                         run_id,
                         "Verification summary",
@@ -1498,7 +1503,7 @@ class TelegramRelay:
                 original_request=text,
                 decision_client=self._pm_decision_client if self._is_pm_org else None,
             )
-            for chunk in _split_message(response, 4000):
+            for chunk in split_message(response, 4000):
                 await self.display.send_reply(update.message, chunk)
             await self._auto_upload("\n".join(upload_candidates), self.token, update.effective_chat.id)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
@@ -1691,15 +1696,19 @@ class TelegramRelay:
         progress_msg = await msg.reply_text("⚙️ 처리 중...")
         history: list[str] = []
         last_edit = time.time()
+        progress_interval = self._progress_interval()
+        history_limit = self._progress_history_limit()
 
         async def on_progress(line: str) -> None:
             nonlocal last_edit
+            if not self._show_progress():
+                return
             stripped = self._clean_progress_line(line)
             if not stripped:
                 return
             history.append(stripped)
-            if time.time() - last_edit > 1.5:
-                display = "\n".join(history[-5:])
+            if time.time() - last_edit > progress_interval:
+                display = "\n".join(history[-history_limit:])
                 try:
                     await progress_msg.edit_text(f"🛰️ 중간보고\n\n{display}")
                     last_edit = time.time()
@@ -1713,6 +1722,7 @@ class TelegramRelay:
             progress_callback=on_progress,
             route_kind="local_execution",
         )
+        upload_candidates = extract_local_artifact_paths(response or "")
         self._append_runbook(
             run_id,
             "Implementation result",
@@ -1739,8 +1749,9 @@ class TelegramRelay:
                 original_request=task,
                 decision_client=self._pm_decision_client if self._is_pm_org else None,
             )
-            for chunk in _split_message(response, 4000):
+            for chunk in split_message(response, 4000):
                 await msg.reply_text(chunk)
+            await self._auto_upload("\n".join(upload_candidates), self.token, self.allowed_chat_id)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
         self._append_runbook(
             run_id,
@@ -2549,7 +2560,7 @@ class TelegramRelay:
         done_text = f"{requester_mention} {make_collab_done(self.org_id, summary)}".strip()
         await update.message.reply_text(done_text)
         if response and len(response) > 300:
-            for chunk in _split_message(response[300:], 4000):
+            for chunk in split_message(response[300:], 4000):
                 await update.message.reply_text(chunk)
         self._append_runbook(
             run_id,
@@ -2956,40 +2967,6 @@ class TelegramRelay:
         if cmd == "/setup":
             await self.on_command_setup(update, context)
             return
-
-
-
-def _split_message(text: str, max_len: int) -> list[str]:
-    """긴 메시지를 문단/문장 경계를 우선으로 분할한다."""
-    body = (text or "").strip()
-    if not body:
-        return [""]
-    if len(body) <= max_len:
-        return [body]
-
-    def _find_breakpoint(chunk: str) -> int:
-        lower_bound = max(1, int(max_len * 0.55))
-        for token in ("\n\n", "\n- ", "\n• ", "\n", ". ", "? ", "! ", "; ", ", ", " "):
-            idx = chunk.rfind(token, lower_bound, max_len + 1)
-            if idx != -1:
-                return idx + len(token.rstrip())
-        return max_len
-
-    chunks: list[str] = []
-    remaining = body
-    while len(remaining) > max_len:
-        window = remaining[: max_len + 1]
-        cut = _find_breakpoint(window)
-        piece = remaining[:cut].rstrip()
-        if not piece:
-            piece = remaining[:max_len].rstrip()
-            cut = len(piece)
-        chunks.append(piece)
-        remaining = remaining[cut:].lstrip()
-    if remaining:
-        chunks.append(remaining)
-    return chunks
-
 
 # ── /setup 마법사 헬퍼 함수 ────────────────────────────────────────────────
 

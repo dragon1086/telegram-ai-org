@@ -24,8 +24,8 @@ _BASE_SURFACES = [
     ),
     BuiltinSurface(
         name="conversation_review",
-        command="./.venv/bin/python tools/orchestration_cli.py review-recent --hours 24 --engine claude-code --upload",
-        purpose="최근 대화/작업 로그 품질 점검 후 텔레그램 방에 리포트 첨부",
+        command="./.venv/bin/python tools/orchestration_cli.py auto-improve-recent --hours 24 --review-engine claude-code --apply-engine claude-code --push-branch --create-pr --upload",
+        purpose="최근 대화/작업 로그를 바탕으로 자동 코드 개선, 검증, PR-ready 결과를 생성",
     ),
 ]
 

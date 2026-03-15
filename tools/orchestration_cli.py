@@ -135,6 +135,7 @@ def cmd_route_request(args: argparse.Namespace) -> int:
     )
     plan = asyncio.run(orch.plan_request(args.text))
     print(json.dumps({
+        "lane": plan.lane,
         "route": plan.route,
         "complexity": plan.complexity,
         "rationale": plan.rationale,
@@ -175,6 +176,29 @@ def cmd_review_recent(args: argparse.Namespace) -> int:
         "--org-id", args.org_id,
         "--limit-lines", str(args.limit_lines),
     ]
+    if args.upload:
+        cmd.append("--upload")
+    env = dict(os.environ)
+    result = __import__("subprocess").run(cmd, cwd=str(PROJECT_ROOT), env=env)
+    return int(result.returncode)
+
+
+def cmd_auto_improve_recent(args: argparse.Namespace) -> int:
+    script = PROJECT_ROOT / "scripts" / "auto_improve_recent_conversations.py"
+    cmd = [
+        sys.executable,
+        str(script),
+        "--hours", str(args.hours),
+        "--org-id", args.org_id,
+        "--review-engine", args.review_engine,
+        "--apply-engine", args.apply_engine,
+        "--limit-lines", str(args.limit_lines),
+        "--max-actions", str(args.max_actions),
+    ]
+    if args.push_branch:
+        cmd.append("--push-branch")
+    if args.create_pr:
+        cmd.append("--create-pr")
     if args.upload:
         cmd.append("--upload")
     env = dict(os.environ)
@@ -237,6 +261,18 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--limit-lines", type=int, default=400)
     review.add_argument("--upload", action="store_true")
     review.set_defaults(func=cmd_review_recent)
+
+    auto_improve = sub.add_parser("auto-improve-recent")
+    auto_improve.add_argument("--hours", type=int, default=24)
+    auto_improve.add_argument("--org-id", default="global")
+    auto_improve.add_argument("--review-engine", default="claude-code", choices=["claude-code", "codex"])
+    auto_improve.add_argument("--apply-engine", default="claude-code", choices=["claude-code", "codex"])
+    auto_improve.add_argument("--limit-lines", type=int, default=500)
+    auto_improve.add_argument("--max-actions", type=int, default=1)
+    auto_improve.add_argument("--push-branch", action="store_true")
+    auto_improve.add_argument("--create-pr", action="store_true")
+    auto_improve.add_argument("--upload", action="store_true")
+    auto_improve.set_defaults(func=cmd_auto_improve_recent)
 
     send_file = sub.add_parser("send-file")
     send_file.add_argument("--org-id", default="global")
