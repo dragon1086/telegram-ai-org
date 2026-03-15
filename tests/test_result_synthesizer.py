@@ -13,6 +13,7 @@ from core.result_synthesizer import (
     ResultSynthesizer,
     SynthesisJudgment,
     SynthesisResult,
+    _result_excerpt,
 )
 
 
@@ -144,6 +145,14 @@ class TestKeywordSynthesize:
         ]
         result = synth._keyword_synthesize(subtasks)
         assert result.judgment == SynthesisJudgment.INSUFFICIENT
+
+
+def test_result_excerpt_preserves_head_and_tail() -> None:
+    text = "A" * 1800 + "B" * 900
+    excerpt = _result_excerpt(text, limit=2200)
+    assert excerpt.startswith("A" * 100)
+    assert excerpt.endswith("B" * 100)
+    assert "[중간 내용 생략]" in excerpt
 
 
 class TestSynthesizeIntegration:

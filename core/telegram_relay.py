@@ -11,6 +11,7 @@ import hashlib
 import os
 import re
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from loguru import logger
@@ -45,6 +46,8 @@ from core.pm_router import PMRouter, PMRoute
 from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR, KNOWN_DEPTS
 from core.orchestration_config import load_orchestration_config
 from core.orchestration_runbook import OrchestrationRunbook
+from core.attachment_manager import AttachmentContext
+from core.artifact_pipeline import prepare_upload_bundle
 from core.telegram_delivery import resolve_delivery_target
 from core.session_registry import SessionRegistry
 from core.discussion_parser import is_discussion_message, parse_discussion_tags
@@ -790,17 +793,16 @@ class TelegramRelay:
                 continue
             seen.add(path_text)
             path = Path(path_text)
-            if not path.exists() or not path.is_file():
-                continue
-            try:
-                await upload_file(
-                    safe_token,
-                    safe_chat_id,
-                    str(path),
-                    f"📎 {self.org_id} 산출물: {path.name}",
-                )
-            except Exception as exc:
-                logger.warning(f"[auto_upload:{self.org_id}] 업로드 실패 {path}: {exc}")
+            for artifact in prepare_upload_bundle(path):
+                try:
+                    await upload_file(
+                        safe_token,
+                        safe_chat_id,
+                        str(artifact),
+                        f"📎 {self.org_id} 산출물: {artifact.name}",
+                    )
+                except Exception as exc:
+                    logger.warning(f"[auto_upload:{self.org_id}] 업로드 실패 {artifact}: {exc}")
 
     # ── 메시지 처리 ────────────────────────────────────────────────────────
 
@@ -1231,19 +1233,33 @@ class TelegramRelay:
             save_path = save_dir / filename
             await tg_file.download_to_drive(save_path)
             caption = msg.caption or f"{filename} 파일을 분석해줘"
+            attachment = AttachmentContext.from_local_file(
+                kind="document",
+                local_path=save_path,
+                caption=caption,
+                original_filename=filename,
+                mime_type=msg.document.mime_type or "",
+            )
         elif msg.photo:
             photo = msg.photo[-1]
             tg_file = await context.bot.get_file(photo.file_id)
             save_path = save_dir / f"photo_{msg.message_id}.jpg"
             await tg_file.download_to_drive(save_path)
             caption = msg.caption or "이 이미지를 분석해줘"
+            attachment = AttachmentContext.from_local_file(
+                kind="photo",
+                local_path=save_path,
+                caption=caption,
+                original_filename=save_path.name,
+                mime_type="image/jpeg",
+            )
         else:
             return
 
         await msg.reply_text(f"📎 파일 수신: {save_path.name}\n처리 중...")
         logger.info(f"[on_attachment] 저장: {save_path}")
 
-        task = f"{caption}\n\n첨부파일 경로: {save_path}"
+        task = attachment.build_task_prompt()
         score = await self.confidence_scorer.score(task, self.identity)
         is_default = self.identity._data.get("default_handler", False)
         if score < DEFAULT_CONFIDENCE_THRESHOLD and not is_default:
@@ -1577,10 +1593,12 @@ class TelegramRelay:
         if self.context_db is not None:
             try:
                 import aiosqlite as _aiosqlite
+                cutoff = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
                 async with _aiosqlite.connect(self.context_db.db_path) as _db:
                     result = await _db.execute(
-                        "UPDATE pm_tasks SET status='assigned' WHERE status='running' AND assigned_dept=?",
-                        (self.org_id,),
+                        "UPDATE pm_tasks SET status='assigned' "
+                        "WHERE status='running' AND assigned_dept=? AND updated_at < ?",
+                        (self.org_id, cutoff),
                     )
                     await _db.commit()
                     if result.rowcount:
@@ -1964,14 +1982,14 @@ class TelegramRelay:
                 )
             self._advance_runbook(run_id, "조직 위임 실행 완료, verification phase 이동")
 
-            result = (response or "(완료)")[:1000]
-            await self.context_db.update_pm_task_status(task_id, "done", result=result)
+            full_result = (response or "(완료)")
+            await self.context_db.update_pm_task_status(task_id, "done", result=full_result)
             logger.info(f"[{self.org_id}] PM_TASK {task_id} 완료")
 
             # 결과를 채팅방에 공유
             # pm_bot은 "✅ [X] 태스크 T-xxx 완료" 패턴을 파싱해서 on_task_complete 트리거
             summary_prefix = f"{requester_mention} " if requester_mention else ""
-            summary = f"{summary_prefix}✅ [{dept_name}] 태스크 {task_id} 완료\n{result[:300]}"
+            summary = f"{summary_prefix}✅ [{dept_name}] 태스크 {task_id} 완료\n{full_result[:300]}"
             if self.app and self.app.bot:
                 await self.display.send_to_chat(
                     self.app.bot,

@@ -85,13 +85,13 @@ class ResultSynthesizer:
             return None
 
         dept_results = "\n".join(
-            f"- [{KNOWN_DEPTS.get(st.get('assigned_dept', ''), st.get('assigned_dept', '?'))}]: "
-            f"{st.get('result', '(결과 없음)')[:300]}"
+            f"## [{KNOWN_DEPTS.get(st.get('assigned_dept', ''), st.get('assigned_dept', '?'))}]\n"
+            f"{_result_excerpt(st.get('result', '(결과 없음)'))}"
             for st in subtasks
         )
 
         prompt = _SYNTHESIS_PROMPT.format(
-            original_request=original_request[:500],
+            original_request=original_request[:2000],
             dept_results=dept_results,
         )
 
@@ -228,3 +228,12 @@ def _parse_follow_up_line(line: str, follow_ups: list[dict]) -> None:
     task = parts.get("TASK", "")
     if dept and dept in KNOWN_DEPTS and task:
         follow_ups.append({"dept": dept, "description": task})
+
+
+def _result_excerpt(result: str, limit: int = 2200) -> str:
+    text = (result or "(결과 없음)").strip()
+    if len(text) <= limit:
+        return text
+    head = text[:1400].rstrip()
+    tail = text[-600:].lstrip()
+    return f"{head}\n\n[중간 내용 생략]\n\n{tail}"
