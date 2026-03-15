@@ -10,6 +10,8 @@ from scripts.auto_improve_recent_conversations import (
     ImprovementPlan,
     VerificationResult,
     _fallback_plan,
+    changed_files_are_safe,
+    validate_plan,
     write_run_artifacts,
 )
 
@@ -57,3 +59,41 @@ def test_write_run_artifacts_creates_summary(tmp_path: Path) -> None:
     content = summary_path.read_text(encoding="utf-8")
     assert "Auto improve" in content
     assert "auto/review-demo" in content
+
+
+def test_validate_plan_rejects_unsafe_files() -> None:
+    plan = ImprovementPlan(
+        summary="unsafe",
+        pr_title="unsafe",
+        branch_name="auto/review-unsafe",
+        actions=[
+            ImprovementAction(
+                title="bad",
+                rationale="bad",
+                files=["organizations.yaml"],
+                implementation_prompt="do it",
+                verify_commands=["pytest -q tests/test_pm_intercept.py"],
+            )
+        ],
+    )
+
+    try:
+        validate_plan(plan, max_actions=1, stamp="20260315-120000")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unsafe plan should fail")
+
+
+def test_changed_files_are_safe_allows_planned_and_tests() -> None:
+    assert changed_files_are_safe(
+        ["core/telegram_relay.py", "tests/test_pm_intercept.py"],
+        ["core/telegram_relay.py"],
+    ) is True
+
+
+def test_changed_files_are_safe_blocks_unplanned_config_changes() -> None:
+    assert changed_files_are_safe(
+        ["organizations.yaml"],
+        ["core/telegram_relay.py"],
+    ) is False
