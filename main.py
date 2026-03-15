@@ -9,20 +9,51 @@ import os
 import time
 from pathlib import Path
 
-# .env 로드
-env_file = Path(__file__).parent / ".env"
-if env_file.exists():
-    for line in env_file.read_text().splitlines():
+PROJECT_ROOT = Path(__file__).parent
+
+
+def _load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, _, v = line.partition("=")
             os.environ.setdefault(k.strip(), v.strip())
+
+
+for _env_path in (Path.home() / ".ai-org" / "config.yaml", PROJECT_ROOT / ".env"):
+    _load_env_file(_env_path)
 
 from core.message_bus import MessageBus
 from core.session_manager import SessionManager
 from core.memory_manager import MemoryManager
 from core.telegram_relay import TelegramRelay
 from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR
+from core.orchestration_config import load_orchestration_config
+
+
+def _resolve_runtime_binding(org_id: str) -> tuple[str, int, str]:
+    token = os.environ.get("PM_BOT_TOKEN", "")
+    chat_id_raw = os.environ.get("TELEGRAM_GROUP_CHAT_ID", "")
+    engine = "claude-code"
+
+    try:
+        cfg = load_orchestration_config(force_reload=True)
+        org = cfg.get_org(org_id)
+    except Exception:
+        org = None
+
+    if org is not None:
+        if not token:
+            token = org.token
+        if not chat_id_raw and org.chat_id is not None:
+            chat_id_raw = str(org.chat_id)
+        engine = org.preferred_engine or engine
+
+    if not token or not chat_id_raw:
+        raise RuntimeError(f"org '{org_id}' binding is incomplete")
+    return token, int(chat_id_raw), engine
 
 if __name__ == "__main__":
     # ── PID lock (중복 실행 방지) ─────────────────────────────────────────
@@ -38,43 +69,8 @@ if __name__ == "__main__":
         import sys; sys.exit(1)
     # ─────────────────────────────────────────────────────────────────────
 
-    token = os.environ["PM_BOT_TOKEN"]
-    chat_id = int(os.environ["TELEGRAM_GROUP_CHAT_ID"])
-
-    # 조직별 engine 설정 지원: PM_ORG_NAME이 설정되면 organizations.yaml에서 engine을 읽어온다.
-    # 없으면 기존 동작 유지 (claude-code 기본값).
     org_id = os.environ.get("PM_ORG_NAME", "global")
-    engine = "claude-code"
-
-    pm_org_name = os.environ.get("PM_ORG_NAME")
-    if pm_org_name:
-        # 1) organizations.yaml에서 시도
-        try:
-            from pathlib import Path as _Path
-            from core.org_registry import OrgRegistry
-            _registry = OrgRegistry(_Path(__file__).parent / "organizations.yaml")
-            _registry.load()
-            _org = _registry.get_org(pm_org_name)
-            if _org is not None:
-                engine = _org.engine
-        except Exception as _e:
-            import logging as _logging
-            _logging.warning(f"organizations.yaml에서 engine 로드 실패: {_e}")
-
-        # 2) organizations.yaml에 없으면 bots/{org_id}.yaml에서 engine 읽기
-        if engine == "claude-code":
-            try:
-                from pathlib import Path as _Path
-                _bot_yaml = _Path(__file__).parent / "bots" / f"{pm_org_name}.yaml"
-                if _bot_yaml.exists():
-                    import yaml as _yaml
-                    with open(_bot_yaml) as _f:
-                        _bot_cfg = _yaml.safe_load(_f) or {}
-                    if _bot_cfg.get("engine"):
-                        engine = _bot_cfg["engine"]
-            except Exception as _e2:
-                import logging as _logging
-                _logging.warning(f"bots/{pm_org_name}.yaml에서 engine 로드 실패: {_e2}")
+    token, chat_id, engine = _resolve_runtime_binding(org_id)
 
     session_manager = SessionManager()
     memory_manager = MemoryManager(org_id)

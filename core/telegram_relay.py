@@ -64,6 +64,14 @@ from core.verification import ENABLE_CROSS_VERIFICATION
 from core.goal_tracker import ENABLE_GOAL_TRACKER
 from core.task_poller import TaskPoller
 from core.telegram_formatting import split_message
+from core.setup_registration import (
+    default_identity_for_org,
+    parse_setup_identity,
+    refresh_legacy_bot_configs,
+    refresh_pm_identity_files,
+    upsert_org_in_canonical_config,
+    upsert_runtime_env_var,
+)
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
@@ -72,7 +80,7 @@ ARTIFACT_MARKER_RE = re.compile(r"\[ARTIFACT:([^\]]+)\]")
 PM_CHAT_REPLY_TIMEOUT_SEC = int(os.environ.get("PM_CHAT_REPLY_TIMEOUT_SEC", "120"))
 
 # /setup 마법사 ConversationHandler 상태
-SETUP_MENU, SETUP_AWAIT_TOKEN, SETUP_AWAIT_ENGINE = range(3)
+SETUP_MENU, SETUP_AWAIT_TOKEN, SETUP_AWAIT_ENGINE, SETUP_AWAIT_IDENTITY = range(4)
 ATTACHMENT_GROUP_DEBOUNCE_SEC = 1.2
 
 
@@ -1775,13 +1783,9 @@ class TelegramRelay:
         if update.message is None:
             return
 
-        existed = self.session_manager.session_exists(TEAM_ID)
-        self.session_manager.ensure_session(TEAM_ID)
+        initialized = self._ensure_runtime_bootstrap()
 
-        if not existed:
-            ctx = self.memory_manager.build_context()
-            if ctx:
-                self.session_manager.inject_context(TEAM_ID, ctx)
+        if initialized:
             await update.message.reply_text(
                 "🤖 **PM Bot 온라인**\n\n"
                 "tmux 세션에서 Claude Code가 실행 중입니다.\n"
@@ -1791,6 +1795,42 @@ class TelegramRelay:
             )
         else:
             await update.message.reply_text("✅ 이미 실행 중인 세션에 연결됩니다.")
+
+    def _ensure_runtime_bootstrap(self) -> bool:
+        existed = self.session_manager.session_exists(TEAM_ID)
+        self.session_manager.ensure_session(TEAM_ID)
+        if existed:
+            return False
+        ctx = self.memory_manager.build_context()
+        if ctx:
+            self.session_manager.inject_context(TEAM_ID, ctx)
+        return True
+
+    async def on_self_added_to_chat(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """봇이 그룹에 추가되면 /start 없이 자동 초기화한다."""
+        if update.message is None or update.effective_chat is None:
+            return
+        if update.effective_chat.id != self.allowed_chat_id:
+            return
+        new_members = getattr(update.message, "new_chat_members", None) or []
+        if not new_members:
+            return
+        me = await context.bot.get_me()
+        if not any(member.id == me.id for member in new_members):
+            return
+
+        initialized = self._ensure_runtime_bootstrap()
+        specialties = self.identity.get_specialty_text() or "미설정"
+        if initialized:
+            text = (
+                "✅ 봇 초기화 완료\n\n"
+                f"조직: {self.org_id}\n"
+                f"전문분야: {specialties}\n\n"
+                "이제 바로 메시지를 보내면 됩니다. 별도 `/start` 나 `/org` 초기 설정은 필요하지 않습니다."
+            )
+        else:
+            text = "✅ 이미 준비된 세션에 연결되어 있습니다. 바로 사용하시면 됩니다."
+        await update.message.reply_text(text)
 
     async def on_command_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """세션 상태, 메모리 크기, PM 정체성 출력."""
@@ -1935,52 +1975,83 @@ class TelegramRelay:
         return SETUP_AWAIT_ENGINE
 
     async def _setup_receive_engine(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """엔진 선택 콜백 → 등록 완료."""
+        """엔진 선택 콜백 → 조직 정체성 입력 단계."""
         query = update.callback_query
         await query.answer()
 
         engine = (query.data or "").replace("engine_", "") or "claude-code"
-        token = context.user_data.get("setup_token", "")
         username = context.user_data.get("setup_username", "")
-        bot_display = context.user_data.get("setup_bot_display", "")
-        chat_id = context.user_data.get("setup_chat_id", 0)
+        context.user_data["setup_engine"] = engine
 
         _engine_labels = {
             "claude-code": "Claude Code",
             "codex": "Codex",
             "auto": "자동 결정",
         }
+        identity = default_identity_for_org(username)
+        specialty_text = ",".join(identity.specialties) if identity.specialties else ""
         await query.edit_message_text(
-            f"✅ 엔진 선택: `{engine}` — {_engine_labels.get(engine, engine)}\n\n⚙️ 등록 중...",
+            f"✅ 엔진 선택: `{engine}` — {_engine_labels.get(engine, engine)}\n\n"
+            "🏷️ *조직 정체성을 입력하세요.*\n"
+            "형식: `역할|전문분야1,전문분야2|방향성`\n\n"
+            f"기본값:\n`{identity.role}|{specialty_text}|{identity.direction}`\n\n"
+            "기본값을 그대로 쓰려면 `기본` 이라고 입력하세요.",
             parse_mode="Markdown",
         )
+        return SETUP_AWAIT_IDENTITY
+
+    async def _setup_receive_identity(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """조직 정체성 수신 → 등록 완료."""
+        if update.message is None:
+            return SETUP_AWAIT_IDENTITY
+
+        token = context.user_data.get("setup_token", "")
+        username = context.user_data.get("setup_username", "")
+        bot_display = context.user_data.get("setup_bot_display", "")
+        chat_id = context.user_data.get("setup_chat_id", 0)
+        engine = context.user_data.get("setup_engine", "claude-code")
+        raw_identity = (update.message.text or "").strip()
+
+        _engine_labels = {
+            "claude-code": "Claude Code",
+            "codex": "Codex",
+            "auto": "자동 결정",
+        }
+        processing_msg = await update.effective_chat.send_message("⚙️ 조직 등록 중...")
 
         try:
+            identity = parse_setup_identity(username, raw_identity)
             env_key = f"BOT_TOKEN_{username.upper().replace('-', '_')}"
-            _append_env_var(env_key, token)
-            _upsert_org_in_canonical_config(
+            upsert_runtime_env_var(Path(__file__).parent.parent, env_key, token)
+            upsert_org_in_canonical_config(
+                Path(__file__).parent.parent,
                 username=username,
                 token_env=env_key,
                 chat_id=chat_id,
                 engine=engine,
+                identity=identity,
             )
-            _refresh_legacy_bot_configs()
+            refresh_legacy_bot_configs(Path(__file__).parent.parent)
+            refresh_pm_identity_files(Path(__file__).parent.parent)
             pid = _launch_bot_subprocess(token, username, chat_id)
-            await _set_org_bot_commands(token)
+            org_kind = _profile_bundle_for_org(username)["kind"]
+            await _set_org_bot_commands(token, kind=org_kind)
 
-            await query.edit_message_text(
+            await processing_msg.edit_text(
                 f"✅ *@{username} 등록 완료!*\n\n"
                 f"봇 이름: {bot_display}\n"
+                f"역할: {identity.role}\n"
+                f"전문분야: {', '.join(identity.specialties) or '미설정'}\n"
                 f"엔진: `{engine}` ({_engine_labels.get(engine, engine)})\n"
                 f"PID: {pid}\n\n"
-                f"canonical organizations.yaml 반영 완료\n"
-                f"봇이 시작되었습니다. 그룹방에 초대 후\n"
-                f"`/start@{username}` 으로 초기화하세요.",
+                "canonical config / PM identity / bot commands 동기화 완료\n"
+                "봇이 시작되었습니다. 그룹방에 초대하면 자동으로 초기화됩니다.\n"
+                "별도 `/org` 나 `/start` 초기 설정은 필요하지 않습니다.",
                 parse_mode="Markdown",
             )
         except Exception as e:
             logger.error(f"봇 등록 실패: {e}")
-            await query.edit_message_text(f"❌ 등록 실패: {e}")
+            await processing_msg.edit_text(f"❌ 등록 실패: {e}")
 
         return ConversationHandler.END
 
@@ -2212,6 +2283,10 @@ class TelegramRelay:
                     CallbackQueryHandler(self._setup_receive_engine, pattern="^engine_"),
                     CommandHandler("cancel", self._setup_cancel),
                 ],
+                SETUP_AWAIT_IDENTITY: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._setup_receive_identity),
+                    CommandHandler("cancel", self._setup_cancel),
+                ],
             },
             fallbacks=[CommandHandler("cancel", self._setup_cancel)],
             per_chat=True,
@@ -2223,6 +2298,7 @@ class TelegramRelay:
         self.app.add_handler(CommandHandler("start", self.on_command_start))
         self.app.add_handler(CommandHandler("status", self.on_command_status))
         self.app.add_handler(CommandHandler("reset", self.on_command_reset))
+        self.app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self.on_self_added_to_chat))
         self.app.add_handler(
             MessageHandler(filters.TEXT, self.on_message)  # 명령어 포함
         )
@@ -2970,13 +3046,13 @@ class TelegramRelay:
 
 # ── /setup 마법사 헬퍼 함수 ────────────────────────────────────────────────
 
-async def _set_org_bot_commands(token: str) -> None:
+async def _set_org_bot_commands(token: str, *, kind: str = "specialist") -> None:
     """새로 등록된 조직봇에 전용 명령어 세트를 자동으로 등록한다."""
     from telegram import Bot as _TGBot
     from core.bot_commands import get_bot_commands
     try:
         bot = _TGBot(token=token)
-        org_commands = get_bot_commands("specialist")
+        org_commands = get_bot_commands(kind)
         await bot.set_my_commands(org_commands)
         logger.info(f"조직봇 명령어 자동 등록 완료: {[c.command for c in org_commands]}")
     except Exception as e:

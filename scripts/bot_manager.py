@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""봇 프로세스 관리 — 시작/중지/목록/전체재시작.
+"""봇 프로세스 관리 — canonical organizations 기준 프로세스 관리.
 
 사용법:
   python scripts/bot_manager.py list
@@ -11,18 +11,93 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).parent.parent
 PID_DIR = Path.home() / ".ai-org" / "bots"
 
 
+def _runtime_pid_file(org_id: str) -> Path:
+    return Path(f"/tmp/telegram-ai-org-{org_id}.pid")
+
+
+def _read_pid(path: Path) -> int | None:
+    try:
+        return int(path.read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _process_command(pid: int) -> str:
+    try:
+        return subprocess.check_output(
+            ["ps", "eww", "-p", str(pid), "-o", "command="],
+            text=True,
+        ).strip()
+    except subprocess.CalledProcessError:
+        return ""
+
+
+def _process_matches_org(pid: int, org_id: str) -> bool:
+    command = _process_command(pid)
+    return bool(command and "main.py" in command and f"PM_ORG_NAME={org_id}" in command)
+
+
+def _scan_live_bot_pids() -> dict[str, set[int]]:
+    try:
+        output = subprocess.check_output(
+            ["ps", "eww", "-ax", "-o", "pid=,command="],
+            text=True,
+        )
+    except subprocess.CalledProcessError:
+        return {}
+
+    live: dict[str, set[int]] = {}
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        pid_text, _, command = line.partition(" ")
+        if not pid_text.isdigit() or "main.py" not in command or "PM_ORG_NAME=" not in command:
+            continue
+        match = re.search(r"PM_ORG_NAME=([^\s]+)", command)
+        if not match:
+            continue
+        live.setdefault(match.group(1), set()).add(int(pid_text))
+    return live
+
+
+def _find_live_pids(org_id: str) -> set[int]:
+    return set(_scan_live_bot_pids().get(org_id, set()))
+
+
+def _known_pids_for_org(org_id: str) -> set[int]:
+    pids = _find_live_pids(org_id)
+    for path in (PID_DIR / f"{org_id}.pid", _runtime_pid_file(org_id)):
+        pid = _read_pid(path)
+        if pid is not None and _process_matches_org(pid, org_id):
+            pids.add(pid)
+    return pids
+
+
+def _cleanup_tracking_files(org_id: str) -> None:
+    for path in (
+        PID_DIR / f"{org_id}.pid",
+        PID_DIR / f"{org_id}.json",
+        _runtime_pid_file(org_id),
+    ):
+        path.unlink(missing_ok=True)
+
+
 def start_bot(token: str, org_id: str, chat_id: int) -> int:
     """새 봇 프로세스를 시작하고 PID를 반환한다."""
     PID_DIR.mkdir(parents=True, exist_ok=True)
+    stop_bot(org_id)
     env = {
         **os.environ,
         "PM_BOT_TOKEN": token,
@@ -32,12 +107,13 @@ def start_bot(token: str, org_id: str, chat_id: int) -> int:
     proc = subprocess.Popen(
         [sys.executable, str(PROJECT_DIR / "main.py")],
         env=env,
+        stdin=subprocess.DEVNULL,
         stdout=open(Path.home() / ".ai-org" / f"{org_id}.log", "a"),
         stderr=subprocess.STDOUT,
         cwd=str(PROJECT_DIR),
+        start_new_session=True,
     )
     (PID_DIR / f"{org_id}.pid").write_text(str(proc.pid))
-    # 재시작에 필요한 메타데이터 저장
     meta = {"token": token, "org_id": org_id, "chat_id": chat_id}
     (PID_DIR / f"{org_id}.json").write_text(json.dumps(meta))
     return proc.pid
@@ -45,37 +121,62 @@ def start_bot(token: str, org_id: str, chat_id: int) -> int:
 
 def stop_bot(org_id: str) -> bool:
     """봇 프로세스를 중지한다. 성공하면 True 반환."""
-    pid_file = PID_DIR / f"{org_id}.pid"
-    if not pid_file.exists():
-        return False
-    pid = int(pid_file.read_text().strip())
-    try:
-        os.kill(pid, signal.SIGTERM)
-        pid_file.unlink()
-        return True
-    except ProcessLookupError:
-        pid_file.unlink(missing_ok=True)
-        return False
+    had_tracking = any(
+        path.exists()
+        for path in (
+            PID_DIR / f"{org_id}.pid",
+            PID_DIR / f"{org_id}.json",
+            _runtime_pid_file(org_id),
+        )
+    )
+    pids = _known_pids_for_org(org_id)
+    stopped = False
+
+    for pid in sorted(pids):
+        try:
+            os.kill(pid, signal.SIGTERM)
+            stopped = True
+        except ProcessLookupError:
+            continue
+
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        remaining = _find_live_pids(org_id)
+        if not remaining:
+            break
+        time.sleep(0.2)
+
+    for pid in sorted(_find_live_pids(org_id)):
+        try:
+            os.kill(pid, signal.SIGKILL)
+            stopped = True
+        except ProcessLookupError:
+            continue
+
+    _cleanup_tracking_files(org_id)
+    return stopped or had_tracking
 
 
 def restart_all_bots() -> None:
-    """pm_bot + 모든 조직봇을 순서대로 재시작한다 (Telegram Conflict 방지: 2초 딜레이)."""
     restart_script = PROJECT_DIR / "scripts" / "restart_bots.sh"
     subprocess.run(["bash", str(restart_script)], check=False)
 
 
 def list_bots() -> list[dict]:
-    """실행 중인 봇 목록을 반환한다."""
-    if not PID_DIR.exists():
-        return []
+    tracked_orgs = set()
+    if PID_DIR.exists():
+        tracked_orgs.update(path.stem for path in PID_DIR.glob("*.pid"))
+        tracked_orgs.update(path.stem for path in PID_DIR.glob("*.json"))
+    tracked_orgs.update(_scan_live_bot_pids())
+
     bots = []
-    for pid_file in sorted(PID_DIR.glob("*.pid")):
-        org_id = pid_file.stem
-        pid = int(pid_file.read_text().strip())
-        try:
-            os.kill(pid, 0)  # 프로세스 존재 확인 (신호 미발송)
+    for org_id in sorted(tracked_orgs):
+        live_pids = sorted(_find_live_pids(org_id))
+        if live_pids:
+            pid: int | str = live_pids[0] if len(live_pids) == 1 else ",".join(str(p) for p in live_pids)
             status = "running"
-        except ProcessLookupError:
+        else:
+            pid = _read_pid(PID_DIR / f"{org_id}.pid") or "-"
             status = "dead"
         bots.append({"org_id": org_id, "pid": pid, "status": status})
     return bots
