@@ -60,6 +60,32 @@ def collect_recent_log_lines(hours: int, limit_lines: int) -> str:
     return "\n".join(interesting)
 
 
+def heuristic_review_markdown(transcript: str, hours: int) -> str:
+    lines = [line for line in transcript.splitlines() if line.strip()]
+    receipts = sum("텔레그램 수신" in line for line in lines)
+    task_detects = sum("태스크 감지" in line for line in lines)
+    task_starts = sum("PM_TASK 실행 시작" in line for line in lines)
+    syntheses = sum("결과 합성" in line for line in lines)
+    uploads = sum("auto_upload" in line for line in lines)
+    return (
+        f"# 최근 {hours}시간 대화/작업 리뷰\n\n"
+        "## 주요 관찰\n"
+        f"- 텔레그램 수신 로그: {receipts}건\n"
+        f"- TaskPoller 태스크 감지: {task_detects}건\n"
+        f"- PM_TASK 실행 시작: {task_starts}건\n"
+        f"- 결과 합성: {syntheses}건\n"
+        f"- 자동 업로드 관련 로그: {uploads}건\n\n"
+        "## 잠재 이슈\n"
+        "- 모델 기반 리뷰 생성이 실패했거나 불안정할 수 있음\n"
+        "- 수신/감지/실행 시작 건수 차이를 보고 중복 감지 또는 미완료 체인을 점검할 필요가 있음\n"
+        "- auto_upload 로그가 적으면 첨부 전달 체인 검증이 더 필요함\n\n"
+        "## 권장 액션\n"
+        "- 최신 review 리포트와 봇 로그를 같이 확인해 반복 패턴을 비교할 것\n"
+        "- task_poller, synthesis, attachment 관련 로그를 우선 점검할 것\n"
+        "- 필요 시 `scripts/review_recent_conversations.py --engine claude-code`를 재실행할 것\n"
+    )
+
+
 def _extract_timestamp(line: str) -> datetime | None:
     match = re.match(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", line)
     if not match:
@@ -84,12 +110,21 @@ async def build_report(org_id: str, transcript: str, hours: int, engine: str) ->
         f"[최근 로그]\n{transcript or '(최근 로그 없음)'}"
     )
     try:
-        return await asyncio.wait_for(client.complete(prompt), timeout=120.0)
+        report = await asyncio.wait_for(client.complete(prompt), timeout=120.0)
+        if report.strip().startswith(("❌", "API Error")) or len(report.strip()) < 80:
+            return heuristic_review_markdown(transcript, hours)
+        return report
     except Exception:
         provider = get_provider()
         if provider is None:
-            raise
-        return await asyncio.wait_for(provider.complete(prompt, timeout=30.0), timeout=40.0)
+            return heuristic_review_markdown(transcript, hours)
+        try:
+            report = await asyncio.wait_for(provider.complete(prompt, timeout=30.0), timeout=40.0)
+            if report.strip().startswith(("❌", "API Error")) or len(report.strip()) < 80:
+                return heuristic_review_markdown(transcript, hours)
+            return report
+        except Exception:
+            return heuristic_review_markdown(transcript, hours)
 
 
 def save_report(output_dir: Path, content: str) -> Path:
