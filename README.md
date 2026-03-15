@@ -36,10 +36,17 @@
 ./scripts/setup.sh
 
 # 2. 설치 마법사 실행 (PM 봇 + 워커 봇 대화형 설정)
-python scripts/setup_wizard.py
+./.venv/bin/python scripts/setup_wizard.py
 
 # 3. 모든 봇 시작
 bash scripts/start_all.sh
+```
+
+테스트 실행도 전역 Python 대신 프로젝트 가상환경을 사용합니다.
+
+```bash
+./.venv/bin/pytest -q
+./.venv/bin/pytest tests/test_pm_orchestrator.py -q
 ```
 
 ## 텔레그램 전달 품질

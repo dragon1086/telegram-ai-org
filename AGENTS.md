@@ -33,10 +33,10 @@ This file applies to the entire repository rooted at `/Users/aerok/Desktop/rocky
 
 - Run targeted tests for the area you changed first, then broader coverage if the change crosses modules.
 - Useful commands:
-  - `pytest -q`
-  - `pytest tests/test_pm_routing.py -q`
-  - `pytest tests/test_pm_orchestrator.py -q`
-  - `pytest tests/test_context_db_pm.py -q`
+  - `./.venv/bin/pytest -q`
+  - `./.venv/bin/pytest tests/test_pm_routing.py -q`
+  - `./.venv/bin/pytest tests/test_pm_orchestrator.py -q`
+  - `./.venv/bin/pytest tests/test_context_db_pm.py -q`
 
 ## Change Guidance
 
