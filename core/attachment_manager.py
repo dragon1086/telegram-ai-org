@@ -22,6 +22,7 @@ class AttachmentContext:
     mime_type: str
     size_bytes: int
     preview_text: str = ""
+    analysis_text: str = ""
 
     @classmethod
     def from_local_file(
@@ -63,6 +64,12 @@ class AttachmentContext:
                 "",
                 "[첨부 미리보기]",
                 self.preview_text,
+            ])
+        if self.analysis_text:
+            lines.extend([
+                "",
+                "[첨부 해석 요약]",
+                self.analysis_text,
             ])
         elif self.kind == "photo":
             lines.extend([

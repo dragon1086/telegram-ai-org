@@ -255,6 +255,22 @@ class ContextDB:
             await db.commit()
         return await self.get_pm_task(task_id)
 
+    async def update_pm_task_metadata(self, task_id: str, metadata: dict) -> dict | None:
+        """PM 태스크 메타데이터 병합 업데이트."""
+        task = await self.get_pm_task(task_id)
+        if task is None:
+            return None
+        merged = dict(task.get("metadata") or {})
+        merged.update(metadata)
+        now = _utcnow_iso()
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "UPDATE pm_tasks SET metadata=?, updated_at=? WHERE id=?",
+                (json.dumps(merged, ensure_ascii=False), now, task_id),
+            )
+            await db.commit()
+        return await self.get_pm_task(task_id)
+
     async def get_pm_task(self, task_id: str) -> dict | None:
         """PM 태스크 조회."""
         async with aiosqlite.connect(self.db_path) as db:
@@ -461,23 +477,137 @@ class ContextDB:
             cursor = await db.execute("""
                 SELECT * FROM pm_tasks t
                 WHERE t.assigned_dept = ?
-                  AND t.status NOT IN ('done', 'failed', 'running')
-                  AND (
-                      t.status = 'assigned'
-                      OR (
-                          t.status = 'pending'
-                          AND NOT EXISTS (
-                              SELECT 1 FROM pm_task_dependencies d
-                              JOIN pm_tasks dep ON dep.id = d.depends_on
-                              WHERE d.task_id = t.id
-                                AND dep.status != 'done'
-                          )
-                      )
-                  )
+                  AND t.status NOT IN ('done', 'failed')
                 ORDER BY t.created_at
             """, (dept_id,))
             rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
+            tasks = [self._decode_pm_task_row(r) for r in rows]
+            now = datetime.now(UTC)
+            result: list[dict] = []
+            for task in tasks:
+                metadata = task.get("metadata") or {}
+                retry_after = metadata.get("retry_after_at")
+                if retry_after:
+                    try:
+                        if datetime.fromisoformat(retry_after) > now:
+                            continue
+                    except ValueError:
+                        pass
+                if task["status"] == "assigned":
+                    result.append(task)
+                    continue
+                if task["status"] == "pending":
+                    deps_ready = True
+                    async with aiosqlite.connect(self.db_path) as dep_db:
+                        dep_cursor = await dep_db.execute(
+                            """SELECT 1 FROM pm_task_dependencies d
+                               JOIN pm_tasks dep ON dep.id = d.depends_on
+                               WHERE d.task_id = ? AND dep.status != 'done'
+                               LIMIT 1""",
+                            (task["id"],),
+                        )
+                        deps_ready = await dep_cursor.fetchone() is None
+                    if deps_ready:
+                        result.append(task)
+                    continue
+                if task["status"] != "running":
+                    continue
+                lease_until = metadata.get("lease_expires_at")
+                if not lease_until:
+                    continue
+                try:
+                    if datetime.fromisoformat(lease_until) < now:
+                        result.append(task)
+                except ValueError:
+                    result.append(task)
+            return result
+
+    async def claim_pm_task_lease(
+        self,
+        task_id: str,
+        owner: str,
+        ttl_seconds: float,
+    ) -> dict | None:
+        """태스크 lease를 획득한다. 이미 유효한 lease가 있으면 None."""
+        task = await self.get_pm_task(task_id)
+        if task is None:
+            return None
+        metadata = dict(task.get("metadata") or {})
+        now = datetime.now(UTC)
+        lease_until_raw = metadata.get("lease_expires_at")
+        lease_owner = metadata.get("lease_owner")
+        if lease_until_raw and lease_owner and lease_owner != owner:
+            try:
+                lease_until = datetime.fromisoformat(lease_until_raw)
+                if lease_until > now:
+                    return None
+            except ValueError:
+                pass
+        metadata.update({
+            "lease_owner": owner,
+            "lease_expires_at": (now + timedelta(seconds=ttl_seconds)).isoformat(),
+            "lease_heartbeat_at": now.isoformat(),
+        })
+        now_iso = _utcnow_iso()
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "UPDATE pm_tasks SET status='running', metadata=?, updated_at=? WHERE id=?",
+                (json.dumps(metadata, ensure_ascii=False), now_iso, task_id),
+            )
+            await db.commit()
+        return await self.get_pm_task(task_id)
+
+    async def heartbeat_pm_task_lease(
+        self,
+        task_id: str,
+        owner: str,
+        ttl_seconds: float,
+    ) -> dict | None:
+        task = await self.get_pm_task(task_id)
+        if task is None:
+            return None
+        metadata = dict(task.get("metadata") or {})
+        if metadata.get("lease_owner") != owner:
+            return None
+        now = datetime.now(UTC)
+        metadata.update({
+            "lease_expires_at": (now + timedelta(seconds=ttl_seconds)).isoformat(),
+            "lease_heartbeat_at": now.isoformat(),
+        })
+        return await self.update_pm_task_metadata(task_id, metadata)
+
+    async def release_pm_task_lease(
+        self,
+        task_id: str,
+        owner: str,
+        *,
+        requeue_if_running: bool = False,
+        retry_delay_seconds: float = 0.0,
+    ) -> dict | None:
+        task = await self.get_pm_task(task_id)
+        if task is None:
+            return None
+        metadata = dict(task.get("metadata") or {})
+        if metadata.get("lease_owner") != owner:
+            return task
+        metadata.pop("lease_owner", None)
+        metadata.pop("lease_expires_at", None)
+        metadata.pop("lease_heartbeat_at", None)
+        if retry_delay_seconds > 0:
+            metadata["retry_after_at"] = (datetime.now(UTC) + timedelta(seconds=retry_delay_seconds)).isoformat()
+        else:
+            metadata.pop("retry_after_at", None)
+        now = _utcnow_iso()
+        status = task["status"]
+        if requeue_if_running and status == "running":
+            status = "assigned"
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "UPDATE pm_tasks SET status=?, metadata=?, updated_at=? WHERE id=?",
+                (status, json.dumps(metadata, ensure_ascii=False), now, task_id),
+            )
+            await db.commit()
+        return await self.get_pm_task(task_id)
 
     # ── Auto-Dispatch 헬퍼 ────────────────────────────────────────────────
 

@@ -47,6 +47,7 @@ from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR, KNOWN_DEPTS
 from core.orchestration_config import load_orchestration_config
 from core.orchestration_runbook import OrchestrationRunbook
 from core.attachment_manager import AttachmentContext
+from core.attachment_analysis import AttachmentAnalyzer
 from core.artifact_pipeline import prepare_upload_bundle
 from core.builtin_surfaces import recommend_builtin_surfaces
 from core.telegram_delivery import resolve_delivery_target
@@ -106,6 +107,7 @@ class TelegramRelay:
 
         # PM 집단 기억 — PM 간 맥락 공유
         self.global_context = GlobalContext()
+        self._attachment_analyzer = AttachmentAnalyzer()
         self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
         self.display = DisplayLimiter(
@@ -1262,6 +1264,8 @@ class TelegramRelay:
             )
         else:
             return
+
+        attachment.analysis_text = await self._attachment_analyzer.analyze(attachment)
 
         await msg.reply_text(f"📎 파일 수신: {save_path.name}\n처리 중...")
         logger.info(f"[on_attachment] 저장: {save_path}")

@@ -11,8 +11,8 @@ from loguru import logger
 
 
 CODEX_CLI = os.environ.get("CODEX_CLI_PATH", "codex")
-DEFAULT_TIMEOUT = 300
-COMPLEX_TASK_TIMEOUT = 900
+DEFAULT_TIMEOUT = int(os.environ.get("CODEX_DEFAULT_TIMEOUT_SEC", "1800"))
+COMPLEX_TASK_TIMEOUT = int(os.environ.get("CODEX_COMPLEX_TIMEOUT_SEC", "14400"))
 AGENT_DIRS = [
     Path.home() / ".claude" / "agents",
     Path.home() / ".ai-org" / "agents",
