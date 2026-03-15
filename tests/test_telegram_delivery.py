@@ -39,7 +39,10 @@ async def test_auto_upload_uses_configured_target(tmp_path, monkeypatch):
 
     await relay._auto_upload(f"생성됨: {artifact}", token="bad-token", chat_id=777)
 
-    assert uploads == [("cfg-token", 123, str(artifact), f"📎 global 산출물: {artifact.name}")]
+    assert uploads[0] == ("cfg-token", 123, str(artifact), f"📎 global 산출물: {artifact.name}")
+    assert uploads[1][0] == "cfg-token"
+    assert uploads[1][1] == 123
+    assert uploads[1][2].endswith(".telegram-preview.html")
 
 
 @pytest.mark.asyncio

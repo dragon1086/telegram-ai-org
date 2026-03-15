@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Protocol
+from pathlib import Path
 
 from core.orchestration_config import load_orchestration_config
 from core.pm_identity import PMIdentity
@@ -39,10 +40,12 @@ class PMDecisionClient:
         *,
         engine: str = "auto",
         session_store: SessionStore | None = None,
+        default_workdir: str | None = None,
     ) -> None:
         self.org_id = org_id
         self.engine = _resolve_engine(org_id, engine)
         self._session_store = session_store
+        self._default_workdir = default_workdir or str(Path(__file__).resolve().parent.parent)
         self._runner = None
 
     def _base_system_prompt(self) -> str:
@@ -80,6 +83,7 @@ class PMDecisionClient:
         workdir: str | None = None,
     ) -> str:
         runner = self._get_runner()
+        resolved_workdir = workdir or self._default_workdir
         combined_system = self._base_system_prompt()
         if system_prompt:
             combined_system = f"{combined_system}\n\n{system_prompt}"
@@ -88,7 +92,7 @@ class PMDecisionClient:
             full_prompt = f"{combined_system}\n\n{prompt}"
             return await runner.run(
                 full_prompt,
-                workdir=workdir,
+                workdir=resolved_workdir,
                 workdir_hint=prompt,
             )
 
@@ -98,5 +102,5 @@ class PMDecisionClient:
             org_id=self.org_id,
             session_store=self._session_store,
             global_context=None,
-            workdir=workdir,
+            workdir=resolved_workdir,
         )
