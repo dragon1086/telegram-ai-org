@@ -219,6 +219,64 @@ class TestPMOrchestratorWiring:
         assert relay._is_dept_org is True
 
 
+class TestDeptBotIgnoreUserTraffic:
+    @pytest.mark.asyncio
+    async def test_dept_bot_ignores_general_user_message(self):
+        with patch("core.telegram_relay.ENABLE_PM_ORCHESTRATOR", True), patch(
+            "core.telegram_relay.KNOWN_DEPTS", {"aiorg_engineering_bot": "개발실"}
+        ):
+            from core.telegram_relay import TelegramRelay
+
+            relay = TelegramRelay(
+                token="fake",
+                allowed_chat_id=123,
+                session_manager=MagicMock(),
+                memory_manager=MagicMock(),
+                org_id="aiorg_engineering_bot",
+            )
+            relay._handle_command = AsyncMock()
+            relay._reply_with_pm_chat = AsyncMock()
+            relay.display.send_reply = AsyncMock()
+
+            update = MagicMock()
+            update.effective_chat.id = 123
+            update.message.text = "일반 사용자 메시지"
+            update.message.from_user.is_bot = False
+            update.message.date = None
+
+            await relay.on_message(update, MagicMock())
+
+            relay._handle_command.assert_not_called()
+            relay._reply_with_pm_chat.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dept_bot_ignores_user_attachment(self):
+        with patch("core.telegram_relay.ENABLE_PM_ORCHESTRATOR", True), patch(
+            "core.telegram_relay.KNOWN_DEPTS", {"aiorg_engineering_bot": "개발실"}
+        ):
+            from core.telegram_relay import TelegramRelay
+
+            relay = TelegramRelay(
+                token="fake",
+                allowed_chat_id=123,
+                session_manager=MagicMock(),
+                memory_manager=MagicMock(),
+                org_id="aiorg_engineering_bot",
+            )
+
+            update = MagicMock()
+            update.effective_chat.id = 123
+            update.message.document = None
+            update.message.photo = [MagicMock(file_id="p1")]
+
+            context = MagicMock()
+            context.bot.get_file = AsyncMock()
+
+            await relay.on_attachment(update, context)
+
+            context.bot.get_file.assert_not_called()
+
+
 # ── _handle_pm_task 단위 테스트 ───────────────────────────────────────────
 
 class TestHandlePMTask:

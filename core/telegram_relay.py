@@ -828,6 +828,11 @@ class TelegramRelay:
         if not text:
             return
 
+        # 명령어는 허용하되, PM 오케스트레이터 모드의 부서 봇은 일반 사용자 메시지를 처리하지 않는다.
+        if text.startswith("/"):
+            await self._handle_command(text, update, context)
+            return
+
         # 봇 메시지 처리 — 협업 요청, [PM_TASK:...], 토론 태그 수락
         sender = update.message.from_user
         if sender and sender.is_bot:
@@ -842,17 +847,16 @@ class TelegramRelay:
                 await self._handle_pm_done_event(text)
             return
 
+        if self._is_dept_org:
+            logger.debug(f"[{self.org_id}] PM 오케스트레이터 활성 — 일반 사용자 메시지 무시")
+            return
+
         message_id = str(update.message.message_id)
         # 봇 시작 이전 메시지 무시 (pending updates 방지)
         if update.message.date and update.message.date.timestamp() < self._start_time - 5:
             logger.debug(f"[{self.org_id}] 오래된 메시지 무시 (message_id={message_id})")
             return
         logger.info(f"텔레그램 수신 [{self.org_id}]: {text[:80]}")
-
-        # 명령어 처리 (/ 로 시작)
-        if text.startswith("/"):
-            await self._handle_command(text, update, context)
-            return
 
         # LLM 기반 라우팅 (pm_bot 전용)
         _replied_context = ""
@@ -1231,6 +1235,9 @@ class TelegramRelay:
         if msg is None:
             return
         if update.effective_chat is None or update.effective_chat.id != self.allowed_chat_id:
+            return
+        if self._is_dept_org:
+            logger.debug(f"[{self.org_id}] PM 오케스트레이터 활성 — 일반 사용자 첨부 무시")
             return
 
         save_dir = Path.home() / ".ai-org" / "uploads"
