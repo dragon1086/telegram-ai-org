@@ -52,6 +52,7 @@ from core.attachment_analysis import AttachmentAnalyzer
 from core.artifact_pipeline import prepare_upload_bundle
 from core.builtin_surfaces import recommend_builtin_surfaces
 from core.telegram_delivery import resolve_delivery_target
+from core.telegram_user_guardrail import ensure_user_friendly_output
 from core.session_registry import SessionRegistry
 from core.discussion_parser import is_discussion_message, parse_discussion_tags
 from core.discussion import ENABLE_DISCUSSION_PROTOCOL
@@ -64,6 +65,8 @@ TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
 USE_NL_CLASSIFIER = True  # 2-tier NLClassifier 활성화 플래그 (False 시 기존 키워드 로직 사용)
 AUTO_UPLOAD_FILE_RE = re.compile(r"(?:(?<=\s)|^)(~?/[^ \t\r\n'\"`]+\.\w+)")
+ARTIFACT_MARKER_RE = re.compile(r"\[ARTIFACT:([^\]]+)\]")
+PM_CHAT_REPLY_TIMEOUT_SEC = int(os.environ.get("PM_CHAT_REPLY_TIMEOUT_SEC", "120"))
 
 # /setup 마법사 ConversationHandler 상태
 SETUP_MENU, SETUP_AWAIT_TOKEN, SETUP_AWAIT_ENGINE = range(3)
@@ -220,12 +223,15 @@ class TelegramRelay:
     ) -> object | None:
         """PMOrchestrator용 텔레그램 메시지 발송 콜백."""
         if self.app and self.app.bot:
-            return await self.display.send_to_chat(
+            visible_text = ARTIFACT_MARKER_RE.sub("", text).strip() or "첨부 파일을 전송합니다."
+            sent = await self.display.send_to_chat(
                 self.app.bot,
                 chat_id,
-                text,
+                visible_text,
                 reply_to_message_id=reply_to_message_id,
             )
+            await self._auto_upload(text, self.token, chat_id)
+            return sent
         return None
 
     def _make_runner(self):
@@ -269,6 +275,128 @@ class TelegramRelay:
             return "\n\n현재 진행 중인 태스크:\n" + "\n".join(lines)
         except Exception:
             return ""
+
+    @staticmethod
+    def _build_user_expectations(text: str) -> list[str]:
+        lower = text.lower()
+        expectations = [
+            "첫 문단에서 사용자의 질문이나 불만에 직접 답한다.",
+            "파일 경로·링크·문서 위치만 나열하지 말고 핵심 내용을 먼저 설명한다.",
+            "확인한 내용, 바뀐 점, 다음 조치를 구체적으로 적는다.",
+        ]
+        if any(token in lower for token in ("불친절", "친절", "불편")):
+            expectations.append("톤은 정중하고 협업적으로 유지하되, 모호한 표현은 줄인다.")
+        if "요약" in text:
+            expectations.append("요약은 결론, 근거, 남은 이슈를 포함하고 위치 안내만으로 끝내지 않는다.")
+        if any(token in lower for token in ("반응이 없", "응답이 없", "무응답", "대답이 없")):
+            expectations.append("무응답이 있었다면 원인과 복구 상태를 분명히 설명한다.")
+        if any(token in lower for token in ("첨부", "파일", "md", "슬라이드", "이미지")):
+            expectations.append("필요한 산출물이나 첨부 여부를 답변 본문에서 먼저 안내한다.")
+        deduped: list[str] = []
+        for item in expectations:
+            if item not in deduped:
+                deduped.append(item)
+        return deduped[:6]
+
+    async def _build_conversation_context_packet(
+        self,
+        text: str,
+        replied_context: str = "",
+        db_context: str = "",
+    ) -> str:
+        sections = [f"## 최신 사용자 요청\n{text[:700]}"]
+        if replied_context:
+            sections.append(f"## 답장 대상 맥락\n{replied_context[:500]}")
+
+        expectations = self._build_user_expectations(text)
+        if expectations:
+            sections.append(
+                "## 이번 응답에서 꼭 만족할 점\n" + "\n".join(f"- {item}" for item in expectations)
+            )
+
+        memory_context = self.memory_manager.build_context(text)
+        if memory_context:
+            sections.append(f"## 현재 조직 내부 기억\n{memory_context[:1800]}")
+
+        if db_context:
+            sections.append(f"## 진행 중인 관련 태스크\n{db_context[:1200]}")
+
+        return "\n\n".join(section.strip() for section in sections if section.strip())
+
+    async def _collect_upstream_result_context(
+        self,
+        parent_id: str | None,
+        *,
+        exclude_task_id: str | None = None,
+    ) -> str:
+        if self.context_db is None or not parent_id:
+            return ""
+        try:
+            siblings = await self.context_db.get_subtasks(parent_id)
+        except Exception:
+            return ""
+        completed = [
+            task for task in siblings
+            if task.get("id") != exclude_task_id and task.get("status") == "done" and task.get("result")
+        ]
+        if not completed:
+            return ""
+        lines: list[str] = []
+        for task in completed[:3]:
+            dept_name = KNOWN_DEPTS.get(task.get("assigned_dept") or "", task.get("assigned_dept") or "?")
+            excerpt = (task.get("result") or "").strip().replace("\n", " ")
+            lines.append(f"- {dept_name}: {excerpt[:240]}")
+        return "## 이미 완료된 관련 조직 결과\n" + "\n".join(lines)
+
+    async def _build_delegated_task_packet(self, task_info: dict) -> str:
+        metadata = task_info.get("metadata") or {}
+        packet = metadata.get("task_packet") or {}
+        description = task_info.get("description", "")
+        sections: list[str] = []
+
+        original_request = packet.get("original_request") or metadata.get("original_request")
+        if original_request:
+            sections.append(f"## 상위 사용자 요청\n{str(original_request)[:900]}")
+
+        conversation_context = packet.get("conversation_context") or metadata.get("conversation_context")
+        if conversation_context:
+            sections.append(f"## 현재 대화 맥락\n{str(conversation_context)[:1500]}")
+
+        rationale = packet.get("rationale") or metadata.get("rationale")
+        if rationale:
+            sections.append(f"## 왜 이 태스크를 지금 맡았는가\n{str(rationale)[:500]}")
+
+        expectations = packet.get("user_expectations") or metadata.get("user_expectations") or []
+        if isinstance(expectations, list) and expectations:
+            sections.append("## 사용자 기대치\n" + "\n".join(f"- {str(item)[:160]}" for item in expectations[:6]))
+
+        memory_context = self.memory_manager.build_context(description)
+        if memory_context:
+            sections.append(f"## 이 조직의 내부 기억\n{memory_context[:1500]}")
+
+        upstream = await self._collect_upstream_result_context(
+            task_info.get("parent_id"),
+            exclude_task_id=task_info.get("id"),
+        )
+        if upstream:
+            sections.append(upstream)
+
+        sections.append(
+            "## 실행 규칙\n"
+            "- 주어진 지시문만 기계적으로 수행하지 말고, 이 조직의 전문성 관점에서 숨은 blocker와 개선 기회를 함께 본다.\n"
+            "- 범위를 무한정 넓히지는 말고 현재 목표 달성에 직접 도움이 되는 추가 제안만 포함한다.\n"
+            "- 산출물 위치만 적지 말고 핵심 결과와 이유를 본문에 설명한다.\n"
+            "- 추가 협업이 필요하면 이유가 드러나는 형태로 제안한다."
+        )
+
+        return "\n\n".join(section.strip() for section in sections if section.strip())
+
+    @staticmethod
+    def _looks_like_failed_reply(reply: str) -> bool:
+        stripped = (reply or "").strip()
+        if not stripped:
+            return True
+        return stripped.startswith("❌") or stripped.startswith("Error:") or stripped.startswith("Exception:")
 
     def _get_org_config(self):
         try:
@@ -475,26 +603,110 @@ class TelegramRelay:
             return
         db_context = await self._build_pm_db_context()
         await self._queue_retry_candidates_from_db_context(db_context)
+        context_packet = await self._build_conversation_context_packet(
+            text,
+            replied_context=replied_context,
+            db_context=db_context,
+        )
         system_prompt = (
-            "당신은 총괄 PM입니다. 한국어로 답하세요. "
-            "간단한 질문·확인·상태 문의는 직접 답하고 불필요한 위임을 하지 마세요. "
-            "짧지만 실무적으로 답하세요."
-            + db_context
+            self.identity.build_system_prompt()
+            + "\n\n## 사용자 응답 계약\n"
+            "- 당신은 총괄 PM이며, 텔레그램 사용자에게 직접 설명한다.\n"
+            "- 첫 문단에서 질문이나 불만에 바로 답한다.\n"
+            "- 링크, 경로, 내부 문서 위치만 던지지 말고 핵심 내용을 먼저 설명한다.\n"
+            "- 필요한 경우 무엇을 확인했고 무엇을 바꿀지 다음 조치를 분명히 적는다.\n"
+            "- 간단한 질문·확인·상태 문의는 직접 답하고 불필요한 위임을 하지 않는다.\n\n"
+            f"{context_packet}"
         )
         prompt = text + replied_context
-        if self.engine == "codex":
-            runner = self._make_codex_runner()
-            reply = await runner.run(f"{system_prompt}\n\n{prompt}")
-        else:
-            runner = self._make_claude_runner()
-            reply = await runner.run_single(
-                prompt,
-                system_prompt=system_prompt,
-                org_id=self.org_id,
-                session_store=self.session_store,
-                global_context=self.global_context,
-            )
-        await self.display.send_reply(update.message, (reply or "알겠습니다.").strip()[:4000])
+        progress_msg = await self.display.send_reply(update.message, "🧠 확인 중...")
+        history: list[str] = []
+        last_edit = 0.0
+
+        async def on_progress(line: str) -> None:
+            nonlocal last_edit
+            cleaned = self._clean_progress_line(line)
+            if not cleaned:
+                return
+            history.append(cleaned)
+            if time.time() - last_edit < 1.5:
+                return
+            last_edit = time.time()
+            try:
+                await self.display.edit_progress(
+                    progress_msg,
+                    "🧠 확인 중...\n\n" + "\n".join(history[-4:]),
+                    agent_id=f"{self.org_id}-chat",
+                )
+            except Exception:
+                pass
+
+        reply = ""
+        used_codex = self.engine == "codex"
+        try:
+            if self.engine == "codex":
+                runner = self._make_codex_runner()
+                reply = await asyncio.wait_for(
+                    runner.run(
+                        f"{system_prompt}\n\n{prompt}",
+                        progress_callback=on_progress,
+                    ),
+                    timeout=PM_CHAT_REPLY_TIMEOUT_SEC,
+                )
+            else:
+                runner = self._make_claude_runner()
+                reply = await asyncio.wait_for(
+                    runner.run_single(
+                        prompt,
+                        progress_callback=on_progress,
+                        system_prompt=system_prompt,
+                        org_id=self.org_id,
+                        session_store=self.session_store,
+                        global_context=self.global_context,
+                    ),
+                    timeout=PM_CHAT_REPLY_TIMEOUT_SEC,
+                )
+        except asyncio.TimeoutError:
+            reply = ""
+            history.append("응답이 길어져 복구 경로로 전환합니다.")
+        except Exception as exc:
+            logger.warning(f"[{self.org_id}] PM chat primary reply 실패: {exc}")
+            reply = ""
+
+        if used_codex and self._looks_like_failed_reply(reply):
+            try:
+                fallback_runner = self._make_claude_runner()
+                reply = await fallback_runner.run_single(
+                    prompt,
+                    progress_callback=on_progress,
+                    system_prompt=system_prompt,
+                    org_id=self.org_id,
+                    session_store=self.session_store,
+                    global_context=self.global_context,
+                )
+                used_codex = False
+            except Exception as exc:
+                logger.warning(f"[{self.org_id}] PM chat fallback 실패: {exc}")
+
+        reply = await ensure_user_friendly_output(
+            reply or "지금 응답을 복구하는 중입니다. 조금 더 구체적으로 다시 이어서 처리하겠습니다.",
+            original_request=text,
+            decision_client=self._pm_decision_client,
+        )
+
+        if used_codex and reply:
+            await self.global_context.extract_and_save(self.org_id, prompt, reply)
+
+        await self.memory_manager.add_log(f"PM 응답: {reply[:200]}")
+
+        chunks = _split_message(reply.strip() or "알겠습니다.", 4000)
+        first = chunks[0]
+        try:
+            await progress_msg.edit_text(first)
+        except Exception:
+            await self.display.send_reply(update.message, first)
+        for chunk in chunks[1:]:
+            await self.display.send_reply(update.message, chunk)
 
     async def _build_team_config(self, task: str):
         prefs = self.identity.get_team_preferences()
@@ -614,6 +826,10 @@ class TelegramRelay:
             prompt = task
             if agent_names:
                 prompt = f"[Agents: {', '.join(agent_names)}]\n{task}"
+            if self.global_context:
+                ctx_prompt = await self.global_context.build_system_prompt(self.org_id, task)
+                if ctx_prompt:
+                    system_prompt = f"{system_prompt}\n\n{ctx_prompt}".strip()
             if system_prompt:
                 prompt = f"{system_prompt}\n\n{prompt}"
             result = await runner.run(
@@ -621,10 +837,13 @@ class TelegramRelay:
                 workdir=workdir,
                 workdir_hint=task,
                 agents=agent_names,
+                progress_callback=progress_callback,
                 shell_session_manager=self.session_manager if backend == "tmux_batch" else None,
                 shell_team_id=self.org_id if backend == "tmux_batch" else None,
             )
             self._apply_runner_metrics(runner)
+            if self.global_context and result and not self._looks_like_failed_reply(result):
+                await self.global_context.extract_and_save(self.org_id, task, result)
             if progress_callback:
                 backend_label = "tmux_batch" if backend == "tmux_batch" else "direct"
                 await progress_callback(
@@ -972,6 +1191,13 @@ class TelegramRelay:
             return
 
         asyncio.get_event_loop().run_in_executor(None, self.claim_manager.cleanup_old_claims)
+        await self.memory_manager.add_log(f"사용자 메시지: {text[:200]}")
+        if self._is_pm_org:
+            self.global_context.append_entry(
+                self.org_id,
+                f"**사용자 요청**: {text[:160]}",
+                category="대화",
+            )
 
         # PM 오케스트레이터: 사용자 요청을 분해·배분 (Claude Code 직접 실행 대신)
         if self._pm_orchestrator is not None:
@@ -984,7 +1210,6 @@ class TelegramRelay:
 
                 if plan.route == "local_execution":
                     await self.display.send_reply(update.message, "🧠 PM이 직접 처리합니다. 팀 구성 중...")
-                    await self.memory_manager.add_log(f"사용자 메시지: {text[:200]}")
                     run_id = self._create_runbook(request_text)
                     self._advance_runbook(run_id, "요청 접수 후 planning phase로 이동")
                     team_config = await self._build_team_config(request_text)
@@ -1056,6 +1281,11 @@ class TelegramRelay:
                         reply_to_message_id=update.message.message_id if update.message else None,
                     )
                     if response:
+                        response = await ensure_user_friendly_output(
+                            response,
+                            original_request=request_text,
+                            decision_client=self._pm_decision_client,
+                        )
                         for chunk in _split_message(response, 4000):
                             await self.display.send_reply(update.message, chunk)
                         await self._auto_upload(response, self.token, update.effective_chat.id)
@@ -1077,6 +1307,11 @@ class TelegramRelay:
 
                 await self.display.send_reply(update.message, "📋 여러 조직 협업이 필요해 보여 오케스트레이션으로 넘깁니다.")
                 run_id = self._create_runbook(request_text)
+                conversation_context = await self._build_conversation_context_packet(
+                    text,
+                    replied_context=_replied_context,
+                )
+                user_expectations = self._build_user_expectations(text)
                 self._advance_runbook(run_id, "오케스트레이션 계획 수립 시작")
                 self._append_runbook(
                     run_id,
@@ -1093,7 +1328,11 @@ class TelegramRelay:
                     metadata={
                         "route": plan.route,
                         "complexity": plan.complexity,
+                        "rationale": plan.rationale,
                         "run_id": run_id,
+                        "original_request": text[:2000],
+                        "conversation_context": conversation_context,
+                        "user_expectations": user_expectations,
                         "source_message_id": update.message.message_id if update.message else None,
                         "requester_mention": self._user_mention(update.effective_user),
                         "source_org_mention": self._org_mention(self.org_id),
@@ -1137,7 +1376,6 @@ class TelegramRelay:
 
         # 4. 담당 선언 + 실행 (모델 기반 팀 구성)
         await self.display.send_reply(update.message, f"✋ {self.org_id} 담당 — 팀 구성 중...")
-        await self.memory_manager.add_log(f"사용자 메시지: {text[:200]}")
         run_id = self._create_runbook(text)
         self._advance_runbook(run_id, "요청 접수 후 planning phase로 이동")
         team_config = await self._build_team_config(text)
@@ -1213,6 +1451,11 @@ class TelegramRelay:
         )
 
         if response:
+            response = await ensure_user_friendly_output(
+                response,
+                original_request=text,
+                decision_client=self._pm_decision_client if self._is_pm_org else None,
+            )
             for chunk in _split_message(response, 4000):
                 await self.display.send_reply(update.message, chunk)
             await self._auto_upload(response, self.token, update.effective_chat.id)
@@ -1448,6 +1691,11 @@ class TelegramRelay:
                 chat_id=self.allowed_chat_id,
                 requester_mention=requester_mention,
                 reply_to_message_id=reply_to_message_id,
+            )
+            response = await ensure_user_friendly_output(
+                response,
+                original_request=task,
+                decision_client=self._pm_decision_client if self._is_pm_org else None,
             )
             for chunk in _split_message(response, 4000):
                 await msg.reply_text(chunk)
@@ -2049,21 +2297,28 @@ class TelegramRelay:
 
         async def on_progress(line: str) -> None:
             now = time.time()
-            # 5초 간격으로 진행 상태 전송 (도배 방지)
-            if now - last_progress_time[0] < 5.0:
+            # 2초 간격으로 진행 상태 전송 (도배 방지)
+            if now - last_progress_time[0] < 2.0:
                 return
             last_progress_time[0] = now
             short = self._clean_progress_line(line)[:150]
             if short and self.app and self.app.bot:
                 await self.display.send_to_chat(
                     self.app.bot, self.allowed_chat_id,
-                    f"🛰️ {dept_name} 중간보고: {short}",
+                    f"🛰️ {dept_name} 작업 중: {short}",
                 )
 
         # Claude Code / Codex로 태스크 실행
         try:
             system_prompt = self.identity.build_system_prompt()
-            system_prompt += f"\n\n## PM 배정 태스크\nTask ID: {task_id}\n{description}"
+            task_packet = await self._build_delegated_task_packet(task_info)
+            system_prompt += (
+                f"\n\n## PM 배정 태스크\n"
+                f"Task ID: {task_id}\n"
+                f"담당 조직: {dept_name}\n"
+                f"실행 지시: {description}\n\n"
+                f"{task_packet}"
+            )
 
             response = await self._execute_with_team_config(
                 task=description,
@@ -2095,8 +2350,12 @@ class TelegramRelay:
 
             # 결과를 채팅방에 공유
             # pm_bot은 "✅ [X] 태스크 T-xxx 완료" 패턴을 파싱해서 on_task_complete 트리거
+            public_result = await ensure_user_friendly_output(
+                full_result,
+                original_request=(task_info.get("metadata") or {}).get("original_request", description),
+            )
             summary_prefix = f"{requester_mention} " if requester_mention else ""
-            summary = f"{summary_prefix}✅ [{dept_name}] 태스크 {task_id} 완료\n{full_result[:300]}"
+            summary = f"{summary_prefix}✅ [{dept_name}] 태스크 {task_id} 완료\n{public_result[:500]}"
             if self.app and self.app.bot:
                 await self.display.send_to_chat(
                     self.app.bot,
@@ -2231,7 +2490,12 @@ class TelegramRelay:
         except Exception:
             pass
 
-        summary = (response or "(결과 없음)")[:300]
+        response = await ensure_user_friendly_output(
+            response or "(결과 없음)",
+            original_request=task,
+            decision_client=self._pm_decision_client if self._is_pm_org else None,
+        )
+        summary = response[:300]
         done_text = f"{requester_mention} {make_collab_done(self.org_id, summary)}".strip()
         await update.message.reply_text(done_text)
         if response and len(response) > 300:

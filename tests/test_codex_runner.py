@@ -93,8 +93,8 @@ def test_select_agent_prompts_prefers_explicit_agents(tmp_path: Path, monkeypatc
 def test_effective_timeout_increases_for_multi_agent_tasks(tmp_path: Path) -> None:
     runner = CodexRunner(workdir=str(tmp_path / "fallback"))
 
-    assert runner._effective_timeout(["analyst", "writer"]) == 900
-    assert runner._effective_timeout(["analyst"]) == 300
+    assert runner._effective_timeout(["analyst", "writer"]) == codex_runner.COMPLEX_TASK_TIMEOUT
+    assert runner._effective_timeout(["analyst"]) == codex_runner.DEFAULT_TIMEOUT
 
 
 @pytest.mark.asyncio
@@ -188,3 +188,35 @@ tokens used
     assert "OpenAI Codex v0.114.0" not in cleaned
     assert "thinking" not in cleaned
     assert "현재 작업 요약" not in cleaned
+
+
+@pytest.mark.asyncio
+async def test_streaming_progress_emits_meaningful_lines(tmp_path: Path) -> None:
+    runner = CodexRunner(workdir=str(tmp_path))
+    seen: list[str] = []
+
+    class _Stream:
+        def __init__(self, lines: list[bytes]) -> None:
+            self._lines = list(lines)
+
+        async def readline(self) -> bytes:
+            if not self._lines:
+                return b""
+            return self._lines.pop(0)
+
+    class _Proc:
+        def __init__(self) -> None:
+            self.stdout = _Stream([b"thinking\n", "핵심 진행 업데이트\n".encode("utf-8")])
+            self.stderr = _Stream([])
+
+        async def wait(self) -> None:
+            return None
+
+    async def _progress(line: str) -> None:
+        seen.append(line)
+
+    stdout, stderr = await runner._communicate_with_progress(_Proc(), _progress)
+
+    assert "핵심 진행 업데이트".encode("utf-8") in stdout
+    assert stderr == b""
+    assert seen == ["핵심 진행 업데이트"]

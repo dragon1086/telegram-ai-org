@@ -54,10 +54,15 @@ _SYNTHESIS_PROMPT = (
     "- CONFLICTING: departments contradict each other\n"
     "- NEEDS_INTEGRATION: results are good but need to be combined into one coherent output\n"
     "- Write in Korean\n"
-  "- IMPORTANT: Even when SUFFICIENT, scan all reports for future plans\n"
-  "  (향후 계획/다음 단계/추가 작업/진행 예정/예정 등) and add them as FOLLOW_UP tasks.\n"
-  "  Assign each to the most relevant dept (aiorg_design_bot/aiorg_engineering_bot/\n"
-  "  aiorg_growth_bot/aiorg_ops_bot/aiorg_product_bot). If truly none, write FOLLOW_UP: none\n"
+    "- The REPORT must be user-facing, answer-first, and helpful.\n"
+    "- First paragraph: directly answer what the user cares about.\n"
+    "- Then explain what was checked, changed, found, or produced across teams.\n"
+    "- Do NOT reply with only file paths, links, or location hints.\n"
+    "- If artifacts/files exist, mention them only as supplements after explaining the substance.\n"
+    "- IMPORTANT: Even when SUFFICIENT, scan all reports for future plans\n"
+    "  (향후 계획/다음 단계/추가 작업/진행 예정/예정 등) and add them as FOLLOW_UP tasks.\n"
+    "  Assign each to the most relevant dept (aiorg_design_bot/aiorg_engineering_bot/\n"
+    "  aiorg_growth_bot/aiorg_ops_bot/aiorg_product_bot). If truly none, write FOLLOW_UP: none\n"
 )
 
 
@@ -197,13 +202,11 @@ class ResultSynthesizer:
             else:
                 lines.append(f"**{dept_name}**: {result[:200]}")
 
-        unified = "\n".join(lines)
-
         if missing:
             return SynthesisResult(
                 judgment=SynthesisJudgment.INSUFFICIENT,
                 summary=f"{len(missing)}개 부서 결과 누락: {', '.join(missing)}",
-                unified_report=unified,
+                unified_report=_build_fallback_public_report(lines, missing=missing),
                 reasoning=f"다음 부서에서 결과를 받지 못함: {', '.join(missing)}",
                 follow_up_tasks=[],
             )
@@ -211,7 +214,7 @@ class ResultSynthesizer:
         return SynthesisResult(
             judgment=SynthesisJudgment.SUFFICIENT,
             summary=f"모든 {len(subtasks)}개 부서 결과 수신 완료",
-            unified_report=unified,
+            unified_report=_build_fallback_public_report(lines),
             reasoning="모든 부서가 결과를 제출함",
         )
 
@@ -237,3 +240,16 @@ def _result_excerpt(result: str, limit: int = 2200) -> str:
     head = text[:1400].rstrip()
     tail = text[-600:].lstrip()
     return f"{head}\n\n[중간 내용 생략]\n\n{tail}"
+
+
+def _build_fallback_public_report(lines: list[str], missing: list[str] | None = None) -> str:
+    header = "현재까지 확인된 핵심 결과를 먼저 정리합니다."
+    if missing:
+        header = (
+            "아직 일부 조직 결과가 빠져 있어서 최종 결론을 확정하긴 이릅니다. "
+            "다만 현재까지 확인된 내용은 아래와 같습니다."
+        )
+    details = "\n".join(f"- {line}" for line in lines[:6])
+    if missing:
+        details += f"\n- 추가 확인 필요: {', '.join(missing)}"
+    return f"{header}\n\n{details}".strip()

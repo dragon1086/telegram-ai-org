@@ -23,6 +23,7 @@ from core.result_synthesizer import ResultSynthesizer, SynthesisJudgment
 from core.structured_prompt import StructuredPromptGenerator
 from core.pm_decision import DecisionClientProtocol
 from core.pm_identity import PMIdentity
+from core.telegram_user_guardrail import ensure_user_friendly_output
 
 ENABLE_PM_ORCHESTRATOR = os.environ.get("ENABLE_PM_ORCHESTRATOR", "0") == "1"
 
@@ -594,6 +595,59 @@ class PMOrchestrator:
         except Exception as e:
             logger.warning(f"[PM] 계획 미리보기 전송 실패: {e}")
 
+    def _build_subtask_packet(
+        self,
+        parent_description: str,
+        subtask: SubTask,
+        *,
+        rationale: str | None,
+        parent_metadata: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        meta = parent_metadata or {}
+        packet = {
+            "original_request": meta.get("original_request") or parent_description[:2000],
+            "conversation_context": meta.get("conversation_context", ""),
+            "rationale": rationale or meta.get("rationale", ""),
+            "requester_mention": meta.get("requester_mention") or meta.get("source_org_mention") or "",
+            "user_expectations": list(meta.get("user_expectations") or []),
+            "goal": subtask.description[:1000],
+        }
+        return {key: value for key, value in packet.items() if value}
+
+    def _write_unified_report_artifact(
+        self,
+        parent_task_id: str,
+        original_request: str,
+        report: str,
+        subtasks: list[dict],
+    ) -> Path:
+        reports_root = os.environ.get("AIORG_REPORT_DIR")
+        reports_dir = Path(reports_root).expanduser() if reports_root else Path(__file__).resolve().parent.parent / ".omx" / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        path = reports_dir / f"{parent_task_id}-telegram-report.md"
+        lines = [
+            f"# {parent_task_id} 통합 보고서",
+            "",
+            "## 원 요청",
+            original_request.strip() or "(요청 없음)",
+            "",
+            "## 최종 전달본",
+            report.strip() or "(보고서 없음)",
+            "",
+            "## 조직별 핵심 결과",
+        ]
+        for task in subtasks:
+            dept = task.get("assigned_dept") or "unknown"
+            dept_name = KNOWN_DEPTS.get(dept, dept)
+            result = (task.get("result") or "(결과 없음)").strip()
+            lines.extend([
+                f"### {dept_name}",
+                result[:4000],
+                "",
+            ])
+        path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+        return path
+
     async def dispatch(
         self,
         parent_task_id: str,
@@ -613,6 +667,7 @@ class PMOrchestrator:
             return []
         parent_task = await self._db.get_pm_task(parent_task_id)
         parent_metadata = parent_task.get("metadata", {}) if parent_task else {}
+        parent_description = parent_task.get("description", "") if parent_task else ""
         # 0. 계획 미리보기 전송
         await self._send_plan_preview(
             subtasks,
@@ -626,10 +681,21 @@ class PMOrchestrator:
         # 1. 서브태스크 생성 (구조화 프롬프트 적용)
         for st in subtasks:
             tid = await self._next_task_id()
+            task_packet = self._build_subtask_packet(
+                parent_description,
+                st,
+                rationale=rationale,
+                parent_metadata=parent_metadata,
+            )
             # 구조화 프롬프트 생성
             structured = await self._prompt_gen.generate(
                 description=st.description,
                 dept=st.assigned_dept,
+                context=(
+                    f"상위 목표: {task_packet.get('original_request', '')[:400]}\n"
+                    f"현재 배정 목표: {task_packet.get('goal', '')[:300]}\n"
+                    f"사용자 기대: {'; '.join(task_packet.get('user_expectations', [])[:4])}"
+                ).strip(),
             )
             full_description = structured.render()
 
@@ -641,8 +707,9 @@ class PMOrchestrator:
                 parent_id=parent_task_id,
                 metadata={
                     **parent_metadata,
+                    "task_packet": task_packet,
                     **({"workdir": st.workdir} if st.workdir else {}),
-                } if parent_metadata or st.workdir else None,
+                },
             )
             task_ids.append(tid)
 
@@ -770,10 +837,25 @@ class PMOrchestrator:
         parent_workdir = parent_meta.get("workdir")
         run_id = parent_meta.get("run_id")
         runbook = OrchestrationRunbook(Path(__file__).resolve().parent.parent)
+        report_text = synthesis.unified_report or synthesis.summary
+        user_friendly_report = await ensure_user_friendly_output(
+            report_text,
+            original_request=original_request,
+            decision_client=self._decision_client,
+        )
+        artifact_path = self._write_unified_report_artifact(
+            parent_task_id,
+            original_request,
+            user_friendly_report,
+            subtasks,
+        )
 
         if synthesis.judgment == SynthesisJudgment.SUFFICIENT:
-            report = synthesis.unified_report or synthesis.summary
-            await self._send(chat_id, f"✅ 모든 부서 작업 완료!\n\n{report}")
+            report = user_friendly_report
+            await self._send(
+                chat_id,
+                f"✅ 모든 부서 작업 완료!\n\n{report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]",
+            )
             if run_id:
                 try:
                     runbook.advance_phase(run_id, note="조직 협업 결과 통합 완료, verification phase 이동")
@@ -804,7 +886,7 @@ class PMOrchestrator:
             await self._send(
                 chat_id,
                 f"⚠️ 결과 부족 — 추가 작업 배분 중...\n"
-                f"사유: {synthesis.reasoning}\n\n{synthesis.summary}",
+                f"사유: {synthesis.reasoning}\n\n{user_friendly_report}\n\n현재까지의 통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]",
             )
             if run_id:
                 try:
@@ -830,8 +912,8 @@ class PMOrchestrator:
             await self._send(
                 chat_id,
                 f"⚠️ 부서 간 결과 충돌 감지\n"
-                f"사유: {synthesis.reasoning}\n\n{synthesis.summary}\n\n"
-                f"조율이 필요합니다.",
+                f"사유: {synthesis.reasoning}\n\n{user_friendly_report}\n\n"
+                f"조율이 필요합니다.\n현재 통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]",
             )
             if run_id:
                 try:
@@ -842,8 +924,11 @@ class PMOrchestrator:
                 parent_task_id, "needs_review", result=synthesis.summary,
             )
         else:  # NEEDS_INTEGRATION
-            report = synthesis.unified_report or synthesis.summary
-            await self._send(chat_id, f"📋 결과 통합 보고서:\n\n{report}")
+            report = user_friendly_report
+            await self._send(
+                chat_id,
+                f"📋 결과 통합 보고서:\n\n{report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]",
+            )
             if run_id:
                 try:
                     runbook.advance_phase(run_id, note="통합 보고서 작성 완료, verification phase 이동")

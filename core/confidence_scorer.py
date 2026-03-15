@@ -12,14 +12,12 @@ from loguru import logger
 
 from core.pm_identity import PMIdentity
 from core.keywords import GREETING_KW
-from core.llm_provider import LLMProvider, get_provider
+from core.pm_decision import PMDecisionClient
 
 DEFAULT_CONFIDENCE_THRESHOLD = 6
 
 GREETING_PATTERNS = GREETING_KW
-
-# 모듈 수준 캐싱 — 매번 생성 금지
-_provider: LLMProvider | None = get_provider()
+_decision_clients: dict[str, PMDecisionClient] = {}
 
 
 class ConfidenceScorer:
@@ -37,28 +35,38 @@ class ConfidenceScorer:
         if not specialties:
             return 3
 
-        # LLM provider가 없으면 즉시 keyword fallback
-        if _provider is None:
-            return self._keyword_score(message, specialties)
+        org_id = identity._data.get("org_id") or "global"
+        decision_client = _decision_clients.get(org_id)
+        if decision_client is None:
+            try:
+                decision_client = PMDecisionClient(org_id=org_id, engine="auto", session_store=None)
+                _decision_clients[org_id] = decision_client
+            except Exception as e:
+                logger.warning(f"[confidence] decision client 초기화 실패, keyword fallback: {e}")
+                return self._keyword_score(message, specialties)
 
-        # LLM 엔진으로 자율 판단
         try:
             score = await asyncio.wait_for(
-                self._engine_score(message, specialties),
+                self._engine_score(message, specialties, decision_client),
                 timeout=15.0,
             )
             logger.debug(f"[confidence] engine score: {score}")
             return score
         except Exception as e:
-            logger.warning(f"[confidence] engine 판단 실패, keyword fallback: {e}")
+            logger.warning(f"[confidence] org engine 판단 실패, keyword fallback: {e}")
             return self._keyword_score(message, specialties)
 
-    async def _engine_score(self, message: str, specialties: list[str]) -> int:
-        """LLMProvider.complete()으로 자율 판단. 초단순 프롬프트."""
+    async def _engine_score(
+        self,
+        message: str,
+        specialties: list[str],
+        decision_client: PMDecisionClient,
+    ) -> int:
+        """조직 엔진으로 relevance score를 판단한다."""
         specs = ", ".join(specialties)
         prompt = f"Reply with a single integer 0-10 only. No explanation. How relevant is this message to [{specs}] expert? Message: '{message}'"
 
-        raw = await _provider.complete(prompt, timeout=12.0)  # type: ignore[union-attr]
+        raw = await decision_client.complete(prompt)
         m = re.search(r"\d+", raw)
         score = int(m.group()) if m else 0
         return max(0, min(10, score))
