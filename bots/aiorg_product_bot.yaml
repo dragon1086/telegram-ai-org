@@ -1,14 +1,18 @@
-# 자동 생성 봇 설정 — 2026-03-11T07:04:27.048594
-username: "aiorg_product_bot"
-org_id: "aiorg_product_bot"
-token_env: "BOT_TOKEN_AIORG_PRODUCT_BOT"
+schema_version: 2
+organization_ref: aiorg_product_bot
+username: aiorg_product_bot
+org_id: aiorg_product_bot
+token_env: BOT_TOKEN_AIORG_PRODUCT_BOT
 chat_id: -5203707291
-engine: "codex"
-dept_name: "기획실"
-role: "기획/요구사항 분석/PRD 작성"
-instruction: "다음 요청에 대해 기획/요구사항 관점에서 분석하고 PRD 또는 스펙 문서를 작성하세요"
-
+engine: codex
+dept_name: 기획실
+role: 기획/요구사항 분석/PRD 작성
+instruction: 다음 요청에 대해 기획/요구사항 관점에서 분석하고 PRD 또는 스펙 문서를 작성하세요
+is_pm: false
 team_config:
+  preferred_agents: []
   avoid_agents: []
+  preferred_skills: []
   max_team_size: 3
-  guidance: "요구사항 명확화 우선. PRD 작성 후 구현 위임."
+  guidance: 요구사항 명확화 우선. PRD 작성 후 구현 위임.
+comment: generated from canonical orchestration config

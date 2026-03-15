@@ -56,9 +56,23 @@ class DisplayLimiter:
                 logger.warning(f"stop flush 실패 [{key}]: {e}")
         self._pending.clear()
 
-    async def send_reply(self, message: object, text: str,
-                         priority: MessagePriority = MessagePriority.IMMEDIATE) -> object:
-        return await message.reply_text(text)
+    async def send_reply(
+        self,
+        message: object,
+        text: str,
+        priority: MessagePriority = MessagePriority.IMMEDIATE,
+        reply_to_message_id: int | None = None,
+    ) -> object:
+        kwargs = {}
+        if reply_to_message_id is not None:
+            kwargs["reply_to_message_id"] = reply_to_message_id
+        try:
+            return await message.reply_text(text, **kwargs)
+        except Exception as e:
+            if reply_to_message_id is not None and self._should_retry_without_reply(e):
+                logger.warning(f"reply 대상 메시지를 찾지 못해 일반 응답으로 재시도: {e}")
+                return await message.reply_text(text)
+            raise
 
     async def edit_progress(self, progress_msg: object, text: str,
                             agent_id: str | None = None) -> None:
@@ -67,8 +81,27 @@ class DisplayLimiter:
             return
         self._pending[agent_id] = PendingEdit(progress_msg, text, time.time())
 
-    async def send_to_chat(self, bot: object, chat_id: int, text: str) -> None:
-        await bot.send_message(chat_id=chat_id, text=text)
+    async def send_to_chat(
+        self,
+        bot: object,
+        chat_id: int,
+        text: str,
+        reply_to_message_id: int | None = None,
+    ) -> object:
+        kwargs = {"chat_id": chat_id, "text": text}
+        if reply_to_message_id is not None:
+            kwargs["reply_to_message_id"] = reply_to_message_id
+        try:
+            return await bot.send_message(**kwargs)
+        except Exception as e:
+            if reply_to_message_id is not None and self._should_retry_without_reply(e):
+                logger.warning(f"reply 대상 메시지를 찾지 못해 일반 전송으로 재시도: {e}")
+                return await bot.send_message(chat_id=chat_id, text=text)
+            raise
+
+    @staticmethod
+    def _should_retry_without_reply(error: Exception) -> bool:
+        return "Message to be replied not found" in str(error)
 
     async def _flush_loop(self) -> None:
         while self._running:

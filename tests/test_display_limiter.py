@@ -36,6 +36,42 @@ async def test_send_to_chat_always_immediate():
 
 
 @pytest.mark.asyncio
+async def test_send_to_chat_with_reply_to():
+    limiter = DisplayLimiter(debounce_sec=5.0)
+    bot = AsyncMock()
+    await limiter.send_to_chat(bot, chat_id=123, text="collab msg", reply_to_message_id=9)
+    bot.send_message.assert_awaited_once_with(
+        chat_id=123,
+        text="collab msg",
+        reply_to_message_id=9,
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_to_chat_retries_without_reply_on_missing_target():
+    limiter = DisplayLimiter(debounce_sec=5.0)
+    bot = AsyncMock()
+    bot.send_message.side_effect = [Exception("Message to be replied not found"), object()]
+
+    await limiter.send_to_chat(bot, chat_id=123, text="collab msg", reply_to_message_id=9)
+
+    assert bot.send_message.await_count == 2
+    assert bot.send_message.await_args_list[1].kwargs == {"chat_id": 123, "text": "collab msg"}
+
+
+@pytest.mark.asyncio
+async def test_send_reply_retries_without_reply_on_missing_target():
+    limiter = DisplayLimiter(debounce_sec=5.0)
+    msg = FakeMessage()
+    msg.reply_text.side_effect = [Exception("Message to be replied not found"), object()]
+
+    await limiter.send_reply(msg, "hello", reply_to_message_id=9)
+
+    assert msg.reply_text.await_count == 2
+    assert msg.reply_text.await_args_list[1].args == ("hello",)
+
+
+@pytest.mark.asyncio
 async def test_edit_progress_debounce():
     limiter = DisplayLimiter(debounce_sec=0.1)
     await limiter.start()

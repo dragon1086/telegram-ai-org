@@ -1,14 +1,18 @@
-# 자동 생성 봇 설정 — 2026-03-11T07:33:54.332484
-username: "aiorg_engineering_bot"
-org_id: "aiorg_engineering_bot"
-token_env: "BOT_TOKEN_AIORG_ENGINEERING_BOT"
+schema_version: 2
+organization_ref: aiorg_engineering_bot
+username: aiorg_engineering_bot
+org_id: aiorg_engineering_bot
+token_env: BOT_TOKEN_AIORG_ENGINEERING_BOT
 chat_id: -5203707291
-engine: "codex"
-dept_name: "개발실"
-role: "개발/코딩/API 구현/버그 수정"
-instruction: "다음 요청에 대해 기술적 관점에서 분석하고 코드 구현 계획 또는 구현을 수행하세요"
-
+engine: codex
+dept_name: 개발실
+role: 개발/코딩/API 구현/버그 수정
+instruction: 다음 요청에 대해 기술적 관점에서 분석하고 코드 구현 계획 또는 구현을 수행하세요
+is_pm: false
 team_config:
+  preferred_agents: []
   avoid_agents: []
+  preferred_skills: []
   max_team_size: 3
-  guidance: "항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호."
+  guidance: 항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호.
+comment: generated from canonical orchestration config

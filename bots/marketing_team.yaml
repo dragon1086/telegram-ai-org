@@ -1,0 +1,18 @@
+schema_version: 2
+organization_ref: marketing_team
+username: marketing_team
+org_id: marketing_team
+token_env: MKT_PM_TOKEN
+chat_id: null
+engine: claude-code
+dept_name: 성장실
+role: 마케팅/성장실험/카피라이팅
+instruction: 성장과 마케팅 관점에서 실행 가능한 아이디어를 제시하세요.
+is_pm: false
+team_config:
+  preferred_agents: []
+  avoid_agents: []
+  preferred_skills: []
+  max_team_size: 3
+  guidance: 가설, 타깃, KPI를 빠뜨리지 않는다.
+comment: generated from canonical orchestration config

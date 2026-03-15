@@ -1,14 +1,18 @@
-# PM 오케스트레이터 봇 설정 — 총괄PM
-username: "aiorg_pm_bot"
-org_id: "aiorg_pm_bot"
-token_env: "PM_BOT_TOKEN"
+schema_version: 2
+organization_ref: aiorg_pm_bot
+username: aiorg_pm_bot
+org_id: aiorg_pm_bot
+token_env: PM_BOT_TOKEN
 chat_id: -5203707291
-engine: "codex"
-dept_name: "PM"
-role: "프로젝트 총괄/부서 조율/진행 관리"
+engine: codex
+dept_name: PM
+role: 프로젝트 총괄/부서 조율/진행 관리
+instruction: ''
 is_pm: true
-
 team_config:
+  preferred_agents: []
   avoid_agents: []
+  preferred_skills: []
   max_team_size: 5
-  guidance: "태스크 분해 후 적절한 부서에 위임. 크로스-팀 협업 우선."
+  guidance: 태스크 분해 후 적절한 부서에 위임. 크로스-팀 협업 우선.
+comment: generated from canonical orchestration config

@@ -1,0 +1,143 @@
+schema_version: 1
+runtime:
+  docs_root: docs/orchestration-v2
+  run_state_root: .ai-org/runs
+phase_policies:
+  default:
+    order:
+    - intake
+    - planning
+    - design
+    - implementation
+    - verification
+    - feedback
+    required_documents:
+      intake:
+      - request-brief.md
+      planning:
+      - plan.md
+      design:
+      - design.md
+      implementation:
+      - implementation.md
+      verification:
+      - verification.md
+      feedback:
+      - feedback.md
+    announce_plan_on_start: true
+    announce_progress: true
+    require_goal_feedback: true
+backend_policies:
+  orchestrator_default:
+    direct_reply: resume_session
+    local_execution: resume_session
+    delegated_execution: tmux_batch
+    long_running: tmux_batch
+  specialist_default:
+    direct_reply: ephemeral
+    local_execution: resume_session
+    delegated_execution: tmux_batch
+    long_running: tmux_batch
+session_policies:
+  orchestrator_default:
+    max_messages_before_compact: 80
+    warn_threshold_percent: 70
+    compact_threshold_percent: 80
+    stale_after_minutes: 180
+  specialist_default:
+    max_messages_before_compact: 50
+    warn_threshold_percent: 70
+    compact_threshold_percent: 80
+    stale_after_minutes: 180
+team_profiles:
+  global_orchestrator:
+    preferred_engine: codex
+    fallback_engine: claude-code
+    execution_mode: sequential
+    preferred_agents:
+    - planner
+    - architect
+    - writer
+    preferred_skills: []
+    avoid_agents: []
+    max_team_size: 3
+    guidance: 전체 조율과 사용자 응답 품질을 우선한다.
+  research_strategy:
+    preferred_engine: codex
+    fallback_engine: claude-code
+    execution_mode: sequential
+    preferred_agents:
+    - analyst
+    - writer
+    preferred_skills: []
+    avoid_agents: []
+    max_team_size: 3
+    guidance: 출처와 비교 기준을 명확히 남긴다.
+  engineering_delivery:
+    preferred_engine: codex
+    fallback_engine: claude-code
+    execution_mode: sequential
+    preferred_agents:
+    - executor
+    - debugger
+    preferred_skills: []
+    avoid_agents: []
+    max_team_size: 3
+    guidance: 구현과 검증을 함께 수행한다.
+  design_strategy:
+    preferred_engine: claude-code
+    fallback_engine: codex
+    execution_mode: sequential
+    preferred_agents:
+    - designer
+    - writer
+    preferred_skills: []
+    avoid_agents: []
+    max_team_size: 3
+    guidance: 사용자 경험과 전달 명확성을 우선한다.
+  product_strategy:
+    preferred_engine: claude-code
+    fallback_engine: codex
+    execution_mode: sequential
+    preferred_agents:
+    - planner
+    - analyst
+    preferred_skills: []
+    avoid_agents: []
+    max_team_size: 3
+    guidance: 요구사항과 우선순위를 구조화한다.
+  growth_strategy:
+    preferred_engine: claude-code
+    fallback_engine: codex
+    execution_mode: sequential
+    preferred_agents:
+    - analyst
+    - writer
+    preferred_skills: []
+    avoid_agents: []
+    max_team_size: 3
+    guidance: 가설, 지표, 메시지 전달을 명확히 한다.
+  ops_delivery:
+    preferred_engine: codex
+    fallback_engine: claude-code
+    execution_mode: sequential
+    preferred_agents:
+    - executor
+    - verifier
+    preferred_skills: []
+    avoid_agents: []
+    max_team_size: 3
+    guidance: 운영 안정성과 검증 체크리스트를 우선한다.
+verification_profiles:
+  orchestrator_default:
+    require_plan: true
+    require_tests: true
+    require_status_snapshot: true
+    require_feedback: true
+  specialist_default:
+    require_plan: true
+    require_tests: true
+    require_status_snapshot: true
+    require_feedback: true
+legacy_exports:
+  bots_dir: bots
