@@ -38,6 +38,8 @@ from tools.telegram_uploader import upload_file
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / ".omx" / "auto-improve"
 MAX_FILES_PER_ACTION = 6
+MAX_CHANGED_FILES = 12
+MAX_DIFF_LINE_CHURN = 600
 SAFE_FILE_PREFIXES = ("core/", "scripts/", "tools/", "tests/", "docs/")
 SAFE_FILE_EXACT = {"README.md", "ARCHITECTURE.md", "AGENTS.md", "pyproject.toml"}
 FORBIDDEN_FILE_PREFIXES = ("bots/", ".ai-org/", ".omx/state/", ".omx/metrics", ".env")
@@ -86,6 +88,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit-lines", type=int, default=500)
     parser.add_argument("--max-actions", type=int, default=1)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--base-ref", default="origin/main")
     parser.add_argument("--push-branch", action="store_true")
     parser.add_argument("--create-pr", action="store_true")
     parser.add_argument("--upload", action="store_true")
@@ -247,7 +250,7 @@ def _run(cmd: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True, check=True)
 
 
-def create_worktree(branch_name: str, *, output_root: Path) -> tuple[Path, str]:
+def create_worktree(branch_name: str, *, output_root: Path, base_ref: str) -> tuple[Path, str]:
     worktrees_root = output_root / "worktrees"
     worktrees_root.mkdir(parents=True, exist_ok=True)
     worktree_dir = worktrees_root / branch_name.replace("/", "__")
@@ -257,7 +260,7 @@ def create_worktree(branch_name: str, *, output_root: Path) -> tuple[Path, str]:
     probe = subprocess.run(["git", "show-ref", "--verify", f"refs/heads/{branch_name}"], cwd=str(PROJECT_ROOT), text=True, capture_output=True, check=False)
     if probe.returncode == 0:
         final_branch = f"{branch_name}-{datetime.now().strftime('%H%M%S')}"
-    _run(["git", "worktree", "add", "-b", final_branch, str(worktree_dir), "HEAD"], cwd=PROJECT_ROOT)
+    _run(["git", "worktree", "add", "-b", final_branch, str(worktree_dir), base_ref], cwd=PROJECT_ROOT)
     return worktree_dir, final_branch
 
 
@@ -393,7 +396,30 @@ def collect_changed_files(*, worktree_dir: Path) -> list[str]:
     return changed
 
 
+def diff_line_churn(*, worktree_dir: Path) -> int:
+    proc = subprocess.run(
+        ["git", "diff", "--numstat"],
+        cwd=str(worktree_dir),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    churn = 0
+    for raw in proc.stdout.splitlines():
+        parts = raw.split("\t")
+        if len(parts) < 3:
+            continue
+        added, deleted = parts[0], parts[1]
+        if added.isdigit():
+            churn += int(added)
+        if deleted.isdigit():
+            churn += int(deleted)
+    return churn
+
+
 def changed_files_are_safe(changed_files: list[str], planned_files: list[str]) -> bool:
+    if len(changed_files) > MAX_CHANGED_FILES:
+        return False
     allowed = {path.lstrip("./") for path in planned_files}
     for path in changed_files:
         normalized = path.lstrip("./")
@@ -415,6 +441,8 @@ def commit_branch(plan: ImprovementPlan, *, worktree_dir: Path) -> str | None:
         return None
     planned_files = [path for action in plan.actions for path in action.files]
     if not changed_files_are_safe(changed_files, planned_files):
+        return None
+    if diff_line_churn(worktree_dir=worktree_dir) > MAX_DIFF_LINE_CHURN:
         return None
     _run(["git", "add", "-A"], cwd=worktree_dir)
     _run(["git", "commit", "-m", f"auto-improve: {plan.pr_title}"], cwd=worktree_dir)
@@ -478,7 +506,7 @@ async def run_cycle(args: argparse.Namespace) -> int:
         stamp=stamp,
     )
     run_dir = args.output_root / stamp
-    worktree_dir, final_branch = create_worktree(plan.branch_name, output_root=args.output_root)
+    worktree_dir, final_branch = create_worktree(plan.branch_name, output_root=args.output_root, base_ref=args.base_ref)
     plan.branch_name = final_branch
     try:
         apply_logs = await apply_actions(

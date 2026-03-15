@@ -11,6 +11,7 @@ from scripts.auto_improve_recent_conversations import (
     VerificationResult,
     _fallback_plan,
     changed_files_are_safe,
+    diff_line_churn,
     validate_plan,
     write_run_artifacts,
 )
@@ -97,3 +98,24 @@ def test_changed_files_are_safe_blocks_unplanned_config_changes() -> None:
         ["organizations.yaml"],
         ["core/telegram_relay.py"],
     ) is False
+
+
+def test_changed_files_are_safe_blocks_excessive_file_count() -> None:
+    changed = [f"core/file_{idx}.py" for idx in range(20)]
+    assert changed_files_are_safe(changed, changed) is False
+
+
+def test_diff_line_churn_counts_added_and_deleted_lines(tmp_path: Path) -> None:
+    worktree = tmp_path / "repo"
+    worktree.mkdir()
+    subprocess = __import__("subprocess")
+    subprocess.run(["git", "init"], cwd=str(worktree), check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=str(worktree), check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.name", "test"], cwd=str(worktree), check=True, capture_output=True, text=True)
+    sample = worktree / "sample.txt"
+    sample.write_text("a\nb\n", encoding="utf-8")
+    subprocess.run(["git", "add", "sample.txt"], cwd=str(worktree), check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=str(worktree), check=True, capture_output=True, text=True)
+    sample.write_text("a\nc\nd\n", encoding="utf-8")
+
+    assert diff_line_churn(worktree_dir=worktree) == 3
