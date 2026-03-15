@@ -8,7 +8,9 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import shlex
 import subprocess
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from loguru import logger
@@ -37,6 +39,9 @@ class SessionManager:
 
     def session_name(self, team_id: str) -> str:
         return f"{SESSION_PREFIX}_{team_id}"
+
+    def shell_session_name(self, team_id: str, purpose: str = "exec") -> str:
+        return f"{SESSION_PREFIX}_{team_id}_{purpose}"
 
     # ── tmux 헬퍼 ─────────────────────────────────────────────────────────
 
@@ -107,6 +112,63 @@ class SessionManager:
             return []
         return [s for s in out.splitlines() if s.startswith(SESSION_PREFIX + "_")]
 
+    def ensure_shell_session(self, team_id: str, purpose: str = "exec") -> str:
+        """일반 쉘 명령 실행용 tmux 세션을 준비한다."""
+        if not self._tmux_available():
+            raise RuntimeError("tmux unavailable")
+        name = self.shell_session_name(team_id, purpose)
+        return self._ensure_shell_session_name(name)
+
+    def _ensure_shell_session_name(self, name: str, *, reset: bool = False) -> str:
+        if reset:
+            self._run_tmux("kill-session", "-t", name)
+        out = self._run_tmux("has-session", "-t", name)
+        exists = not out
+        if not exists:
+            self._run_tmux("new-session", "-d", "-s", name, "-x", "220", "-y", "50")
+            logger.info(f"tmux shell 세션 생성 완료: {name}")
+        return name
+
+    async def run_shell_command(
+        self,
+        team_id: str,
+        command: str,
+        *,
+        purpose: str = "exec",
+        timeout: float | None = None,
+        progress_callback: Callable[[str], Awaitable[None]] | None = None,
+    ) -> tuple[str, int]:
+        """tmux shell 세션에서 명령을 실행하고 stdout/stderr를 수집한다."""
+        if not self._tmux_available():
+            raise RuntimeError("tmux unavailable")
+        name = self._ensure_shell_session_name(self.shell_session_name(team_id, purpose), reset=True)
+        output_file = Path.home() / ".ai-org" / "sessions" / f"{name}.out"
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text("", encoding="utf-8")
+
+        command_body = (
+            f"({command}) > {shlex.quote(str(output_file))} 2>&1; "
+            "status=$?; "
+            f"printf '\\n__EXIT_CODE__:%s\\n__DONE__\\n' \"$status\" >> {shlex.quote(str(output_file))}"
+        )
+        shell_cmd = f"bash -lc {shlex.quote(command_body)}"
+        self._run_tmux("send-keys", "-t", name, shell_cmd, "Enter")
+
+        try:
+            content = await asyncio.wait_for(
+                self._wait_for_output(output_file, progress_callback=progress_callback),
+                timeout=timeout or OUTPUT_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            self._run_tmux("kill-session", "-t", name)
+            raise
+        exit_code = 0
+        m = re.search(r"__EXIT_CODE__:(\d+)", content)
+        if m:
+            exit_code = int(m.group(1))
+            content = re.sub(r"\n?__EXIT_CODE__:\d+\n?__DONE__\n?", "", content).strip()
+        return content, exit_code
+
     def kill_session(self, team_id: str) -> None:
         """세션 종료."""
         name = self.session_name(team_id)
@@ -140,12 +202,28 @@ class SessionManager:
             logger.warning(f"세션 응답 타임아웃: {name}")
             return output_file.read_text(encoding="utf-8") if output_file.exists() else ""
 
-    async def _wait_for_output(self, output_file: Path) -> str:
+    async def _wait_for_output(
+        self,
+        output_file: Path,
+        progress_callback: Callable[[str], Awaitable[None]] | None = None,
+    ) -> str:
         """출력 파일에 __DONE__ 마커 나타날 때까지 대기."""
+        last_size = 0
         while True:
             await asyncio.sleep(0.5)
             if output_file.exists():
                 content = output_file.read_text(encoding="utf-8")
+                if progress_callback and len(content) > last_size:
+                    delta = content[last_size:]
+                    last_size = len(content)
+                    for line in delta.splitlines():
+                        stripped = line.strip()
+                        if not stripped or stripped.startswith("__EXIT_CODE__") or stripped == "__DONE__":
+                            continue
+                        try:
+                            await progress_callback(stripped)
+                        except Exception as cb_err:
+                            logger.warning(f"shell progress_callback 오류: {cb_err}")
                 if "__DONE__" in content:
                     return content.replace("__DONE__", "").strip()
 

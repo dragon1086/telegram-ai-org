@@ -5,6 +5,7 @@ import asyncio
 import os
 import re
 import shlex
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from loguru import logger
@@ -233,6 +234,20 @@ def _sanitize_codex_output(text: str) -> str:
     return cleaned or text.strip()
 
 
+def _extract_progress_line(line: str) -> str:
+    """Codex stdout에서 텔레그램 중간보고로 쓸 만한 줄만 추린다."""
+    stripped = line.strip()
+    if not stripped:
+        return ""
+    if stripped.lower() in _SECTION_HEADERS:
+        return ""
+    if _looks_like_noise_line(stripped):
+        return ""
+    if len(stripped) > 240:
+        stripped = stripped[:237].rstrip() + "..."
+    return stripped
+
+
 class CodexRunner:
     """OpenAI Codex CLI를 subprocess로 실행하는 래퍼."""
 
@@ -338,6 +353,7 @@ class CodexRunner:
         workdir: str | None = None,
         workdir_hint: str | None = None,
         agents: list[str] | None = None,
+        progress_callback: Callable[[str], Awaitable[None]] | None = None,
         shell_session_manager=None,
         shell_team_id: str | None = None,
         shell_purpose: str = "codex-batch",
@@ -371,6 +387,7 @@ class CodexRunner:
                     shell_cmd,
                     purpose=shell_purpose,
                     timeout=timeout_sec,
+                    progress_callback=progress_callback,
                 )
                 self._last_run_metrics = {
                     "output_chars": len(output or ""),
@@ -390,7 +407,13 @@ class CodexRunner:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=resolved_workdir,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+            if progress_callback is None:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+            else:
+                stdout, stderr = await asyncio.wait_for(
+                    self._communicate_with_progress(proc, progress_callback),
+                    timeout=timeout_sec,
+                )
 
             if proc.returncode != 0:
                 error = stderr.decode(errors="replace")
@@ -423,6 +446,7 @@ class CodexRunner:
         workdir: str | None = None,
         workdir_hint: str | None = None,
         agents: list[str] | None = None,
+        progress_callback: Callable[[str], Awaitable[None]] | None = None,
         shell_session_manager=None,
         shell_team_id: str | None = None,
         shell_purpose: str = "codex-batch",
@@ -434,7 +458,53 @@ class CodexRunner:
             workdir=workdir,
             workdir_hint=workdir_hint,
             agents=agents,
+            progress_callback=progress_callback,
             shell_session_manager=shell_session_manager,
             shell_team_id=shell_team_id,
             shell_purpose=shell_purpose,
         )
+
+    async def _communicate_with_progress(
+        self,
+        proc,
+        progress_callback: Callable[[str], Awaitable[None]],
+    ) -> tuple[bytes, bytes]:
+        stdout_chunks: list[bytes] = []
+        stderr_chunks: list[bytes] = []
+        last_progress = 0.0
+        recent: set[str] = set()
+
+        async def _drain(stream, sink: list[bytes]) -> None:
+            nonlocal last_progress
+            if stream is None:
+                return
+            while True:
+                raw_line = await stream.readline()
+                if not raw_line:
+                    break
+                sink.append(raw_line)
+                progress = _extract_progress_line(raw_line.decode(errors="replace"))
+                if not progress:
+                    continue
+                now = asyncio.get_running_loop().time()
+                dedupe_key = progress.lower()
+                if dedupe_key in recent and now - last_progress < 2.0:
+                    continue
+                recent.add(dedupe_key)
+                if len(recent) > 20:
+                    recent.clear()
+                    recent.add(dedupe_key)
+                if now - last_progress < 1.2:
+                    continue
+                last_progress = now
+                try:
+                    await progress_callback(progress)
+                except Exception as cb_err:
+                    logger.warning(f"codex progress_callback 오류: {cb_err}")
+
+        await asyncio.gather(
+            _drain(proc.stdout, stdout_chunks),
+            _drain(proc.stderr, stderr_chunks),
+        )
+        await proc.wait()
+        return b"".join(stdout_chunks), b"".join(stderr_chunks)
