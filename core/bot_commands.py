@@ -24,6 +24,9 @@ COMMON_COMMANDS = [
 
 ORCHESTRATOR_ONLY_COMMANDS = [
     BotCommand("setup", "새 조직 봇 등록 마법사"),
+    BotCommand("stop_tasks", "진행 중인 작업 전체 종료"),
+    BotCommand("restart", "봇 전체 재시작"),
+    BotCommand("set_engine", "엔진 변경 (예: /set_engine claude-code)"),
 ]
 
 

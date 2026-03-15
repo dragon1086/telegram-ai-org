@@ -1873,6 +1873,118 @@ class TelegramRelay:
             logger.error(f"리셋 실패: {e}")
             await update.message.reply_text(f"❌ 리셋 실패: {e}")
 
+    async def on_command_stop_tasks(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """현재 진행 중인 tmux 세션 전체 종료. PM봇 전용."""
+        if update.message is None:
+            return
+        if not self._is_pm_org:
+            return
+
+        sessions = self.session_manager.list_sessions()
+        if not sessions:
+            await update.message.reply_text("ℹ️ 현재 실행 중인 세션이 없습니다.")
+            return
+
+        prefix = "aiorg_"
+        stopped = []
+        for session_name in sessions:
+            team_id = session_name[len(prefix):] if session_name.startswith(prefix) else session_name
+            try:
+                self.session_manager.kill_session(team_id)
+                stopped.append(session_name)
+            except Exception as exc:
+                logger.warning(f"[stop_tasks] 세션 종료 실패 {session_name}: {exc}")
+
+        if stopped:
+            await update.message.reply_text(
+                f"🛑 작업 종료 완료\n종료된 세션: {', '.join(stopped)}"
+            )
+        else:
+            await update.message.reply_text("⚠️ 세션 종료 중 오류가 발생했습니다.")
+
+    async def on_command_restart(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """봇 전체 재시작 (scripts/restart_bots.sh 실행). PM봇 전용."""
+        if update.message is None:
+            return
+        if not self._is_pm_org:
+            return
+
+        await update.message.reply_text("🔄 봇 재시작 중... (약 5초 후 다시 온라인 됩니다)")
+        import asyncio as _asyncio
+        project_dir = Path(__file__).parent.parent
+        restart_script = project_dir / "scripts" / "restart_bots.sh"
+        try:
+            proc = await _asyncio.create_subprocess_exec(
+                "bash", str(restart_script),
+                stdout=_asyncio.subprocess.DEVNULL,
+                stderr=_asyncio.subprocess.DEVNULL,
+                cwd=str(project_dir),
+            )
+            _asyncio.create_task(proc.wait())
+        except Exception as exc:
+            logger.error(f"/restart 실패: {exc}")
+            await update.message.reply_text(f"❌ 재시작 실패: {exc}")
+
+    async def on_command_set_engine(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/set_engine <engine> — bots/*.yaml 엔진 변경 후 재시작. PM봇 전용."""
+        if update.message is None:
+            return
+        if not self._is_pm_org:
+            return
+
+        args = (update.message.text or "").split()
+        if len(args) < 2:
+            await update.message.reply_text(
+                "사용법: /set_engine <engine>\n예: /set_engine claude-code"
+            )
+            return
+
+        engine = args[1].strip()
+        import yaml as _yaml
+        bots_dir = Path(__file__).parent.parent / "bots"
+        updated = []
+        errors = []
+        for yaml_path in sorted(bots_dir.glob("*.yaml")):
+            try:
+                data = _yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+                if data.get("engine") != engine:
+                    data["engine"] = engine
+                    yaml_path.write_text(
+                        _yaml.dump(data, allow_unicode=True, sort_keys=False),
+                        encoding="utf-8",
+                    )
+                    updated.append(yaml_path.stem)
+            except Exception as exc:
+                logger.warning(f"[set_engine] {yaml_path.name} 수정 실패: {exc}")
+                errors.append(yaml_path.stem)
+
+        if not updated and not errors:
+            await update.message.reply_text(f"ℹ️ 모든 봇이 이미 {engine} 엔진을 사용 중입니다.")
+            return
+
+        msg = f"⚙️ 엔진 변경: {engine}\n"
+        if updated:
+            msg += f"• 업데이트: {', '.join(updated)}\n"
+        if errors:
+            msg += f"• 실패: {', '.join(errors)}\n"
+        msg += "\n🔄 재시작 중..."
+        await update.message.reply_text(msg)
+
+        import asyncio as _asyncio
+        project_dir = Path(__file__).parent.parent
+        restart_script = project_dir / "scripts" / "restart_bots.sh"
+        try:
+            proc = await _asyncio.create_subprocess_exec(
+                "bash", str(restart_script),
+                stdout=_asyncio.subprocess.DEVNULL,
+                stderr=_asyncio.subprocess.DEVNULL,
+                cwd=str(project_dir),
+            )
+            _asyncio.create_task(proc.wait())
+        except Exception as exc:
+            logger.error(f"[set_engine] 재시작 실패: {exc}")
+            await update.message.reply_text(f"❌ 재시작 실패: {exc}")
+
     async def on_command_setup(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """설정 마법사 진입 — 메뉴 표시."""
         if update.message is None:
@@ -2092,6 +2204,11 @@ class TelegramRelay:
             _asyncio.create_task(self._synthesis_poll_loop())
             logger.info(f"[{self.org_id}] SynthesisPoller 시작됨")
 
+        if self._is_pm_org:
+            import asyncio as _asyncio
+            _asyncio.create_task(register_all_bot_commands())
+            logger.info(f"[{self.org_id}] 봇 명령어 등록 태스크 시작됨")
+
     async def _store_pending_confirmation(self, action: str, task_ids: list, description: str = "") -> None:
         """pm_bot 제안 상태 저장 (5분 유효). 사용자 긍정 응답 시 _execute_pending_confirmation 실행."""
         import time as _time
@@ -2298,6 +2415,9 @@ class TelegramRelay:
         self.app.add_handler(CommandHandler("start", self.on_command_start))
         self.app.add_handler(CommandHandler("status", self.on_command_status))
         self.app.add_handler(CommandHandler("reset", self.on_command_reset))
+        self.app.add_handler(CommandHandler("stop_tasks", self.on_command_stop_tasks))
+        self.app.add_handler(CommandHandler("restart", self.on_command_restart))
+        self.app.add_handler(CommandHandler("set_engine", self.on_command_set_engine))
         self.app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self.on_self_added_to_chat))
         self.app.add_handler(
             MessageHandler(filters.TEXT, self.on_message)  # 명령어 포함
@@ -3057,6 +3177,30 @@ async def _set_org_bot_commands(token: str, *, kind: str = "specialist") -> None
         logger.info(f"조직봇 명령어 자동 등록 완료: {[c.command for c in org_commands]}")
     except Exception as e:
         logger.warning(f"조직봇 명령어 등록 실패 (무시): {e}")
+
+
+async def register_all_bot_commands() -> None:
+    """bots/*.yaml 의 모든 봇에 setMyCommands 를 호출해 명령어 목록을 최신화한다."""
+    import yaml as _yaml
+    from telegram import Bot as _TGBot
+    from core.bot_commands import get_bot_commands
+
+    bots_dir = Path(__file__).parent.parent / "bots"
+    for yaml_path in sorted(bots_dir.glob("*.yaml")):
+        try:
+            data = _yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+            token_env = data.get("token_env", "")
+            token = os.environ.get(token_env, "") if token_env else ""
+            if not token:
+                logger.debug(f"[register_commands] 토큰 없음: {yaml_path.name} ({token_env})")
+                continue
+            kind = "orchestrator" if data.get("is_pm") else "specialist"
+            commands = get_bot_commands(kind)
+            bot = _TGBot(token=token)
+            await bot.set_my_commands(commands)
+            logger.info(f"[register_commands] {yaml_path.stem} ({kind}) 명령어 등록 완료")
+        except Exception as exc:
+            logger.warning(f"[register_commands] {yaml_path.name} 실패 (무시): {exc}")
 
 
 async def _validate_bot_token(token: str) -> dict | None:
