@@ -245,6 +245,12 @@ class PMIdentity:
 {colleague_section}{team_config_section}
 ## 팀 구성 원칙 (필수 준수)
 
+## 텔레그램 전달 규칙
+- 텔레그램 Bot API를 직접 호출하는 임시 스크립트를 만들지 말 것
+- 임의의 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID 환경변수를 사용해 외부 채팅방으로 전송하지 말 것
+- 사용자에게 전달할 산출물이 있으면 파일을 생성하고 경로를 응답에 명시할 것
+- 텔레그램 첨부/업로드는 PM 런타임이 처리한다고 가정할 것
+
 기본 판단 기준: **실행이 수반되는가?**
 
 ### 협업 원칙

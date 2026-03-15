@@ -45,6 +45,7 @@ from core.pm_router import PMRouter, PMRoute
 from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR, KNOWN_DEPTS
 from core.orchestration_config import load_orchestration_config
 from core.orchestration_runbook import OrchestrationRunbook
+from core.telegram_delivery import resolve_delivery_target
 from core.session_registry import SessionRegistry
 from core.discussion_parser import is_discussion_message, parse_discussion_tags
 from core.discussion import ENABLE_DISCUSSION_PROTOCOL
@@ -56,6 +57,7 @@ from core.task_poller import TaskPoller
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
 USE_NL_CLASSIFIER = True  # 2-tier NLClassifier 활성화 플래그 (False 시 기존 키워드 로직 사용)
+AUTO_UPLOAD_FILE_RE = re.compile(r"(?:(?<=\s)|^)(~?/[^ \t\r\n'\"`]+\.\w+)")
 
 # /setup 마법사 ConversationHandler 상태
 SETUP_MENU, SETUP_AWAIT_TOKEN, SETUP_AWAIT_ENGINE = range(3)
@@ -767,6 +769,39 @@ class TelegramRelay:
             return ""
         return stripped
 
+    async def _auto_upload(self, response: str, token: str, chat_id: int) -> None:
+        """응답 내 생성 파일 경로를 감지해 현재 조직의 설정된 채팅방으로 업로드."""
+        from tools.telegram_uploader import upload_file
+
+        target = resolve_delivery_target(self.org_id)
+        if target is None:
+            logger.warning(f"[auto_upload:{self.org_id}] configured target 없음")
+            return
+
+        safe_token = target.token
+        safe_chat_id = target.chat_id
+        if token != safe_token or int(chat_id) != safe_chat_id:
+            logger.warning(f"[auto_upload:{self.org_id}] 전달 대상 불일치 감지, configured target 사용")
+
+        seen: set[str] = set()
+        for raw in AUTO_UPLOAD_FILE_RE.findall(response or ""):
+            path_text = os.path.expanduser(raw.strip())
+            if path_text in seen:
+                continue
+            seen.add(path_text)
+            path = Path(path_text)
+            if not path.exists() or not path.is_file():
+                continue
+            try:
+                await upload_file(
+                    safe_token,
+                    safe_chat_id,
+                    str(path),
+                    f"📎 {self.org_id} 산출물: {path.name}",
+                )
+            except Exception as exc:
+                logger.warning(f"[auto_upload:{self.org_id}] 업로드 실패 {path}: {exc}")
+
     # ── 메시지 처리 ────────────────────────────────────────────────────────
 
     async def on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -997,6 +1032,7 @@ class TelegramRelay:
                     if response:
                         for chunk in _split_message(response, 4000):
                             await self.display.send_reply(update.message, chunk)
+                        await self._auto_upload(response, self.token, update.effective_chat.id)
                     self._append_runbook(
                         run_id,
                         "Verification summary",
@@ -1153,6 +1189,7 @@ class TelegramRelay:
         if response:
             for chunk in _split_message(response, 4000):
                 await self.display.send_reply(update.message, chunk)
+            await self._auto_upload(response, self.token, update.effective_chat.id)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
             if self.bus:
                 await self.bus.publish(Event(
@@ -1942,6 +1979,7 @@ class TelegramRelay:
                     summary,
                     reply_to_message_id=reply_to_message_id,
                 )
+                await self._auto_upload(response or "", self.token, self.allowed_chat_id)
             self._append_runbook(
                 run_id,
                 "Verification summary",
@@ -2786,6 +2824,3 @@ class _CodexRunnerAdapter:
         if progress_callback:
             await progress_callback(result[:200])
         return result
-
-    async def _auto_upload(self, response: str, token: str, chat_id: int) -> None:
-        """Codex runner는 자동 업로드 미지원 — no-op."""
