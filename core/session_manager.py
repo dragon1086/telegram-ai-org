@@ -166,7 +166,7 @@ class SessionManager:
         m = re.search(r"__EXIT_CODE__:(\d+)", content)
         if m:
             exit_code = int(m.group(1))
-            content = re.sub(r"\n?__EXIT_CODE__:\d+\n?__DONE__\n?", "", content).strip()
+            content = re.sub(r"\n?__EXIT_CODE__:\d+\s*", "", content).strip()
         return content, exit_code
 
     def kill_session(self, team_id: str) -> None:

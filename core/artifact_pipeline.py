@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import re
 from pathlib import Path
 
 
@@ -35,8 +36,12 @@ def _render_html_preview(source: Path) -> Path | None:
             "<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
             "max-width:880px;margin:40px auto;padding:0 20px;line-height:1.6;color:#10243e}"
             "pre{background:#f5f7fa;padding:12px;border-radius:8px;overflow:auto}"
-            "code{background:#f5f7fa;padding:2px 4px;border-radius:4px}"
-            "h1,h2,h3{color:#0b3b68} li{margin:6px 0}</style></head><body>"
+            "code{background:#f5f7fa;padding:2px 4px;border-radius:4px;font-size:.9em}"
+            "h1,h2,h3,h4{color:#0b3b68} li{margin:6px 0}"
+            "ol,ul{padding-left:1.5em} ol{list-style:decimal} ul{list-style:disc}"
+            "hr{border:none;border-top:1px solid #d0dae8;margin:16px 0}"
+            "a{color:#1a6bb5} em{font-style:italic} strong{font-weight:700}"
+            "p{margin:8px 0}</style></head><body>"
             f"{body}</body></html>"
         ),
         encoding="utf-8",
@@ -85,6 +90,10 @@ def _render_slide_html(source: Path) -> Path | None:
         ".slide-body pre{background:#020617;border:1px solid #1e293b;border-radius:10px;"
         "padding:14px 16px;overflow:auto;font-size:.85em;color:#a5f3fc}"
         ".slide-body strong,.slide-body b{color:#f8fafc;font-weight:600}"
+        ".slide-body em{font-style:italic;color:#e2e8f0}"
+        ".slide-body a{color:#7dd3fc;text-decoration:underline}"
+        ".slide-body hr{border:none;border-top:1px solid rgba(99,179,237,.2);margin:12px 0}"
+        ".slide-body ol{padding-left:1.4em;list-style:decimal}"
         ".nav{display:flex;align-items:center;gap:16px;margin-top:20px}"
         ".nav button{background:rgba(99,179,237,.15);border:1px solid rgba(99,179,237,.3);"
         "color:#7dd3fc;font-size:20px;width:44px;height:44px;border-radius:50%;cursor:pointer;"
@@ -142,18 +151,48 @@ def _split_sections(text: str) -> list[tuple[str, str]]:
     return [(title, body) for title, body in sections if body]
 
 
+def _inline_md(raw: str) -> str:
+    """Inline markdown → HTML: code spans, bold, italic, links."""
+    # Split on backtick code spans first (preserve content verbatim)
+    segments = re.split(r"(`[^`\n]+`)", raw)
+    out: list[str] = []
+    for seg in segments:
+        if seg.startswith("`") and seg.endswith("`") and len(seg) > 2:
+            out.append(f"<code>{html.escape(seg[1:-1])}</code>")
+        else:
+            s = html.escape(seg)
+            # Links [text](url) — [ ] ( ) are not escaped by html.escape
+            s = re.sub(
+                r"\[([^\]]+)\]\(([^)\s]+)\)",
+                lambda m: f'<a href="{html.escape(m.group(2))}">{m.group(1)}</a>',
+                s,
+            )
+            # Bold+Italic ***text***
+            s = re.sub(r"\*\*\*(.+?)\*\*\*", r"<strong><em>\1</em></strong>", s)
+            # Bold **text**
+            s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
+            # Italic *text* (not adjacent to another *)
+            s = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<em>\1</em>", s)
+            out.append(s)
+    return "".join(out)
+
+
 def _markdownish_to_html(text: str) -> str:
     lines = text.splitlines()
     parts: list[str] = []
-    in_list = False
+    in_ul = False
+    in_ol = False
     in_code = False
     code_lines: list[str] = []
 
-    def close_list() -> None:
-        nonlocal in_list
-        if in_list:
+    def close_lists() -> None:
+        nonlocal in_ul, in_ol
+        if in_ul:
             parts.append("</ul>")
-            in_list = False
+            in_ul = False
+        if in_ol:
+            parts.append("</ol>")
+            in_ol = False
 
     def close_code() -> None:
         nonlocal in_code, code_lines
@@ -165,8 +204,9 @@ def _markdownish_to_html(text: str) -> str:
     for raw in lines:
         stripped = raw.rstrip()
         marker = stripped.strip()
+
         if marker.startswith("```"):
-            close_list()
+            close_lists()
             if in_code:
                 close_code()
             else:
@@ -176,29 +216,50 @@ def _markdownish_to_html(text: str) -> str:
             code_lines.append(stripped)
             continue
         if not marker:
-            close_list()
+            close_lists()
             continue
-        if marker.startswith("# "):
-            close_list()
-            parts.append(f"<h1>{html.escape(marker[2:].strip())}</h1>")
-            continue
-        if marker.startswith("## "):
-            close_list()
-            parts.append(f"<h2>{html.escape(marker[3:].strip())}</h2>")
-            continue
-        if marker.startswith("### "):
-            close_list()
-            parts.append(f"<h3>{html.escape(marker[4:].strip())}</h3>")
-            continue
-        if marker.startswith(("- ", "* ", "• ")):
-            if not in_list:
-                parts.append("<ul>")
-                in_list = True
-            parts.append(f"<li>{html.escape(marker[2:].strip())}</li>")
-            continue
-        close_list()
-        parts.append(f"<p>{html.escape(marker)}</p>")
 
-    close_list()
+        # Horizontal rule
+        if re.match(r"^[-*_]{3,}$", marker):
+            close_lists()
+            parts.append("<hr>")
+            continue
+
+        # Headers (#### → #)
+        for level in (4, 3, 2, 1):
+            prefix = "#" * level + " "
+            if marker.startswith(prefix):
+                close_lists()
+                parts.append(f"<h{level}>{_inline_md(marker[len(prefix):].strip())}</h{level}>")
+                break
+        else:
+            # Unordered list
+            if marker.startswith(("- ", "* ", "• ")):
+                if in_ol:
+                    parts.append("</ol>")
+                    in_ol = False
+                if not in_ul:
+                    parts.append("<ul>")
+                    in_ul = True
+                parts.append(f"<li>{_inline_md(marker[2:].strip())}</li>")
+                continue
+
+            # Ordered list  (1. 2. etc.)
+            m = re.match(r"^(\d+)[.)]\s+(.+)$", marker)
+            if m:
+                if in_ul:
+                    parts.append("</ul>")
+                    in_ul = False
+                if not in_ol:
+                    parts.append("<ol>")
+                    in_ol = True
+                parts.append(f"<li>{_inline_md(m.group(2))}</li>")
+                continue
+
+            close_lists()
+            parts.append(f"<p>{_inline_md(marker)}</p>")
+            continue
+
+    close_lists()
     close_code()
     return "".join(parts)
