@@ -1155,6 +1155,26 @@ class TelegramRelay:
             if progress_task and not progress_task.done():
                 progress_task.cancel()
 
+    async def _with_immediate_ack(self, update: Update, coro):
+        """
+        처리 시작 즉시 '🤔 분석 중...' ACK를 전송하고,
+        처리 완료 후 해당 메시지를 삭제한다 (최종 결과는 별도 전송).
+        """
+        ack_msg = None
+        try:
+            ack_msg = await self.display.send_reply(update.message, "🤔 분석 중...")
+        except Exception:
+            pass  # ACK 실패해도 처리는 계속
+
+        try:
+            return await coro
+        finally:
+            if ack_msg is not None:
+                try:
+                    await ack_msg.delete()
+                except Exception:
+                    pass  # 삭제 실패 무시
+
     async def on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """메시지 수신 → confidence scoring → claim → 응답."""
         if update.message is None or update.effective_chat is None:
@@ -1313,7 +1333,7 @@ class TelegramRelay:
         if self._pm_orchestrator is not None:
             try:
                 request_text = text + _replied_context
-                plan = await self._with_progress_feedback(
+                plan = await self._with_immediate_ack(
                     update,
                     self._pm_orchestrator.plan_request(request_text),
                 )
