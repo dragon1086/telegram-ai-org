@@ -42,6 +42,43 @@ class TaskGraph:
             logger.info(f"TaskGraph: {task_id} 완료 → 새로 실행 가능: {newly_ready}")
         return newly_ready
 
+    async def handle_task_failure(self, task_id: str, policy: str = "cascade_fail") -> list[str]:
+        """선행 태스크 실패 시 후속 태스크 처리 정책.
+
+        Args:
+            task_id: 실패한 태스크 ID
+            policy: 'cascade_fail' — 모든 후속 태스크를 즉시 failed로.
+                    'skip'         — 후속 태스크를 skipped 상태로.
+        Returns:
+            영향받은 태스크 ID 목록.
+        """
+        if policy not in ("cascade_fail", "skip"):
+            return []
+        target_status = "failed" if policy == "cascade_fail" else "skipped"
+        affected = await self._get_all_successors(task_id)
+        for s_id in affected:
+            await self._db.update_pm_task_status(
+                s_id, target_status,
+                result=f"cascade from failed task {task_id}",
+            )
+            logger.warning(f"TaskGraph: {s_id} → {target_status} (cascade from {task_id})")
+        return affected
+
+    async def _get_all_successors(self, task_id: str) -> list[str]:
+        """DFS로 모든 후속 태스크 ID를 수집."""
+        visited: set[str] = set()
+        stack = [task_id]
+        result: list[str] = []
+        while stack:
+            current = stack.pop()
+            dependents = await self._db.get_tasks_depending_on(current)
+            for dep_id in dependents:
+                if dep_id not in visited:
+                    visited.add(dep_id)
+                    result.append(dep_id)
+                    stack.append(dep_id)
+        return result
+
     async def detect_cycle(self, task_id: str, depends_on: list[str]) -> bool:
         """의존성 추가 시 순환이 생기는지 DFS로 검사."""
         # task_id가 depends_on의 조상(직/간접 의존 대상)이면 순환
