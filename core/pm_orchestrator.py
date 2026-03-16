@@ -753,7 +753,7 @@ class PMOrchestrator:
         for task in subtasks:
             dept = task.get("assigned_dept") or "unknown"
             dept_name = KNOWN_DEPTS.get(dept, dept)
-            result = (task.get("result") or "(결과 없음)").strip()
+            result = (task.get("result") or "(결과 없음)").strip().lstrip("-").strip()
             lines.extend([
                 f"### {dept_name}",
                 result[:4000],
@@ -952,19 +952,17 @@ class PMOrchestrator:
         run_id = parent_meta.get("run_id")
         runbook = OrchestrationRunbook(Path(__file__).resolve().parent.parent)
         # LLM 합성 성공 시 unified_report 사용, 실패(keyword fallback) 시 subtask 원본 결과 직접 전달
-        if synthesis.unified_report and len(synthesis.unified_report) > 300:
-            report_text = synthesis.unified_report
-        else:
-            full_results = "\n\n".join(
-                f"## {KNOWN_DEPTS.get(st.get('assigned_dept', ''), st.get('assigned_dept', '?'))}\n"
-                f"{(st.get('result') or '').lstrip('-').strip()}"
-                for st in subtasks
-                if st.get("result")
-            )
-            report_text = full_results or synthesis.unified_report or synthesis.summary
+        full_results = "\n\n".join(
+            f"## {KNOWN_DEPTS.get(st.get('assigned_dept', ''), st.get('assigned_dept', '?'))}\n"
+            f"{(st.get('result') or '').lstrip('-').strip()}"
+            for st in subtasks
+            if st.get("result")
+        )
+        report_text = synthesis.unified_report or full_results or synthesis.summary
         user_friendly_report = await ensure_user_friendly_output(
             report_text,
             original_request=original_request,
+            full_context=full_results,
             decision_client=self._decision_client,
         )
         artifact_path = self._write_unified_report_artifact(

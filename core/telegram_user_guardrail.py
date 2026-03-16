@@ -53,26 +53,35 @@ async def ensure_user_friendly_output(
     draft: str,
     *,
     original_request: str = "",
+    full_context: str = "",
     decision_client: DecisionClientProtocol | None = None,
 ) -> str:
     cleaned = (draft or "").strip()
     artifact_names = extract_local_artifact_names(cleaned)
 
-    if decision_client is not None and needs_rewrite_for_telegram(cleaned):
+    should_rewrite = needs_rewrite_for_telegram(cleaned) or bool(full_context)
+    if decision_client is not None and should_rewrite:
+        context_section = (
+            f"\n\nFULL DEPARTMENT RESULTS (use these to produce a comprehensive report — do NOT compress or omit key findings):\n"
+            f"{full_context[:8000]}"
+        ) if full_context else ""
         prompt = (
             "You are rewriting a PM update for a Telegram-only end user.\n"
             "Rewrite in Korean.\n"
             "Rules:\n"
-            "- First paragraph must directly answer the user.\n"
+            "- First paragraph must directly answer the user's original request.\n"
             "- Do not expose local filesystem paths.\n"
-            "- If artifacts exist, refer to them as attached files by filename only.\n"
-            "- Explain the substance first, attachments second.\n"
-            "- Preserve factual claims.\n\n"
+            "- If artifacts exist, refer to them by filename only at the end.\n"
+            "- Include ALL key findings from every department — do NOT summarize away details.\n"
+            "- Organize findings clearly (by department or topic).\n"
+            "- Explain substance first, attachments last.\n"
+            "- Preserve all factual claims, numbers, and names.\n\n"
             f"Original request:\n{original_request[:1200]}\n\n"
-            f"Draft:\n{cleaned[:6000]}"
+            f"Draft:\n{cleaned[:4000]}"
+            f"{context_section}"
         )
         try:
-            rewritten = await asyncio.wait_for(decision_client.complete(prompt), timeout=35.0)
+            rewritten = await asyncio.wait_for(decision_client.complete(prompt), timeout=60.0)
             if rewritten and rewritten.strip():
                 return _heuristic_cleanup(rewritten.strip(), artifact_names)
         except Exception:
@@ -81,8 +90,12 @@ async def ensure_user_friendly_output(
     return _heuristic_cleanup(cleaned, artifact_names)
 
 
+EXIT_CODE_RE = re.compile(r"__EXIT_CODE__:\d+\s*", re.MULTILINE)
+
+
 def _heuristic_cleanup(text: str, artifact_names: list[str]) -> str:
     cleaned = ARTIFACT_MARKER_RE.sub("", text or "").strip()
+    cleaned = EXIT_CODE_RE.sub("", cleaned).strip()
     cleaned = LOCAL_PATH_RE.sub("", cleaned).strip()
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
