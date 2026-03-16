@@ -37,7 +37,9 @@ class LessonMemory:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS lessons (
                     id TEXT PRIMARY KEY,
@@ -61,7 +63,7 @@ class LessonMemory:
             how_to_prevent=how_to_prevent,
             worker=worker,
         )
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             conn.execute(
                 "INSERT INTO lessons VALUES (?,?,?,?,?,?,?,?)",
                 (lesson.id, lesson.task_description, lesson.category,
@@ -72,7 +74,7 @@ class LessonMemory:
 
     def get_relevant(self, task_description: str, limit: int = 3) -> list[Lesson]:
         keywords = set(task_description.lower().split())
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
                 "SELECT * FROM lessons WHERE resolved=0 ORDER BY created_at DESC LIMIT 50"
             ).fetchall()
@@ -88,7 +90,7 @@ class LessonMemory:
     def get_recent_failures(self, days: int = 7) -> list[Lesson]:
         from datetime import timedelta
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
                 "SELECT * FROM lessons WHERE created_at > ? AND resolved=0 ORDER BY created_at DESC",
                 (cutoff,)
@@ -96,14 +98,14 @@ class LessonMemory:
         return [self._row_to_lesson(r) for r in rows]
 
     def get_category_stats(self) -> dict[str, int]:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
-                "SELECT category, COUNT(*) FROM lessons GROUP BY category"
+                "SELECT category, COUNT(*) FROM lessons WHERE resolved=0 GROUP BY category"
             ).fetchall()
         return dict(rows)
 
     def mark_resolved(self, lesson_id: str):
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             conn.execute("UPDATE lessons SET resolved=1 WHERE id=?", (lesson_id,))
 
     def _row_to_lesson(self, row) -> Lesson:

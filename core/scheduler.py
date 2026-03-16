@@ -38,25 +38,25 @@ class OrgScheduler:
         self.scheduler.add_job(
             self.morning_standup,
             CronTrigger(hour=9, minute=0, timezone=KST),
-            id="morning_standup",
+            id="morning_standup", misfire_grace_time=300,
             replace_existing=True,
         )
         self.scheduler.add_job(
             self.daily_retro,
             CronTrigger(hour=23, minute=30, timezone=KST),
-            id="daily_retro",
+            id="daily_retro", misfire_grace_time=300,
             replace_existing=True,
         )
         self.scheduler.add_job(
             self.weekly_standup,
-            CronTrigger(day_of_week="mon", hour=9, minute=0, timezone=KST),
-            id="weekly_standup",
+            CronTrigger(day_of_week="mon", hour=9, minute=5, timezone=KST),
+            id="weekly_standup", misfire_grace_time=300,
             replace_existing=True,
         )
         self.scheduler.add_job(
             self.friday_retro,
             CronTrigger(day_of_week="fri", hour=18, minute=0, timezone=KST),
-            id="friday_retro",
+            id="friday_retro", misfire_grace_time=300,
             replace_existing=True,
         )
 
@@ -79,6 +79,7 @@ class OrgScheduler:
         try:
             from scripts.daily_retro import main as _retro_main
             await _retro_main()
+            tasks = []  # Phase 3에서 참조 — 여기서 초기화
             # Phase 2: RetroMemory에 저장
             try:
                 from core.retro_memory import RetroMemory, RetroEntry
@@ -102,8 +103,8 @@ class OrgScheduler:
             try:
                 from core.collaboration_tracker import CollaborationTracker
                 from core.agent_persona_memory import AgentPersonaMemory
-                ct = CollaborationTracker()
                 apm = AgentPersonaMemory()
+                ct = CollaborationTracker(persona_memory=None)  # synergy는 update_from_task로만 일원화
                 # 오늘 완료된 태스크의 협업 기록
                 for task in tasks:
                     if task.get("status") == "completed":

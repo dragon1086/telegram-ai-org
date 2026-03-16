@@ -40,7 +40,7 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 def _load_yesterday_retro() -> str:
     """어제 회고 MD 파일 또는 DB에서 인사이트 로드."""
     yesterday = (datetime.now(KST) - timedelta(days=1)).strftime("%Y-%m-%d")
-    retro_dir = PROJECT_ROOT / "logs" / "retro"
+    retro_dir = PROJECT_ROOT / "docs" / "retros"
     retro_file = retro_dir / f"{yesterday}.md"
     if retro_file.exists():
         content = retro_file.read_text()
