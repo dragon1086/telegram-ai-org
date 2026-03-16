@@ -346,10 +346,10 @@ class SessionManager:
             return self._extract_response(current, before)
 
     async def maybe_compact(self, team_id: str, message_count: int = 0) -> bool:
-        """컨텍스트 80% 초과 감지 시 /compact 실행. 실행 여부 반환.
+        """컨텍스트 70% 초과 감지 시 /compact 실행. 실행 여부 반환.
 
         감지 방법:
-        1. message_count >= 50 이면 compact 트리거
+        1. message_count >= 35 이면 compact 트리거
         2. pane 출력에서 'context' + '%' 패턴 탐색
         """
         name = self.session_name(team_id)
@@ -359,13 +359,13 @@ class SessionManager:
         should_compact = False
 
         # 메시지 수 기반
-        if message_count >= 50:
+        if message_count >= 35:
             should_compact = True
         else:
             # pane 출력에서 컨텍스트 사용량 감지
             pane = self._capture_pane(name)
             m = re.search(r"(\d+)%\s*(?:context|컨텍스트)", pane, re.IGNORECASE)
-            if m and int(m.group(1)) >= 80:
+            if m and int(m.group(1)) >= 70:
                 should_compact = True
 
         if should_compact:
