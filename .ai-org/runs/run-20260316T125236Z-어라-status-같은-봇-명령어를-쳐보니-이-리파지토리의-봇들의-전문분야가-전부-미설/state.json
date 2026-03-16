@@ -1,0 +1,48 @@
+{
+  "run_id": "run-20260316T125236Z-어라-status-같은-봇-명령어를-쳐보니-이-리파지토리의-봇들의-전문분야가-전부-미설",
+  "org_id": "aiorg_pm_bot",
+  "request": "어라.'/status'같은 봇 명령어를 쳐보니, 이 리파지토리의 봇들의 전문분야가 전부 미설정인 것으로 보여. 아마 파싱문제인 것 같아. 파싱 제대로 되게 해결해줘",
+  "phase_policy": "default",
+  "status": "completed",
+  "current_phase": "feedback",
+  "phases": [
+    {
+      "name": "intake",
+      "status": "completed",
+      "started_at": "2026-03-16T12:52:36.852018+00:00",
+      "completed_at": "2026-03-16T12:52:36.876671+00:00"
+    },
+    {
+      "name": "planning",
+      "status": "completed",
+      "started_at": "2026-03-16T12:52:36.876679+00:00",
+      "completed_at": "2026-03-16T12:52:55.841743+00:00"
+    },
+    {
+      "name": "design",
+      "status": "completed",
+      "started_at": "2026-03-16T12:52:55.841758+00:00",
+      "completed_at": "2026-03-16T12:52:55.898542+00:00"
+    },
+    {
+      "name": "implementation",
+      "status": "completed",
+      "started_at": "2026-03-16T12:52:55.898545+00:00",
+      "completed_at": "2026-03-16T12:53:15.036303+00:00"
+    },
+    {
+      "name": "verification",
+      "status": "completed",
+      "started_at": "2026-03-16T12:53:15.036307+00:00",
+      "completed_at": "2026-03-16T12:53:16.482028+00:00"
+    },
+    {
+      "name": "feedback",
+      "status": "completed",
+      "started_at": "2026-03-16T12:53:16.482032+00:00",
+      "completed_at": "2026-03-16T12:53:16.538112+00:00"
+    }
+  ],
+  "created_at": "2026-03-16T12:52:36.852059+00:00",
+  "updated_at": "2026-03-16T12:53:16.538115+00:00"
+}
