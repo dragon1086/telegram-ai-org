@@ -601,23 +601,24 @@ class ClaudeCodeRunner:
             logger.exception(msg)
             return msg
 
-        # stderr 읽기 (디버깅용)
+        # stderr 읽기
         stderr_text = ""
         if proc.stderr is not None:
             try:
                 stderr_raw = await proc.stderr.read()
                 stderr_text = stderr_raw.decode("utf-8", errors="replace").strip()
                 if stderr_text:
-                    logger.debug(f"[stream_json] stderr: {stderr_text[:300]}")
+                    logger.error(f"[stream_json] stderr (rc={proc.returncode}): {stderr_text[:500]}")
             except Exception:
                 pass
 
         # 에러 반환코드 시 ERROR: 접두사 추가
         if proc.returncode and proc.returncode != 0:
+            stderr_hint = f"\nstderr: {stderr_text[:300]}" if stderr_text else ""
             if final_result:
-                return f"ERROR: {final_result}"
+                return f"ERROR: {final_result}{stderr_hint}"
             if stderr_text:
-                return f"ERROR: {stderr_text[:1000]}"
+                return f"ERROR: 프로세스 오류 (code={proc.returncode})\n{stderr_text[:1000]}"
             if raw_lines:
                 raw_hint = "\n".join(raw_lines[-5:])[:500]
                 return f"ERROR: 프로세스 오류 (code={proc.returncode})\n{raw_hint}"
