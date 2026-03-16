@@ -19,4 +19,4 @@ export PM_BOT_TOKEN="${PM_BOT_TOKEN:?PM_BOT_TOKEN 환경변수 필요}"
 export ENABLE_PM_ORCHESTRATOR=1
 
 echo "[PM] 총괄PM 오케스트레이터 시작 (org=${PM_ORG_NAME})"
-exec python3 main.py
+exec "$PROJECT_DIR/.venv/bin/python3" main.py
