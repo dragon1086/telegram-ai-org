@@ -78,6 +78,25 @@ class OrgScheduler:
         try:
             from scripts.daily_retro import main as _retro_main
             await _retro_main()
+            # Phase 2: RetroMemory에 저장
+            try:
+                from core.retro_memory import RetroMemory, RetroEntry
+                from scripts.daily_retro import get_today_tasks
+                from datetime import date
+                tasks = get_today_tasks()
+                total = len(tasks)
+                success = sum(1 for t in tasks if t.get("status") == "completed")
+                rm = RetroMemory()
+                rm.save_daily(RetroEntry(
+                    date=date.today().isoformat(),
+                    best_thing=f"오늘 {success}/{total}건 완료",
+                    failure_summary=f"실패 {total - success}건",
+                    experiment="내일 개선 방향 탐색",
+                    task_count=total,
+                    success_count=success,
+                ))
+            except Exception as e2:
+                logger.warning(f"[OrgScheduler] RetroMemory 저장 실패 (무시): {e2}")
         except Exception as e:
             logger.error(f"[OrgScheduler] daily_retro 실패: {e}")
             await self._safe_send(f"⚠️ [스케줄러] 일일 회고 중 오류 발생: {e}")
@@ -88,6 +107,17 @@ class OrgScheduler:
         try:
             from scripts.weekly_standup import main as _weekly_main
             await _weekly_main()
+            # Phase 2: LessonMemory 교훈 통계
+            try:
+                from core.lesson_memory import LessonMemory
+                lm = LessonMemory()
+                stats = lm.get_category_stats()
+                if stats:
+                    top = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:3]
+                    summary = ", ".join(f"{c}:{n}" for c, n in top)
+                    logger.info(f"[OrgScheduler] 이번 주 실패 패턴: {summary}")
+            except Exception as e2:
+                logger.warning(f"[OrgScheduler] LessonMemory 조회 실패: {e2}")
         except Exception as e:
             logger.error(f"[OrgScheduler] weekly_standup 실패: {e}")
             await self._safe_send(f"⚠️ [스케줄러] 주간 회의 중 오류 발생: {e}")
@@ -113,7 +143,17 @@ class OrgScheduler:
             # 주간 회고임을 명시
             now_kst = datetime.now(timezone(timedelta(hours=9)))
             header = f"📅 *주간 회고 — {now_kst.strftime('%Y년 %m월 %d일')}*\n\n"
-            await self._safe_send(header + tg_msg)
+            tg_msg = header + tg_msg
+            # Phase 2: RetroReport 추가
+            try:
+                from core.retro_memory import RetroMemory
+                rm = RetroMemory()
+                report = rm.generate_weekly_report()
+                retro_summary = rm.format_telegram(report)
+                tg_msg = tg_msg + "\n\n" + retro_summary
+            except Exception as e2:
+                logger.warning(f"[OrgScheduler] RetroReport 생성 실패: {e2}")
+            await self._safe_send(tg_msg)
 
             save_to_shared_memory({**retro_data, "type": "weekly_retro"})
             save_markdown(md_content)

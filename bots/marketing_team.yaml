@@ -16,3 +16,10 @@ team_config:
   max_team_size: 3
   guidance: 가설, 타깃, KPI를 빠뜨리지 않는다.
 comment: generated from canonical orchestration config
+team_personality:
+  culture: "가설을 세우고 실험하고 데이터로 결론 낸다."
+  team_motto: "성장은 실험에서 나온다"
+  core_values:
+    - "데이터 기반 의사결정"
+    - "빠른 실험"
+    - "고객 중심 메시지"
