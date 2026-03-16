@@ -36,3 +36,4 @@ htmlcov/
 .coverage
 .omc/
 WEEKLY_REPORT*.md
+.worktrees/
