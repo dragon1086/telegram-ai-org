@@ -38,7 +38,17 @@
       "Bash(/Users/rocky/telegram-ai-org/.venv/bin/pytest -q --tb=no 2>&1 | tail -5)",
       "Bash(tail:*)",
       "Bash(/Users/rocky/telegram-ai-org/.venv/bin/python -m pytest -q --tb=short -x 2>&1 | tail -20)",
-      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/python -m pytest -q --tb=no 2>&1 | tail -5)"
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/python -m pytest -q --tb=no 2>&1 | tail -5)",
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/python -m pytest tests/test_task_graph.py tests/test_context_db.py tests/test_scheduler.py tests/test_worker_health.py -q --tb=short 2>&1 | tail -20)",
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/python -m pytest tests/test_task_graph.py tests/test_scheduler.py tests/test_worker_health.py tests/test_task_poller.py -q --tb=short 2>&1 | tail -20)",
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/python -m pytest tests/test_task_graph.py -v 2>&1)",
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/python -m pytest tests/test_worker_health.py tests/test_scheduler.py tests/test_task_poller.py -v 2>&1)",
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/python -m pytest tests/test_worker_health.py -v 2>&1)",
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/python -m pytest tests/test_scheduler.py tests/test_task_poller.py -v 2>&1)",
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/python -m pytest tests/test_scheduler.py -v 2>&1)",
+      "Read(//private/tmp/**)",
+      "Read(//private/var/log/**)",
+      "Bash(./.venv/bin/python scripts/bot_manager.py restart-all 2>&1)"
     ]
   }
 }

@@ -1,0 +1,48 @@
+{
+  "run_id": "run-20260316T073123Z-최근-2026년-3월-기준-코딩에이전트-오픈소스-포함-시장-조사해주고-기술적으로-트렌드",
+  "org_id": "aiorg_pm_bot",
+  "request": "최근 2026년 3월 기준 코딩에이전트(오픈소스 포함) 시장 조사해주고 기술적으로 트렌드를 파악해줘",
+  "phase_policy": "default",
+  "status": "completed",
+  "current_phase": "feedback",
+  "phases": [
+    {
+      "name": "intake",
+      "status": "completed",
+      "started_at": "2026-03-16T07:31:23.430584+00:00",
+      "completed_at": "2026-03-16T07:31:23.454679+00:00"
+    },
+    {
+      "name": "planning",
+      "status": "completed",
+      "started_at": "2026-03-16T07:31:23.454685+00:00",
+      "completed_at": "2026-03-16T07:32:14.805560+00:00"
+    },
+    {
+      "name": "design",
+      "status": "completed",
+      "started_at": "2026-03-16T07:32:14.805570+00:00",
+      "completed_at": "2026-03-16T07:32:16.169740+00:00"
+    },
+    {
+      "name": "implementation",
+      "status": "completed",
+      "started_at": "2026-03-16T07:32:16.169761+00:00",
+      "completed_at": "2026-03-16T07:32:16.226877+00:00"
+    },
+    {
+      "name": "verification",
+      "status": "completed",
+      "started_at": "2026-03-16T07:32:16.226881+00:00",
+      "completed_at": "2026-03-16T07:32:38.648208+00:00"
+    },
+    {
+      "name": "feedback",
+      "status": "completed",
+      "started_at": "2026-03-16T07:32:38.648215+00:00",
+      "completed_at": "2026-03-16T08:01:46.790182+00:00"
+    }
+  ],
+  "created_at": "2026-03-16T07:31:23.430599+00:00",
+  "updated_at": "2026-03-16T08:01:46.790189+00:00"
+}

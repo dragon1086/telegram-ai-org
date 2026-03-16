@@ -14,4 +14,4 @@
 - feedback: completed
 
 ## note
-조직 위임 implementation phase 이동
+delegated run 완료
