@@ -29,9 +29,14 @@ def _save_result(user_input: str, result: dict) -> None:
 # 프로젝트 루트를 path에 추가
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.llm_router import LLMRouter
-from core.task_planner import TaskPlanner
 from core.worker_registry import WorkerRegistry
+
+try:
+    from core.llm_router import LLMRouter
+    from core.task_planner import TaskPlanner
+    _ROUTER_AVAILABLE = True
+except ImportError:
+    _ROUTER_AVAILABLE = False
 
 try:
     from core.agent_catalog import AgentCatalog

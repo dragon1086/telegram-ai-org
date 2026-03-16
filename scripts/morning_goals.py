@@ -33,7 +33,6 @@ _load_env()
 
 BOT_TOKEN = os.environ.get("PM_BOT_TOKEN", "")
 GROUP_CHAT_ID = int(os.environ.get("TELEGRAM_GROUP_CHAT_ID", "-5203707291"))
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 # ── 어제 회고 로드 ─────────────────────────────────────────────────────────
 
@@ -67,37 +66,30 @@ def _load_yesterday_retro() -> str:
 
 # ── LLM 목표 생성 ──────────────────────────────────────────────────────────
 
-def _generate_goals(yesterday_retro: str) -> str:
-    """Claude로 오늘 팀 목표 3가지 생성."""
-    if not ANTHROPIC_API_KEY:
-        print("[morning_goals] ANTHROPIC_API_KEY 없음 — 기본 목표 사용")
+async def _generate_goals(yesterday_retro: str) -> str:
+    """PMDecisionClient로 오늘 팀 목표 3가지 생성."""
+    sys.path.insert(0, str(PROJECT_ROOT))
+    try:
+        from core.pm_decision import PMDecisionClient
+    except ImportError:
+        print("[morning_goals] PMDecisionClient 없음 — 기본 목표 사용")
         return _default_goals()
 
+    today = datetime.now(KST).strftime("%Y-%m-%d (%A)")
+    prompt = (
+        f"당신은 AI 개발팀의 PM입니다. 오늘({today}) 팀의 목표를 설정해주세요.\n\n"
+        f"어제 회고 요약:\n{yesterday_retro}\n\n"
+        "다음 형식으로 정확히 답변해주세요 (다른 설명 없이):\n"
+        "1. [목표1 — 구체적인 행동 중심]\n"
+        "2. [목표2 — 어제 개선점 반영]\n"
+        "3. [목표3 — 실험/도전 과제]\n\n"
+        "각 목표는 한 줄, 50자 이내."
+    )
+
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        today = datetime.now(KST).strftime("%Y-%m-%d (%A)")
-
-        response = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=600,
-            timeout=30,
-            messages=[{
-                "role": "user",
-                "content": f"""당신은 AI 개발팀의 PM입니다. 오늘({today}) 팀의 목표를 설정해주세요.
-
-어제 회고 요약:
-{yesterday_retro}
-
-다음 형식으로 정확히 답변해주세요 (다른 설명 없이):
-1. [목표1 — 구체적인 행동 중심]
-2. [목표2 — 어제 개선점 반영]
-3. [목표3 — 실험/도전 과제]
-
-각 목표는 한 줄, 50자 이내."""
-            }]
-        )
-        return response.content[0].text.strip()
+        client = PMDecisionClient("aiorg_pm_bot", engine="claude-code")
+        result = await asyncio.wait_for(client.complete(prompt), timeout=30.0)
+        return result.strip()
     except Exception as e:
         print(f"[morning_goals] LLM 호출 실패: {e}")
         return _default_goals()
@@ -139,7 +131,7 @@ async def main() -> None:
     print(f"[morning_goals] 시작 — {today}")
 
     yesterday_retro = _load_yesterday_retro()
-    goals = _generate_goals(yesterday_retro)
+    goals = await _generate_goals(yesterday_retro)
 
     message = (
         f"☀️ *오늘의 팀 목표* — {today}\n\n"

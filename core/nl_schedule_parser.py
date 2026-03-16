@@ -1,10 +1,9 @@
 """자연어 → cron 표현식 + 태스크 설명 파서.
 
-규칙 기반 패턴 먼저 시도; ANTHROPIC_API_KEY 있으면 복잡한 표현은 LLM fallback.
+규칙 기반 패턴으로 파싱한다.
 """
 from __future__ import annotations
 
-import os
 import re
 
 
@@ -103,16 +102,9 @@ class NLScheduleParser:
         Raises:
             ParseError: 파싱 불가능한 경우.
         """
-        # 1. 규칙 기반 시도
         result = self._rule_based(text)
         if result is not None:
             return result
-
-        # 2. LLM fallback (API key 있을 때만)
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            result = self._llm_fallback(text)
-            if result is not None:
-                return result
 
         raise ParseError(
             f"스케줄 표현을 인식하지 못했습니다: '{text}'\n"
@@ -205,35 +197,3 @@ class NLScheduleParser:
         result = result.strip("해줘줘요.!? ")
         return result or text.strip()
 
-    # ── LLM fallback ─────────────────────────────────────────────────────
-
-    def _llm_fallback(self, text: str) -> dict | None:
-        """Anthropic API로 cron 추출 시도. 실패 시 None."""
-        try:
-            import anthropic
-            client = anthropic.Anthropic()
-            prompt = (
-                "아래 한국어 스케줄 표현을 분석해서 JSON으로만 응답하세요.\n"
-                "형식: {\"cron_expr\": \"분 시 일 월 요일\", \"task_description\": \"태스크\", \"human_readable\": \"사람이 읽을 수 있는 주기\"}\n"
-                "요일: 0=일, 1=월, 2=화, 3=수, 4=목, 5=금, 6=토\n"
-                f"스케줄 표현: {text}"
-            )
-            msg = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=200,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            import json
-            content = msg.content[0].text.strip()
-            # JSON 추출
-            json_match = re.search(r"\{.*\}", content, re.DOTALL)
-            if not json_match:
-                return None
-            data = json.loads(json_match.group())
-            if "cron_expr" not in data or "task_description" not in data:
-                return None
-            data.setdefault("human_readable", text)
-            data["confidence"] = 0.7
-            return data
-        except Exception:
-            return None

@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any  # kept for anthropic_client: Any signature compatibility
 
 from loguru import logger
 
@@ -48,24 +48,6 @@ class MemoryDoc:
     summary: list[str] = field(default_factory=list)
     log: list[LogEntry] = field(default_factory=list)
 
-
-# ── importance 채점 프롬프트 ──────────────────────────────────────────────────
-
-_SCORE_SYSTEM = """\
-태스크/이벤트의 중요도를 0~10 정수로만 응답하세요. 기준:
-- 의사결정/방향 변경 언급: +3
-- 사용자(상록)가 명시적 강조: +3
-- 반복 참조 가능성 높음: +2
-- 향후 작업에 영향: +2
-- 일회성 단순 실행: 1-2
-정수만 응답. 설명 없음."""
-
-_CORE_DETECT_SYSTEM = """\
-아래 내용이 "이거 꼭 기억해", "항상 기억", "절대 잊지 마" 같은 핵심 지시를 포함하면 "yes"로만 응답.
-아니면 "no"로만 응답."""
-
-_COMPRESS_SYSTEM = """\
-아래 로그 항목들을 한 줄 요약으로 압축하세요. 핵심 내용만 유지. 날짜 범위 포함. 50자 이내."""
 
 
 # ── MemoryManager ─────────────────────────────────────────────────────────────
@@ -158,8 +140,8 @@ class MemoryManager:
     # ── LOG 추가 ──────────────────────────────────────────────────────────
 
     async def add_log(self, content: str, anthropic_client: Any = None) -> int:
-        """새 LOG 항목 추가. importance 자동 채점. returns importance 값."""
-        importance = await self._score_importance(content, anthropic_client)
+        """새 LOG 항목 추가. importance 키워드 채점. returns importance 값."""
+        importance = self._keyword_score(content)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         entry = LogEntry(importance=importance, timestamp=timestamp, content=content[:200])
 
@@ -168,30 +150,12 @@ class MemoryManager:
 
         # LOG 30개 초과 시 compress 트리거
         if len(doc.log) > MAX_LOG_ENTRIES:
-            doc = await self._compress_doc(doc, anthropic_client)
+            doc = await self._compress_doc(doc)
         else:
             self._save(doc)
 
         logger.debug(f"[{self.scope}] LOG 추가 (importance={importance}): {content[:60]}")
         return importance
-
-    async def _score_importance(self, content: str, anthropic_client: Any) -> int:
-        """LLM으로 importance 0-10 채점. 실패 시 키워드 폴백."""
-        if anthropic_client is None:
-            return self._keyword_score(content)
-        try:
-            resp = await anthropic_client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=10,
-                system=_SCORE_SYSTEM,
-                messages=[{"role": "user", "content": content[:500]}],
-            )
-            raw = resp.content[0].text.strip()
-            score = int(re.search(r"\d+", raw).group())  # type: ignore
-            return max(0, min(10, score))
-        except Exception as e:
-            logger.debug(f"importance 채점 LLM 실패: {e}")
-            return self._keyword_score(content)
 
     @staticmethod
     def _keyword_score(content: str) -> int:
@@ -232,20 +196,20 @@ class MemoryManager:
     async def compress(self, anthropic_client: Any = None) -> None:
         """사이즈 관리: LOG 초과 시 자동 압축."""
         doc = self.load()
-        doc = await self._compress_doc(doc, anthropic_client)
+        doc = await self._compress_doc(doc)
 
-    async def _compress_doc(self, doc: MemoryDoc, anthropic_client: Any) -> MemoryDoc:
+    async def _compress_doc(self, doc: MemoryDoc) -> MemoryDoc:
         """
         1. importance 1-4 항목 삭제
-        2. importance 5+ 항목 → LLM 한 줄 요약 → SUMMARY 승격
+        2. importance 5+ 항목 → 첫 항목 기반 한 줄 요약 → SUMMARY 승격
         3. SUMMARY 과다 시 재압축
         """
         low = [e for e in doc.log if e.importance <= 4]
         high = [e for e in doc.log if e.importance >= 5]
 
-        # high 항목들 SUMMARY 승격
+        # high 항목들 SUMMARY 승격 (키워드 폴백)
         if high:
-            summary_line = await self._summarize_entries(high, anthropic_client)
+            summary_line = self._summarize_entries_fallback(high)
             if summary_line:
                 doc.summary.append(summary_line)
 
@@ -264,27 +228,13 @@ class MemoryManager:
         logger.info(f"[{self.scope}] 압축 완료: LOG {len(low)}건 제거, SUMMARY {len(doc.summary)}개")
         return doc
 
-    async def _summarize_entries(self, entries: list[LogEntry], anthropic_client: Any) -> str:
-        """LOG 항목들을 한 줄 요약."""
+    @staticmethod
+    def _summarize_entries_fallback(entries: list[LogEntry]) -> str:
+        """LOG 항목들을 첫 항목 기반으로 한 줄 요약 (키워드 폴백)."""
         if not entries:
             return ""
-        text = "\n".join(e.format() for e in entries)
-        if anthropic_client is None:
-            # 폴백: 첫 항목 내용 사용
-            dates = f"{entries[0].timestamp[:7]}~{entries[-1].timestamp[:7]}"
-            return f"{dates}: {entries[0].content[:80]}"
-        try:
-            resp = await anthropic_client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=80,
-                system=_COMPRESS_SYSTEM,
-                messages=[{"role": "user", "content": text[:1000]}],
-            )
-            return resp.content[0].text.strip()
-        except Exception as e:
-            logger.debug(f"요약 LLM 실패: {e}")
-            dates = f"{entries[0].timestamp[:7]}"
-            return f"{dates}: {entries[0].content[:80]}"
+        dates = f"{entries[0].timestamp[:7]}~{entries[-1].timestamp[:7]}"
+        return f"{dates}: {entries[0].content[:80]}"
 
     # ── 컨텍스트 생성 ─────────────────────────────────────────────────────
 
@@ -334,29 +284,10 @@ class MemoryManager:
 
     async def maybe_promote_to_core(self, content: str, anthropic_client: Any = None) -> bool:
         """'이거 꼭 기억해' 감지 시 CORE 승격. 승격됐으면 True 반환."""
-        # 빠른 키워드 체크 먼저
         keywords = ["꼭 기억", "항상 기억", "절대 잊지", "핵심 사실", "반드시 기억", "never forget"]
         if any(kw in content for kw in keywords):
             self.add_core(content)
             return True
-
-        if anthropic_client is None:
-            return False
-
-        try:
-            resp = await anthropic_client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=5,
-                system=_CORE_DETECT_SYSTEM,
-                messages=[{"role": "user", "content": content[:300]}],
-            )
-            answer = resp.content[0].text.strip().lower()
-            if answer == "yes":
-                self.add_core(content)
-                return True
-        except Exception as e:
-            logger.debug(f"CORE 승격 감지 실패: {e}")
-
         return False
 
     # ── 유틸 ─────────────────────────────────────────────────────────────
