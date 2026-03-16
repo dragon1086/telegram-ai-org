@@ -1188,6 +1188,26 @@ class TelegramRelay:
         if not text:
             return
 
+        # 대화 이력 캡처 (non-blocking, 실패해도 처리 계속)
+        if self.context_db is not None:
+            try:
+                import asyncio as _asyncio
+                _sender = update.message.from_user
+                _asyncio.create_task(
+                    self.context_db.insert_conversation_message(
+                        msg_id=update.message.message_id,
+                        chat_id=str(update.message.chat_id),
+                        user_id=str(_sender.id) if _sender else "unknown",
+                        bot_id=self.org_id,
+                        role="bot" if (_sender and _sender.is_bot) else "user",
+                        is_bot=bool(_sender and _sender.is_bot),
+                        content=text[:4000],
+                        timestamp=update.message.date.isoformat(),
+                    )
+                )
+            except Exception:
+                pass  # 캡처 실패해도 처리 계속
+
         # 명령어는 허용하되, PM 오케스트레이터 모드의 부서 봇은 일반 사용자 메시지를 처리하지 않는다.
         if text.startswith("/"):
             await self._handle_command(text, update, context)

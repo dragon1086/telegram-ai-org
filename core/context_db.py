@@ -18,8 +18,8 @@ def _utcnow_iso() -> str:
 class ContextDB:
     """SQLite 기반 공유 컨텍스트 저장소."""
 
-    def __init__(self, db_path: Path = DEFAULT_DB_PATH):
-        self.db_path = db_path
+    def __init__(self, db_path: "Path | str" = DEFAULT_DB_PATH):
+        self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     async def initialize(self) -> None:
@@ -151,6 +151,23 @@ class ContextDB:
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_pm_goals_status ON pm_goals(status);
+
+                CREATE TABLE IF NOT EXISTS conversation_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    msg_id INTEGER,
+                    chat_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    bot_id TEXT,
+                    role TEXT NOT NULL,
+                    is_bot BOOLEAN DEFAULT 0,
+                    content TEXT NOT NULL,
+                    timestamp TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_conv_chat_user
+                    ON conversation_messages(chat_id, user_id);
+                CREATE INDEX IF NOT EXISTS idx_conv_timestamp
+                    ON conversation_messages(timestamp);
             """)
             await db.commit()
 
@@ -824,3 +841,69 @@ class ContextDB:
             )
             await db.commit()
         return await self.get_goal(goal_id)
+
+    # ── Conversation Messages ──────────────────────────────────────────────
+
+    async def insert_conversation_message(
+        self,
+        *,
+        msg_id: int | None,
+        chat_id: str,
+        user_id: str,
+        bot_id: str | None,
+        role: str,
+        is_bot: bool,
+        content: str,
+        timestamp: str,
+    ) -> None:
+        """대화 메시지 삽입."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """INSERT INTO conversation_messages
+                   (msg_id, chat_id, user_id, bot_id, role, is_bot, content, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (msg_id, chat_id, user_id, bot_id, role, int(is_bot), content, timestamp),
+            )
+            await db.commit()
+
+    async def get_conversation_messages(
+        self,
+        *,
+        chat_id: str | None = None,
+        user_id: str | None = None,
+        is_bot: bool | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """대화 메시지 조회. 필터 조건이 없으면 전체 반환."""
+        clauses: list[str] = []
+        params: list = []
+        if chat_id is not None:
+            clauses.append("chat_id = ?")
+            params.append(chat_id)
+        if user_id is not None:
+            clauses.append("user_id = ?")
+            params.append(user_id)
+        if is_bot is not None:
+            clauses.append("is_bot = ?")
+            params.append(int(is_bot))
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.append(limit)
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                f"SELECT * FROM conversation_messages {where} ORDER BY timestamp DESC LIMIT ?",
+                params,
+            )
+            rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def cleanup_old_conversations(self, retention_days: int = 30) -> int:
+        """retention_days일 이전 메시지를 삭제한다. 삭제된 행 수 반환."""
+        from datetime import datetime, timedelta, UTC
+        cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "DELETE FROM conversation_messages WHERE timestamp < ?", (cutoff,)
+            )
+            await db.commit()
+            return cursor.rowcount
