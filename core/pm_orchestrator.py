@@ -822,6 +822,7 @@ class PMOrchestrator:
                 metadata={
                     **parent_metadata,
                     "task_packet": task_packet,
+                    "original_description": st.description,
                     **({"workdir": st.workdir} if st.workdir else {}),
                 },
             )

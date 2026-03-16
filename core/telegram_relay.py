@@ -2701,12 +2701,15 @@ class TelegramRelay:
         """
         task_id = task_info["id"]
         description = task_info.get("description", "")
+        metadata = task_info.get("metadata", {})
+        # 요약 표시용: PM이 저장한 원본 description 우선 사용 (structured.render() 결과 회피)
+        summary_text = metadata.get("original_description") or description
         dept_name = KNOWN_DEPTS.get(self.org_id, self.org_id)
-        run_id = task_info.get("metadata", {}).get("run_id") or self._create_runbook(description)
-        requester_mention = self._requester_mention_from_metadata(task_info.get("metadata"))
-        reply_to_message_id = self._reply_message_id_from_metadata(task_info.get("metadata"))
+        run_id = metadata.get("run_id") or self._create_runbook(description)
+        requester_mention = self._requester_mention_from_metadata(metadata)
+        reply_to_message_id = self._reply_message_id_from_metadata(metadata)
 
-        logger.info(f"[{self.org_id}] PM_TASK 실행 시작: {task_id} — {description[:80]}")
+        logger.info(f"[{self.org_id}] PM_TASK 실행 시작: {task_id} — {summary_text[:80]}")
 
         if self.context_db is None:
             return
@@ -2717,7 +2720,7 @@ class TelegramRelay:
         if self.app and self.app.bot:
             team_config = await self._build_team_config(description)
             brief = self._format_execution_brief(
-                description,
+                summary_text,
                 team_config,
                 owner_label=dept_name,
                 route_label="조직 위임 실행",
