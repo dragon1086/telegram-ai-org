@@ -33,6 +33,7 @@ class SynthesisResult:
     follow_up_tasks: list[dict] = field(default_factory=list)  # [{dept, description}]
     unified_report: str = ""
     reasoning: str = ""
+    artifact_paths: list[str] = field(default_factory=list)  # LLM이 선별한 첨부 파일 경로
 
 
 _SYNTHESIS_PROMPT = (
@@ -44,6 +45,7 @@ _SYNTHESIS_PROMPT = (
     "REASONING: one-line explanation of your judgment\n"
     "SUMMARY: unified summary of all results (2-3 sentences)\n"
     "FOLLOW_UP: DEPT:aiorg_xxx_bot|TASK:description (one per line, or 'none')\n"
+    "ARTIFACTS: /absolute/path/to/file.png (one per line, or 'none')\n"
     "REPORT:\n"
     "final integrated report for the user\n"
     "END_REPORT\n\n"
@@ -59,6 +61,9 @@ _SYNTHESIS_PROMPT = (
     "- Organize findings by department or topic for clarity.\n"
     "- Do NOT reply with only file paths, links, or location hints.\n"
     "- If artifacts/files exist, mention them only as supplements after explaining the substance.\n"
+    "- ARTIFACTS: list only files that are genuinely useful to the user (images, reports, docs).\n"
+    "  Exclude temp files, logs, lock files. Write absolute paths as they appear in results.\n"
+    "  If no files worth sending, write ARTIFACTS: none\n"
     "- IMPORTANT: Even when SUFFICIENT, scan all reports for future plans\n"
     "  (향후 계획/다음 단계/추가 작업/진행 예정/예정 등) and add them as FOLLOW_UP tasks.\n"
     "  Assign each to the most relevant dept (aiorg_design_bot/aiorg_engineering_bot/\n"
@@ -116,8 +121,10 @@ class ResultSynthesizer:
         reasoning = ""
         summary = ""
         follow_ups: list[dict] = []
+        artifact_paths: list[str] = []
         report_lines: list[str] = []
         in_report = False
+        in_artifacts = False
 
         for line in response.strip().split("\n"):
             stripped = line.strip()
@@ -128,6 +135,7 @@ class ResultSynthesizer:
                 continue
 
             if in_report:
+                in_artifacts = False
                 report_lines.append(stripped)
                 continue
 
@@ -159,6 +167,14 @@ class ResultSynthesizer:
                 rest = stripped.split(":", 1)[1].strip()
                 if rest.lower() != "none":
                     _parse_follow_up_line(rest, follow_ups)
+            elif upper.startswith("ARTIFACTS:"):
+                in_artifacts = True
+                rest = stripped.split(":", 1)[1].strip()
+                if rest.lower() != "none" and rest:
+                    artifact_paths.append(rest)
+            elif in_artifacts and (stripped.startswith("/") or stripped.startswith("~")):
+                # ARTIFACTS 섹션 이후 경로만 나열된 추가 줄
+                artifact_paths.append(stripped)
             elif "DEPT:" in upper and "TASK:" in upper:
                 # follow-up 태스크 추가 라인
                 _parse_follow_up_line(stripped, follow_ups)
@@ -171,6 +187,7 @@ class ResultSynthesizer:
             follow_up_tasks=follow_ups,
             unified_report=unified_report,
             reasoning=reasoning,
+            artifact_paths=artifact_paths,
         )
 
     @staticmethod
