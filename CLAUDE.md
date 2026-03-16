@@ -57,6 +57,22 @@ bash scripts/start_all.sh
 | `bots/` | 봇 YAML 정의 |
 | `tests/` | pytest 회귀 커버리지 |
 
+## 운영 주의사항 (누적)
+
+> 세션 시작 시 반드시 확인. 실수가 발생할 때마다 여기에 추가한다.
+
+### [2026-03-16] 봇 재시작 전 패키지 sync 필수
+- **증상**: 재시작 후 `ModuleNotFoundError` 반복 크래시 → 봇 무응답
+- **원인**: `pyproject.toml`에 선언된 패키지도 venv에 자동 설치되지 않음
+- **체크리스트**:
+  ```bash
+  # 소스 수정 후 재시작 전 항상 실행
+  .venv/bin/pip install -e . --quiet
+  bash scripts/start_all.sh
+  ```
+
+---
+
 ## 개발 규칙
 
 - 변경 범위를 최소화. 타깃 이외 영역 리팩토링 금지.
