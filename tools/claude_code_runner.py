@@ -614,6 +614,12 @@ class ClaudeCodeRunner:
 
         # 에러 반환코드 시 ERROR: 접두사 추가
         if proc.returncode and proc.returncode != 0:
+            # 만료된 세션으로 --resume 실패한 경우 세션 ID 초기화 (다음 호출은 새 세션으로)
+            if session_store and session_store.get_session_id():
+                logger.warning(
+                    f"[stream_json] code={proc.returncode} — 세션 초기화 (만료된 --resume 가능성)"
+                )
+                session_store.reset(preserve_metrics=True)
             stderr_hint = f"\nstderr: {stderr_text[:300]}" if stderr_text else ""
             if final_result:
                 return f"ERROR: {final_result}{stderr_hint}"
