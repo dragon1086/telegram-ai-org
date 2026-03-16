@@ -765,6 +765,10 @@ async def get_relevant_semantic(self, task_description: str) -> list[Lesson]:
 | 🔴 Critical | TaskPoller 이중 release 버그 수정 | ✅ 구현완료 (이번 세션) |
 | 🟡 High | LLM 호출 체인 병렬화 (pm_orchestrator.py) | ✅ 구현완료 (이번 세션) |
 | 🟡 High | sync SQLite run_in_executor 보호 | ✅ 부분 구현 (d6fcde0: scheduler) |
+| 🟡 High | LLM 호출 통합 분류 (`_llm_unified_classify`) | ✅ 구현완료 (이번 세션) |
+| 🟡 High | 즉시 ACK 패턴 (`_with_immediate_ack`) | ✅ 구현완료 (이번 세션) |
+| 🟡 Medium | BID_WAIT 2.5s→0.8s, TaskPoller 10s→2s | ✅ 구현완료 (이번 세션) |
+| 🟡 Medium | WarmSessionPool 세션 예열 | ✅ 구현완료 (이번 세션) |
 
 ---
 
@@ -772,6 +776,10 @@ async def get_relevant_semantic(self, task_description: str) -> list[Lesson]:
 
 | 커밋 | 분류 | 내용 |
 |------|------|------|
+| 77eb1dc | ⚡ perf | BID_WAIT 2.5s→0.8s, TaskPoller 폴링 10s→2s |
+| 17d3994 | ⚡ perf | PMRouter+classify_lane+plan_request → 단일 LLM 통합 분류 |
+| eb919ae | ⚡ perf | 즉시 ACK 패턴 — BID 완료 직후 분석중 메시지 즉시 전송 |
+| 30b4201 | ⚡ perf | WarmSessionPool — 세션 예열로 cold start 제거 |
 | bc4a478 | 🔧 refactor | LLM API 직접 호출 전수 제거 (llm_provider.py 삭제) |
 | bad83e9 | 🔧 refactor | DynamicTeamBuilder AsyncAnthropic 직접 호출 제거 |
 | 75a444b | 🔧 refactor | llm_provider.py 파일 제거 |
