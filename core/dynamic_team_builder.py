@@ -100,9 +100,27 @@ class DynamicTeamBuilder:
         self._decision_client = decision_client
 
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            # Claude Code OAuth 토큰으로 fallback
+            api_key = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+            if not api_key:
+                try:
+                    from pathlib import Path as _Path
+                    api_key = (_Path.home() / ".claude" / "oauth-token").read_text().strip()
+                except Exception:
+                    pass
         self._model = os.environ.get("PM_MODEL", "claude-haiku-4-5")
         self._llm_available = bool(api_key)
-        self._client = anthropic.AsyncAnthropic(api_key=api_key) if self._llm_available else None
+        if self._llm_available:
+            if api_key.startswith("sk-ant-oat"):
+                self._client = anthropic.AsyncAnthropic(
+                    auth_token=api_key,
+                    base_url="https://api.anthropic.com",
+                )
+            else:
+                self._client = anthropic.AsyncAnthropic(api_key=api_key)
+        else:
+            self._client = None
 
         if not self._llm_available:
             logger.warning("ANTHROPIC_API_KEY not set — DynamicTeamBuilder will use fallback mode")
