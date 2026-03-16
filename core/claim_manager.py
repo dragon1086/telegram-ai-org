@@ -113,7 +113,7 @@ class ClaimManager:
         return max(bids, key=lambda x: x["score"])["org_id"]
 
     def cleanup_old_claims(self) -> None:
-        """TTL 초과 claim/bid 파일 삭제."""
+        """TTL 초과 claim/bid/hash-lock 파일 삭제."""
         now = time.time()
         removed = 0
         for claim_file in self.CLAIM_FILE_DIR.glob("*.json"):
@@ -124,6 +124,16 @@ class ClaimManager:
                     removed += 1
             except (json.JSONDecodeError, OSError):
                 claim_file.unlink(missing_ok=True)
+                removed += 1
+        # hash lock 파일도 TTL 초과 시 삭제 (*.lock은 *.json 글로브에 포함되지 않음)
+        for lock_file in self.CLAIM_FILE_DIR.glob("*.lock"):
+            try:
+                data = json.loads(lock_file.read_text(encoding="utf-8"))
+                if now - data.get("ts", 0) > self.CLAIM_TTL:
+                    lock_file.unlink()
+                    removed += 1
+            except (json.JSONDecodeError, OSError):
+                lock_file.unlink(missing_ok=True)
                 removed += 1
         if removed:
             logger.debug(f"[claim] 오래된 claim/bid {removed}개 삭제")
