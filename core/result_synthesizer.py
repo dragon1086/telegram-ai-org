@@ -101,7 +101,7 @@ class ResultSynthesizer:
         try:
             response = await asyncio.wait_for(
                 self._decision_client.complete(prompt),
-                timeout=45.0,
+                timeout=180.0,
             )
             return self._parse_synthesis(response)
         except Exception as e:
@@ -192,7 +192,7 @@ class ResultSynthesizer:
                 missing.append(dept_name)
                 lines.append(f"**{dept_name}**: (결과 없음)")
             else:
-                lines.append(f"**{dept_name}**: {result[:200]}")
+                lines.append(f"**{dept_name}**\n\n{result.lstrip('-').strip()}")
 
         if missing:
             return SynthesisResult(
@@ -241,7 +241,7 @@ def _build_fallback_public_report(lines: list[str], missing: list[str] | None = 
             "아직 일부 조직 결과가 빠져 있어서 최종 결론을 확정하긴 이릅니다. "
             "다만 현재까지 확인된 내용은 아래와 같습니다."
         )
-    details = "\n".join(f"- {line}" for line in lines[:6])
+    details = "\n\n".join(line for line in lines)
     if missing:
         details += f"\n- 추가 확인 필요: {', '.join(missing)}"
     return f"{header}\n\n{details}".strip()
