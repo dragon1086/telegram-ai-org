@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from typing import TYPE_CHECKING, Callable, Coroutine, Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -97,6 +98,24 @@ class OrgScheduler:
                 ))
             except Exception as e2:
                 logger.warning(f"[OrgScheduler] RetroMemory 저장 실패 (무시): {e2}")
+            # Phase 3: CollaborationTracker + AgentPersonaMemory 업데이트
+            try:
+                from core.collaboration_tracker import CollaborationTracker
+                from core.agent_persona_memory import AgentPersonaMemory
+                ct = CollaborationTracker()
+                apm = AgentPersonaMemory()
+                # 오늘 완료된 태스크의 협업 기록
+                for task in tasks:
+                    if task.get("status") == "completed":
+                        task_id = task.get("id", "")
+                        participants = task.get("participants", [])
+                        task_type = task.get("type", "general")
+                        if participants and len(participants) > 1:
+                            ct.record(task_id or str(uuid.uuid4())[:8], participants, task_type, True)
+                        elif task.get("assigned_to"):
+                            apm.update_from_task(task["assigned_to"], task_type, True)
+            except Exception as e2:
+                logger.warning(f"[OrgScheduler] Phase3 CollaborationTracker 저장 실패 (무시): {e2}")
         except Exception as e:
             logger.error(f"[OrgScheduler] daily_retro 실패: {e}")
             await self._safe_send(f"⚠️ [스케줄러] 일일 회고 중 오류 발생: {e}")
@@ -118,6 +137,21 @@ class OrgScheduler:
                     logger.info(f"[OrgScheduler] 이번 주 실패 패턴: {summary}")
             except Exception as e2:
                 logger.warning(f"[OrgScheduler] LessonMemory 조회 실패: {e2}")
+            # Phase 3: Top performers + Weekly MVP
+            try:
+                from core.agent_persona_memory import AgentPersonaMemory
+                from core.shoutout_system import ShoutoutSystem
+                apm = AgentPersonaMemory()
+                ss = ShoutoutSystem()
+                top = apm.get_top_performers(n=3)
+                if top:
+                    perf_lines = "\n".join(f"  • {a}: {r:.0%}" for a, r in top)
+                    await self._safe_send(f"🏆 *이번 주 Top Performers*\n{perf_lines}")
+                mvp = ss.weekly_mvp()
+                if mvp:
+                    await self._safe_send(f"🎉 *이번 주 MVP (칭찬왕)*: {mvp}")
+            except Exception as e2:
+                logger.warning(f"[OrgScheduler] Phase3 performers 조회 실패: {e2}")
         except Exception as e:
             logger.error(f"[OrgScheduler] weekly_standup 실패: {e}")
             await self._safe_send(f"⚠️ [스케줄러] 주간 회의 중 오류 발생: {e}")
@@ -153,6 +187,35 @@ class OrgScheduler:
                 tg_msg = tg_msg + "\n\n" + retro_summary
             except Exception as e2:
                 logger.warning(f"[OrgScheduler] RetroReport 생성 실패: {e2}")
+            # Phase 3: BotCharacterEvolution + 자동 MVP Shoutout
+            try:
+                from core.bot_character_evolution import BotCharacterEvolution
+                from core.shoutout_system import ShoutoutSystem
+                from core.agent_persona_memory import AgentPersonaMemory
+                bce = BotCharacterEvolution()
+                ss = ShoutoutSystem()
+                apm = AgentPersonaMemory()
+                # 모든 에이전트 캐릭터 진화
+                evolutions = bce.evolve_all()
+                if evolutions:
+                    summaries = [bce.get_evolution_summary(e["agent_id"]) for e in evolutions[:3]]
+                    evolution_text = "🌱 *캐릭터 성장 업데이트*\n" + "\n".join(f"  • {s}" for s in summaries)
+                    tg_msg = tg_msg + "\n\n" + evolution_text
+                # Weekly MVP 자동 칭찬
+                mvp = ss.weekly_mvp()
+                top_performers = apm.get_top_performers(n=1)
+                if not mvp and top_performers:
+                    mvp = top_performers[0][0]
+                if mvp:
+                    all_agents = [e["agent_id"] for e in evolutions] if evolutions else []
+                    ss.auto_shoutout(
+                        task_id="weekly_retro",
+                        winner=mvp,
+                        reason=f"이번 주 최고 성과를 거둔 팀원입니다!",
+                        all_participants=all_agents,
+                    )
+            except Exception as e2:
+                logger.warning(f"[OrgScheduler] Phase3 evolution 실패 (무시): {e2}")
             await self._safe_send(tg_msg)
 
             save_to_shared_memory({**retro_data, "type": "weekly_retro"})
