@@ -301,6 +301,16 @@ class ContextDB:
             )
             await db.commit()
 
+    async def get_tasks_depending_on(self, task_id: str) -> list[str]:
+        """이 태스크에 직접 의존하는 태스크 ID 목록 (역방향 조회)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT task_id FROM pm_task_dependencies WHERE depends_on=?",
+                (task_id,),
+            )
+            rows = await cursor.fetchall()
+        return [r[0] for r in rows]
+
     async def get_ready_tasks(self, parent_id: str) -> list[dict]:
         """의존성이 모두 완료된 실행 가능 태스크 조회."""
         async with aiosqlite.connect(self.db_path) as db:
