@@ -59,6 +59,7 @@ class MemoryManager:
         self.scope = scope
         self.path = MEMORY_DIR / f"{scope}.md"
         MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        self._context_db = None
 
     # ── 로드/파싱 ──────────────────────────────────────────────────────────
 
@@ -289,6 +290,53 @@ class MemoryManager:
             self.add_core(content)
             return True
         return False
+
+    # ── BM25 통합 검색 ────────────────────────────────────────────────────
+
+    async def search_memories(
+        self, query: str, top_k: int = 5, user_id: str = ""
+    ) -> list[str]:
+        """BM25로 LOG 항목 + conversation_messages 통합 검색.
+
+        rank_bm25 미설치 시 keyword 폴백.
+        """
+        try:
+            from rank_bm25 import BM25Okapi
+        except ImportError:
+            return self._keyword_search(query, top_k)
+
+        # 1) LOG 항목
+        doc = self.load()
+        log_entries = [e.content for e in doc.log]
+
+        # 2) conversation_messages (최근 100개, _context_db가 있을 때만)
+        conv_entries: list[str] = []
+        if self._context_db is not None:
+            try:
+                rows = await self._context_db.get_conversation_messages(
+                    user_id=user_id if user_id else None, limit=100
+                )
+                conv_entries = [r["content"] for r in rows if r.get("content")]
+            except Exception:
+                pass
+
+        corpus = log_entries + conv_entries
+        if not corpus:
+            return []
+
+        tokenized = [entry.split() for entry in corpus]
+        bm25 = BM25Okapi(tokenized)
+        scores = bm25.get_scores(query.split())
+        top_indices = sorted(range(len(corpus)), key=lambda i: scores[i], reverse=True)[:top_k]
+        return [corpus[i] for i in top_indices if scores[i] > 0]
+
+    def _keyword_search(self, query: str, top_k: int) -> list[str]:
+        """BM25 없을 때 fallback keyword 검색."""
+        doc = self.load()
+        entries = [e.content for e in doc.log]
+        query_words = set(query.lower().split())
+        scored = [(e, len(query_words & set(e.lower().split()))) for e in entries]
+        return [e for e, s in sorted(scored, key=lambda x: -x[1]) if s > 0][:top_k]
 
     # ── 유틸 ─────────────────────────────────────────────────────────────
 
