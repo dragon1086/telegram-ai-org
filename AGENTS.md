@@ -1,55 +1,77 @@
 # AGENTS.md
 
-## Scope
+이 파일은 Codex CLI 등 AI 에이전트가 이 저장소에서 작업할 때 자동으로 읽는 프로젝트 지침이다.
 
-This file applies to the entire repository rooted at `/Users/aerok/Desktop/rocky/telegram-ai-org`.
+## 프로젝트 개요
 
-## Project Summary
+`telegram-ai-org` — Telegram 그룹 채팅방을 AI 조직의 오피스로 쓰는 멀티봇 오케스트레이션 시스템.
 
-- `telegram-ai-org` is a Python 3.11+ Telegram-based AI organization.
-- The PM bot orchestrates worker agents, shared context, routing, and completion checks.
-- Most core runtime code lives under `core/`, bot manifests live under `bots/`, and CLI/helpers live under `tools/` and `scripts/`.
+- PM 봇이 `workers.yaml`을 읽어 태스크를 적합한 워커 봇에 자율 배분
+- 봇마다 성격·기억·캐릭터 진화, 팀워크/칭찬 시스템, 자연어 스케줄 등록 지원
+- 실행 엔진: `claude-code` / `codex` 중 봇별 설정
 
-## Key Paths
+## 환경 설정
 
-- `main.py`: local entrypoint
-- `core/`: orchestration, routing, context, PM flow, Telegram relay
-- `tools/`: external runner integrations and helper utilities
-- `tests/`: pytest-based regression coverage
-- `scripts/`: setup and local process helpers
-- `bots/`: YAML bot definitions
-- `README.md`, `ARCHITECTURE.md`: product and system context
+```bash
+# 가상환경 활성화 (항상 venv 사용)
+source .venv/bin/activate
 
-## Working Rules
+# 또는 직접 경로로
+./.venv/bin/python ...
+./.venv/bin/pytest ...
+```
 
-- Keep changes narrowly scoped; do not refactor unrelated areas while fixing a targeted issue.
-- Preserve async behavior and existing public method signatures unless the task requires a contract change.
-- Prefer small, readable functions and explicit control flow over clever abstractions.
-- Follow the existing Python style with type hints where the surrounding code uses them.
-- Keep line length compatible with Ruff settings in `pyproject.toml` (`100`).
-- Never hardcode secrets or bot tokens. Use environment variables and `.env`-style configuration only.
+`.env` 파일에 `PM_BOT_TOKEN`, `COKAC_BOT_TOKEN` 등 봇 토큰 필수.
 
-## Validation
+## 주요 명령어
 
-- Run targeted tests for the area you changed first, then broader coverage if the change crosses modules.
-- Useful commands:
-  - `./.venv/bin/pytest -q`
-  - `./.venv/bin/pytest tests/test_pm_routing.py -q`
-  - `./.venv/bin/pytest tests/test_pm_orchestrator.py -q`
-  - `./.venv/bin/pytest tests/test_context_db_pm.py -q`
+```bash
+# 전체 봇 시작
+bash scripts/start_all.sh
 
-## Change Guidance
+# 테스트 실행
+./.venv/bin/pytest -q
 
-- When editing PM or routing logic, inspect related files together:
-  - `core/pm_orchestrator.py`
-  - `core/pm_router.py`
-  - `core/nl_classifier.py`
-  - `core/telegram_relay.py`
-- When changing storage or context behavior, also review the matching tests under `tests/`.
-- Keep documentation in sync when behavior changes materially, especially `README.md` and `ARCHITECTURE.md`.
+# 린트
+./.venv/bin/ruff check .
+```
 
-## Operational Notes
+## 핵심 경로
 
-- Local setup is documented in `README.md`.
-- Prefer `rg`/`rg --files` for repository search.
-- Do not remove untracked user files or unrelated local changes.
+| 경로 | 역할 |
+|------|------|
+| `main.py` | 로컬 진입점 |
+| `core/pm_orchestrator.py` | PM 오케스트레이션 메인 루프 |
+| `core/pm_router.py` | 태스크 → 워커 라우팅 |
+| `core/telegram_relay.py` | Telegram 메시지 중계 |
+| `workers.yaml` | 워커 봇 등록부 |
+| `orchestration.yaml` | 오케스트레이션 설정 |
+| `tasks/lessons.md` | 누적 운영 레슨 (반드시 읽을 것) |
+
+## 개발 규칙
+
+- 변경 범위를 최소화. 타깃 이외 영역 리팩토링 금지.
+- async 동작과 기존 public 메서드 시그니처 유지.
+- 시크릿/봇 토큰 하드코딩 금지. 환경변수만 사용.
+- 줄 길이: Ruff 설정 기준 100자.
+
+## 운영 주의사항 (누적)
+
+> 작업 시작 전 반드시 확인. 실수 발생 시 여기와 `tasks/lessons.md`에 추가한다.
+
+### [2026-03-16] 봇 재시작 전 패키지 sync 필수
+- **증상**: 재시작 후 `ModuleNotFoundError` 반복 크래시 → 봇 무응답
+- **원인**: `pyproject.toml`에 선언된 패키지도 venv에 자동 설치되지 않음
+- **체크리스트**:
+  ```bash
+  # 소스 수정 후 재시작 전 항상 실행
+  .venv/bin/pip install -e . --quiet
+  bash scripts/start_all.sh
+  ```
+
+## 레슨 추가 규칙
+
+새 운영 실수가 생기면 반드시 **세 파일 모두** 업데이트:
+1. `CLAUDE.md` → Claude Code용
+2. `AGENTS.md` → Codex 등 기타 엔진용
+3. `tasks/lessons.md` → 상세 원인/해결 기록
