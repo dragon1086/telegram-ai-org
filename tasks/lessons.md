@@ -10,9 +10,11 @@ Claude Code 세션 시작 시 이 파일을 읽어 과거 실수를 반복하지
 
 **원인**: `pyproject.toml`에 의존성이 선언되어 있어도 venv에 자동 반영되지 않음. `pip install -e .`를 실행해야 sync됨.
 
-**해결**: `.venv/bin/pip install -e . --quiet` 후 재시작
+**해결**: `.venv/bin/pip install aiosqlite -q` 후 재시작
+
+**주의**: `pip install -e .`는 이 프로젝트에서 **작동하지 않음** — hatchling이 `telegram_ai_org` 디렉토리를 찾지 못해 실패. 누락 패키지는 개별 설치할 것.
 
 **적용 규칙**: 소스 수정 + 재시작 작업 순서는 항상
 1. 코드 수정
-2. `.venv/bin/pip install -e . --quiet`
+2. `.venv/bin/pip install <누락패키지> -q`
 3. `bash scripts/start_all.sh`

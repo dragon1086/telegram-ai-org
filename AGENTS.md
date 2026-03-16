@@ -65,7 +65,8 @@ bash scripts/start_all.sh
 - **체크리스트**:
   ```bash
   # 소스 수정 후 재시작 전 항상 실행
-  .venv/bin/pip install -e . --quiet
+  # ❌ pip install -e . 는 이 프로젝트에서 작동하지 않음 (hatchling 설정 미비)
+  .venv/bin/pip install aiosqlite -q  # 누락 패키지 개별 설치
   bash scripts/start_all.sh
   ```
 
