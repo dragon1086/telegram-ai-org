@@ -97,8 +97,10 @@ class PMOrchestrator:
         """유저 요청을 직접 답변/PM 직접 실행/조직 위임 중 어디로 보낼지 결정한다."""
         dept_hints = self._detect_relevant_depts(user_message)
         workdir = self._extract_workdir(user_message)
-        lane = await self._classify_lane(user_message, dept_hints, workdir=workdir)
-        llm_plan = await self._llm_plan_request(user_message, dept_hints, workdir=workdir)
+        lane, llm_plan = await asyncio.gather(
+            self._classify_lane(user_message, dept_hints, workdir=workdir),
+            self._llm_plan_request(user_message, dept_hints, workdir=workdir),
+        )
         if llm_plan is not None:
             llm_plan.lane = lane
             return self._normalize_request_plan(llm_plan)

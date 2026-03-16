@@ -13,6 +13,9 @@
 3. [telegram-ai-org 아키텍처 분석](#3-telegram-ai-org-아키텍처-분석)
 4. [비교 분석](#4-비교-분석)
 5. [telegram-ai-org 개선 제안](#5-telegram-ai-org-개선-제안)
+6. [개선 우선순위 요약](#6-개선-우선순위-요약)
+7. [최근 변경사항 이력 (2026-03-16 이후)](#7-최근-변경사항-이력-2026-03-16-이후)
+8. [핵심 참조 파일](#8-핵심-참조-파일)
 
 ---
 
@@ -381,12 +384,14 @@ PMOrchestrator.plan_request()
 | TaskPoller 재큐잉 | `task_poller.py` | lease TTL(180초) 후 재큐잉 |
 | 워커 상태머신 | `worker_health.py` | ONLINE→DEGRADED(3회)→QUARANTINED(5회) |
 | 응답 품질 가드 | `telegram_relay.py:755` | `ensure_user_friendly_output()` |
+| 세션 자동 compact | `core/session_manager.py` | 컨텍스트 70% 초과 시 자동 /compact |
+| PMDecisionClient 세션 분리 | `core/telegram_relay.py` | 전용 세션으로 --resume 충돌 방지 |
 
 **닫힌 루프가 없는 곳 (갭):**
-1. **스케줄러 잡 실패**: morning_standup, daily_retro 실패 시 재시도 없음 → 그냥 사라짐
-2. **DAG 선행 태스크 실패**: 선행이 `failed`이면 후속이 영원히 `pending` (cascade fail 정책 없음)
-3. **ResultSynthesizer follow_up_tasks**: INSUFFICIENT 판단 시 태스크 생성하지만 실제 실행 보장 없음
-4. **WorkerHealthMonitor DLQ**: in-memory, 프로세스 재시작 시 소실
+1. **스케줄러 잡 실패**: ~~재시도 없음~~ **✅ 수정 (d6fcde0): 지수 백오프 재시도 3회**
+2. **DAG 선행 태스크 실패**: ~~cascade fail 정책 없음~~ **✅ 수정 (e2f5ec1): cascade_fail 정책 구현**
+3. **ResultSynthesizer follow_up_tasks**: ~~실행 보장 없음~~ **✅ 수정 (b48aaae, b94a644): SUFFICIENT 후 follow_up 방지 + 무한루프 수정**
+4. **WorkerHealthMonitor DLQ**: ~~in-memory, 프로세스 재시작 시 소실~~ **✅ 부분 수정 (020e919): DLQ 크기 상한 100 설정**
 
 ### 3.5 캐릭터/메모리 시스템
 
@@ -404,6 +409,35 @@ score = 0.8 * old + 0.2 * (1.0 if success else 0.0)
 `recommend_team(task_type, count)` — 특정 task_type에서 성공률 높은 에이전트 추천.
 
 **LessonMemory**: 실패 패턴 keyword overlap scoring (semantic search 아님).
+
+### 3.6 LLM API 직접 호출 제거 리팩토링
+
+**배경 (bc4a478, bad83e9, 75a444b):** `llm_provider.py`가 삭제되고 모든 LLM 직접 호출이 제거됐다.
+
+**Before:**
+```python
+# llm_provider.py (삭제됨)
+client = AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+response = await client.messages.create(...)
+```
+
+**After:** 모든 LLM 호출은 `claude-code` / `codex` CLI를 통해서만 이루어진다. `llm_router.py`가 이를 추상화한다.
+
+**영향:**
+- `attachment_analysis.py`, `memory_manager.py`, `nl_schedule_parser.py`, `pm_bot.py`, `task_planner.py`, `telegram_relay.py` 등 전수 리팩토링
+- 직접 API 키 의존성 제거 → `ANTHROPIC_API_KEY` 없어도 OAuth 토큰 fallback (a53d915)
+- `DynamicTeamBuilder`의 `AsyncAnthropic` 직접 호출도 제거 (bad83e9)
+
+### 3.7 세션 자동 compact
+
+**배경 (47fe506, b48b97c):** 장시간 실행되는 Claude Code / Codex 세션이 컨텍스트 임계값(70%)을 초과하면 자동으로 compact된다.
+
+**구현 (`core/session_manager.py`):**
+- 컨텍스트 사용률 70% 초과 → `/compact` 명령 자동 주입
+- Codex와 Claude Code 세션명 불일치 수정 포함
+- 세션 만료(code=1 에러) 시 자동 초기화 (5e0afb6)
+
+**효과:** 장시간 자율 실행 시 컨텍스트 오버플로우로 인한 세션 실패 방지.
 
 ---
 
@@ -512,7 +546,7 @@ async def _execute_task(self, task):
             await self.context_db.release_pm_task_lease(task.id, requeue_if_running=True)
 ```
 
-### 5.3 🔴 Critical: DAG 실패 전파 정책
+### **✅ 구현완료 (e2f5ec1)** 5.3 🔴 Critical: DAG 실패 전파 정책
 
 **문제**: 선행 태스크가 `failed`이면 후속 태스크가 영원히 `pending` 상태.
 
@@ -612,7 +646,7 @@ await context_db.update_task_status(task_id, 'done', result=result)
 # → 텍스트 파싱 불필요, 포맷 변화에 강건
 ```
 
-### 5.8 🟡 Medium: 스케줄러 잡 재시도
+### **✅ 구현완료 (d6fcde0)** 5.8 🟡 Medium: 스케줄러 잡 재시도
 
 **문제**: `scheduler.py`의 morning_standup, daily_retro 등이 실패 시 재시도 없음.
 
@@ -634,7 +668,7 @@ async def _retryable_job(self, job_fn, max_retries=3, backoff_base=60):
             await asyncio.sleep(wait)
 ```
 
-### 5.9 🟡 Medium: ClaimManager 파일 자동 정리
+### **✅ 구현완료 (d6fcde0)** 5.9 🟡 Medium: ClaimManager 파일 자동 정리
 
 **문제**: `~/.ai-org/claims/` 에 파일이 무한 누적.
 
@@ -652,7 +686,7 @@ async def _cleanup_claims(self):
     await self.claim_manager.cleanup_old_claims(max_age_seconds=3600)
 ```
 
-### 5.10 🟡 Medium: DLQ 크기 상한 + 알림
+### **✅ 구현완료 (020e919, daefc49)** 5.10 🟡 Medium: DLQ 크기 상한 + 알림
 
 **문제**: `WorkerHealthMonitor._dlq`가 무한 증가.
 
@@ -671,7 +705,7 @@ def _add_to_dlq(self, task):
         asyncio.create_task(self._notify_dlq_overflow())
 ```
 
-### 5.11 🟢 Low: 응답 SLA 정의
+### **✅ 구현완료 (0579b14)** 5.11 🟢 Low: 응답 SLA 정의
 
 **현재**: 최악의 경우 5-6 LLM 호출 × 타임아웃 = 수분 대기.
 
@@ -716,22 +750,55 @@ async def get_relevant_semantic(self, task_description: str) -> list[Lesson]:
 
 | 우선순위 | 항목 | 예상 임팩트 |
 |---------|------|------------|
-| 🔴 Critical | TaskPoller finally/except 이중 release 버그 수정 | 태스크 소실 방지 |
-| 🔴 Critical | DAG 실패 전파 정책 구현 | 교착 상태 방지 |
+| 🔴 Critical | TaskPoller finally/except 이중 release 버그 수정 | ~~태스크 소실 방지~~ ✅ 구현완료 (이번 세션) |
+| 🔴 Critical | DAG 실패 전파 정책 구현 | ~~교착 상태 방지~~ ✅ 구현완료 |
 | 🔴 Critical | sync SQLite → aiosqlite 통일 | 이벤트 루프 안정성 |
 | 🔴 Critical | TaskLoopGuard (닫힌 루프) 신설 | 작업 완료율 향상 |
 | 🟡 High | 워커 상태 영속화 | 재시작 안정성 |
-| 🟡 High | LLM 호출 체인 병렬화 | 응답 시간 단축 |
+| 🟡 High | LLM 호출 체인 병렬화 | ✅ 구현완료 (이번 세션) |
 | 🟡 High | 봇 완료 감지 이벤트 기반으로 | brittle 패턴 제거 |
-| 🟡 Medium | 스케줄러 잡 재시도 로직 | 누락 회고 방지 |
-| 🟡 Medium | ClaimManager 자동 정리 | 디스크 누적 방지 |
-| 🟡 Medium | DLQ 상한 + 알림 | 운영 가시성 |
-| 🟢 Low | 응답 SLA + progress 피드백 | UX 개선 |
+| 🟡 Medium | 스케줄러 잡 재시도 로직 | ✅ 구현완료 |
+| 🟡 Medium | ClaimManager 자동 정리 | ✅ 구현완료 |
+| 🟡 Medium | DLQ 상한 + 알림 | ✅ 구현완료 |
+| 🟢 Low | 응답 SLA + progress 피드백 | ✅ 구현완료 |
 | 🟢 Low | LessonMemory 시맨틱 검색 | 교훈 검색 정확도 |
+| 🔴 Critical | TaskPoller 이중 release 버그 수정 | ✅ 구현완료 (이번 세션) |
+| 🟡 High | LLM 호출 체인 병렬화 (pm_orchestrator.py) | ✅ 구현완료 (이번 세션) |
+| 🟡 High | sync SQLite run_in_executor 보호 | ✅ 부분 구현 (d6fcde0: scheduler) |
 
 ---
 
-## 7. 핵심 참조 파일
+## 7. 최근 변경사항 이력 (2026-03-16 이후)
+
+| 커밋 | 분류 | 내용 |
+|------|------|------|
+| bc4a478 | 🔧 refactor | LLM API 직접 호출 전수 제거 (llm_provider.py 삭제) |
+| bad83e9 | 🔧 refactor | DynamicTeamBuilder AsyncAnthropic 직접 호출 제거 |
+| 75a444b | 🔧 refactor | llm_provider.py 파일 제거 |
+| a53d915 | ✨ feat | ANTHROPIC_API_KEY 없을 때 Claude Code OAuth 토큰 자동 fallback |
+| b48b97c | 🐛 fix | Codex/Claude Code 세션 자동 compact 세션명 불일치 수정 |
+| 47fe506 | ✨ feat | 세션 자동 compact (임계값 70%) |
+| b48aaae | 🐛 fix | result_synthesizer SUFFICIENT 후 불필요한 follow_up 생성 방지 |
+| b94a644 | 🐛 fix | SynthesisPoller 무한 루프 — follow_up 후 parent done 처리 누락 |
+| 8d15128 | 🐛 fix | 첨부파일 3개 중복 업로드 버그 수정 |
+| d3fffbe | 🐛 fix | PMDecisionClient 전용 세션 분리 — 동시 --resume 충돌 방지 |
+| ac47726 | 🐛 fix | cleanup_old_claims hash lock 파일(*.lock) 누락 버그 수정 |
+| 5e0afb6 | 🐛 fix | 만료된 --resume 세션 code=1 에러 시 자동 초기화 |
+| daefc49 | ✨ feat | 에이전트 아키텍처 업그레이드 (DAG cascade, DLQ cap, ClaimManager cleanup, progress feedback) |
+| 44aacbd | 🐛 fix | 스케줄러 잡 retry 래핑 제거 (테스트 호환성) |
+| 54c0a5d | ✨ feat | PM 합성 시 LLM이 첨부 파일 직접 선별 |
+| b999778 | 🐛 fix | PM 합성 결과에 하위 조직 생성 파일(PNG 등) 첨부 누락 수정 |
+| 17df138 | 🐛 fix | claude_code_runner stderr ERROR 레벨 로깅 |
+| 02f8702 | 🐛 fix | claude_code_runner 에러 메시지에 raw_lines 포함 |
+| 0579b14 | ✨ feat | 복잡 태스크 처리 시 progress 피드백 (3초 후 분석중 표시) |
+| d6fcde0 | ✨ feat | 스케줄러 지수 백오프 재시도 + ClaimManager 정기 정리 + sync SQLite run_in_executor 보호 |
+| e2f5ec1 | ✨ feat | DAG 실패 전파 정책 (cascade_fail) 구현 |
+| 020e919 | ✨ feat | DLQ 크기 상한(100) 설정 및 overflow 경고 로깅 |
+| 6ed92da | 🐛 fix | 하위 조직 '요청 요약' 항상 [배경]으로 표시되는 버그 수정 |
+
+---
+
+## 8. 핵심 참조 파일
 
 ### telegram-ai-org
 | 파일 | 역할 |

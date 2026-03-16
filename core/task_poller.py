@@ -110,8 +110,11 @@ class TaskPoller:
     async def _execute_task(self, task: dict) -> None:
         """태스크 콜백 실행 및 완료 후 processing set에서 제거."""
         task_id = task["id"]
+        released = False
         try:
             await self._on_task(task)
+            await self._db.release_pm_task_lease(task_id, self._worker_id, requeue_if_running=False)
+            released = True
         except Exception:
             logger.exception(f"[TaskPoller:{self._org_id}] 태스크 실행 오류: {task_id}")
             await self._db.release_pm_task_lease(
@@ -120,9 +123,11 @@ class TaskPoller:
                 requeue_if_running=True,
                 retry_delay_seconds=max(self._lease_ttl_sec, self._poll_interval * 4),
             )
+            released = True
         finally:
             self._processing.discard(task_id)
             hb_task = self._heartbeat_tasks.pop(task_id, None)
             if hb_task and not hb_task.done():
                 hb_task.cancel()
-            await self._db.release_pm_task_lease(task_id, self._worker_id, requeue_if_running=False)
+            if not released:
+                await self._db.release_pm_task_lease(task_id, self._worker_id, requeue_if_running=True)
