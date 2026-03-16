@@ -90,7 +90,7 @@ class LessonMemory:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
-                "SELECT * FROM lessons WHERE created_at > ? ORDER BY created_at DESC",
+                "SELECT * FROM lessons WHERE created_at > ? AND resolved=0 ORDER BY created_at DESC",
                 (cutoff,)
             ).fetchall()
         return [self._row_to_lesson(r) for r in rows]
