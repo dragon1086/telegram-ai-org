@@ -351,10 +351,17 @@ class SessionManager:
         감지 방법:
         1. message_count >= 35 이면 compact 트리거
         2. pane 출력에서 'context' + '%' 패턴 탐색
+
+        세션 탐색 순서: claude-agent-team → 기본 세션
         """
-        name = self.session_name(team_id)
-        if not self.session_exists(team_id):
-            return False
+        # claude-agent-team 세션 우선 시도 (Codex/Claude Code 공용 세션)
+        agent_team_name = self.shell_session_name(team_id, "claude-agent-team")
+        if self._run_tmux("has-session", "-t", agent_team_name).strip() == "":
+            name = agent_team_name
+        else:
+            name = self.session_name(team_id)
+            if not self.session_exists(team_id):
+                return False
 
         should_compact = False
 
