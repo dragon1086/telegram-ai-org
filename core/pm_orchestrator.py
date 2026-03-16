@@ -973,14 +973,22 @@ class PMOrchestrator:
             subtasks,
         )
 
-        # 하위 조직이 생성한 파일 경로 수집 (PNG, MD 등)
-        subtask_artifact_markers = ""
+        # 첨부 파일 경로 수집: LLM 선별 우선, 없으면 정규식 fallback
         seen_paths: set[str] = set()
-        for st in subtasks:
-            for path in extract_local_artifact_paths(st.get("result") or ""):
+        subtask_artifact_markers = ""
+        if synthesis.artifact_paths:
+            # LLM이 사용자에게 보낼 파일을 직접 선별한 경우
+            for path in synthesis.artifact_paths:
                 if path not in seen_paths:
                     seen_paths.add(path)
                     subtask_artifact_markers += f"\n[ARTIFACT:{path}]"
+        else:
+            # fallback: subtask result에서 경로 자동 추출
+            for st in subtasks:
+                for path in extract_local_artifact_paths(st.get("result") or ""):
+                    if path not in seen_paths:
+                        seen_paths.add(path)
+                        subtask_artifact_markers += f"\n[ARTIFACT:{path}]"
 
         if synthesis.judgment == SynthesisJudgment.SUFFICIENT:
             report = user_friendly_report
