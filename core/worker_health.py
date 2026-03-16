@@ -113,6 +113,7 @@ class WorkerHealthMonitor:
     RETRY_BASE_DELAY = 2.0           # 초
     RETRY_MAX_DELAY = 120.0          # 초
     DEFAULT_MAX_ATTEMPTS = 3
+    DLQ_MAX_SIZE = 100               # DLQ 최대 크기 (초과 시 FIFO 방식 제거)
 
     def __init__(self) -> None:
         self._health: dict[str, WorkerHealth] = {}
@@ -324,6 +325,9 @@ class WorkerHealthMonitor:
             reason=reason,
             attempts=self._attempts.get(task_id, 0),
         )
+        if len(self._dlq) >= self.DLQ_MAX_SIZE:
+            evicted = self._dlq.pop(0)
+            logger.warning(f"DLQ 가득 참 (max={self.DLQ_MAX_SIZE}), 오래된 항목 제거: task={evicted.task_id}")
         self._dlq.append(entry)
         # 시도 카운터 정리
         self._attempts.pop(task_id, None)
