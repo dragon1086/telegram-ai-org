@@ -27,14 +27,17 @@ class OrgScheduler:
         self,
         send_text: Callable[[str], Coroutine[Any, Any, None]],
         execute_callback: Optional[Callable[[str], Coroutine[Any, Any, str]]] = None,
+        claim_manager=None,
     ) -> None:
         """
         Args:
             send_text: Telegram 메시지 전송 코루틴 (TelegramRelay.send_text 또는 동일 시그니처).
             execute_callback: 사용자 태스크 실행 코루틴 (태스크 설명 → 결과 문자열). 없으면 알림만.
+            claim_manager: ClaimManager 인스턴스. 제공 시 매시간 파일 정리 잡 등록.
         """
         self._send_text = send_text
         self._execute_callback = execute_callback
+        self._claim_manager = claim_manager
         self.scheduler = AsyncIOScheduler(timezone=KST)
         self._register_jobs()
 
@@ -65,6 +68,13 @@ class OrgScheduler:
             id="friday_retro", misfire_grace_time=300,
             replace_existing=True,
         )
+        if self._claim_manager is not None:
+            self.scheduler.add_job(
+                self._cleanup_claims,
+                CronTrigger(hour="*", timezone=KST),
+                id="claim_cleanup", misfire_grace_time=3600,
+                replace_existing=True,
+            )
 
     # ── 잡 구현 ──────────────────────────────────────────────────────────────
 
@@ -73,8 +83,7 @@ class OrgScheduler:
         logger.info("[OrgScheduler] morning_standup 시작")
         try:
             from scripts.morning_goals import main as _morning_main
-            # morning_goals.main()은 내부에서 Telegram 전송까지 처리
-            await _morning_main()
+            await self._retryable_job(_morning_main)
         except Exception as e:
             logger.error(f"[OrgScheduler] morning_standup 실패: {e}")
             await self._safe_send(f"⚠️ [스케줄러] 아침 목표 생성 중 오류 발생: {e}")
@@ -84,7 +93,7 @@ class OrgScheduler:
         logger.info("[OrgScheduler] daily_retro 시작")
         try:
             from scripts.daily_retro import main as _retro_main
-            await _retro_main()
+            await self._retryable_job(_retro_main)
             tasks = []  # Phase 3에서 참조 — 여기서 초기화
             # Phase 2: RetroMemory에 저장
             try:
@@ -132,12 +141,13 @@ class OrgScheduler:
         logger.info("[OrgScheduler] weekly_standup 시작")
         try:
             from scripts.weekly_standup import main as _weekly_main
-            await _weekly_main()
+            await self._retryable_job(_weekly_main)
             # Phase 2: LessonMemory 교훈 통계
             try:
                 from core.lesson_memory import LessonMemory
                 lm = LessonMemory()
-                stats = lm.get_category_stats()
+                loop = asyncio.get_event_loop()
+                stats = await loop.run_in_executor(None, lm.get_category_stats)
                 if stats:
                     top = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:3]
                     summary = ", ".join(f"{c}:{n}" for c, n in top)
@@ -150,11 +160,12 @@ class OrgScheduler:
                 from core.shoutout_system import ShoutoutSystem
                 apm = AgentPersonaMemory()
                 ss = ShoutoutSystem()
-                top = apm.get_top_performers(n=3)
+                _loop = asyncio.get_event_loop()
+                top = await _loop.run_in_executor(None, lambda: apm.get_top_performers(n=3))
                 if top:
                     perf_lines = "\n".join(f"  • {a}: {r:.0%}" for a, r in top)
                     await self._safe_send(f"🏆 *이번 주 Top Performers*\n{perf_lines}")
-                mvp = ss.weekly_mvp()
+                mvp = await _loop.run_in_executor(None, ss.weekly_mvp)
                 if mvp:
                     await self._safe_send(f"🎉 *이번 주 MVP (칭찬왕)*: {mvp}")
             except Exception as e2:
@@ -283,6 +294,36 @@ class OrgScheduler:
             await self._safe_send(f"❌ 예약 태스크 실패: {sched.task_description}\n{e}")
 
     # ── 헬퍼 ─────────────────────────────────────────────────────────────────
+
+    async def _retryable_job(self, job_fn, max_retries: int = 3, backoff_base: int = 60) -> None:
+        """지수 백오프 재시도로 잡 함수 실행. max_retries 초과 시 에러 로깅 후 종료."""
+        for attempt in range(max_retries):
+            try:
+                await job_fn()
+                return
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(
+                        f"[OrgScheduler] {getattr(job_fn, '__name__', str(job_fn))} "
+                        f"{max_retries}회 시도 후 최종 실패: {e}"
+                    )
+                    return
+                wait = backoff_base * (2 ** attempt)
+                logger.warning(
+                    f"[OrgScheduler] {getattr(job_fn, '__name__', str(job_fn))} "
+                    f"실패 (시도 {attempt + 1}/{max_retries}), {wait}s 후 재시도: {e}"
+                )
+                await asyncio.sleep(wait)
+
+    async def _cleanup_claims(self) -> None:
+        """ClaimManager 파일 정기 정리 (매시간)."""
+        try:
+            if self._claim_manager is not None:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, self._claim_manager.cleanup_old_claims)
+                logger.info("[OrgScheduler] claim 파일 정리 완료")
+        except Exception as e:
+            logger.warning(f"[OrgScheduler] claim 파일 정리 실패 (무시): {e}")
 
     async def _safe_send(self, text: str) -> None:
         try:
