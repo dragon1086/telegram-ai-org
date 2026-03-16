@@ -1109,6 +1109,24 @@ class TelegramRelay:
 
     # ── 메시지 처리 ────────────────────────────────────────────────────────
 
+    async def _with_progress_feedback(self, update: Update, coro, delay: float = 3.0):
+        """delay초 이상 걸리면 '🤔 분석 중...' 피드백을 전송하고, 완료 시 자동 취소."""
+        progress_task = None
+
+        async def _send_progress():
+            await asyncio.sleep(delay)
+            try:
+                await self.display.send_reply(update.message, "🤔 분석 중...")
+            except Exception:
+                pass
+
+        try:
+            progress_task = asyncio.create_task(_send_progress())
+            return await coro
+        finally:
+            if progress_task and not progress_task.done():
+                progress_task.cancel()
+
     async def on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """메시지 수신 → confidence scoring → claim → 응답."""
         if update.message is None or update.effective_chat is None:
@@ -1267,7 +1285,10 @@ class TelegramRelay:
         if self._pm_orchestrator is not None:
             try:
                 request_text = text + _replied_context
-                plan = await self._pm_orchestrator.plan_request(request_text)
+                plan = await self._with_progress_feedback(
+                    update,
+                    self._pm_orchestrator.plan_request(request_text),
+                )
                 if plan.route == "direct_reply":
                     await self._reply_with_pm_chat(update, text, _replied_context)
                     return
