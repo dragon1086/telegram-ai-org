@@ -1287,7 +1287,7 @@ class TelegramRelay:
         self.claim_manager.submit_bid(text_hash, self.org_id, bid_score)
 
         # 2단계: BID_WAIT_SEC 대기 (다른 봇들도 입찰 제출하도록)
-        BID_WAIT_SEC = 2.5
+        BID_WAIT_SEC = 0.8
         await asyncio.sleep(BID_WAIT_SEC)
 
         # 3단계: 내가 winner인지 확인
