@@ -124,7 +124,12 @@ class OrganizationConfig:
 
     @property
     def specialties(self) -> list[str]:
-        return list(self.identity.get("specialties", []))
+        specs = list(self.identity.get("specialties", []))
+        if not specs:
+            role = self.identity.get("role", "")
+            if role:
+                specs = [s.strip() for s in role.split("/") if s.strip()]
+        return specs
 
     @property
     def direction(self) -> str:

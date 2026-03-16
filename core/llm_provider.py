@@ -127,7 +127,13 @@ class AnthropicProvider(LLMProvider):
         def _run() -> str:
             try:
                 import anthropic  # type: ignore
-                client = anthropic.Anthropic(api_key=self._api_key)
+                if self._api_key.startswith("sk-ant-oat"):
+                    client = anthropic.Anthropic(
+                        auth_token=self._api_key,
+                        base_url="https://api.anthropic.com",
+                    )
+                else:
+                    client = anthropic.Anthropic(api_key=self._api_key)
                 msg = client.messages.create(
                     model="claude-haiku-4-5-20251001",
                     max_tokens=64,
@@ -144,10 +150,15 @@ class AnthropicProvider(LLMProvider):
                 "max_tokens": 64,
                 "messages": [{"role": "user", "content": prompt}],
             }).encode()
+            # OAuth 토큰(oat01)은 Bearer, 일반 API 키는 x-api-key
+            if self._api_key.startswith("sk-ant-oat"):
+                auth_headers = {"Authorization": f"Bearer {self._api_key}"}
+            else:
+                auth_headers = {"x-api-key": self._api_key}
             req = urllib.request.Request(url, data=body, headers={
                 "Content-Type": "application/json",
-                "x-api-key": self._api_key,
                 "anthropic-version": "2023-06-01",
+                **auth_headers,
             })
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 data = json.loads(r.read())
@@ -268,9 +279,20 @@ def get_provider() -> LLMProvider | None:
             logger.debug("[llm_provider] OpenAIProvider 선택")
             provider = OpenAIProvider(key)
 
-    # 3. Anthropic
+    # 3. Anthropic (API 키 또는 OAuth 토큰 자동 선택)
     if provider is None:
         key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not key:
+            # Claude Code OAuth 토큰으로 fallback
+            oauth = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+            if not oauth:
+                try:
+                    oauth = (Path.home() / ".claude" / "oauth-token").read_text().strip()
+                except Exception:
+                    pass
+            if oauth:
+                key = oauth
+                logger.debug("[llm_provider] AnthropicProvider (OAuth 토큰 사용)")
         if key:
             logger.debug("[llm_provider] AnthropicProvider 선택")
             provider = AnthropicProvider(key)
