@@ -24,7 +24,7 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    preferred_engine: codex
+    preferred_engine: claude-code
     fallback_engine: claude-code
     team_profile: design_strategy
     verification_profile: specialist_default
@@ -63,7 +63,7 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    preferred_engine: codex
+    preferred_engine: claude-code
     fallback_engine: claude-code
     team_profile: engineering_delivery
     verification_profile: specialist_default
@@ -102,7 +102,7 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    preferred_engine: codex
+    preferred_engine: claude-code
     fallback_engine: claude-code
     team_profile: growth_strategy
     verification_profile: specialist_default
@@ -141,7 +141,7 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    preferred_engine: codex
+    preferred_engine: claude-code
     fallback_engine: claude-code
     team_profile: ops_delivery
     verification_profile: specialist_default
@@ -180,7 +180,7 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    preferred_engine: codex
+    preferred_engine: claude-code
     fallback_engine: claude-code
     team_profile: global_orchestrator
     verification_profile: orchestrator_default
@@ -219,7 +219,7 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    preferred_engine: codex
+    preferred_engine: claude-code
     fallback_engine: claude-code
     team_profile: product_strategy
     verification_profile: specialist_default
@@ -262,7 +262,7 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    preferred_engine: codex
+    preferred_engine: claude-code
     fallback_engine: claude-code
     team_profile: research_strategy
     verification_profile: specialist_default
