@@ -145,6 +145,7 @@ class TelegramRelay:
         # PM 오케스트레이터 모드 — ENABLE_PM_ORCHESTRATOR + context_db 필요
         self._pm_orchestrator = None
         self._synthesizing: set = set()  # 합성 중복 방지 (이벤트 드리븐 + 폴러 공유)
+        self._uploaded_artifacts: set[str] = set()  # 중복 파일 업로드 방지
         self._pending_confirmation: dict = {}  # {chat_id: {action, task_ids, expires}}
         self._is_pm_org = ENABLE_PM_ORCHESTRATOR and org_id not in KNOWN_DEPTS
         self._is_dept_org = ENABLE_PM_ORCHESTRATOR and org_id in KNOWN_DEPTS
@@ -1097,7 +1098,11 @@ class TelegramRelay:
             path_text = os.path.expanduser(raw.strip())
             if path_text in seen:
                 continue
+            if path_text in self._uploaded_artifacts:
+                logger.debug(f"[auto_upload:{self.org_id}] 중복 업로드 스킵: {path_text}")
+                continue
             seen.add(path_text)
+            self._uploaded_artifacts.add(path_text)
             path = Path(path_text)
             for artifact in prepare_upload_bundle(path):
                 try:
