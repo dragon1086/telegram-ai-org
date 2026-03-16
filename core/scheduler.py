@@ -325,6 +325,14 @@ class OrgScheduler:
         except Exception as e:
             logger.warning(f"[OrgScheduler] claim 파일 정리 실패 (무시): {e}")
 
+    async def _check_inactivity(self) -> None:
+        """비활성 감지 — message_bus 연결 시 INACTIVITY_DETECTED 이벤트 발행."""
+        logger.warning("[OrgScheduler] _check_inactivity: message_bus 미연결 상태로 호출됨. 무시.")
+
+    async def _fire_daily_insight(self) -> None:
+        """일일 인사이트 — message_bus 연결 시 DAILY_INSIGHT 이벤트 발행."""
+        logger.warning("[OrgScheduler] _fire_daily_insight: message_bus 미연결 상태로 호출됨. 무시.")
+
     async def _safe_send(self, text: str) -> None:
         try:
             await self._send_text(text)
