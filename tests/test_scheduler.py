@@ -22,13 +22,14 @@ def scheduler(send_text_mock: AsyncMock) -> OrgScheduler:
 # ── 잡 등록 테스트 ────────────────────────────────────────────────────────────
 
 def test_scheduler_jobs_registered(scheduler: OrgScheduler) -> None:
-    """4개 잡이 정상 등록되는지 확인."""
+    """5개 잡이 정상 등록되는지 확인."""
     job_ids = scheduler.get_job_ids()
     assert "morning_standup" in job_ids
     assert "daily_retro" in job_ids
     assert "weekly_standup" in job_ids
     assert "friday_retro" in job_ids
-    assert len(job_ids) == 4
+    assert "conversation_cleanup" in job_ids
+    assert len(job_ids) == 5
 
 
 # ── 잡 실행 크래시 테스트 ─────────────────────────────────────────────────────

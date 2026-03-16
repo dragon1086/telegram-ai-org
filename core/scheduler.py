@@ -75,6 +75,12 @@ class OrgScheduler:
                 id="claim_cleanup", misfire_grace_time=3600,
                 replace_existing=True,
             )
+        # 주 1회 오래된 대화 이력 정리
+        self.scheduler.add_job(
+            lambda: asyncio.create_task(self._cleanup_old_conversations()),
+            "interval", weeks=1, id="conversation_cleanup",
+            replace_existing=True,
+        )
 
     # ── 잡 구현 ──────────────────────────────────────────────────────────────
 
@@ -324,6 +330,10 @@ class OrgScheduler:
                 logger.info("[OrgScheduler] claim 파일 정리 완료")
         except Exception as e:
             logger.warning(f"[OrgScheduler] claim 파일 정리 실패 (무시): {e}")
+
+    async def _cleanup_old_conversations(self) -> None:
+        """오래된 대화 이력 정리 (주 1회) — context_db 연결 시 실제 삭제 구현."""
+        logger.warning("[OrgScheduler] _cleanup_old_conversations: context_db 미연결 상태. 무시.")
 
     async def _check_inactivity(self) -> None:
         """비활성 감지 — message_bus 연결 시 INACTIVITY_DETECTED 이벤트 발행."""

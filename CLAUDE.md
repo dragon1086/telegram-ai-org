@@ -72,6 +72,10 @@ bash scripts/start_all.sh
   bash scripts/start_all.sh
   ```
 
+### [2026-03-17] rank-bm25 설치 시 pip install -e . 사용 불가
+- 이 프로젝트는 hatchling 설정 미비로 pip install -e . 작동 안 함
+- rank-bm25 등 신규 패키지는 직접 설치: .venv/bin/pip install rank-bm25
+
 ---
 
 ## 개발 규칙

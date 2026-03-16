@@ -728,7 +728,23 @@ async def plan_request(self, message: str, ...):
         await self._send("⏱️ 처리 시간이 초과됐습니다. 더 간단하게 다시 시도해주세요.")
 ```
 
-### 5.12 🟢 Low: LessonMemory에 벡터 검색 도입
+### 5.12 conversation_messages 대화 이력 영속 저장 ✅
+
+`context_db`를 통해 대화 메시지를 SQLite에 영속 저장. 재시작 후에도 대화 맥락 복원 가능.
+
+### 5.13 BM25 통합 검색 (MemoryManager + conversation) ✅
+
+`rank-bm25` 기반 전문 검색을 MemoryManager와 대화 이력에 통합. LLM 없이 관련 컨텍스트를 빠르게 검색.
+
+### 5.14 ProactiveHandler — INACTIVITY/DAILY_INSIGHT 이벤트 ✅
+
+MessageBus 이벤트(`INACTIVITY_DETECTED`, `DAILY_INSIGHT`)를 구독해 비활성 감지 시 자동 메시지 발송.
+
+### 5.15 active_hours YAML 설정 ✅
+
+`bots/*.yaml`과 `orchestration.yaml`에 `active_hours` 블록 추가. 프로액티브 이벤트를 지정 시간대(기본 09-22 KST)에만 발화.
+
+### 5.16 🟢 Low: LessonMemory에 벡터 검색 도입
 
 **현재**: keyword overlap scoring (단순 단어 교집합).
 
