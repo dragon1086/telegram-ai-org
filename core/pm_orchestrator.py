@@ -22,7 +22,7 @@ from core.result_synthesizer import ResultSynthesizer, SynthesisJudgment
 from core.structured_prompt import StructuredPromptGenerator
 from core.pm_decision import DecisionClientProtocol
 from core.pm_identity import PMIdentity
-from core.telegram_user_guardrail import ensure_user_friendly_output
+from core.telegram_user_guardrail import ensure_user_friendly_output, extract_local_artifact_paths
 
 ENABLE_PM_ORCHESTRATOR = os.environ.get("ENABLE_PM_ORCHESTRATOR", "0") == "1"
 
@@ -973,11 +973,20 @@ class PMOrchestrator:
             subtasks,
         )
 
+        # 하위 조직이 생성한 파일 경로 수집 (PNG, MD 등)
+        subtask_artifact_markers = ""
+        seen_paths: set[str] = set()
+        for st in subtasks:
+            for path in extract_local_artifact_paths(st.get("result") or ""):
+                if path not in seen_paths:
+                    seen_paths.add(path)
+                    subtask_artifact_markers += f"\n[ARTIFACT:{path}]"
+
         if synthesis.judgment == SynthesisJudgment.SUFFICIENT:
             report = user_friendly_report
             await self._send(
                 chat_id,
-                f"✅ 모든 부서 작업 완료!\n\n{report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]",
+                f"✅ 모든 부서 작업 완료!\n\n{report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
             )
             if run_id:
                 try:
@@ -1009,7 +1018,7 @@ class PMOrchestrator:
             await self._send(
                 chat_id,
                 f"⚠️ 결과 부족 — 추가 작업 배분 중...\n"
-                f"사유: {synthesis.reasoning}\n\n{user_friendly_report}\n\n현재까지의 통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]",
+                f"사유: {synthesis.reasoning}\n\n{user_friendly_report}\n\n현재까지의 통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
             )
             if run_id:
                 try:
@@ -1036,7 +1045,7 @@ class PMOrchestrator:
                 chat_id,
                 f"⚠️ 부서 간 결과 충돌 감지\n"
                 f"사유: {synthesis.reasoning}\n\n{user_friendly_report}\n\n"
-                f"조율이 필요합니다.\n현재 통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]",
+                f"조율이 필요합니다.\n현재 통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
             )
             if run_id:
                 try:
@@ -1050,7 +1059,7 @@ class PMOrchestrator:
             report = user_friendly_report
             await self._send(
                 chat_id,
-                f"📋 결과 통합 보고서:\n\n{report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]",
+                f"📋 결과 통합 보고서:\n\n{report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
             )
             if run_id:
                 try:
