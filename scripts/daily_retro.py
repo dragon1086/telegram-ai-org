@@ -96,16 +96,13 @@ def save_to_shared_memory(retro_data: dict) -> None:
 # ── 메시지 생성 ───────────────────────────────────────────────────────────
 
 async def _llm_insights(tasks: list[dict]) -> str | None:
-    """anthropic SDK로 태스크 분석 → 3가지 인사이트 생성."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        print("[retro] ANTHROPIC_API_KEY 없음 — LLM 인사이트 건너뜀")
-        return None
-
+    """PMDecisionClient로 태스크 분석 → 3가지 인사이트 생성."""
+    import sys
+    sys.path.insert(0, str(PROJECT_ROOT))
     try:
-        import anthropic
+        from core.pm_decision import PMDecisionClient
     except ImportError:
-        print("[retro] anthropic SDK 없음 — LLM 인사이트 건너뜀")
+        print("[retro] PMDecisionClient 없음 — LLM 인사이트 건너뜀")
         return None
 
     completed = [t for t in tasks if t.get("status") == "completed"]
@@ -133,16 +130,11 @@ async def _llm_insights(tasks: list[dict]) -> str | None:
     )
 
     try:
-        client = anthropic.AsyncAnthropic(api_key=api_key)
-        resp = await asyncio.wait_for(
-            client.messages.create(
-                model=os.environ.get("PM_MODEL", "claude-haiku-4-5"),
-                max_tokens=300,
-                messages=[{"role": "user", "content": prompt}],
-            ),
+        client = PMDecisionClient("aiorg_pm_bot", engine="claude-code")
+        return await asyncio.wait_for(
+            client.complete(prompt),
             timeout=30.0,
         )
-        return resp.content[0].text if resp.content else None
     except Exception as e:
         print(f"[retro] LLM 인사이트 생성 실패: {e}")
         return None

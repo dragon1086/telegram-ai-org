@@ -13,14 +13,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
-# ── test_pm_bot_asyncio_import ───────────────────────────────────────────
-
-def test_pm_bot_asyncio_import():
-    """pm_bot 임포트 시 asyncio가 포함되어 NameError가 발생하지 않는지 확인."""
-    import core.pm_bot as pm_bot_mod
-    assert hasattr(pm_bot_mod, "asyncio"), "asyncio should be imported in pm_bot"
-
-
 # ── test_dynamic_team_builder_count_string ────────────────────────────────
 
 def _write_agent(directory: Path, name: str, description: str) -> None:

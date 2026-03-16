@@ -133,7 +133,6 @@ class TelegramRelay:
         # PM 집단 기억 — PM 간 맥락 공유
         self.global_context = GlobalContext()
         self._attachment_analyzer = AttachmentAnalyzer()
-        self._anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
         self.display = DisplayLimiter(
             debounce_sec=5.0,
