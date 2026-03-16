@@ -82,6 +82,42 @@ def get_task_history_last_week() -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
+# ── Phase 2 헬퍼 ──────────────────────────────────────────────────────────
+
+def get_weekly_mvp(by_bot: dict[str, list[str]]) -> str:
+    """완료 태스크 가장 많은 봇을 MVP로 선정."""
+    if not by_bot:
+        return "_(데이터 없음)_"
+    mvp = max(by_bot.items(), key=lambda x: len(x[1]))
+    return f"🏆 *{mvp[0]}* ({len(mvp[1])}건 완료)"
+
+
+def get_lesson_summary() -> str:
+    """LessonMemory에서 이번 주 반복 실패 TOP 3."""
+    try:
+        from core.lesson_memory import LessonMemory
+        lm = LessonMemory()
+        stats = lm.get_category_stats()
+        if not stats:
+            return "_(이번 주 기록된 실패 없음)_"
+        top3 = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:3]
+        lines = [f"• {cat} ({cnt}회)" for cat, cnt in top3]
+        return "\n".join(lines)
+    except Exception:
+        return "_(lesson_memory 조회 실패)_"
+
+
+def get_weekly_plan_items() -> list[str]:
+    """이번 주 목표 아이템 (RetroReport action_items 기반)."""
+    try:
+        from core.retro_memory import RetroMemory
+        rm = RetroMemory()
+        report = rm.generate_weekly_report(week_offset=-1)
+        return report.action_items[:3]
+    except Exception:
+        return ["지난주 데이터 없음 — 새로운 목표를 설정하세요"]
+
+
 # ── 메시지 생성 ───────────────────────────────────────────────────────────
 
 def build_standup_message(tasks: list[dict], hist: list[dict]) -> tuple[str, str]:
@@ -129,11 +165,40 @@ def build_standup_message(tasks: list[dict], hist: list[dict]) -> tuple[str, str
                 lines_md.append(f"- ... 외 {len(items) - 5}건")
             lines_md.append("")
 
+    # Phase 2: MVP, 실패 패턴, 목표
+    mvp_text = get_weekly_mvp(by_bot)
+    lesson_text = get_lesson_summary()
+    plan_items = get_weekly_plan_items()
+
+    plan_lines_tg = []
+    for i, item in enumerate(plan_items[:3], 1):
+        plan_lines_tg.append(f"{i}. {item}")
+
     lines_tg += [
+        "",
+        f"🏆 *이번 주 MVP*",
+        mvp_text,
+        "",
+        f"💡 *반복 실패 패턴*",
+        lesson_text,
+        "",
+        f"🎯 *이번 주 목표*",
+        *plan_lines_tg,
         "",
         "✅ 이번 주도 화이팅! 🚀",
     ]
+
+    plan_lines_md = [f"{i}. {item}" for i, item in enumerate(plan_items[:3], 1)]
     lines_md += [
+        "## 이번 주 MVP",
+        mvp_text,
+        "",
+        "## 반복 실패 패턴",
+        lesson_text,
+        "",
+        "## 이번 주 목표",
+        *plan_lines_md,
+        "",
         "---",
         f"*자동 생성: {now.isoformat()}*",
     ]

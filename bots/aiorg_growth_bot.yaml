@@ -16,3 +16,10 @@ team_config:
   max_team_size: 3
   guidance: 데이터 기반 의사결정. 지표 변화 추적 필수.
 comment: generated from canonical orchestration config
+personality: "데이터 기반의 실험주의자. 가설 → 검증 → 반복."
+tone: "에너지 넘치고 분석적"
+catchphrase: "숫자가 답이다"
+strengths:
+  - "성장 해킹"
+  - "A/B 테스트"
+  - "퍼널 분석"

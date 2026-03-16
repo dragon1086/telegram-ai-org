@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import yaml
 from loguru import logger
 
 
@@ -53,6 +54,10 @@ class AgentPersona:
     description: str
     model: str = DEFAULT_MODEL
     skills: list[str] = field(default_factory=list)
+    personality: str = ""
+    tone: str = ""
+    catchphrase: str = ""
+    strengths: list[str] = field(default_factory=list)
 
 
 def _extract_skills(description: str) -> list[str]:
@@ -133,6 +138,46 @@ class AgentCatalog:
                 logger.warning("Failed to parse {}: {}", md_path.name, exc)
 
         logger.info("AgentCatalog loaded {} personas from {}", len(self._personas), self._agents_dir)
+
+    def load_bot_yamls(self, bots_dir: Path | None = None) -> None:
+        """bots/ 디렉토리의 YAML 파일에서 봇 페르소나를 로드한다."""
+        if bots_dir is None:
+            bots_dir = Path(__file__).parent.parent / "bots"
+
+        if not bots_dir.exists():
+            logger.warning("bots_dir not found: {}", bots_dir)
+            return
+
+        loaded = 0
+        for yaml_path in sorted(bots_dir.glob("*.yaml")):
+            try:
+                data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+                if not isinstance(data, dict):
+                    continue
+
+                key = data.get("username") or data.get("org_id") or yaml_path.stem
+                name = data.get("dept_name") or data.get("role") or key
+                description = data.get("role") or data.get("instruction") or f"{name} bot"
+                if len(description) > 200:
+                    description = description[:197] + "..."
+
+                persona = AgentPersona(
+                    name=key,
+                    description=description,
+                    model=DEFAULT_MODEL,
+                    skills=_extract_skills(description),
+                    personality=data.get("personality", ""),
+                    tone=data.get("tone", ""),
+                    catchphrase=data.get("catchphrase", ""),
+                    strengths=data.get("strengths") or [],
+                )
+                self._personas[key] = persona
+                loaded += 1
+                logger.debug("Loaded bot persona: {}", key)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Failed to parse {}: {}", yaml_path.name, exc)
+
+        logger.info("load_bot_yamls loaded {} personas from {}", loaded, bots_dir)
 
     def list_agents(self) -> list[AgentPersona]:
         """로드된 모든 에이전트 페르소나 목록을 반환한다."""
