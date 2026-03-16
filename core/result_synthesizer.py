@@ -64,10 +64,10 @@ _SYNTHESIS_PROMPT = (
     "- ARTIFACTS: list only files that are genuinely useful to the user (images, reports, docs).\n"
     "  Exclude temp files, logs, lock files. Write absolute paths as they appear in results.\n"
     "  If no files worth sending, write ARTIFACTS: none\n"
-    "- IMPORTANT: Even when SUFFICIENT, scan all reports for future plans\n"
-    "  (향후 계획/다음 단계/추가 작업/진행 예정/예정 등) and add them as FOLLOW_UP tasks.\n"
-    "  Assign each to the most relevant dept (aiorg_design_bot/aiorg_engineering_bot/\n"
-    "  aiorg_growth_bot/aiorg_ops_bot/aiorg_product_bot). If truly none, write FOLLOW_UP: none\n"
+    "- FOLLOW_UP: Only add when the user's original request is genuinely NOT yet fulfilled.\n"
+    "  DO NOT create follow-ups just because departments mentioned future plans or next steps.\n"
+    "  If judgment is SUFFICIENT, write FOLLOW_UP: none in almost all cases.\n"
+    "  Only exception: user explicitly asked for a multi-step deliverable and a step is missing.\n"
 )
 
 
