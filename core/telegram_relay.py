@@ -625,11 +625,32 @@ class TelegramRelay:
             return
         if item["health"] not in {"warning", "compact_recommended", "stale"}:
             return
+
+        ctx_pct = item.get("context_percent", 0) or 0
+
+        # 70% 이상이면 자동 compact 실행 (알림 대신 조용히 처리)
+        if ctx_pct >= 70 and item.get("tmux_active"):
+            try:
+                did = await self.session_manager.maybe_compact(org_id, item.get("msg_count", 0))
+                if did:
+                    store.mark_compacted(reason="auto-compact at 70%")
+                    store.mark_alerted(item["health"])
+                    logger.info(f"[auto-compact] {org_id} 자동 compact 완료 ({ctx_pct}%)")
+                    # 텔레그램에는 조용한 로그만
+                    await self.display.send_to_chat(
+                        self.app.bot, self.allowed_chat_id,
+                        f"🧹 {org_id} 자동 compact 완료 (컨텍스트 {ctx_pct}%)"
+                    )
+                    return
+            except Exception as e:
+                logger.warning(f"[auto-compact] {org_id} 실패: {e}")
+
+        # compact 실패하거나 tmux 없으면 기존 알림 전송
         usage_hint = f"tok={item['total_tokens']}" if item["total_tokens"] else f"msg={item['msg_count']}"
         text = (
             f"⚠️ 세션 알림: {org_id}\n"
             f"- 상태: {item['health']}\n"
-            f"- 컨텍스트: {item['context_percent']}%\n"
+            f"- 컨텍스트: {ctx_pct}%\n"
             f"- 사용량: {usage_hint}\n"
             f"- 권장 조치: {item['next_action']}"
         )
