@@ -848,3 +848,21 @@ async def get_relevant_semantic(self, task_description: str) -> list[Lesson]:
 | `src/features/magic-keywords.ts` | 키워드→프롬프트 변환 |
 | `src/mcp/omc-tools-server.ts` | MCP Tool 노출 |
 | `src/team/inbox-outbox.ts` | Actor 모델 mailbox |
+
+---
+
+## 9. 수정 이력 (버그픽스)
+
+### [2026-03-17] sync SQLite run_in_executor 보호 + 완료 감지 정규식 강화
+
+**Fix 1 — sync SQLite 호출 run_in_executor 래핑**
+
+- `core/telegram_relay.py`: `on_command_schedule`, `on_command_schedules`, `on_command_cancel_schedule`, `on_command_pause_schedule`, `on_command_resume_schedule` 내 `_schedule_store` 동기 메서드 6개(`add`, `list_all`, `delete`, `disable`, `get_by_id`, `enable`) 모두 `await loop.run_in_executor(None, ...)` 패턴으로 래핑 완료.
+- `core/scheduler.py`: `daily_retro` async 메서드 내 `ct.record()` 및 `apm.update_from_task()` 동기 호출도 동일 패턴으로 래핑 완료.
+- 패턴 출처: `core/scheduler.py` `weekly_standup()` 기존 구현 참고.
+
+**Fix 2 — 완료 감지 정규식 강화**
+
+- `core/telegram_relay.py` line 1226: 봇 메시지 완료 감지 가드를 느슨한 키워드 체크(`"태스크" in text and "완료" in text`)에서 엄격한 정규식(`re.search(r"태스크\s+T-[A-Za-z0-9_]+-\d+\s+완료", text)`)으로 교체.
+- 오탐(false positive) 방지 — 일반 대화에서 "태스크"/"완료" 단어가 포함된 경우 잘못된 합성 트리거 방지.
+- 동일 패턴이 `_handle_pm_done_event()` 내부(line 2585)에서 이미 사용 중이던 것을 가드에도 적용.

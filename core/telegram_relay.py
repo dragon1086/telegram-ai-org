@@ -1223,7 +1223,7 @@ class TelegramRelay:
             elif self._discussion_manager and is_discussion_message(text):
                 await self._handle_discussion_message(text, update, context)
             # pm_bot: 워커봇 완료 메시지 감지 → 즉시 합성 트리거 (이벤트 드리븐)
-            elif self._pm_orchestrator is not None and "태스크" in text and "완료" in text:
+            elif self._pm_orchestrator is not None and re.search(r"태스크\s+T-[A-Za-z0-9_]+-\d+\s+완료", text):
                 await self._handle_pm_done_event(text)
             return
 
@@ -2013,7 +2013,10 @@ class TelegramRelay:
             parsed = self._nl_parser.parse(text)
             # cron 표현식 유효성 검증 (APScheduler로 실제 파싱 시도)
             _CronTrigger.from_crontab(parsed["cron_expr"], timezone="Asia/Seoul")
-            sched = self._schedule_store.add(text, parsed["cron_expr"], parsed["task_description"])
+            loop = asyncio.get_event_loop()
+            sched = await loop.run_in_executor(
+                None, self._schedule_store.add, text, parsed["cron_expr"], parsed["task_description"]
+            )
             if self._org_scheduler is not None:
                 self._org_scheduler.add_user_job(sched)
             await update.message.reply_text(
@@ -2031,7 +2034,8 @@ class TelegramRelay:
             return
         if not self._is_pm_org or self._schedule_store is None:
             return
-        schedules = self._schedule_store.list_all()
+        loop = asyncio.get_event_loop()
+        schedules = await loop.run_in_executor(None, self._schedule_store.list_all)
         if not schedules:
             await update.message.reply_text("등록된 스케줄이 없습니다.")
             return
@@ -2058,7 +2062,8 @@ class TelegramRelay:
         except ValueError:
             await update.message.reply_text("❌ 유효하지 않은 ID입니다.")
             return
-        deleted = self._schedule_store.delete(schedule_id)
+        loop = asyncio.get_event_loop()
+        deleted = await loop.run_in_executor(None, self._schedule_store.delete, schedule_id)
         if deleted:
             if self._org_scheduler is not None:
                 self._org_scheduler.remove_user_job(schedule_id)
@@ -2080,7 +2085,8 @@ class TelegramRelay:
         except ValueError:
             await update.message.reply_text("❌ 유효하지 않은 ID입니다.")
             return
-        disabled = self._schedule_store.disable(schedule_id)
+        loop = asyncio.get_event_loop()
+        disabled = await loop.run_in_executor(None, self._schedule_store.disable, schedule_id)
         if disabled:
             if self._org_scheduler is not None:
                 self._org_scheduler.remove_user_job(schedule_id)
@@ -2102,11 +2108,12 @@ class TelegramRelay:
         except ValueError:
             await update.message.reply_text("❌ 유효하지 않은 ID입니다.")
             return
-        sched = self._schedule_store.get_by_id(schedule_id)
+        loop = asyncio.get_event_loop()
+        sched = await loop.run_in_executor(None, self._schedule_store.get_by_id, schedule_id)
         if sched is None:
             await update.message.reply_text(f"❌ ID {schedule_id}를 찾을 수 없습니다.")
             return
-        enabled = self._schedule_store.enable(schedule_id)
+        enabled = await loop.run_in_executor(None, self._schedule_store.enable, schedule_id)
         if enabled:
             sched.enabled = True
             if self._org_scheduler is not None:

@@ -133,9 +133,14 @@ class OrgScheduler:
                         participants = task.get("participants", [])
                         task_type = task.get("type", "general")
                         if participants and len(participants) > 1:
-                            ct.record(task_id or str(uuid.uuid4())[:8], participants, task_type, True)
+                            _tid = task_id or str(uuid.uuid4())[:8]
+                            await asyncio.get_event_loop().run_in_executor(
+                                None, ct.record, _tid, participants, task_type, True
+                            )
                         elif task.get("assigned_to"):
-                            apm.update_from_task(task["assigned_to"], task_type, True)
+                            await asyncio.get_event_loop().run_in_executor(
+                                None, apm.update_from_task, task["assigned_to"], task_type, True
+                            )
             except Exception as e2:
                 logger.warning(f"[OrgScheduler] Phase3 CollaborationTracker 저장 실패 (무시): {e2}")
         except Exception as e:
