@@ -35,6 +35,8 @@ class EventType(Enum):
     GOAL_EVALUATED = "goal_evaluated"
     GOAL_ACHIEVED = "goal_achieved"
     GOAL_STAGNATED = "goal_stagnated"
+    INACTIVITY_DETECTED = "inactivity_detected"
+    DAILY_INSIGHT = "daily_insight"
 
 
 @dataclass

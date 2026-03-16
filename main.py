@@ -91,6 +91,11 @@ if __name__ == "__main__":
     memory_manager = MemoryManager(org_id)
     bus = MessageBus()
 
+    # ProactiveHandler: INACTIVITY_DETECTED / DAILY_INSIGHT 이벤트 구독
+    from core.proactive_handler import ProactiveHandler
+    _proactive_handler = ProactiveHandler(bus, bots={})
+    _proactive_handler.register()
+
     # PM 오케스트레이터 모드: ContextDB 초기화
     context_db = None
     if ENABLE_PM_ORCHESTRATOR:
