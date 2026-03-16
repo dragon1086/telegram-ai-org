@@ -8,7 +8,6 @@ from enum import Enum
 from pathlib import Path
 
 from loguru import logger
-import anthropic
 
 from core.agent_catalog import AgentCatalog, AgentPersona
 from core.pm_decision import DecisionClientProtocol
@@ -99,31 +98,9 @@ class DynamicTeamBuilder:
             self._catalog.load()
         self._decision_client = decision_client
 
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            # Claude Code OAuth 토큰으로 fallback
-            api_key = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
-            if not api_key:
-                try:
-                    from pathlib import Path as _Path
-                    api_key = (_Path.home() / ".claude" / "oauth-token").read_text().strip()
-                except Exception:
-                    pass
-        self._model = os.environ.get("PM_MODEL", "claude-haiku-4-5")
-        self._llm_available = bool(api_key)
-        if self._llm_available:
-            if api_key.startswith("sk-ant-oat"):
-                self._client = anthropic.AsyncAnthropic(
-                    auth_token=api_key,
-                    base_url="https://api.anthropic.com",
-                )
-            else:
-                self._client = anthropic.AsyncAnthropic(api_key=api_key)
-        else:
-            self._client = None
-
-        if not self._llm_available:
-            logger.warning("ANTHROPIC_API_KEY not set — DynamicTeamBuilder will use fallback mode")
+        # LLM은 _decision_client (PMDecisionClient → Claude Code)로만 처리
+        # AsyncAnthropic 직접 호출 제거 — OAuth 토큰이 REST API를 지원하지 않음
+        self._llm_available = decision_client is not None
         self._hints: dict = {}  # lazy-loaded from agent_hints.yaml
 
     def set_decision_client(self, decision_client: DecisionClientProtocol | None) -> None:
@@ -177,7 +154,7 @@ class DynamicTeamBuilder:
         avoid_agents = avoid_agents or []
         max_team_size = max(1, max_team_size)
 
-        if self._decision_client is None and (not self._llm_available or self._client is None):
+        if self._decision_client is None:
             logger.info("LLM unavailable, using fallback team for task: {}", task[:60])
             return self._fallback_team(
                 task,
@@ -208,20 +185,6 @@ class DynamicTeamBuilder:
                     task_context,
                     system_prompt=_TEAM_SYSTEM_PROMPT,
                 )
-            else:
-                import asyncio as _asyncio
-                resp = await _asyncio.wait_for(
-                    self._client.messages.create(
-                        model=self._model,
-                        max_tokens=512,
-                        system=_TEAM_SYSTEM_PROMPT,
-                        messages=[
-                            {"role": "user", "content": task_context},
-                        ],
-                    ),
-                    timeout=30.0,
-                )
-                content = resp.content[0].text if resp.content else "{}"
             data = json.loads(content)
             return self._parse_llm_response(
                 data,

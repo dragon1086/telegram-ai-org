@@ -15,7 +15,10 @@ organizations:
     dept_name: 디자인실
     display_name: 디자인실
     role: UI/UX 디자인/와이어프레임/프로토타입
-    specialties: []
+    specialties:
+    - UI/UX 디자인
+    - 와이어프레임
+    - 프로토타입
     direction: 접근성(WCAG) 준수. 디자인 시스템 일관성 유지.
     instruction: 다음 요청에 대해 UI/UX 관점에서 분석하고 디자인 방안을 제시하세요
   routing:
@@ -54,7 +57,11 @@ organizations:
     dept_name: 개발실
     display_name: 개발실
     role: 개발/코딩/API 구현/버그 수정
-    specialties: []
+    specialties:
+    - 개발
+    - 코딩
+    - API 구현
+    - 버그 수정
     direction: 항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호.
     instruction: 다음 요청에 대해 기술적 관점에서 분석하고 코드 구현 계획 또는 구현을 수행하세요
   routing:
@@ -93,7 +100,10 @@ organizations:
     dept_name: 성장실
     display_name: 성장실
     role: 성장 전략/마케팅/지표 분석
-    specialties: []
+    specialties:
+    - 성장 전략
+    - 마케팅
+    - 지표 분석
     direction: 데이터 기반 의사결정. 지표 변화 추적 필수.
     instruction: 다음 요청에 대해 성장/마케팅 관점에서 분석하고 전략을 수립하세요
   routing:
@@ -132,7 +142,11 @@ organizations:
     dept_name: 운영실
     display_name: 운영실
     role: 운영/배포/인프라/모니터링
-    specialties: []
+    specialties:
+    - 운영
+    - 배포
+    - 인프라
+    - 모니터링
     direction: 배포 전 항상 테스트. 인프라 변경은 단계적으로.
     instruction: 다음 요청에 대해 운영/인프라 관점에서 분석하고 배포 및 모니터링 계획을 수립하세요
   routing:
@@ -171,7 +185,10 @@ organizations:
     dept_name: PM
     display_name: PM
     role: 프로젝트 총괄/부서 조율/진행 관리
-    specialties: []
+    specialties:
+    - 프로젝트 총괄
+    - 부서 조율
+    - 진행 관리
     direction: 태스크 분해 후 적절한 부서에 위임. 크로스-팀 협업 우선.
     instruction: ''
   routing:
@@ -210,7 +227,10 @@ organizations:
     dept_name: 기획실
     display_name: 기획실
     role: 기획/요구사항 분석/PRD 작성
-    specialties: []
+    specialties:
+    - 기획
+    - 요구사항 분석
+    - PRD 작성
     direction: 요구사항 명확화 우선. PRD 작성 후 구현 위임.
     instruction: 다음 요청에 대해 기획/요구사항 관점에서 분석하고 PRD 또는 스펙 문서를 작성하세요
   routing:
