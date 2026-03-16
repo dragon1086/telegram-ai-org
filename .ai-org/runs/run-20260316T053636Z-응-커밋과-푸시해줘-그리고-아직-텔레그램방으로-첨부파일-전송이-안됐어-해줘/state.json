@@ -1,0 +1,48 @@
+{
+  "run_id": "run-20260316T053636Z-응-커밋과-푸시해줘-그리고-아직-텔레그램방으로-첨부파일-전송이-안됐어-해줘",
+  "org_id": "aiorg_pm_bot",
+  "request": "응 커밋과 푸시해줘. 그리고 아직 텔레그램방으로 첨부파일 전송이 안됐어. 해줘",
+  "phase_policy": "default",
+  "status": "completed",
+  "current_phase": "feedback",
+  "phases": [
+    {
+      "name": "intake",
+      "status": "completed",
+      "started_at": "2026-03-16T05:36:36.576906+00:00",
+      "completed_at": "2026-03-16T05:36:36.601444+00:00"
+    },
+    {
+      "name": "planning",
+      "status": "completed",
+      "started_at": "2026-03-16T05:36:36.601458+00:00",
+      "completed_at": "2026-03-16T05:37:45.491773+00:00"
+    },
+    {
+      "name": "design",
+      "status": "completed",
+      "started_at": "2026-03-16T05:37:45.491789+00:00",
+      "completed_at": "2026-03-16T05:37:45.539763+00:00"
+    },
+    {
+      "name": "implementation",
+      "status": "completed",
+      "started_at": "2026-03-16T05:37:45.539767+00:00",
+      "completed_at": "2026-03-16T05:37:47.138415+00:00"
+    },
+    {
+      "name": "verification",
+      "status": "completed",
+      "started_at": "2026-03-16T05:37:47.138428+00:00",
+      "completed_at": "2026-03-16T05:37:48.609488+00:00"
+    },
+    {
+      "name": "feedback",
+      "status": "completed",
+      "started_at": "2026-03-16T05:37:48.609499+00:00",
+      "completed_at": "2026-03-16T05:37:48.655707+00:00"
+    }
+  ],
+  "created_at": "2026-03-16T05:36:36.576917+00:00",
+  "updated_at": "2026-03-16T05:37:48.656168+00:00"
+}

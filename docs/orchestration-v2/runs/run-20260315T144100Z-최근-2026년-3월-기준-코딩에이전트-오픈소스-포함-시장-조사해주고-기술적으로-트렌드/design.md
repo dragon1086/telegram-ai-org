@@ -46,3 +46,10 @@ agents=designer, analyst, analyst, document-specialist
 engine=codex
 mode=agent_teams
 agents=designer, analyst, document-specialist
+
+## Design summary
+- at: 2026-03-16T01:57:32.815338+00:00
+
+engine=codex
+mode=agent_teams
+agents=architect, debugger, executor
