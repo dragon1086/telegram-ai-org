@@ -4,7 +4,7 @@ from __future__ import annotations
 from core.agent_persona_memory import AgentPersonaMemory
 
 SUCCESS_RATE_THRESHOLD = 0.80   # 80% 이상 성공률 → strengths 추가
-SUCCESS_MIN_COUNT = 5           # 최소 5회 이상 성공한 task_type만 검토
+SUCCESS_MIN_COUNT = 3           # agent_persona_memory STRENGTH_THRESHOLD=3 과 동일 기준
 FAILURE_MIN_COUNT = 3           # 3회 이상 실패 카테고리 → weaknesses 추가
 
 
@@ -35,13 +35,12 @@ class BotCharacterEvolution:
         if stats is None:
             return result
 
-        # strengths: success_patterns[task_type] / total_tasks > 80%, 최소 5회
-        if stats.total_tasks > 0:
-            for task_type, count in stats.success_patterns.items():
-                rate = count / stats.total_tasks
-                if count >= SUCCESS_MIN_COUNT and rate > SUCCESS_RATE_THRESHOLD:
-                    if task_type not in result["strengths"]:
-                        result["strengths"].append(task_type)
+        # strengths: success_patterns[task_type] >= SUCCESS_MIN_COUNT (count 기준)
+        # agent_persona_memory의 STRENGTH_THRESHOLD=3 과 동일 기준으로 통일
+        for task_type, count in stats.success_patterns.items():
+            if count >= SUCCESS_MIN_COUNT:
+                if task_type not in result["strengths"]:
+                    result["strengths"].append(task_type)
 
         # weaknesses: failure_patterns[category] >= 3
         for category, count in stats.failure_patterns.items():

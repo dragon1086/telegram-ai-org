@@ -41,7 +41,9 @@ class RetroMemory:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS retro_entries (
                     date TEXT PRIMARY KEY,
@@ -55,7 +57,7 @@ class RetroMemory:
             """)
 
     def save_daily(self, entry: RetroEntry) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO retro_entries
                    (date, best_thing, failure_summary, experiment,
@@ -71,7 +73,7 @@ class RetroMemory:
         # Monday of the target week
         week_start = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
         week_end = week_start + timedelta(days=6)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
                 "SELECT * FROM retro_entries WHERE date >= ? AND date <= ? ORDER BY date ASC",
                 (week_start.isoformat(), week_end.isoformat())

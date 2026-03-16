@@ -157,7 +157,7 @@ class PMBot:
             direct_task = user_text.split(" ", 1)[1].strip()
             await self.send_text(f"⚡ 동적 팀 모드로 실행: {direct_task[:100]}...")
             result = await self._execute_with_dynamic_team(direct_task)
-            await self.send_text(f"✅ 완료:\n{result[:3000]}")
+            await self.send_text(f"❌ 실패:\n{result[:3000]}" if result and (result.startswith("ERROR:") or result.startswith("❌")) else f"✅ 완료:\n{result[:3000]}")
             return
 
         workers = self.registry.list_workers()
@@ -173,7 +173,7 @@ class PMBot:
             logger.info("워커 봇 없음 → 동적 팀 모드로 자동 전환")
             await self.send_text(f"🤖 AI 팀 구성 중...")
             result = await self._execute_with_dynamic_team(user_text)
-            await self.send_text(f"✅ 완료:\n{result[:3000]}")
+            await self.send_text(f"❌ 실패:\n{result[:3000]}" if result and (result.startswith("ERROR:") or result.startswith("❌")) else f"✅ 완료:\n{result[:3000]}")
             return
 
         # RAG 컨텍스트로 플래너에 과거 태스크 이력 제공

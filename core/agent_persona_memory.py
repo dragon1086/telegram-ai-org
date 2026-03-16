@@ -35,7 +35,9 @@ class AgentPersonaMemory:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS agent_stats (
                     agent_id        TEXT PRIMARY KEY,
@@ -65,7 +67,7 @@ class AgentPersonaMemory:
         return datetime.now(timezone.utc).isoformat()
 
     def _load_stats_row(self, agent_id: str) -> dict:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             row = conn.execute(
                 "SELECT agent_id, strengths, weaknesses, failure_patterns, "
                 "success_patterns, total_tasks, success_tasks, updated_at "
@@ -95,7 +97,7 @@ class AgentPersonaMemory:
         }
 
     def _save_stats_row(self, data: dict) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             conn.execute("""
                 INSERT INTO agent_stats
                     (agent_id, strengths, weaknesses, failure_patterns,
@@ -177,7 +179,7 @@ class AgentPersonaMemory:
         a, b = self._pair_key(agent_a, agent_b)
         old_score = self.get_synergy_score(a, b)
         new_score = (1.0 - SYNERGY_ALPHA) * old_score + SYNERGY_ALPHA * (1.0 if success else 0.0)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             conn.execute("""
                 INSERT INTO synergy_scores (agent_a, agent_b, score)
                 VALUES (?,?,?)
@@ -187,7 +189,7 @@ class AgentPersonaMemory:
     def get_synergy_score(self, agent_a: str, agent_b: str) -> float:
         """두 에이전트 시너지 스코어 반환. 기본값 0.5. 양방향 조회."""
         a, b = self._pair_key(agent_a, agent_b)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             row = conn.execute(
                 "SELECT score FROM synergy_scores WHERE agent_a=? AND agent_b=?",
                 (a, b)
@@ -196,7 +198,7 @@ class AgentPersonaMemory:
 
     def recommend_team(self, task_type: str, count: int = 3) -> list[str]:
         """task_type에 success_patterns 있는 에이전트 중 성공률 높은 순서로 반환."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
                 "SELECT agent_id, success_patterns, total_tasks, success_tasks "
                 "FROM agent_stats"
@@ -218,7 +220,7 @@ class AgentPersonaMemory:
         # 한 번도 기록된 적 없으면 None 반환
         if data["total_tasks"] == 0 and data["updated_at"] == "":
             # DB에 실제로 존재하는지 확인
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=10) as conn:
                 exists = conn.execute(
                     "SELECT 1 FROM agent_stats WHERE agent_id=?", (agent_id,)
                 ).fetchone()
@@ -226,7 +228,7 @@ class AgentPersonaMemory:
                 return None
 
         # synergy_scores 로드 (해당 에이전트 관련 모든 쌍)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
                 "SELECT agent_a, agent_b, score FROM synergy_scores "
                 "WHERE agent_a=? OR agent_b=?",
@@ -250,7 +252,7 @@ class AgentPersonaMemory:
         )
 
     def get_all_stats(self) -> list[AgentStats]:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
                 "SELECT agent_id FROM agent_stats"
             ).fetchall()
@@ -263,7 +265,7 @@ class AgentPersonaMemory:
 
     def get_top_performers(self, n: int = 3) -> list[tuple[str, float]]:
         """성공률 상위 N 에이전트 [(agent_id, success_rate)] 반환."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
                 "SELECT agent_id, total_tasks, success_tasks FROM agent_stats "
                 "WHERE total_tasks > 0"

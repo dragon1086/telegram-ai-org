@@ -34,7 +34,9 @@ class ShoutoutSystem:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS shoutouts (
                     id TEXT PRIMARY KEY,
@@ -76,7 +78,7 @@ class ShoutoutSystem:
             reason=reason,
             task_id=task_id,
         )
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             conn.execute(
                 "INSERT INTO shoutouts VALUES (?,?,?,?,?,?)",
                 (shoutout.id, shoutout.from_agent, shoutout.to_agent,
@@ -110,7 +112,7 @@ class ShoutoutSystem:
     def get_top_recipients(self, days: int = 7) -> list[tuple[str, int]]:
         """최근 N일 칭찬 가장 많이 받은 봇 [(agent_id, count)] 내림차순."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
                 "SELECT to_agent, COUNT(*) as cnt FROM shoutouts "
                 "WHERE created_at > ? GROUP BY to_agent ORDER BY cnt DESC",
@@ -123,7 +125,7 @@ class ShoutoutSystem:
         now = datetime.now(timezone.utc)
         monday = now - timedelta(days=now.weekday())
         week_start = monday.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             row = conn.execute(
                 "SELECT to_agent, COUNT(*) as cnt FROM shoutouts "
                 "WHERE created_at >= ? GROUP BY to_agent ORDER BY cnt DESC LIMIT 1",
@@ -133,7 +135,7 @@ class ShoutoutSystem:
 
     def get_received(self, agent_id: str, limit: int = 10) -> list[Shoutout]:
         """특정 에이전트가 받은 칭찬 최근 limit개."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
                 "SELECT id, from_agent, to_agent, reason, task_id, created_at "
                 "FROM shoutouts WHERE to_agent=? ORDER BY created_at DESC LIMIT ?",

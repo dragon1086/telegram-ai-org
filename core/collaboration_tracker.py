@@ -31,7 +31,9 @@ class CollaborationTracker:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS collaborations (
                     id TEXT PRIMARY KEY,
@@ -53,7 +55,7 @@ class CollaborationTracker:
             task_type=task_type,
             success=success,
         )
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             conn.execute(
                 "INSERT INTO collaborations VALUES (?,?,?,?,?,?)",
                 (rec.id, rec.task_id, json.dumps(rec.participants),
@@ -66,7 +68,7 @@ class CollaborationTracker:
 
     def get_frequent_pairs(self, min_count: int = 2) -> list[tuple[tuple, int]]:
         """자주 함께 일하는 봇 조합 반환 [((a, b), count)] 내림차순."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute("SELECT participants FROM collaborations").fetchall()
         counter: Counter = Counter()
         for (raw,) in rows:
@@ -82,7 +84,7 @@ class CollaborationTracker:
     def get_agent_collaborations(self, agent_id: str, days: int = 30) -> list[CollaborationRecord]:
         """특정 에이전트의 최근 days일 협업 히스토리."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
                 "SELECT * FROM collaborations WHERE created_at > ? ORDER BY created_at DESC",
                 (cutoff,)
@@ -95,7 +97,7 @@ class CollaborationTracker:
 
     def get_collaboration_graph(self) -> dict[str, dict[str, int]]:
         """전체 협업 그래프 {agent: {partner: count}}"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute("SELECT participants FROM collaborations").fetchall()
         graph: dict[str, dict[str, int]] = {}
         for (raw,) in rows:
