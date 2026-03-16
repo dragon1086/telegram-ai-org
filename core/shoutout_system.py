@@ -68,6 +68,55 @@ class ShoutoutSystem:
             except Exception:
                 pass
 
+    # ------------------------------------------------------------------
+    # Private sync helpers — contain the actual sqlite3 work.
+    # Call these directly from sync code, or via run_in_executor from async.
+    # ------------------------------------------------------------------
+
+    def _sync_insert_shoutout(self, shoutout: Shoutout) -> None:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            conn.execute(
+                "INSERT INTO shoutouts VALUES (?,?,?,?,?,?)",
+                (shoutout.id, shoutout.from_agent, shoutout.to_agent,
+                 shoutout.reason, shoutout.task_id, shoutout.created_at)
+            )
+
+    def _sync_get_top_recipients(self, days: int) -> list[tuple[str, int]]:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            rows = conn.execute(
+                "SELECT to_agent, COUNT(*) as cnt FROM shoutouts "
+                "WHERE created_at > ? GROUP BY to_agent ORDER BY cnt DESC",
+                (cutoff,)
+            ).fetchall()
+        return [(row[0], row[1]) for row in rows]
+
+    def _sync_weekly_mvp(self) -> str | None:
+        now = datetime.now(timezone.utc)
+        monday = now - timedelta(days=now.weekday())
+        week_start = monday.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            row = conn.execute(
+                "SELECT to_agent, COUNT(*) as cnt FROM shoutouts "
+                "WHERE created_at >= ? GROUP BY to_agent ORDER BY cnt DESC LIMIT 1",
+                (week_start,)
+            ).fetchone()
+        return row[0] if row else None
+
+    def _sync_get_received(self, agent_id: str, limit: int) -> list[Shoutout]:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            rows = conn.execute(
+                "SELECT id, from_agent, to_agent, reason, task_id, created_at "
+                "FROM shoutouts WHERE to_agent=? ORDER BY created_at DESC LIMIT ?",
+                (agent_id, limit)
+            ).fetchall()
+        return [self._row_to_shoutout(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Public API — sync; safe to call from sync or via run_in_executor
+    # from async contexts to avoid blocking the event loop.
+    # ------------------------------------------------------------------
+
     def give_shoutout(self, from_agent: str, to_agent: str,
                       reason: str, task_id: str = "") -> Shoutout:
         """칭찬 기록 저장 + send_telegram_fn이 있으면 전송."""
@@ -78,12 +127,7 @@ class ShoutoutSystem:
             reason=reason,
             task_id=task_id,
         )
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
-            conn.execute(
-                "INSERT INTO shoutouts VALUES (?,?,?,?,?,?)",
-                (shoutout.id, shoutout.from_agent, shoutout.to_agent,
-                 shoutout.reason, shoutout.task_id, shoutout.created_at)
-            )
+        self._sync_insert_shoutout(shoutout)
 
         tone = self._personas.get(from_agent)
         base_msg = f"🎉 {from_agent}이(가) {to_agent}를 칭찬합니다!\n{reason}"
@@ -111,37 +155,15 @@ class ShoutoutSystem:
 
     def get_top_recipients(self, days: int = 7) -> list[tuple[str, int]]:
         """최근 N일 칭찬 가장 많이 받은 봇 [(agent_id, count)] 내림차순."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
-            rows = conn.execute(
-                "SELECT to_agent, COUNT(*) as cnt FROM shoutouts "
-                "WHERE created_at > ? GROUP BY to_agent ORDER BY cnt DESC",
-                (cutoff,)
-            ).fetchall()
-        return [(row[0], row[1]) for row in rows]
+        return self._sync_get_top_recipients(days)
 
     def weekly_mvp(self) -> str | None:
         """이번 주(월~일) 가장 많이 칭찬받은 봇 반환. 없으면 None."""
-        now = datetime.now(timezone.utc)
-        monday = now - timedelta(days=now.weekday())
-        week_start = monday.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
-            row = conn.execute(
-                "SELECT to_agent, COUNT(*) as cnt FROM shoutouts "
-                "WHERE created_at >= ? GROUP BY to_agent ORDER BY cnt DESC LIMIT 1",
-                (week_start,)
-            ).fetchone()
-        return row[0] if row else None
+        return self._sync_weekly_mvp()
 
     def get_received(self, agent_id: str, limit: int = 10) -> list[Shoutout]:
         """특정 에이전트가 받은 칭찬 최근 limit개."""
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
-            rows = conn.execute(
-                "SELECT id, from_agent, to_agent, reason, task_id, created_at "
-                "FROM shoutouts WHERE to_agent=? ORDER BY created_at DESC LIMIT ?",
-                (agent_id, limit)
-            ).fetchall()
-        return [self._row_to_shoutout(r) for r in rows]
+        return self._sync_get_received(agent_id, limit)
 
     def _row_to_shoutout(self, row) -> Shoutout:
         return Shoutout(

@@ -66,7 +66,16 @@ class AgentPersonaMemory:
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    def _load_stats_row(self, agent_id: str) -> dict:
+    def _pair_key(self, a: str, b: str) -> tuple[str, str]:
+        """항상 (작은 id, 큰 id) 순서로 정규화."""
+        return (a, b) if a < b else (b, a)
+
+    # ------------------------------------------------------------------
+    # Private sync helpers — contain the actual sqlite3 work.
+    # Call these directly from sync code, or via run_in_executor from async.
+    # ------------------------------------------------------------------
+
+    def _sync_load_stats_row(self, agent_id: str) -> dict:
         with sqlite3.connect(self.db_path, timeout=10) as conn:
             row = conn.execute(
                 "SELECT agent_id, strengths, weaknesses, failure_patterns, "
@@ -96,7 +105,7 @@ class AgentPersonaMemory:
             "updated_at": row[7] or "",
         }
 
-    def _save_stats_row(self, data: dict) -> None:
+    def _sync_save_stats_row(self, data: dict) -> None:
         with sqlite3.connect(self.db_path, timeout=10) as conn:
             conn.execute("""
                 INSERT INTO agent_stats
@@ -122,12 +131,74 @@ class AgentPersonaMemory:
                 data["updated_at"],
             ))
 
-    def _pair_key(self, a: str, b: str) -> tuple[str, str]:
-        """항상 (작은 id, 큰 id) 순서로 정규화."""
-        return (a, b) if a < b else (b, a)
+    def _sync_update_synergy(self, a: str, b: str, new_score: float) -> None:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            conn.execute("""
+                INSERT INTO synergy_scores (agent_a, agent_b, score)
+                VALUES (?,?,?)
+                ON CONFLICT(agent_a, agent_b) DO UPDATE SET score = excluded.score
+            """, (a, b, new_score))
+
+    def _sync_get_synergy_score(self, a: str, b: str) -> float:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            row = conn.execute(
+                "SELECT score FROM synergy_scores WHERE agent_a=? AND agent_b=?",
+                (a, b)
+            ).fetchone()
+        return row[0] if row else SYNERGY_DEFAULT
+
+    def _sync_recommend_team(self, task_type: str, count: int) -> list[str]:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            rows = conn.execute(
+                "SELECT agent_id, success_patterns, total_tasks, success_tasks "
+                "FROM agent_stats"
+            ).fetchall()
+        candidates: list[tuple[float, str]] = []
+        for agent_id, sp_json, total, successes in rows:
+            sp: dict[str, int] = json.loads(sp_json)
+            if task_type not in sp or sp[task_type] == 0:
+                continue
+            rate = successes / total if total > 0 else 0.0
+            candidates.append((rate, agent_id))
+        candidates.sort(reverse=True)
+        return [agent_id for _, agent_id in candidates[:count]]
+
+    def _sync_check_agent_exists(self, agent_id: str) -> bool:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            return conn.execute(
+                "SELECT 1 FROM agent_stats WHERE agent_id=?", (agent_id,)
+            ).fetchone() is not None
+
+    def _sync_get_synergy_rows(self, agent_id: str) -> list[tuple[str, str, float]]:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            rows = conn.execute(
+                "SELECT agent_a, agent_b, score FROM synergy_scores "
+                "WHERE agent_a=? OR agent_b=?",
+                (agent_id, agent_id)
+            ).fetchall()
+        return rows
+
+    def _sync_get_all_agent_ids(self) -> list[str]:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            rows = conn.execute("SELECT agent_id FROM agent_stats").fetchall()
+        return [agent_id for (agent_id,) in rows]
+
+    def _sync_get_top_performers(self, n: int) -> list[tuple[str, float]]:
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            rows = conn.execute(
+                "SELECT agent_id, total_tasks, success_tasks FROM agent_stats "
+                "WHERE total_tasks > 0"
+            ).fetchall()
+        ranked = [
+            (agent_id, success / total)
+            for agent_id, total, success in rows
+        ]
+        ranked.sort(key=lambda x: x[1], reverse=True)
+        return ranked[:n]
 
     # ------------------------------------------------------------------
-    # Public API
+    # Public API — sync; safe to call from sync or via run_in_executor
+    # from async contexts to avoid blocking the event loop.
     # ------------------------------------------------------------------
 
     def update_from_task(
@@ -147,7 +218,7 @@ class AgentPersonaMemory:
         if collaborators is None:
             collaborators = []
 
-        data = self._load_stats_row(agent_id)
+        data = self._sync_load_stats_row(agent_id)
         data["total_tasks"] += 1
 
         if success:
@@ -168,7 +239,7 @@ class AgentPersonaMemory:
                 data["weaknesses"].append(category)
 
         data["updated_at"] = self._now()
-        self._save_stats_row(data)
+        self._sync_save_stats_row(data)
 
         for partner in collaborators:
             if partner != agent_id:
@@ -179,61 +250,25 @@ class AgentPersonaMemory:
         a, b = self._pair_key(agent_a, agent_b)
         old_score = self.get_synergy_score(a, b)
         new_score = (1.0 - SYNERGY_ALPHA) * old_score + SYNERGY_ALPHA * (1.0 if success else 0.0)
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
-            conn.execute("""
-                INSERT INTO synergy_scores (agent_a, agent_b, score)
-                VALUES (?,?,?)
-                ON CONFLICT(agent_a, agent_b) DO UPDATE SET score = excluded.score
-            """, (a, b, new_score))
+        self._sync_update_synergy(a, b, new_score)
 
     def get_synergy_score(self, agent_a: str, agent_b: str) -> float:
         """두 에이전트 시너지 스코어 반환. 기본값 0.5. 양방향 조회."""
         a, b = self._pair_key(agent_a, agent_b)
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
-            row = conn.execute(
-                "SELECT score FROM synergy_scores WHERE agent_a=? AND agent_b=?",
-                (a, b)
-            ).fetchone()
-        return row[0] if row else SYNERGY_DEFAULT
+        return self._sync_get_synergy_score(a, b)
 
     def recommend_team(self, task_type: str, count: int = 3) -> list[str]:
         """task_type에 success_patterns 있는 에이전트 중 성공률 높은 순서로 반환."""
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
-            rows = conn.execute(
-                "SELECT agent_id, success_patterns, total_tasks, success_tasks "
-                "FROM agent_stats"
-            ).fetchall()
-
-        candidates: list[tuple[float, str]] = []
-        for agent_id, sp_json, total, successes in rows:
-            sp: dict[str, int] = json.loads(sp_json)
-            if task_type not in sp or sp[task_type] == 0:
-                continue
-            rate = successes / total if total > 0 else 0.0
-            candidates.append((rate, agent_id))
-
-        candidates.sort(reverse=True)
-        return [agent_id for _, agent_id in candidates[:count]]
+        return self._sync_recommend_team(task_type, count)
 
     def get_stats(self, agent_id: str) -> AgentStats | None:
-        data = self._load_stats_row(agent_id)
+        data = self._sync_load_stats_row(agent_id)
         # 한 번도 기록된 적 없으면 None 반환
         if data["total_tasks"] == 0 and data["updated_at"] == "":
-            # DB에 실제로 존재하는지 확인
-            with sqlite3.connect(self.db_path, timeout=10) as conn:
-                exists = conn.execute(
-                    "SELECT 1 FROM agent_stats WHERE agent_id=?", (agent_id,)
-                ).fetchone()
-            if not exists:
+            if not self._sync_check_agent_exists(agent_id):
                 return None
 
-        # synergy_scores 로드 (해당 에이전트 관련 모든 쌍)
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
-            rows = conn.execute(
-                "SELECT agent_a, agent_b, score FROM synergy_scores "
-                "WHERE agent_a=? OR agent_b=?",
-                (agent_id, agent_id)
-            ).fetchall()
+        rows = self._sync_get_synergy_rows(agent_id)
         synergy: dict[str, float] = {}
         for a, b, score in rows:
             partner = b if a == agent_id else a
@@ -252,12 +287,9 @@ class AgentPersonaMemory:
         )
 
     def get_all_stats(self) -> list[AgentStats]:
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
-            rows = conn.execute(
-                "SELECT agent_id FROM agent_stats"
-            ).fetchall()
+        agent_ids = self._sync_get_all_agent_ids()
         result = []
-        for (agent_id,) in rows:
+        for agent_id in agent_ids:
             stats = self.get_stats(agent_id)
             if stats is not None:
                 result.append(stats)
@@ -265,14 +297,4 @@ class AgentPersonaMemory:
 
     def get_top_performers(self, n: int = 3) -> list[tuple[str, float]]:
         """성공률 상위 N 에이전트 [(agent_id, success_rate)] 반환."""
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
-            rows = conn.execute(
-                "SELECT agent_id, total_tasks, success_tasks FROM agent_stats "
-                "WHERE total_tasks > 0"
-            ).fetchall()
-        ranked = [
-            (agent_id, success / total)
-            for agent_id, total, success in rows
-        ]
-        ranked.sort(key=lambda x: x[1], reverse=True)
-        return ranked[:n]
+        return self._sync_get_top_performers(n)

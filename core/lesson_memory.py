@@ -53,16 +53,12 @@ class LessonMemory:
                 )
             """)
 
-    def record(self, task_description: str, category: str,
-               what_went_wrong: str, how_to_prevent: str, worker: str = "") -> Lesson:
-        lesson = Lesson(
-            id=str(uuid.uuid4())[:8],
-            task_description=task_description,
-            category=category if category in CATEGORIES else "other",
-            what_went_wrong=what_went_wrong,
-            how_to_prevent=how_to_prevent,
-            worker=worker,
-        )
+    # ------------------------------------------------------------------
+    # Private sync helpers — contain the actual sqlite3 work.
+    # Call these directly from sync code, or via run_in_executor from async.
+    # ------------------------------------------------------------------
+
+    def _sync_record(self, lesson: "Lesson") -> None:
         with sqlite3.connect(self.db_path, timeout=10) as conn:
             conn.execute(
                 "INSERT INTO lessons VALUES (?,?,?,?,?,?,?,?)",
@@ -70,9 +66,8 @@ class LessonMemory:
                  lesson.what_went_wrong, lesson.how_to_prevent,
                  lesson.worker, lesson.created_at, 0)
             )
-        return lesson
 
-    def get_relevant(self, task_description: str, limit: int = 3) -> list[Lesson]:
+    def _sync_get_relevant(self, task_description: str, limit: int) -> list["Lesson"]:
         keywords = set(task_description.lower().split())
         with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
@@ -87,7 +82,7 @@ class LessonMemory:
         scored.sort(reverse=True)
         return [self._row_to_lesson(r) for _, r in scored[:limit]]
 
-    def get_recent_failures(self, days: int = 7) -> list[Lesson]:
+    def _sync_get_recent_failures(self, days: int) -> list["Lesson"]:
         from datetime import timedelta
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         with sqlite3.connect(self.db_path, timeout=10) as conn:
@@ -97,16 +92,46 @@ class LessonMemory:
             ).fetchall()
         return [self._row_to_lesson(r) for r in rows]
 
-    def get_category_stats(self) -> dict[str, int]:
+    def _sync_get_category_stats(self) -> dict[str, int]:
         with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
                 "SELECT category, COUNT(*) FROM lessons WHERE resolved=0 GROUP BY category"
             ).fetchall()
         return dict(rows)
 
-    def mark_resolved(self, lesson_id: str):
+    def _sync_mark_resolved(self, lesson_id: str) -> None:
         with sqlite3.connect(self.db_path, timeout=10) as conn:
             conn.execute("UPDATE lessons SET resolved=1 WHERE id=?", (lesson_id,))
+
+    # ------------------------------------------------------------------
+    # Public API — sync; safe to call from sync or via run_in_executor
+    # from async contexts to avoid blocking the event loop.
+    # ------------------------------------------------------------------
+
+    def record(self, task_description: str, category: str,
+               what_went_wrong: str, how_to_prevent: str, worker: str = "") -> Lesson:
+        lesson = Lesson(
+            id=str(uuid.uuid4())[:8],
+            task_description=task_description,
+            category=category if category in CATEGORIES else "other",
+            what_went_wrong=what_went_wrong,
+            how_to_prevent=how_to_prevent,
+            worker=worker,
+        )
+        self._sync_record(lesson)
+        return lesson
+
+    def get_relevant(self, task_description: str, limit: int = 3) -> list[Lesson]:
+        return self._sync_get_relevant(task_description, limit)
+
+    def get_recent_failures(self, days: int = 7) -> list[Lesson]:
+        return self._sync_get_recent_failures(days)
+
+    def get_category_stats(self) -> dict[str, int]:
+        return self._sync_get_category_stats()
+
+    def mark_resolved(self, lesson_id: str):
+        self._sync_mark_resolved(lesson_id)
 
     def _row_to_lesson(self, row) -> Lesson:
         return Lesson(
