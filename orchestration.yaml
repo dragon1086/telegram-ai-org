@@ -139,5 +139,11 @@ verification_profiles:
     require_tests: true
     require_status_snapshot: true
     require_feedback: true
+conversation_history_retention_days: 30
+inactivity_threshold_hours: 4
+default_active_hours:
+  start: 9
+  end: 22
+  timezone: "Asia/Seoul"
 legacy_exports:
   bots_dir: bots

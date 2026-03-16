@@ -23,3 +23,7 @@ strengths:
   - "시장 조사"
   - "경쟁사 분석"
   - "인사이트 도출"
+active_hours:
+  start: 9
+  end: 22
+  timezone: "Asia/Seoul"

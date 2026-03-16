@@ -23,3 +23,7 @@ strengths:
   - "Python"
   - "API 설계"
   - "디버깅"
+active_hours:
+  start: 9
+  end: 22
+  timezone: "Asia/Seoul"
