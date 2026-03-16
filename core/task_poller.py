@@ -21,7 +21,7 @@ from loguru import logger
 from core.context_db import ContextDB
 
 # 기본 폴링 간격 (초)
-DEFAULT_POLL_INTERVAL = 10.0  # 의존성 체인 중간 태스크 감지 (PM_DONE은 최종 합성만 처리)
+DEFAULT_POLL_INTERVAL = 2.0  # 의존성 체인 중간 태스크 감지 (PM_DONE은 최종 합성만 처리)
 DEFAULT_LEASE_TTL_SEC = 180.0
 DEFAULT_HEARTBEAT_INTERVAL_SEC = 30.0
 
