@@ -1017,6 +1017,9 @@ class PMOrchestrator:
                     chat_id,
                     f"📋 향후 계획 {len(follow_ups)}건 자동 실행 중..."
                 )
+                await self._db.update_pm_task_status(
+                    parent_task_id, "done", result=report,
+                )
                 await self.dispatch(parent_task_id, follow_ups, chat_id)
             else:
                 await self._db.update_pm_task_status(
@@ -1042,6 +1045,9 @@ class PMOrchestrator:
                     )
                     for ft in synthesis.follow_up_tasks
                 ]
+                await self._db.update_pm_task_status(
+                    parent_task_id, "done", result=synthesis.summary,
+                )
                 await self.dispatch(parent_task_id, follow_ups, chat_id)
             else:
                 # LLM이 follow-up을 안 줬으면 보고만
