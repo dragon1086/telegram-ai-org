@@ -83,7 +83,7 @@ class OrgScheduler:
         logger.info("[OrgScheduler] morning_standup 시작")
         try:
             from scripts.morning_goals import main as _morning_main
-            await self._retryable_job(_morning_main)
+            await _morning_main()
         except Exception as e:
             logger.error(f"[OrgScheduler] morning_standup 실패: {e}")
             await self._safe_send(f"⚠️ [스케줄러] 아침 목표 생성 중 오류 발생: {e}")
@@ -93,7 +93,7 @@ class OrgScheduler:
         logger.info("[OrgScheduler] daily_retro 시작")
         try:
             from scripts.daily_retro import main as _retro_main
-            await self._retryable_job(_retro_main)
+            await _retro_main()
             tasks = []  # Phase 3에서 참조 — 여기서 초기화
             # Phase 2: RetroMemory에 저장
             try:
@@ -141,7 +141,7 @@ class OrgScheduler:
         logger.info("[OrgScheduler] weekly_standup 시작")
         try:
             from scripts.weekly_standup import main as _weekly_main
-            await self._retryable_job(_weekly_main)
+            await _weekly_main()
             # Phase 2: LessonMemory 교훈 통계
             try:
                 from core.lesson_memory import LessonMemory
