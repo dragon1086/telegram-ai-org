@@ -618,6 +618,9 @@ class ClaudeCodeRunner:
                 return f"ERROR: {final_result}"
             if stderr_text:
                 return f"ERROR: {stderr_text[:1000]}"
+            if raw_lines:
+                raw_hint = "\n".join(raw_lines[-5:])[:500]
+                return f"ERROR: 프로세스 오류 (code={proc.returncode})\n{raw_hint}"
             return f"ERROR: 프로세스 오류 (code={proc.returncode})"
 
         # stream-json이 아무 JSON도 못 파싱했으면 raw 텍스트 반환
