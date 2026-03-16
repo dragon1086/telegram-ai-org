@@ -462,3 +462,48 @@ class SessionManager:
             "sessions": sessions,
             "count": len(sessions),
         }
+
+
+class WarmSessionPool:
+    """
+    세션 1개를 항상 예열 상태로 유지.
+    get_warm_session() 호출 시 즉시 반환 후 백그라운드에서 다음 세션 예열.
+    """
+
+    def __init__(self, session_manager: "SessionManager", org_id: str) -> None:
+        self._sm = session_manager
+        self._org_id = org_id
+        self._warm: str | None = None   # pre-warmed session_id
+        self._preheating = False
+
+    async def start(self) -> None:
+        """봇 시작 시 호출 — 백그라운드 예열 시작."""
+        asyncio.create_task(self._preheat())
+
+    async def get_warm_session(self) -> str | None:
+        """
+        예열된 세션 ID 반환. 없으면 None (caller가 cold-start).
+        반환 후 즉시 다음 예열 시작.
+        """
+        if self._warm:
+            session_id = self._warm
+            self._warm = None
+            asyncio.create_task(self._preheat())
+            return session_id
+        return None
+
+    async def _preheat(self) -> None:
+        if self._preheating:
+            return
+        self._preheating = True
+        try:
+            # ensure_session은 동기 함수 + time.sleep 포함 → 이벤트 루프 블로킹 방지
+            session_id = await asyncio.to_thread(self._sm.ensure_session, self._org_id)
+            self._warm = session_id
+            logger.debug(
+                f"[WarmPool:{self._org_id}] 세션 예열 완료: {session_id[:8] if session_id else 'N/A'}"
+            )
+        except Exception as e:
+            logger.warning(f"[WarmPool:{self._org_id}] 예열 실패: {e}")
+        finally:
+            self._preheating = False
