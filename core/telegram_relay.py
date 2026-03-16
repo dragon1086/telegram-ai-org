@@ -151,10 +151,13 @@ class TelegramRelay:
         self._pm_decision_client = None
         if self._is_pm_org:
             from core.pm_decision import PMDecisionClient
+            # Decision client는 메인 PM 세션과 분리된 전용 세션 사용
+            # (동일 세션 공유 시 동시 --resume 충돌로 code=1 발생)
+            _decision_session_store = SessionStore(f"{org_id}_decision")
             self._pm_decision_client = PMDecisionClient(
                 org_id=org_id,
                 engine=self.engine,
-                session_store=self.session_store,
+                session_store=_decision_session_store,
             )
             self._team_builder.set_decision_client(self._pm_decision_client)
             self.global_context.set_decision_client(self._pm_decision_client)
