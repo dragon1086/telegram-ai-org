@@ -2093,10 +2093,20 @@ class TelegramRelay:
             return
 
         engine = args[1].strip()
+        _VALID_ENGINES = {"claude-code", "codex"}
+        if engine not in _VALID_ENGINES:
+            await update.message.reply_text(
+                f"❌ 유효하지 않은 엔진: {engine}\n사용 가능: {', '.join(sorted(_VALID_ENGINES))}"
+            )
+            return
+
         import yaml as _yaml
-        bots_dir = Path(__file__).parent.parent / "bots"
+        project_dir = Path(__file__).parent.parent
+        bots_dir = project_dir / "bots"
         updated = []
         errors = []
+
+        # 1) bots/*.yaml 업데이트
         for yaml_path in sorted(bots_dir.glob("*.yaml")):
             try:
                 data = _yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
@@ -2111,6 +2121,29 @@ class TelegramRelay:
                 logger.warning(f"[set_engine] {yaml_path.name} 수정 실패: {exc}")
                 errors.append(yaml_path.stem)
 
+        # 2) organizations.yaml preferred_engine / fallback_engine 업데이트
+        org_yaml_path = project_dir / "organizations.yaml"
+        try:
+            org_data = _yaml.safe_load(org_yaml_path.read_text(encoding="utf-8")) or {}
+            org_changed = False
+            for org in org_data.get("organizations", []):
+                exec_block = org.setdefault("execution", {})
+                if exec_block.get("preferred_engine") != engine:
+                    exec_block["preferred_engine"] = engine
+                    org_changed = True
+                if exec_block.get("fallback_engine") != engine:
+                    exec_block["fallback_engine"] = engine
+                    org_changed = True
+            if org_changed:
+                org_yaml_path.write_text(
+                    _yaml.dump(org_data, allow_unicode=True, sort_keys=False),
+                    encoding="utf-8",
+                )
+                updated.append("organizations")
+        except Exception as exc:
+            logger.warning(f"[set_engine] organizations.yaml 수정 실패: {exc}")
+            errors.append("organizations")
+
         if not updated and not errors:
             await update.message.reply_text(f"ℹ️ 모든 봇이 이미 {engine} 엔진을 사용 중입니다.")
             return
@@ -2124,16 +2157,20 @@ class TelegramRelay:
         await update.message.reply_text(msg)
 
         import asyncio as _asyncio
-        project_dir = Path(__file__).parent.parent
         restart_script = project_dir / "scripts" / "restart_bots.sh"
         try:
             proc = await _asyncio.create_subprocess_exec(
                 "bash", str(restart_script),
-                stdout=_asyncio.subprocess.DEVNULL,
-                stderr=_asyncio.subprocess.DEVNULL,
+                stdout=_asyncio.subprocess.PIPE,
+                stderr=_asyncio.subprocess.PIPE,
                 cwd=str(project_dir),
             )
-            _asyncio.create_task(proc.wait())
+            _, stderr = await _asyncio.wait_for(proc.communicate(), timeout=30)
+            if proc.returncode != 0:
+                logger.error(f"[set_engine] 재시작 실패 (rc={proc.returncode}): {stderr.decode()[:200]}")
+                await update.message.reply_text(f"❌ 재시작 실패 (rc={proc.returncode})")
+        except _asyncio.TimeoutError:
+            logger.warning("[set_engine] 재시작 타임아웃 — 백그라운드에서 계속 실행 중일 수 있음")
         except Exception as exc:
             logger.error(f"[set_engine] 재시작 실패: {exc}")
             await update.message.reply_text(f"❌ 재시작 실패: {exc}")
