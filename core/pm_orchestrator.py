@@ -97,14 +97,8 @@ class PMOrchestrator:
         """유저 요청을 직접 답변/PM 직접 실행/조직 위임 중 어디로 보낼지 결정한다."""
         dept_hints = self._detect_relevant_depts(user_message)
         workdir = self._extract_workdir(user_message)
-        lane, llm_plan = await asyncio.gather(
-            self._classify_lane(user_message, dept_hints, workdir=workdir),
-            self._llm_plan_request(user_message, dept_hints, workdir=workdir),
-        )
-        if llm_plan is not None:
-            llm_plan.lane = lane
-            return self._normalize_request_plan(llm_plan)
-        return self._normalize_request_plan(self._heuristic_plan_request(user_message, dept_hints, lane=lane))
+        result = await self._llm_unified_classify(user_message, dept_hints, workdir=workdir)
+        return self._normalize_request_plan(result)
 
     _BASE_DEPT_KEYWORDS: dict[str, list[str]] = {
         "aiorg_product_bot": ["기획", "스펙", "요구사항", "prd", "plan"],
@@ -219,6 +213,78 @@ class PMOrchestrator:
             '{"route":"direct_reply|local_execution|delegate","complexity":"low|medium|high","rationale":"short reason","confidence":0.0}\n\n'
             f"User request: {message[:700]}"
         )
+
+    async def _llm_unified_classify(
+        self,
+        user_message: str,
+        dept_hints: list[str],
+        *,
+        workdir: str | None = None,
+    ) -> "RequestPlan":
+        """lane + route + complexity를 단일 LLM 호출로 처리. 실패 시 heuristic fallback."""
+        if self._decision_client is None:
+            return self._heuristic_unified_classify(user_message, dept_hints)
+
+        dept_list = ", ".join(dept_hints) if dept_hints else "없음"
+        prompt = (
+            "Classify the following user request and return JSON only.\n"
+            "Fields:\n"
+            '  lane: one of [clarify, direct_answer, review_or_audit, attachment_analysis, single_org_execution, multi_org_execution]\n'
+            '  route: one of [direct_reply, local_execution, delegate]\n'
+            '  complexity: one of [low, medium, high]\n'
+            '  rationale: brief Korean explanation (max 30 chars)\n\n'
+            f"dept_hints: {dept_list}\n"
+            f"User request: {user_message[:800]}\n\n"
+            "Return only valid JSON, no markdown."
+        )
+        try:
+            response = await asyncio.wait_for(
+                self._decision_client.complete(prompt, workdir=workdir),
+                timeout=35.0,
+            )
+            text = response.strip()
+            if "```" in text:
+                m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+                if m:
+                    text = m.group(1).strip()
+            start, end = text.find("{"), text.rfind("}") + 1
+            if start >= 0 and end > start:
+                text = text[start:end]
+            data = json.loads(text)
+
+            lane = data.get("lane", "single_org_execution")
+            valid_lanes = {"clarify", "direct_answer", "review_or_audit", "attachment_analysis", "single_org_execution", "multi_org_execution"}
+            if lane not in valid_lanes:
+                lane = "single_org_execution"
+
+            route = data.get("route", "delegate")
+            if route not in {"direct_reply", "local_execution", "delegate"}:
+                route = "delegate"
+
+            complexity = data.get("complexity", "medium")
+            if complexity not in {"low", "medium", "high"}:
+                complexity = "medium"
+
+            return RequestPlan(
+                lane=lane,
+                route=route,
+                complexity=complexity,
+                rationale=str(data.get("rationale", "")).strip() or "통합 LLM 판단",
+                dept_hints=dept_hints,
+                confidence=0.8,
+            )
+        except Exception as e:
+            logger.warning(f"[PM] 통합 분류 LLM 실패, heuristic fallback: {e}")
+            return self._heuristic_unified_classify(user_message, dept_hints)
+
+    def _heuristic_unified_classify(
+        self, user_message: str, dept_hints: list[str]
+    ) -> "RequestPlan":
+        """통합 heuristic fallback — lane + route + complexity 동시 결정."""
+        lane = self._heuristic_lane(user_message, dept_hints)
+        plan = self._heuristic_plan_request(user_message, dept_hints, lane=lane)
+        plan.lane = lane
+        return plan
 
     async def _classify_lane(
         self,
