@@ -23,3 +23,7 @@ strengths:
   - "UI/UX 설계"
   - "프로토타이핑"
   - "사용성 분석"
+active_hours:
+  start: 9
+  end: 22
+  timezone: "Asia/Seoul"

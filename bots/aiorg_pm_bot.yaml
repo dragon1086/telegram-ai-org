@@ -23,3 +23,7 @@ strengths:
   - "프로젝트 관리"
   - "팀 조율"
   - "의사결정"
+active_hours:
+  start: 9
+  end: 22
+  timezone: "Asia/Seoul"

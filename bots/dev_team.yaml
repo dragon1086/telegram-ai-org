@@ -23,3 +23,7 @@ team_personality:
     - "테스트 우선"
     - "코드 품질"
     - "지속적 개선"
+active_hours:
+  start: 9
+  end: 22
+  timezone: "Asia/Seoul"

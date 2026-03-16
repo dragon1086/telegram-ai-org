@@ -23,3 +23,7 @@ strengths:
   - "요구사항 분석"
   - "로드맵 설계"
   - "이해관계자 소통"
+active_hours:
+  start: 9
+  end: 22
+  timezone: "Asia/Seoul"

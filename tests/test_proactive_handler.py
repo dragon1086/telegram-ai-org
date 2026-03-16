@@ -65,3 +65,16 @@ async def test_event_suppressed_outside_active_hours():
             data={"chat_id": "chat1", "inactive_hours": 5, "bot_id": "bot1"}
         ))
     handler._send_proactive_message.assert_not_called()
+
+
+def test_active_hours_yaml_parsed():
+    """bots/*.yaml active_hours 파싱 확인"""
+    import yaml, os
+    bot_yamls = [f for f in os.listdir("bots") if f.endswith(".yaml")]
+    assert len(bot_yamls) > 0
+    for fname in bot_yamls:
+        with open(f"bots/{fname}") as f:
+            cfg = yaml.safe_load(f)
+        if "active_hours" in cfg:
+            assert "start" in cfg["active_hours"]
+            assert "end" in cfg["active_hours"]
