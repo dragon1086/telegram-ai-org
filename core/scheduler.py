@@ -7,13 +7,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import TYPE_CHECKING, Callable, Coroutine, Any
+from typing import TYPE_CHECKING, Callable, Coroutine, Any, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 if TYPE_CHECKING:
-    pass
+    from core.user_schedule_store import UserSchedule, UserScheduleStore
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +23,18 @@ KST = "Asia/Seoul"
 class OrgScheduler:
     """매일/매주 정기 회의·회고를 자율 실행하는 내장 스케줄러."""
 
-    def __init__(self, send_text: Callable[[str], Coroutine[Any, Any, None]]) -> None:
+    def __init__(
+        self,
+        send_text: Callable[[str], Coroutine[Any, Any, None]],
+        execute_callback: Optional[Callable[[str], Coroutine[Any, Any, str]]] = None,
+    ) -> None:
         """
         Args:
             send_text: Telegram 메시지 전송 코루틴 (TelegramRelay.send_text 또는 동일 시그니처).
+            execute_callback: 사용자 태스크 실행 코루틴 (태스크 설명 → 결과 문자열). 없으면 알림만.
         """
         self._send_text = send_text
+        self._execute_callback = execute_callback
         self.scheduler = AsyncIOScheduler(timezone=KST)
         self._register_jobs()
 
@@ -224,6 +230,57 @@ class OrgScheduler:
         except Exception as e:
             logger.error(f"[OrgScheduler] friday_retro 실패: {e}")
             await self._safe_send(f"⚠️ [스케줄러] 주간 회고 중 오류 발생: {e}")
+
+    # ── 사용자 정의 스케줄 ────────────────────────────────────────────────
+
+    def load_user_schedules(self, store: "UserScheduleStore") -> None:
+        """앱 시작 시 저장된 사용자 스케줄 복원."""
+        from core.user_schedule_store import UserSchedule
+        for sched in store.get_enabled():
+            try:
+                self._add_user_job(sched)
+                logger.info(f"[OrgScheduler] 사용자 스케줄 복원: ID={sched.id}, cron={sched.cron_expr}")
+            except Exception as e:
+                logger.error(f"[OrgScheduler] 사용자 스케줄 복원 실패 ID={sched.id}: {e}")
+
+    def add_user_job(self, sched: "UserSchedule") -> None:
+        """동적 job 추가 (중복 ID 안전 처리)."""
+        self._add_user_job(sched)
+        logger.info(f"[OrgScheduler] 사용자 job 추가: ID={sched.id}, cron={sched.cron_expr}")
+
+    def _add_user_job(self, sched: "UserSchedule") -> None:
+        job_id = f"user_schedule_{sched.id}"
+        if self.scheduler.get_job(job_id):
+            self.scheduler.remove_job(job_id)
+        self.scheduler.add_job(
+            self._run_user_task,
+            CronTrigger.from_crontab(sched.cron_expr, timezone=KST),
+            args=[sched],
+            id=job_id,
+            misfire_grace_time=300,
+            replace_existing=True,
+        )
+
+    def remove_user_job(self, schedule_id: int) -> None:
+        """동적 job 제거."""
+        job_id = f"user_schedule_{schedule_id}"
+        if self.scheduler.get_job(job_id):
+            self.scheduler.remove_job(job_id)
+            logger.info(f"[OrgScheduler] 사용자 job 제거: ID={schedule_id}")
+
+    async def _run_user_task(self, sched: "UserSchedule") -> None:
+        """사용자 정의 태스크 실행."""
+        logger.info(f"[OrgScheduler] 사용자 스케줄 실행: {sched.task_description}")
+        try:
+            await self._safe_send(f"⏰ 예약 태스크 시작: {sched.task_description}")
+            if self._execute_callback:
+                result = await self._execute_callback(sched.task_description)
+                await self._safe_send(f"✅ 예약 완료:\n{result[:2000]}")
+            else:
+                await self._safe_send(f"📋 예약된 태스크: {sched.task_description}\n(실행 엔진 미연결)")
+        except Exception as e:
+            logger.error(f"[OrgScheduler] 사용자 스케줄 실패 ID={sched.id}: {e}")
+            await self._safe_send(f"❌ 예약 태스크 실패: {sched.task_description}\n{e}")
 
     # ── 헬퍼 ─────────────────────────────────────────────────────────────────
 

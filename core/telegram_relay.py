@@ -231,13 +231,20 @@ class TelegramRelay:
 
         # OrgScheduler — pm_bot 내장 스케줄러 (회의·회고 자율 실행)
         self._org_scheduler = None
+        self._schedule_store = None
+        self._nl_parser = None
         if self._is_pm_org:
             from core.scheduler import OrgScheduler
+            from core.user_schedule_store import UserScheduleStore
+            from core.nl_schedule_parser import NLScheduleParser
 
             async def _sched_send(text: str) -> None:
                 await self._pm_send_message(self.allowed_chat_id, text)
 
             self._org_scheduler = OrgScheduler(send_text=_sched_send)
+            self._schedule_store = UserScheduleStore()
+            self._nl_parser = NLScheduleParser()
+            self._org_scheduler.load_user_schedules(self._schedule_store)
 
     async def _pm_send_message(
         self,
@@ -1892,6 +1899,133 @@ class TelegramRelay:
             logger.error(f"리셋 실패: {e}")
             await update.message.reply_text(f"❌ 리셋 실패: {e}")
 
+    # ── 사용자 스케줄 커맨드 (pm_org 전용) ───────────────────────────────
+
+    async def on_command_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/schedule [자연어 텍스트] — 새 스케줄 등록."""
+        if update.message is None:
+            return
+        if not self._is_pm_org or self._schedule_store is None or self._nl_parser is None:
+            await update.message.reply_text("❌ 이 봇에서는 스케줄 기능을 사용할 수 없습니다.")
+            return
+        text = " ".join(context.args) if context.args else ""
+        if not text:
+            await update.message.reply_text(
+                "사용법: /schedule [자연어 스케줄]\n"
+                "예시:\n"
+                "  /schedule 매일 오전 9시에 AI 뉴스 요약\n"
+                "  /schedule 매주 월요일 오전 10시에 팀 리포트 확인\n"
+                "  /schedule 매달 1일 오전 9시에 월간 보고서 생성"
+            )
+            return
+        try:
+            from core.nl_schedule_parser import ParseError
+            from apscheduler.triggers.cron import CronTrigger as _CronTrigger
+            parsed = self._nl_parser.parse(text)
+            # cron 표현식 유효성 검증 (APScheduler로 실제 파싱 시도)
+            _CronTrigger.from_crontab(parsed["cron_expr"], timezone="Asia/Seoul")
+            sched = self._schedule_store.add(text, parsed["cron_expr"], parsed["task_description"])
+            if self._org_scheduler is not None:
+                self._org_scheduler.add_user_job(sched)
+            await update.message.reply_text(
+                f"✅ 스케줄 등록!\n"
+                f"📋 ID: {sched.id}\n"
+                f"⏰ {parsed['human_readable']}\n"
+                f"📝 {parsed['task_description']}"
+            )
+        except Exception as e:
+            await update.message.reply_text(f"❌ 등록 실패: {e}")
+
+    async def on_command_schedules(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/schedules — 등록된 스케줄 목록."""
+        if update.message is None:
+            return
+        if not self._is_pm_org or self._schedule_store is None:
+            return
+        schedules = self._schedule_store.list_all()
+        if not schedules:
+            await update.message.reply_text("등록된 스케줄이 없습니다.")
+            return
+        lines = ["📋 *등록된 스케줄 목록*\n"]
+        for s in schedules:
+            status = "✅" if s.enabled else "⏸️"
+            lines.append(f"{status} ID:{s.id} | `{s.cron_expr}` | {s.task_description}")
+        lines.append(
+            "\n취소: /cancel\\_schedule [id]  일시중지: /pause\\_schedule [id]  재개: /resume\\_schedule [id]"
+        )
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+    async def on_command_cancel_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/cancel_schedule [id] — 스케줄 영구 삭제."""
+        if update.message is None:
+            return
+        if not self._is_pm_org or self._schedule_store is None:
+            return
+        if not context.args:
+            await update.message.reply_text("사용법: /cancel_schedule [스케줄 ID]")
+            return
+        try:
+            schedule_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ 유효하지 않은 ID입니다.")
+            return
+        deleted = self._schedule_store.delete(schedule_id)
+        if deleted:
+            if self._org_scheduler is not None:
+                self._org_scheduler.remove_user_job(schedule_id)
+            await update.message.reply_text(f"🗑️ 스케줄 ID {schedule_id} 삭제 완료.")
+        else:
+            await update.message.reply_text(f"❌ ID {schedule_id}를 찾을 수 없습니다.")
+
+    async def on_command_pause_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/pause_schedule [id] — 스케줄 일시중지."""
+        if update.message is None:
+            return
+        if not self._is_pm_org or self._schedule_store is None:
+            return
+        if not context.args:
+            await update.message.reply_text("사용법: /pause_schedule [스케줄 ID]")
+            return
+        try:
+            schedule_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ 유효하지 않은 ID입니다.")
+            return
+        disabled = self._schedule_store.disable(schedule_id)
+        if disabled:
+            if self._org_scheduler is not None:
+                self._org_scheduler.remove_user_job(schedule_id)
+            await update.message.reply_text(f"⏸️ 스케줄 ID {schedule_id} 일시중지.")
+        else:
+            await update.message.reply_text(f"❌ ID {schedule_id}를 찾을 수 없습니다.")
+
+    async def on_command_resume_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/resume_schedule [id] — 스케줄 재개."""
+        if update.message is None:
+            return
+        if not self._is_pm_org or self._schedule_store is None:
+            return
+        if not context.args:
+            await update.message.reply_text("사용법: /resume_schedule [스케줄 ID]")
+            return
+        try:
+            schedule_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ 유효하지 않은 ID입니다.")
+            return
+        sched = self._schedule_store.get_by_id(schedule_id)
+        if sched is None:
+            await update.message.reply_text(f"❌ ID {schedule_id}를 찾을 수 없습니다.")
+            return
+        enabled = self._schedule_store.enable(schedule_id)
+        if enabled:
+            sched.enabled = True
+            if self._org_scheduler is not None:
+                self._org_scheduler.add_user_job(sched)
+            await update.message.reply_text(f"▶️ 스케줄 ID {schedule_id} 재개.")
+        else:
+            await update.message.reply_text(f"❌ 재개 실패: ID {schedule_id}")
+
     async def on_command_stop_tasks(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """현재 진행 중인 tmux 세션 전체 종료. PM봇 전용."""
         if update.message is None:
@@ -2441,6 +2575,13 @@ class TelegramRelay:
         self.app.add_handler(CommandHandler("stop_tasks", self.on_command_stop_tasks))
         self.app.add_handler(CommandHandler("restart", self.on_command_restart))
         self.app.add_handler(CommandHandler("set_engine", self.on_command_set_engine))
+        # 사용자 정의 스케줄 커맨드 (pm_org 전용)
+        if self._is_pm_org:
+            self.app.add_handler(CommandHandler("schedule", self.on_command_schedule))
+            self.app.add_handler(CommandHandler("schedules", self.on_command_schedules))
+            self.app.add_handler(CommandHandler("cancel_schedule", self.on_command_cancel_schedule))
+            self.app.add_handler(CommandHandler("pause_schedule", self.on_command_pause_schedule))
+            self.app.add_handler(CommandHandler("resume_schedule", self.on_command_resume_schedule))
         self.app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, self.on_self_added_to_chat))
         self.app.add_handler(
             MessageHandler(filters.TEXT, self.on_message)  # 명령어 포함
