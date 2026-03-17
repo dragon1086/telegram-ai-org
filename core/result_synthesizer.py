@@ -112,6 +112,25 @@ class ResultSynthesizer:
             logger.warning(f"[Synthesizer] debate LLM 합성 실패, fallback: {e}")
             return self._keyword_debate(opinions)
 
+    async def summarize_discussion(self, perspectives: list[str]) -> str:
+        """자유 토론 관점들을 중립적으로 요약. 판단/결론 없음."""
+        joined = "\n\n".join(f"- {p[:500]}" for p in perspectives)[:4000]
+        if self._decision_client is None:
+            return joined[:500]
+        prompt = (
+            "다음은 여러 팀원의 자유 토론 내용입니다.\n"
+            "판단이나 결론 없이, 핵심 관점들을 중립적으로 2-3줄로 요약해주세요.\n\n"
+            f"{joined}"
+        )
+        try:
+            return await asyncio.wait_for(
+                self._decision_client.complete(prompt),
+                timeout=30.0,
+            )
+        except Exception as e:
+            logger.warning(f"[Synthesizer] discussion 요약 LLM 실패, fallback: {e}")
+            return joined[:500]
+
     @staticmethod
     def _keyword_debate(opinions: list[dict]) -> str:
         """LLM 없을 때 단순 나열 fallback."""

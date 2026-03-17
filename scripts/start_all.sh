@@ -30,6 +30,11 @@ echo "✅ 설정 로드: ${LOADED_SOURCES[*]}"
 PYTHON_BIN="./.venv/bin/python3"
 [ ! -x "$PYTHON_BIN" ] && PYTHON_BIN="python3"
 
+# Cleanup stale tmux sessions before starting bots
+if command -v python3 &>/dev/null; then
+    python3 "$(dirname "$0")/cleanup_tmux.py" 2>/dev/null || true
+fi
+
 BOT_ROWS=$("$PYTHON_BIN" - <<'PY'
 from core.orchestration_config import load_orchestration_config
 
