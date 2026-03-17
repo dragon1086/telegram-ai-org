@@ -40,10 +40,8 @@ async def test_auto_upload_uses_configured_target(tmp_path, monkeypatch):
 
     await relay._auto_upload(f"생성됨: {artifact}", token="bad-token", chat_id=777)
 
+    assert len(uploads) == 1
     assert uploads[0] == ("cfg-token", 123, str(artifact), f"📎 global 산출물: {artifact.name}")
-    assert uploads[1][0] == "cfg-token"
-    assert uploads[1][1] == 123
-    assert uploads[1][2].endswith(".telegram-preview.html")
 
 
 @pytest.mark.asyncio
@@ -113,9 +111,9 @@ async def test_pm_send_message_auto_uploads_artifact(tmp_path, monkeypatch):
     assert "[ARTIFACT:" not in sent_text
     assert "보고서를 첨부합니다." in sent_text
 
-    # 파일 업로드 호출 확인 (원본 .md + .telegram-preview.html)
+    # 파일 업로드 호출 확인 (원본 .md 1개만)
+    assert len(uploads) == 1
     uploaded_paths = [u[2] for u in uploads]
     assert str(artifact) in uploaded_paths
-    assert any(p.endswith(".telegram-preview.html") for p in uploaded_paths)
     assert all(u[0] == "cfg-token" for u in uploads)
     assert all(u[1] == 100 for u in uploads)

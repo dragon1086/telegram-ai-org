@@ -6,23 +6,11 @@ import re
 from pathlib import Path
 
 
-_TEXTISH_SUFFIXES = {".md", ".txt"}
-
-
 def prepare_upload_bundle(path: str | Path) -> list[Path]:
     source = Path(path).expanduser().resolve()
     if not source.exists() or not source.is_file():
         return []
-
-    bundle: list[Path] = [source]
-    if source.suffix.lower() in _TEXTISH_SUFFIXES:
-        html_path = _render_html_preview(source)
-        if html_path is not None:
-            bundle.append(html_path)
-        slides_path = _render_slide_html(source)
-        if slides_path is not None:
-            bundle.append(slides_path)
-    return bundle
+    return [source]
 
 
 def _render_html_preview(source: Path) -> Path | None:

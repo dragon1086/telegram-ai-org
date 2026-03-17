@@ -28,7 +28,7 @@ def test_attachment_context_includes_preview(tmp_path: Path) -> None:
     assert "hello world" in prompt
 
 
-def test_prepare_upload_bundle_generates_html_and_slides(tmp_path: Path) -> None:
+def test_prepare_upload_bundle_returns_source_only(tmp_path: Path) -> None:
     sample = tmp_path / "report.md"
     sample.write_text(
         "# Title\n\nintro\n\n## Section A\n\n- item1\n\n## Section B\n\ntext",
@@ -36,11 +36,9 @@ def test_prepare_upload_bundle_generates_html_and_slides(tmp_path: Path) -> None
     )
 
     bundle = prepare_upload_bundle(sample)
-    names = [path.name for path in bundle]
 
-    assert "report.md" in names
-    assert "report.telegram-preview.html" in names
-    assert "report.telegram-slides.html" in names
+    assert len(bundle) == 1
+    assert bundle[0].name == "report.md"
 
 
 def test_attachment_bundle_prompt(tmp_path: Path) -> None:
