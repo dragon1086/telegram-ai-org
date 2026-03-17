@@ -426,6 +426,7 @@ class SessionManager:
         name = self.ensure_session(team_id)
         if context:
             self.inject_context(team_id, context)
+            self.write_memory_to_claude_md(team_id, context)
 
         logger.info(f"[{team_id}] 세션 리셋 완료")
 
@@ -449,6 +450,46 @@ class SessionManager:
             self._run_tmux("send-keys", "-t", name, msg, "Enter")
 
         logger.info(f"컨텍스트 주입 완료: {name} ({len(context)}글자)")
+
+    def write_memory_to_claude_md(self, team_id: str, memory_context: str) -> None:
+        """
+        봇 workdir의 .claude/CLAUDE.md에 메모리 섹션을 동적으로 기록.
+        Claude Code 시작/compact 시 자동으로 읽힌다.
+        """
+        import pathlib
+        # 봇 workdir 결정 (세션명 기반)
+        session_name = self.session_name(team_id)
+        workdir = pathlib.Path.home() / ".ai-org" / "workspace" / session_name
+        claude_dir = workdir / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        claude_md = claude_dir / "CLAUDE.md"
+
+        marker_start = "<!-- AI-ORG-MEMORY-START -->"
+        marker_end = "<!-- AI-ORG-MEMORY-END -->"
+        memory_block = (
+            f"{marker_start}\n"
+            f"## 관련 기억 (자동 주입)\n"
+            f"{memory_context}\n"
+            f"{marker_end}\n"
+        )
+
+        # 기존 파일 읽기 (없으면 빈 문자열)
+        existing = claude_md.read_text(encoding="utf-8") if claude_md.exists() else ""
+
+        # 기존 메모리 블록 교체 or 파일 끝에 추가
+        if marker_start in existing:
+            import re
+            new_content = re.sub(
+                rf"{re.escape(marker_start)}.*?{re.escape(marker_end)}\n?",
+                memory_block,
+                existing,
+                flags=re.DOTALL,
+            )
+        else:
+            new_content = existing.rstrip("\n") + "\n\n" + memory_block if existing else memory_block
+
+        claude_md.write_text(new_content, encoding="utf-8")
+        logger.debug(f"[SessionManager] CLAUDE.md 메모리 갱신: {claude_md} ({len(memory_context)}자)")
 
     # ── 상태 요약 ─────────────────────────────────────────────────────────
 

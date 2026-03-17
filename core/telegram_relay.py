@@ -1969,6 +1969,13 @@ class TelegramRelay:
         ctx = self.memory_manager.build_context()
         if ctx:
             self.session_manager.inject_context(TEAM_ID, ctx)
+        # CLAUDE.md에 BM25 메모리 동적 기록 (Claude Code 자동 읽기)
+        try:
+            memory_ctx = self.memory_manager.build_context()
+            if memory_ctx:
+                self.session_manager.write_memory_to_claude_md(TEAM_ID, memory_ctx)
+        except Exception as _e:
+            logger.debug(f"[{self.org_id}] CLAUDE.md 갱신 실패(무시): {_e}")
         return True
 
     async def on_self_added_to_chat(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
