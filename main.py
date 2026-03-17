@@ -70,6 +70,13 @@ def _resolve_runtime_binding(org_id: str) -> tuple[str, int, str]:
     return token, int(chat_id_raw), engine
 
 if __name__ == "__main__":
+    # ── CLI 인수 파싱 ──────────────────────────────────────────────────────
+    import argparse
+    _parser = argparse.ArgumentParser()
+    _parser.add_argument("--org", default=None)
+    _args, _ = _parser.parse_known_args()
+    if _args.org:
+        os.environ["PM_ORG_NAME"] = _args.org
     # ── PID lock (중복 실행 방지) ─────────────────────────────────────────
     import fcntl
     _pid_file = Path(f"/tmp/telegram-ai-org-{os.environ.get('PM_ORG_NAME', 'global')}.pid")

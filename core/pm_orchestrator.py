@@ -396,22 +396,28 @@ class PMOrchestrator:
     ]
 
     _COLLAB_KEYWORDS: list[str] = [
-        "협업해줘", "같이 해줘", "함께 만들어",
-        "봇들이 협력", "협력해서", "합작",
+        "협업해줘", "협업해서", "협업하여", "같이 해줘", "같이해줘", "함께 만들어",
+        "봇들이 협력", "협력해서", "협력하여", "합작",
     ]
 
     @staticmethod
     def _classify_interaction_mode(
         lane: str, route: str, user_message: str = ""
     ) -> "Literal['direct', 'delegate', 'debate', 'discussion', 'collab']":
-        """lane + route + 메시지 분석으로 interaction_mode 결정."""
-        if lane == "debate":
-            return "debate"
+        """lane + route + 메시지 분석으로 interaction_mode 결정.
+
+        discussion/collab 명시 키워드는 lane 기반 debate보다 우선한다.
+        (예: 'B2B vs B2C 봇들끼리 얘기해봐' — vs가 debate lane을 트리거해도
+         '봇들끼리 얘기해봐'가 사용자의 명시적 의도이므로 discussion으로 처리)
+        """
         text = user_message.lower()
-        if any(kw in text for kw in PMOrchestrator._COLLAB_KEYWORDS):
-            return "collab"
+        # 사용자 명시 키워드 우선 — lane보다 앞에 체크
         if any(kw in text for kw in PMOrchestrator._DISCUSSION_RELAY_KEYWORDS):
             return "discussion"
+        if any(kw in text for kw in PMOrchestrator._COLLAB_KEYWORDS):
+            return "collab"
+        if lane == "debate":
+            return "debate"
         if lane == "multi_org_execution":
             return "delegate"
         return "direct"
