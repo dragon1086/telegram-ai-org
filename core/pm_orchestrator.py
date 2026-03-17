@@ -62,6 +62,7 @@ class RequestPlan:
     rationale: str
     dept_hints: list[str] = field(default_factory=list)
     confidence: float = 0.0
+    interaction_mode: Literal["direct", "delegate", "debate", "discussion", "collab"] = "direct"
 
 
 async def _record_bot_perf(
@@ -325,6 +326,7 @@ class PMOrchestrator:
                 rationale=str(data.get("rationale", "")).strip() or "통합 LLM 판단",
                 dept_hints=dept_hints,
                 confidence=0.8,
+                interaction_mode=PMOrchestrator._classify_interaction_mode(lane, route, user_message),
             )
         except Exception as e:
             logger.warning(f"[PM] 통합 분류 LLM 실패, heuristic fallback: {e}")
@@ -337,6 +339,9 @@ class PMOrchestrator:
         lane = self._heuristic_lane(user_message, dept_hints)
         plan = self._heuristic_plan_request(user_message, dept_hints, lane=lane)
         plan.lane = lane
+        plan.interaction_mode = PMOrchestrator._classify_interaction_mode(
+            plan.lane, plan.route, user_message
+        )
         return plan
 
     async def _classify_lane(
@@ -385,6 +390,24 @@ class PMOrchestrator:
     _DEBATE_KEYWORDS = [
         "토론", "찬반", "debate", "비교해봐", "vs", "의견 충돌", "두 팀의", "관점을", "비교하면",
     ]
+
+    _DISCUSSION_RELAY_KEYWORDS = [
+        "봇들끼리", "얘기해봐", "자율 토론", "토의해봐", "봇끼리", "서로 논의",
+    ]
+
+    @staticmethod
+    def _classify_interaction_mode(
+        lane: str, route: str, user_message: str = ""
+    ) -> "Literal['direct', 'delegate', 'debate', 'discussion', 'collab']":
+        """lane + route + 메시지 분석으로 interaction_mode 결정."""
+        if lane == "debate":
+            return "debate"
+        text = user_message.lower()
+        if any(kw in text for kw in PMOrchestrator._DISCUSSION_RELAY_KEYWORDS):
+            return "discussion"
+        if lane == "multi_org_execution":
+            return "delegate"
+        return "direct"
 
     def _heuristic_lane(
         self,

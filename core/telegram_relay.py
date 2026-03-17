@@ -1407,6 +1407,11 @@ class TelegramRelay:
                     update,
                     self._pm_orchestrator.plan_request(request_text),
                 )
+                if plan.interaction_mode == "discussion":
+                    logger.info("[PM] interaction_mode=discussion placeholder — delegate fallback")
+                elif plan.interaction_mode == "collab":
+                    logger.info("[PM] interaction_mode=collab placeholder — delegate fallback")
+
                 if plan.route == "direct_reply":
                     await self._reply_with_pm_chat(update, text, _replied_context)
                     return
@@ -1515,7 +1520,7 @@ class TelegramRelay:
                         asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
                     return
 
-                if plan.lane == "debate" and ENABLE_DISCUSSION_PROTOCOL:
+                if plan.interaction_mode == "debate" and ENABLE_DISCUSSION_PROTOCOL:
                     participants = self._pm_orchestrator._select_debate_participants(
                         plan.dept_hints, request_text
                     )
