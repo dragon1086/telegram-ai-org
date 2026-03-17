@@ -1198,13 +1198,18 @@ class TelegramRelay:
 
         target = resolve_delivery_target(self.org_id)
         if target is None:
-            logger.warning(f"[auto_upload:{self.org_id}] configured target 없음")
-            return
-
-        safe_token = target.token
-        safe_chat_id = target.chat_id
-        if token != safe_token or int(chat_id) != safe_chat_id:
-            logger.warning(f"[auto_upload:{self.org_id}] 전달 대상 불일치 감지, configured target 사용")
+            logger.warning(
+                f"[auto_upload:{self.org_id}] configured target 없음 — passed token/chat_id 사용"
+            )
+            safe_token = token
+            safe_chat_id = int(chat_id)
+        else:
+            safe_token = target.token
+            safe_chat_id = target.chat_id
+            if token != safe_token or int(chat_id) != safe_chat_id:
+                logger.warning(
+                    f"[auto_upload:{self.org_id}] 전달 대상 불일치 감지, configured target 사용"
+                )
 
         seen: set[str] = set()
         for raw in extract_local_artifact_paths(response or ""):
