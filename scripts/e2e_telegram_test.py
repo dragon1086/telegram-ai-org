@@ -143,16 +143,18 @@ async def run_e2e_tests() -> None:
                 return
             sender = await event.get_sender()
             if sender and getattr(sender, "bot", False):
+                text = getattr(event.message, "text", None) or ""
                 entry = {
                     "bot": getattr(sender, "username", "unknown"),
-                    "text": event.message.text or "",
+                    "text": text,
                     "ts": time.time(),
                 }
                 _c.append(entry)
-                print(f"   📨 [{entry['bot']}] {entry['text'][:120]}")
+                print(f"   📨 [{entry['bot']}] {text[:120]}")
 
         client.remove_event_handler(global_handler)
         client.add_event_handler(_scoped_handler, events.NewMessage(chats=chat_entity))
+        client.add_event_handler(_scoped_handler, events.MessageEdited(chats=chat_entity))
 
         t0 = time.time()
         await client.send_message(CHAT_ID, msg)
@@ -161,7 +163,8 @@ async def run_e2e_tests() -> None:
         _flag[0] = False
         result.elapsed_sec = time.time() - t0
 
-        client.remove_event_handler(_scoped_handler)
+        client.remove_event_handler(_scoped_handler, events.NewMessage(chats=chat_entity))
+        client.remove_event_handler(_scoped_handler, events.MessageEdited(chats=chat_entity))
 
         result.responses = list(active_collected)
 
