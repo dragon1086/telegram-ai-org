@@ -601,7 +601,7 @@ class PMOrchestrator:
         if self._task_counter is None:
             # DB에서 현재 org의 최대 counter 값 로드
             try:
-                import aiosqlite, re
+                import aiosqlite
                 async with aiosqlite.connect(self._db.db_path) as db:
                     prefix = f"T-{self._org_id}-"
                     cursor = await db.execute(
@@ -1155,6 +1155,19 @@ class PMOrchestrator:
         await self._send(chat_id, msg)
         await self._db.update_pm_task_status(parent_task_id, "done", result=conclusion)
 
+    async def _discussion_summarize(
+        self, parent_id: str, results: list[dict], chat_id: int,
+    ) -> None:
+        """discussion 모드 완료 시 PM이 간단한 요약만 생성. 판단/결론 없음."""
+        perspectives = [r.get("result", "") for r in results if r.get("result")]
+        if not perspectives:
+            await self._db.update_pm_task_status(parent_id, "done", result="")
+            return
+        summary = await self._synthesizer.summarize_discussion(perspectives)
+        if summary and chat_id:
+            await self._send(chat_id, f"💬 *토론 요약*\n{summary}")
+        await self._db.update_pm_task_status(parent_id, "done", result=summary or "")
+
     async def _synthesize_and_act(
         self, parent_task_id: str, subtasks: list[dict], chat_id: int,
     ) -> None:
@@ -1166,6 +1179,10 @@ class PMOrchestrator:
         parent_meta = parent.get("metadata", {}) if parent else {}
         if parent_meta.get("debate"):
             await self._debate_synthesize(parent_task_id, parent_meta, subtasks, chat_id)
+            return
+
+        if parent_meta.get("interaction_mode") == "discussion":
+            await self._discussion_summarize(parent_task_id, subtasks, chat_id)
             return
 
         synthesis = await self._synthesizer.synthesize(original_request, subtasks)
@@ -1586,3 +1603,81 @@ class PMOrchestrator:
             f"[PM] collab_dispatch: {requester_org} -> {target_org} | task_id={task_id}"
         )
         return task_id
+
+    async def discussion_dispatch(
+        self,
+        topic: str,
+        dept_hints: list[str],
+        chat_id: int,
+    ) -> list[str]:
+        """자유 토론 모드 — PM 약한 진행, 강제 결론 없음.
+
+        debate_dispatch와 달리 관점 대립 유도 없이 자유 발언.
+        부모 태스크를 내부에서 생성한다 (relay가 _db에 직접 접근 불필요).
+
+        # TODO(cycle-6): 서브태스크 타임아웃/스탈니스 체커 추가.
+        """
+        participants = list(dict.fromkeys(dept_hints))[:4]
+        if len(participants) < 2:
+            try:
+                cfg = load_orchestration_config(force_reload=True)
+                participants = [o.id for o in cfg.list_specialist_orgs()][:4]
+            except Exception as _e:
+                logger.warning(f"[PM] discussion specialist org 로드 실패: {_e}")
+
+        if len(participants) < 2:
+            logger.info("[PM] discussion 참여자 부족 — discussion_dispatch 건너뜀")
+            return []
+
+        # 부모 태스크 내부 생성 (relay가 _db에 직접 접근 금지)
+        parent_id = await self._next_task_id()
+        await self._db.create_pm_task(
+            task_id=parent_id,
+            description=topic,
+            assigned_dept=self._org_id,
+            created_by=self._org_id,
+            metadata={"interaction_mode": "discussion", "discussion_topic": topic},
+        )
+
+        try:
+            cfg = load_orchestration_config(force_reload=True)
+            org_map = {org.id: org for org in cfg.list_orgs()}
+        except Exception as e:
+            logger.warning(f"[PM] discussion org_map 로드 실패: {e}")
+            org_map = {}
+
+        task_ids: list[str] = []
+        for bot_id in participants:
+            org = org_map.get(bot_id)
+            dept_name = org.dept_name if org else bot_id
+
+            prompt = (
+                f"{topic}\n\n"
+                f"[자유 토론] 당신은 {dept_name}입니다. "
+                f"이 주제에 대해 자유롭게 의견을 나눠주세요."
+            )
+
+            tid = await self._next_task_id()
+            await self._db.create_pm_task(
+                task_id=tid,
+                description=prompt,
+                assigned_dept=bot_id,
+                created_by=self._org_id,
+                parent_id=parent_id,
+                metadata={"interaction_mode": "discussion", "discussion_topic": topic},
+            )
+            await self._db.update_pm_task_status(tid, "assigned")
+            task_ids.append(tid)
+
+            dept_mention = self._org_mention(bot_id)
+            try:
+                await self._send(
+                    chat_id,
+                    f"{dept_mention} [PM_TASK:{tid}|dept:{bot_id}] "
+                    f"토론 참여 요청: {prompt[:200]}",
+                )
+            except Exception as _e:
+                logger.warning(f"[PM] discussion 태스크 {tid} 알림 실패: {_e}")
+            logger.info(f"[PM] discussion 태스크 발송: {tid} → {bot_id}")
+
+        return task_ids

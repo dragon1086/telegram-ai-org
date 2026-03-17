@@ -33,6 +33,39 @@ async def orch_setup():
         os.environ.pop("AIORG_REPORT_DIR", None)
 
 
+# ── TC1. _classify_interaction_mode: lane="debate" → "debate" ────────────────
+
+def test_classify_debate_lane():
+    """lane='debate' 이면 user_message 무관하게 'debate' 반환."""
+    result = PMOrchestrator._classify_interaction_mode(
+        "debate", "delegate", "이 주제로 토론해줘"
+    )
+    assert result == "debate"
+
+
+# ── TC2. _select_debate_participants: dept_hints 3개 → 2~4개 반환 ─────────────
+
+def test_select_debate_participants():
+    """dept_hints 3개 전달 시 2~4개 org id 리스트 반환."""
+    # _select_debate_participants is a plain method — no async, no DB needed
+    with tempfile.TemporaryDirectory() as tmp:
+        db_stub = MagicMock()
+        graph_stub = MagicMock()
+        claim_stub = MagicMock()
+        memory_stub = MagicMock()
+        send_stub = AsyncMock()
+        os.environ["AIORG_REPORT_DIR"] = str(Path(tmp) / "reports")
+        orch = PMOrchestrator(db_stub, graph_stub, claim_stub, memory_stub, "aiorg_pm_bot", send_stub)
+        os.environ.pop("AIORG_REPORT_DIR", None)
+
+    hints = ["bot_a", "bot_b", "bot_c"]
+    result = orch._select_debate_participants(dept_hints=hints, topic="AI 전략")
+    assert isinstance(result, list)
+    assert 2 <= len(result) <= 4
+    for item in result:
+        assert item in hints
+
+
 # ── 1. lane 분류: "토론해봐" → "debate" ──────────────────────────────────────
 
 @pytest.mark.asyncio

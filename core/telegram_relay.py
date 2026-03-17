@@ -1527,8 +1527,17 @@ class TelegramRelay:
                     update,
                     self._pm_orchestrator.plan_request(request_text),
                 )
-                if plan.interaction_mode == "discussion":
-                    logger.info("[PM] interaction_mode=discussion placeholder — delegate fallback")
+                if plan.interaction_mode == "discussion" and ENABLE_DISCUSSION_PROTOCOL:
+                    disc_ids = await self._pm_orchestrator.discussion_dispatch(
+                        request_text, plan.dept_hints, update.effective_chat.id,
+                    )
+                    if disc_ids:
+                        await self.display.send_reply(
+                            update.message,
+                            f"💬 자유 토론을 시작합니다\n주제: {request_text[:100]}",
+                        )
+                        return
+                    logger.info("[PM] discussion 참여자 부족, delegate fallback")
                 elif plan.interaction_mode == "collab":
                     if not ENABLE_DISCUSSION_PROTOCOL:
                         logger.info("[PM] interaction_mode=collab — ENABLE_DISCUSSION_PROTOCOL 미설정, delegate fallback")
