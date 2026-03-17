@@ -116,6 +116,10 @@ class TelegramRelay:
         self.bus = bus
         self.context_db = context_db
         self.app: Application | None = None
+
+        # ContextDB를 MemoryManager에 주입 — BM25가 conversation_messages까지 검색
+        if context_db is not None:
+            self.memory_manager._context_db = context_db
         self._message_count: int = 0
 
         # 자율 라우팅 컴포넌트
@@ -385,12 +389,39 @@ class TelegramRelay:
                 "## 이번 응답에서 꼭 만족할 점\n" + "\n".join(f"- {item}" for item in expectations)
             )
 
-        memory_context = self.memory_manager.build_context(text)
+        # BM25 통합 검색 (LOG + conversation_messages)
+        memory_context = ""
+        try:
+            memory_results = await self.memory_manager.search_memories(
+                query=text, user_id="global", top_k=5
+            )
+            if memory_results:
+                memory_context = "\n".join(memory_results)
+            else:
+                memory_context = self.memory_manager.build_context(text)
+        except Exception:
+            memory_context = self.memory_manager.build_context(text)
         if memory_context:
             sections.append(f"## 현재 조직 내부 기억\n{memory_context[:1800]}")
 
         if db_context:
             sections.append(f"## 진행 중인 관련 태스크\n{db_context[:1200]}")
+
+        # 최근 대화 이력 포함 (부서봇에 맥락 전달)
+        recent_conv = ""
+        if self.context_db is not None:
+            try:
+                recent_msgs = await self.context_db.get_conversation_messages(
+                    chat_id=str(self.allowed_chat_id), is_bot=False, limit=8
+                )
+                if recent_msgs:
+                    lines = [f"[{m['timestamp'][:16]}] {m['content'][:200]}" for m in recent_msgs[:8]]
+                    recent_conv = "\n".join(lines)
+            except Exception:
+                pass
+
+        if recent_conv:
+            sections.append(f"## 최근 대화 이력 (참고용)\n{recent_conv[:1200]}")
 
         return "\n\n".join(section.strip() for section in sections if section.strip())
 
@@ -441,7 +472,18 @@ class TelegramRelay:
         if isinstance(expectations, list) and expectations:
             sections.append("## 사용자 기대치\n" + "\n".join(f"- {str(item)[:160]}" for item in expectations[:6]))
 
-        memory_context = self.memory_manager.build_context(description)
+        # BM25 통합 검색 (LOG + conversation_messages)
+        memory_context = ""
+        try:
+            memory_results = await self.memory_manager.search_memories(
+                query=description, user_id="global", top_k=5
+            )
+            if memory_results:
+                memory_context = "\n".join(memory_results)
+            else:
+                memory_context = self.memory_manager.build_context(description)
+        except Exception:
+            memory_context = self.memory_manager.build_context(description)
         if memory_context:
             sections.append(f"## 이 조직의 내부 기억\n{memory_context[:1500]}")
 
