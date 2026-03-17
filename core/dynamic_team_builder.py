@@ -492,6 +492,6 @@ class DynamicTeamBuilder:
             f"  팀: {parts}\n"
             f"  전략 모드: {mode_label}"
         )
-        if config.reasoning:
+        if config.reasoning and "fallback" not in config.reasoning.lower():
             announcement += f"\n💡 이유: {config.reasoning}"
         return announcement

@@ -154,9 +154,9 @@ class TelegramRelay:
         self._is_pm_org = ENABLE_PM_ORCHESTRATOR and org_id not in KNOWN_DEPTS
         self._is_dept_org = ENABLE_PM_ORCHESTRATOR and org_id in KNOWN_DEPTS
         self._pm_decision_client = None
-        if self._is_pm_org:
+        if self._is_pm_org or self._is_dept_org:
             from core.pm_decision import PMDecisionClient
-            # Decision client는 메인 PM 세션과 분리된 전용 세션 사용
+            # Decision client는 메인 실행 세션과 분리된 전용 세션 사용
             # (동일 세션 공유 시 동시 --resume 충돌로 code=1 발생)
             _decision_session_store = SessionStore(f"{org_id}_decision")
             self._pm_decision_client = PMDecisionClient(
@@ -165,7 +165,8 @@ class TelegramRelay:
                 session_store=_decision_session_store,
             )
             self._team_builder.set_decision_client(self._pm_decision_client)
-            self.global_context.set_decision_client(self._pm_decision_client)
+            if self._is_pm_org:
+                self.global_context.set_decision_client(self._pm_decision_client)
         self._router = PMRouter(decision_client=self._pm_decision_client)
         # P2P 봇 간 직접 통신
         self._p2p = P2PMessenger(bus=self.bus)
@@ -268,15 +269,22 @@ class TelegramRelay:
         text: str,
         reply_to_message_id: int | None = None,
     ) -> object | None:
-        """PMOrchestrator용 텔레그램 메시지 발송 콜백."""
+        """PMOrchestrator용 텔레그램 메시지 발송 콜백.
+
+        4000자 초과 메시지는 split_message로 분할 전송.
+        """
         if self.app and self.app.bot:
             visible_text = ARTIFACT_MARKER_RE.sub("", text).strip() or "첨부 파일을 전송합니다."
-            sent = await self.display.send_to_chat(
-                self.app.bot,
-                chat_id,
-                visible_text,
-                reply_to_message_id=reply_to_message_id,
-            )
+            sent = None
+            first = True
+            for chunk in split_message(visible_text, 4000):
+                sent = await self.display.send_to_chat(
+                    self.app.bot,
+                    chat_id,
+                    chunk,
+                    reply_to_message_id=reply_to_message_id if first else None,
+                )
+                first = False
             await self._auto_upload(text, self.token, chat_id)
             return sent
         return None
@@ -2941,7 +2949,13 @@ class TelegramRelay:
     def build(self) -> Application:
         """텔레그램 Application 빌드."""
         from telegram.request import HTTPXRequest
-        req = HTTPXRequest(connection_pool_size=1)
+        req = HTTPXRequest(
+            connection_pool_size=8,
+            connect_timeout=10.0,
+            read_timeout=30.0,
+            write_timeout=30.0,
+            pool_timeout=5.0,
+        )
         builder = Application.builder().token(self.token).request(req)
         if self._task_poller is not None or self._pm_orchestrator is not None or self._org_scheduler is not None:
             builder = builder.post_init(self._post_init)
