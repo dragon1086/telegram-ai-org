@@ -63,6 +63,35 @@ class RequestPlan:
     confidence: float = 0.0
 
 
+async def _record_bot_perf(
+    db: "ContextDB",
+    task_id: str,
+    success: bool,
+) -> None:
+    """봇 성과 기록 헬퍼. 예외 발생 시 무시 (non-critical)."""
+    try:
+        task = await db.get_pm_task(task_id)
+        if not task:
+            return
+        bot_id = task.get("assigned_dept", "")
+        if not bot_id:
+            return
+        latency = 0.0
+        created = task.get("created_at", "")
+        if created:
+            from datetime import datetime, UTC
+            try:
+                start = datetime.fromisoformat(created)
+                latency = (datetime.now(UTC) - start).total_seconds()
+            except (ValueError, TypeError):
+                pass
+        await db.record_bot_task_completion(
+            bot_id=bot_id, success=success, latency_sec=latency,
+        )
+    except Exception as _perf_err:
+        logger.warning(f"[PM] bot_performance 기록 실패 (무시): {_perf_err}")
+
+
 class PMOrchestrator:
     """사용자 요청을 부서별 태스크로 분해하고 배분하는 오케스트레이터."""
 
@@ -88,6 +117,13 @@ class PMOrchestrator:
         self._task_counter: int | None = None  # DB에서 지연 초기화
         self._synthesizer = ResultSynthesizer(decision_client=decision_client)
         self._prompt_gen = StructuredPromptGenerator(decision_client=decision_client)
+        # AgentPersonaMemory singleton — instantiated once to avoid per-call DDL overhead
+        self._apm = None
+        try:
+            from core.agent_persona_memory import AgentPersonaMemory as _APM
+            self._apm = _APM()
+        except Exception as _apm_err:
+            logger.debug(f"[PM] AgentPersonaMemory 초기화 실패 (무시): {_apm_err}")
 
     @property
     def decision_client(self) -> DecisionClientProtocol | None:
@@ -96,6 +132,21 @@ class PMOrchestrator:
     async def plan_request(self, user_message: str) -> RequestPlan:
         """유저 요청을 직접 답변/PM 직접 실행/조직 위임 중 어디로 보낼지 결정한다."""
         dept_hints = self._detect_relevant_depts(user_message)
+        # recommend_team feedback loop: 성과 데이터 기반 부서 힌트 보강
+        # Only runs when dept_hints is non-empty AND apm is available
+        if dept_hints and self._apm is not None:
+            try:
+                task_type = self._infer_task_type(user_message)
+                if task_type != "general":
+                    loop = asyncio.get_running_loop()
+                    recommended = await loop.run_in_executor(
+                        None, self._apm.recommend_team, task_type, 3,
+                    )
+                    for bot_id in recommended:
+                        if bot_id not in dept_hints:
+                            dept_hints.append(bot_id)
+            except Exception as _e:
+                logger.debug(f"[PM] recommend_team 조회 실패 (무시): {_e}")
         workdir = self._extract_workdir(user_message)
         result = await self._llm_unified_classify(user_message, dept_hints, workdir=workdir)
         return self._normalize_request_plan(result)
@@ -655,6 +706,23 @@ class PMOrchestrator:
             ))
         return subtasks
 
+    def _infer_task_type(self, user_message: str) -> str:
+        """메시지에서 TASK_TYPE_VOCAB 키워드 추론. recommend_team() 조회용."""
+        from core.agent_persona_memory import TASK_TYPE_VOCAB
+        lower = user_message.lower()
+        type_keywords: dict[str, list[str]] = {
+            "coding": ["코딩", "코드", "개발", "구현", "fix", "버그", "build", "테스트"],
+            "design": ["디자인", "ui", "ux", "화면", "design", "레이아웃"],
+            "research": ["리서치", "research", "조사", "분석", "벤치마크", "비교"],
+            "planning": ["기획", "스펙", "prd", "plan", "요구사항", "로드맵"],
+            "ops": ["배포", "인프라", "deploy", "운영", "ops", "서버", "도커"],
+            "marketing": ["마케팅", "성장", "growth", "marketing", "광고", "캠페인"],
+        }
+        for task_type, keywords in type_keywords.items():
+            if task_type in TASK_TYPE_VOCAB and any(kw in lower for kw in keywords):
+                return task_type
+        return "general"
+
     def _detect_relevant_depts(self, user_message: str) -> list[str]:
         """요청에 바로 연관된 부서 후보만 추린다.
 
@@ -960,6 +1028,8 @@ class PMOrchestrator:
         # mark_complete이 before/after diff를 계산하므로 먼저 호출 후 result 저장
         newly_ready = await self._graph.mark_complete(task_id)
         await self._db.update_pm_task_status(task_id, "done", result=result)
+        # Performance DB 업데이트 (성공)
+        asyncio.create_task(_record_bot_perf(self._db, task_id, success=True))
 
         # 새로 unblock된 태스크 발송
         for tid in newly_ready:

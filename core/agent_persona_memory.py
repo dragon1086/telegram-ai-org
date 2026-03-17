@@ -9,6 +9,12 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).parent.parent / ".ai-org" / "agent_persona_memory.db"
 
+# Canonical task_type vocabulary — shared between _infer_task_type (pm_orchestrator)
+# and update_from_task (agent_persona_memory). Must stay in sync.
+TASK_TYPE_VOCAB: frozenset[str] = frozenset({
+    "coding", "design", "research", "planning", "ops", "marketing", "general"
+})
+
 STRENGTH_THRESHOLD = 3   # success_patterns에서 N회 이상 → strengths 자동 추가
 WEAKNESS_THRESHOLD = 3   # failure_patterns에서 N회 이상 → weaknesses 자동 추가
 SYNERGY_ALPHA = 0.2      # EMA 가중치
@@ -217,6 +223,8 @@ class AgentPersonaMemory:
         """
         if collaborators is None:
             collaborators = []
+
+        task_type = task_type if task_type in TASK_TYPE_VOCAB else "general"
 
         data = self._sync_load_stats_row(agent_id)
         data["total_tasks"] += 1

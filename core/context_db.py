@@ -168,6 +168,18 @@ class ContextDB:
                     ON conversation_messages(chat_id, user_id);
                 CREATE INDEX IF NOT EXISTS idx_conv_timestamp
                     ON conversation_messages(timestamp);
+
+                CREATE TABLE IF NOT EXISTS bot_performance (
+                    bot_id TEXT NOT NULL,
+                    week TEXT NOT NULL,
+                    task_count INTEGER DEFAULT 0,
+                    success_count INTEGER DEFAULT 0,
+                    total_latency_sec REAL DEFAULT 0.0,
+                    avg_latency_sec REAL DEFAULT 0.0,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (bot_id, week)
+                );
+                CREATE INDEX IF NOT EXISTS idx_bot_perf_week ON bot_performance(week);
             """)
             await db.commit()
 
@@ -907,3 +919,78 @@ class ContextDB:
             )
             await db.commit()
             return cursor.rowcount
+
+    # ── Bot Performance ────────────────────────────────────────────────────
+
+    async def record_bot_task_completion(
+        self,
+        bot_id: str,
+        success: bool,
+        latency_sec: float,
+        week: str | None = None,
+    ) -> None:
+        """봇 태스크 완료 시 성과 DB 업데이트. week: ISO week (e.g. '2026-W11').
+
+        Uses atomic INSERT ... ON CONFLICT DO UPDATE to avoid TOCTOU races.
+        IMPORTANT: Uses bot_performance.colname in SET clause to reference pre-update values.
+        """
+        from datetime import datetime, UTC
+        if week is None:
+            now = datetime.now(UTC)
+            week = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
+        now_iso = _utcnow_iso()
+        sc_delta = 1 if success else 0
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """
+                INSERT INTO bot_performance
+                    (bot_id, week, task_count, success_count,
+                     total_latency_sec, avg_latency_sec, updated_at)
+                VALUES (?, ?, 1, ?, ?, ?, ?)
+                ON CONFLICT(bot_id, week) DO UPDATE SET
+                    task_count        = bot_performance.task_count + 1,
+                    success_count     = bot_performance.success_count + ?,
+                    total_latency_sec = bot_performance.total_latency_sec + ?,
+                    avg_latency_sec   = (bot_performance.total_latency_sec + ?)
+                                        / (bot_performance.task_count + 1),
+                    updated_at        = ?
+                """,
+                (bot_id, week, sc_delta, latency_sec, latency_sec, now_iso,
+                 sc_delta, latency_sec, latency_sec, now_iso),
+            )
+            await db.commit()
+
+    async def get_bot_performance(
+        self, bot_id: str, week: str | None = None,
+    ) -> dict | None:
+        """봇 주간 성과 조회. week 미지정 시 현재 주."""
+        from datetime import datetime, UTC
+        if week is None:
+            now = datetime.now(UTC)
+            week = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM bot_performance WHERE bot_id=? AND week=?",
+                (bot_id, week),
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    async def get_all_bot_performance(
+        self, week: str | None = None,
+    ) -> list[dict]:
+        """해당 주 전체 봇 성과 조회 (success_count DESC, avg_latency_sec ASC 정렬)."""
+        from datetime import datetime, UTC
+        if week is None:
+            now = datetime.now(UTC)
+            week = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM bot_performance WHERE week=? "
+                "ORDER BY success_count DESC, avg_latency_sec ASC",
+                (week,),
+            )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]

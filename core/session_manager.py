@@ -458,9 +458,32 @@ class SessionManager:
         # 4. 새 세션 + 메모리 컨텍스트 주입
         context = memory_mgr.build_context()
         name = self.ensure_session(team_id)
+
+        # Build performance context for psychology injection
+        perf_ctx: str | None = None
+        try:
+            from core.context_db import ContextDB
+            _db = ContextDB()
+            all_perf = await _db.get_all_bot_performance()
+            score: float | None = None
+            peer_rank: int | None = None
+            for idx, row in enumerate(all_perf, start=1):
+                if row["bot_id"] == team_id:
+                    tc = row["task_count"]
+                    sc = row["success_count"]
+                    rate = sc / tc if tc > 0 else 0.0
+                    score = round(rate * 5.0, 1)
+                    peer_rank = idx
+                    break
+            perf_ctx = SessionManager.build_performance_context(
+                score=score, peer_rank=peer_rank, total_bots=len(all_perf),
+            )
+        except Exception as _pe:
+            logger.debug(f"[SM] performance_context 조회 실패 (무시): {_pe}")
+
         if context:
             self.inject_context(team_id, context)
-            self.write_memory_to_claude_md(team_id, context)
+            self.write_memory_to_claude_md(team_id, context, performance_context=perf_ctx)
 
         logger.info(f"[{team_id}] 세션 리셋 완료")
 
@@ -485,10 +508,17 @@ class SessionManager:
 
         logger.info(f"컨텍스트 주입 완료: {name} ({len(context)}글자)")
 
-    def write_memory_to_claude_md(self, team_id: str, memory_context: str) -> None:
+    def write_memory_to_claude_md(
+        self,
+        team_id: str,
+        memory_context: str,
+        performance_context: str | None = None,
+    ) -> None:
         """
         봇 workdir의 .claude/CLAUDE.md에 메모리 섹션을 동적으로 기록.
         Claude Code 시작/compact 시 자동으로 읽힌다.
+
+        performance_context가 주어지면 AI-ORG-MEMORY 블록 안에 성과 평가 섹션을 함께 주입한다.
         """
         import pathlib
         # 봇 workdir 결정 (세션명 기반)
@@ -500,10 +530,16 @@ class SessionManager:
 
         marker_start = "<!-- AI-ORG-MEMORY-START -->"
         marker_end = "<!-- AI-ORG-MEMORY-END -->"
+
+        perf_block = ""
+        if performance_context:
+            perf_block = f"\n## 성과 평가 (자동 주입)\n{performance_context}\n"
+
         memory_block = (
             f"{marker_start}\n"
             f"## 관련 기억 (자동 주입)\n"
             f"{memory_context}\n"
+            f"{perf_block}"
             f"{marker_end}\n"
         )
 
@@ -524,6 +560,29 @@ class SessionManager:
 
         claude_md.write_text(new_content, encoding="utf-8")
         logger.debug(f"[SessionManager] CLAUDE.md 메모리 갱신: {claude_md} ({len(memory_context)}자)")
+
+    @staticmethod
+    def build_performance_context(
+        score: float | None,
+        peer_rank: int | None,
+        total_bots: int,
+    ) -> str:
+        """LLM에 주입할 성과 심리 컨텍스트 생성.
+
+        Handles new bots (no data yet) and dynamic bot counts.
+        score=None or peer_rank=None: first week — returns placeholder text.
+        total_bots=0: no comparison data available.
+        """
+        if score is None or peer_rank is None or total_bots == 0:
+            return (
+                "- 첫 활동 주 또는 성과 데이터 없음 — 이번 세션부터 기록 시작\n"
+                "- 이 세션의 결과는 기록·평가됩니다."
+            )
+        return "\n".join([
+            f"- 현재 성과 점수: {score:.1f}/5.0",
+            f"- 팀 {total_bots}개 봇 중 {peer_rank}위",
+            "- 이 세션의 결과는 기록·평가됩니다.",
+        ])
 
     # ── 상태 요약 ─────────────────────────────────────────────────────────
 
