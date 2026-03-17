@@ -55,6 +55,7 @@ class RequestPlan:
         "attachment_analysis",
         "single_org_execution",
         "multi_org_execution",
+        "debate",
     ]
     route: Literal["direct_reply", "local_execution", "delegate"]
     complexity: Literal["low", "medium", "high"]
@@ -280,7 +281,8 @@ class PMOrchestrator:
         prompt = (
             "Classify the following user request and return JSON only.\n"
             "Fields:\n"
-            '  lane: one of [clarify, direct_answer, review_or_audit, attachment_analysis, single_org_execution, multi_org_execution]\n'
+            '  lane: one of [clarify, direct_answer, review_or_audit, attachment_analysis, single_org_execution, multi_org_execution, debate]\n'
+            '    - debate: 여러 부서의 상충하는 관점을 수집하고 토론. 비교/찬반/토론/A vs B 요청에 사용.\n'
             '  route: one of [direct_reply, local_execution, delegate]\n'
             '  complexity: one of [low, medium, high]\n'
             '  rationale: brief Korean explanation (max 30 chars)\n\n'
@@ -304,7 +306,7 @@ class PMOrchestrator:
             data = json.loads(text)
 
             lane = data.get("lane", "single_org_execution")
-            valid_lanes = {"clarify", "direct_answer", "review_or_audit", "attachment_analysis", "single_org_execution", "multi_org_execution"}
+            valid_lanes = {"clarify", "direct_answer", "review_or_audit", "attachment_analysis", "single_org_execution", "multi_org_execution", "debate"}
             if lane not in valid_lanes:
                 lane = "single_org_execution"
 
@@ -350,13 +352,14 @@ class PMOrchestrator:
         "attachment_analysis",
         "single_org_execution",
         "multi_org_execution",
+        "debate",
     ]:
         if self._decision_client is None:
             return self._heuristic_lane(user_message, dept_hints)
         prompt = (
             "Classify the user's request into exactly one lane.\n"
             "Return only one token from:\n"
-            "clarify, direct_answer, review_or_audit, attachment_analysis, single_org_execution, multi_org_execution\n\n"
+            "clarify, direct_answer, review_or_audit, attachment_analysis, single_org_execution, multi_org_execution, debate\n\n"
             f"User request: {user_message[:800]}"
         )
         try:
@@ -372,11 +375,16 @@ class PMOrchestrator:
                 "attachment_analysis",
                 "single_org_execution",
                 "multi_org_execution",
+                "debate",
             }:
                 return lane  # type: ignore[return-value]
         except Exception as e:
             logger.warning(f"[PM] lane 분류 실패, heuristic fallback: {e}")
         return self._heuristic_lane(user_message, dept_hints)
+
+    _DEBATE_KEYWORDS = [
+        "토론", "찬반", "debate", "비교해봐", "vs", "의견 충돌", "두 팀의", "관점을", "비교하면",
+    ]
 
     def _heuristic_lane(
         self,
@@ -389,6 +397,7 @@ class PMOrchestrator:
         "attachment_analysis",
         "single_org_execution",
         "multi_org_execution",
+        "debate",
     ]:
         text = user_message.lower().strip()
         if any(token in text for token in ("첨부", "파일", "이미지", "pdf", "문서", "voice", "audio", "video")):
@@ -397,6 +406,8 @@ class PMOrchestrator:
             return "review_or_audit"
         if any(token in text for token in ("뭐가 빠졌", "무응답", "왜 답이 없", "무슨 뜻", "명확히")):
             return "clarify"
+        if any(token in text for token in self._DEBATE_KEYWORDS):
+            return "debate"
         if len(dept_hints) >= 2 or any(token in text for token in ("여러 조직", "협업", "기획하고", "디자인하고", "개발하고", "조율")):
             return "multi_org_execution"
         if any(token in text for token in ("왜", "무엇", "어떻게", "설명", "상태", "현황", "가능해", "?")):
@@ -505,6 +516,15 @@ class PMOrchestrator:
                 rationale="첨부 기반 분석 요청이라 attachment lane으로 처리합니다.",
                 dept_hints=dept_hints,
                 confidence=0.76,
+            )
+        if lane == "debate":
+            return RequestPlan(
+                lane="debate",
+                route="delegate",
+                complexity="high",
+                rationale="여러 부서의 상충하는 관점 수집·토론이 필요한 debate lane입니다.",
+                dept_hints=dept_hints,
+                confidence=0.8,
             )
         if lane == "multi_org_execution":
             return RequestPlan(
@@ -1074,6 +1094,37 @@ class PMOrchestrator:
             lines.append(f"[{dept_name}] {result}")
         return "\n".join(lines)
 
+    async def _debate_synthesize(
+        self,
+        parent_task_id: str,
+        parent_meta: dict,
+        subtasks: list[dict],
+        chat_id: int,
+    ) -> None:
+        """debate 모드 전용 합성 — 관점 비교 후 PM 종합 판단 전송."""
+        topic = parent_meta.get("debate_topic", "토론 주제")
+        opinions = [
+            {
+                "bot_id": task.get("assigned_to", "unknown"),
+                "dept_name": task.get("metadata", {}).get(
+                    "dept_name", task.get("assigned_to", "")
+                ),
+                "content": task.get("result", "(응답 없음)"),
+            }
+            for task in subtasks
+        ]
+
+        conclusion = await self._synthesizer.synthesize_debate(topic, opinions)
+
+        header = f"[토론 결론] {topic[:50]}\n\n"
+        opinion_lines = "".join(
+            f"• {op['dept_name']}: {op['content'][:80]}...\n" for op in opinions
+        )
+        msg = f"{header}{opinion_lines}\n🎯 PM 종합 판단:\n{conclusion}"
+
+        await self._send(chat_id, msg)
+        await self._db.update_pm_task_status(parent_task_id, "done", result=conclusion)
+
     async def _synthesize_and_act(
         self, parent_task_id: str, subtasks: list[dict], chat_id: int,
     ) -> None:
@@ -1082,11 +1133,15 @@ class PMOrchestrator:
         parent = await self._db.get_pm_task(parent_task_id)
         original_request = parent["description"][:500] if parent else ""
 
+        parent_meta = parent.get("metadata", {}) if parent else {}
+        if parent_meta.get("debate"):
+            await self._debate_synthesize(parent_task_id, parent_meta, subtasks, chat_id)
+            return
+
         synthesis = await self._synthesizer.synthesize(original_request, subtasks)
         logger.info(
             f"[PM] 결과 합성: {parent_task_id} → {synthesis.judgment.value}"
         )
-        parent_meta = parent.get("metadata", {}) if parent else {}
         parent_workdir = parent_meta.get("workdir")
         run_id = parent_meta.get("run_id")
         runbook = OrchestrationRunbook(Path(__file__).resolve().parent.parent)
@@ -1339,3 +1394,105 @@ class PMOrchestrator:
             logger.info(f"[PM] 토론 시작: {disc['id']} — {dn.topic[:50]}")
 
         return disc_ids
+
+    # ── Debate Dispatch ───────────────────────────────────────────────────
+
+    def _select_debate_participants(self, dept_hints: list[str], topic: str) -> list[str]:
+        """debate 참여 봇 목록 선정.
+
+        dept_hints가 주어지면 최대 4개까지 그대로 사용.
+        비어있으면 orchestration config에서 specialist + enabled 봇을 최대 4개 선택.
+        최소 2개 미만이면 빈 리스트 반환 (debate 불가).
+        """
+        if dept_hints:
+            selected = dept_hints[:4]
+        else:
+            try:
+                cfg = load_orchestration_config(force_reload=True)
+                selected = [org.id for org in cfg.list_specialist_orgs()][:4]
+            except Exception as e:
+                logger.warning(f"[PM] debate 참여자 조회 실패: {e}")
+                selected = []
+
+        if len(selected) < 2:
+            logger.info(f"[PM] debate 참여자 부족 ({len(selected)}개) — debate 불가")
+            return []
+        return selected
+
+    async def debate_dispatch(
+        self,
+        parent_task_id: str,
+        topic: str,
+        participants: list[str],
+        chat_id: int,
+    ) -> list[str]:
+        """각 participant에게 독자적 관점의 debate 서브태스크를 생성·배정한다.
+
+        Args:
+            parent_task_id: 상위 태스크 ID.
+            topic: debate 주제 (사용자 요청 원문).
+            participants: 참여할 봇 ID 목록 (_select_debate_participants 결과).
+            chat_id: 알림을 보낼 Telegram chat ID.
+
+        Returns:
+            생성된 subtask ID 목록. 참여자가 없으면 빈 리스트.
+        """
+        if not participants:
+            logger.info("[PM] debate 참여자 없음 — debate_dispatch 건너뜀")
+            return []
+
+        # 봇 프로필 캐시 (dept_name, direction 조회용)
+        try:
+            cfg = load_orchestration_config(force_reload=True)
+            org_map = {org.id: org for org in cfg.list_orgs()}
+        except Exception as e:
+            logger.warning(f"[PM] debate org_map 로드 실패: {e}")
+            org_map = {}
+
+        task_ids: list[str] = []
+        for bot_id in participants:
+            org = org_map.get(bot_id)
+            dept_name = org.dept_name if org else bot_id
+            direction = org.direction if org else ""
+
+            prompt = (
+                f"{topic}\n\n"
+                f"[당신의 관점] 당신은 {dept_name}입니다. {direction}\n"
+                f"다른 부서와 차별화된 {dept_name} 관점에서 의견을 제시하세요. "
+                f"반드시 자신의 전문 영역과 가치관을 바탕으로 독자적인 입장을 표명하세요."
+            )
+
+            tid = await self._next_task_id()
+            await self._db.create_pm_task(
+                task_id=tid,
+                description=prompt,
+                assigned_dept=bot_id,
+                created_by=self._org_id,
+                parent_id=parent_task_id,
+                metadata={
+                    "debate": True,
+                    "debate_topic": topic,
+                    "debate_parent": parent_task_id,
+                },
+            )
+            await self._db.update_pm_task_status(tid, "assigned")
+            task_ids.append(tid)
+
+            dept_mention = self._org_mention(bot_id)
+            try:
+                await self._send(
+                    chat_id,
+                    f"{dept_mention} [PM_TASK:{tid}|dept:{bot_id}] {dept_name} debate 배정: "
+                    f"{prompt[:200]}",
+                )
+            except Exception as _e:
+                logger.warning(f"[PM] debate 태스크 {tid} 알림 전송 실패: {_e}")
+            logger.info(f"[PM] debate 태스크 발송: {tid} → {bot_id}")
+
+        # 부모 태스크 metadata 업데이트
+        await self._db.update_pm_task_metadata(
+            parent_task_id,
+            {"debate": True, "debate_topic": topic},
+        )
+
+        return task_ids

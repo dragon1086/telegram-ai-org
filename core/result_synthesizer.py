@@ -71,11 +71,55 @@ _SYNTHESIS_PROMPT = (
 )
 
 
+_DEBATE_SYNTHESIS_PROMPT = (
+    "당신은 AI 조직의 PM입니다. 여러 부서가 동일한 주제에 대해 각자의 관점에서 의견을 제시했습니다.\n\n"
+    "주제: {topic}\n\n"
+    "각 부서의 의견:\n{opinions}\n\n"
+    "다음 형식으로 종합 결론을 작성하세요:\n"
+    "1. 각 부서 입장 한 줄 요약\n"
+    "2. 공통점 (있다면)\n"
+    "3. 핵심 차이점/갈등 지점\n"
+    "4. PM 종합 판단 및 권고안\n\n"
+    "간결하고 실용적으로 작성하세요."
+)
+
+
 class ResultSynthesizer:
     """부서 결과를 LLM으로 분석·판단하는 합성기."""
 
     def __init__(self, decision_client: DecisionClientProtocol | None = None) -> None:
         self._decision_client = decision_client
+
+    async def synthesize_debate(self, topic: str, opinions: list[dict]) -> str:
+        """debate 모드 전용 synthesis — 관점 비교 + 결론."""
+        if self._decision_client is None:
+            return self._keyword_debate(opinions)
+
+        opinions_text = "\n".join(
+            f"[{op.get('dept_name', op.get('bot_id', '?'))}] {op.get('content', '(응답 없음)')}"
+            for op in opinions
+        )
+        prompt = _DEBATE_SYNTHESIS_PROMPT.format(
+            topic=topic[:500],
+            opinions=opinions_text[:4000],
+        )
+        try:
+            return await asyncio.wait_for(
+                self._decision_client.complete(prompt),
+                timeout=180.0,
+            )
+        except Exception as e:
+            logger.warning(f"[Synthesizer] debate LLM 합성 실패, fallback: {e}")
+            return self._keyword_debate(opinions)
+
+    @staticmethod
+    def _keyword_debate(opinions: list[dict]) -> str:
+        """LLM 없을 때 단순 나열 fallback."""
+        lines = [
+            f"- {op.get('dept_name', op.get('bot_id', '?'))}: {op.get('content', '(응답 없음)')[:120]}"
+            for op in opinions
+        ]
+        return "각 부서 의견:\n" + "\n".join(lines)
 
     async def synthesize(
         self, original_request: str, subtasks: list[dict],

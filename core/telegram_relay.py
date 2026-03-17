@@ -1515,6 +1515,40 @@ class TelegramRelay:
                         asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
                     return
 
+                if plan.lane == "debate" and ENABLE_DISCUSSION_PROTOCOL:
+                    participants = self._pm_orchestrator._select_debate_participants(
+                        plan.dept_hints, request_text
+                    )
+                    if len(participants) >= 2:
+                        bot_names = ", ".join(participants)
+                        await self.display.send_reply(
+                            update.message,
+                            f"🥊 토론을 시작합니다\n"
+                            f"주제: {request_text[:100]}\n"
+                            f"참여 봇: {bot_names}",
+                        )
+                        parent_id = await self._pm_orchestrator._next_task_id()
+                        await self.context_db.create_pm_task(
+                            task_id=parent_id,
+                            description=text[:500],
+                            assigned_dept=self.org_id,
+                            created_by=self.org_id,
+                            metadata={
+                                "route": plan.route,
+                                "lane": plan.lane,
+                                "complexity": plan.complexity,
+                                "rationale": plan.rationale,
+                                "original_request": text[:2000],
+                            },
+                        )
+                        await self._pm_orchestrator.debate_dispatch(
+                            parent_task_id=parent_id,
+                            topic=request_text,
+                            participants=participants,
+                            chat_id=update.effective_chat.id,
+                        )
+                        return
+
                 await self.display.send_reply(update.message, "📋 여러 조직 협업이 필요해 보여 오케스트레이션으로 넘깁니다.")
                 run_id = self._create_runbook(request_text)
                 conversation_context = await self._build_conversation_context_packet(
