@@ -395,6 +395,11 @@ class PMOrchestrator:
         "봇들끼리", "얘기해봐", "자율 토론", "토의해봐", "봇끼리", "서로 논의",
     ]
 
+    _COLLAB_KEYWORDS: list[str] = [
+        "협업해줘", "같이 해줘", "함께 만들어",
+        "봇들이 협력", "협력해서", "합작",
+    ]
+
     @staticmethod
     def _classify_interaction_mode(
         lane: str, route: str, user_message: str = ""
@@ -403,6 +408,8 @@ class PMOrchestrator:
         if lane == "debate":
             return "debate"
         text = user_message.lower()
+        if any(kw in text for kw in PMOrchestrator._COLLAB_KEYWORDS):
+            return "collab"
         if any(kw in text for kw in PMOrchestrator._DISCUSSION_RELAY_KEYWORDS):
             return "discussion"
         if lane == "multi_org_execution":
@@ -1519,3 +1526,63 @@ class PMOrchestrator:
         )
 
         return task_ids
+
+    async def collab_dispatch(
+        self,
+        parent_task_id: str,
+        task: str,
+        target_org: str,
+        requester_org: str,
+        context: str = "",
+        chat_id: int = 0,
+    ) -> str:
+        """요청 봇이 지정한 target_org에 collab 서브태스크를 생성·배정한다.
+
+        Args:
+            parent_task_id: 상위 태스크 ID.
+            task: 협업 요청 태스크 내용.
+            target_org: 태스크를 수행할 조직 ID.
+            requester_org: 협업을 요청한 조직 ID.
+            context: 추가 컨텍스트 (선택).
+            chat_id: 알림 Telegram chat ID (미사용, 향후 확장용).
+
+        Returns:
+            생성된 task_id 문자열.
+        """
+        try:
+            cfg = load_orchestration_config(force_reload=True)
+            org_map = {org.id: org for org in cfg.list_orgs()}
+        except Exception as e:
+            logger.warning(f"[PM] collab_dispatch org_map 로드 실패: {e}")
+            org_map = {}
+
+        org = org_map.get(target_org)
+        dept_name = org.dept_name if org else target_org
+        direction = org.direction if org else ""
+
+        description_parts = [task]
+        if context:
+            description_parts.append(f"\n[요청 컨텍스트] {context}")
+        if direction:
+            description_parts.append(
+                f"\n[{dept_name} 전문 영역] {direction}"
+            )
+        description = "".join(description_parts)
+
+        task_id = await self._next_task_id()
+        await self._db.create_pm_task(
+            task_id=task_id,
+            description=description,
+            assigned_dept=target_org,
+            created_by=requester_org,
+            parent_id=parent_task_id,
+            metadata={
+                "collab": True,
+                "collab_requester": requester_org,
+                "parent_task_id": parent_task_id,
+            },
+        )
+        logger.info(
+            f"[PM] collab_dispatch: {requester_org} -> {target_org} | task_id={task_id}"
+        )
+        return task_id

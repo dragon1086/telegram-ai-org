@@ -572,6 +572,32 @@ class TelegramRelay:
         scored.sort(key=lambda item: item[0], reverse=True)
         return [mention for _, mention in scored[:2]]
 
+    async def _infer_collab_target_org(self, task: str) -> str | None:
+        """task 텍스트에서 협업 대상 org_id를 추론한다.
+
+        Returns:
+            추론된 org_id 문자열 (예: "cokac"), 신뢰도 부족 시 None.
+        """
+        cfg = load_orchestration_config()
+        words = {w for w in re.split(r"\W+", task.lower()) if len(w) >= 2}
+        scored: list[tuple[int, str]] = []
+        for org in cfg.list_specialist_orgs():
+            if org.id == self.org_id:
+                continue
+            haystack = " ".join([
+                org.dept_name,
+                org.role,
+                org.direction,
+                " ".join(org.specialties),
+            ]).lower()
+            score = sum(1 for word in words if word and word in haystack)
+            if score >= 2:  # confidence threshold: at least 2 keyword matches
+                scored.append((score, org.id))
+        if not scored:
+            return None
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return scored[0][1]
+
     def _runbook(self) -> OrchestrationRunbook:
         return OrchestrationRunbook(Path(__file__).resolve().parent.parent)
 
@@ -1086,25 +1112,42 @@ class TelegramRelay:
             collab_ctx = parts[1].strip() if len(parts) > 1 else ""
             if is_placeholder_collab(collab_task, collab_ctx):
                 continue
-            target_mentions = self._infer_collab_target_mentions(collab_task, exclude_org_id=self.org_id)
-            collab_msg = make_collab_request_v2(
-                collab_task,
-                self.org_id,
-                context=collab_ctx,
-                requester_mention=requester_mention,
-                from_org_mention=self._org_mention(self.org_id),
-                target_mentions=target_mentions,
-            )
-            try:
-                if bot is not None:
-                    await self.display.send_to_chat(
-                        bot,
-                        chat_id,
-                        collab_msg,
-                        reply_to_message_id=reply_to_message_id,
+            target_org = await self._infer_collab_target_org(collab_task)
+            if target_org is not None and self._pm_orchestrator is not None:
+                try:
+                    parent_id = await self._pm_orchestrator._next_task_id()
+                    await self._pm_orchestrator.collab_dispatch(
+                        parent_task_id=parent_id,
+                        task=collab_task,
+                        target_org=target_org,
+                        requester_org=self.org_id,
+                        context=collab_ctx,
+                        chat_id=chat_id,
                     )
-            except Exception as _e:
-                logger.warning(f"협업 요청 발송 실패: {_e}")
+                except Exception as _e:
+                    logger.warning(f"collab PM dispatch 실패: {_e}")
+            else:
+                target_mentions = self._infer_collab_target_mentions(
+                    collab_task, exclude_org_id=self.org_id
+                )
+                collab_msg = make_collab_request_v2(
+                    collab_task,
+                    self.org_id,
+                    context=collab_ctx,
+                    requester_mention=requester_mention,
+                    from_org_mention=self._org_mention(self.org_id),
+                    target_mentions=target_mentions,
+                )
+                try:
+                    if bot is not None:
+                        await self.display.send_to_chat(
+                            bot,
+                            chat_id,
+                            collab_msg,
+                            reply_to_message_id=reply_to_message_id,
+                        )
+                except Exception as _e:
+                    logger.warning(f"협업 요청 발송 실패: {_e}")
         cleaned = _re.sub(r"\[COLLAB:[^\]]+\]", "", cleaned).strip()
         return cleaned
 
@@ -1410,7 +1453,8 @@ class TelegramRelay:
                 if plan.interaction_mode == "discussion":
                     logger.info("[PM] interaction_mode=discussion placeholder — delegate fallback")
                 elif plan.interaction_mode == "collab":
-                    logger.info("[PM] interaction_mode=collab placeholder — delegate fallback")
+                    if not ENABLE_DISCUSSION_PROTOCOL:
+                        logger.info("[PM] interaction_mode=collab — ENABLE_DISCUSSION_PROTOCOL 미설정, delegate fallback")
 
                 if plan.route == "direct_reply":
                     await self._reply_with_pm_chat(update, text, _replied_context)
@@ -1519,6 +1563,39 @@ class TelegramRelay:
                     if self.bus:
                         asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
                     return
+
+                if plan.interaction_mode == "collab" and ENABLE_DISCUSSION_PROTOCOL:
+                    collab_target = await self._infer_collab_target_org(request_text)
+                    parent_id = await self._pm_orchestrator._next_task_id()
+                    await self.context_db.create_pm_task(
+                        task_id=parent_id,
+                        description=request_text[:500],
+                        assigned_dept=self.org_id,
+                        created_by=self.org_id,
+                        metadata={"interaction_mode": "collab", "collab_topic": request_text},
+                    )
+                    if collab_target is not None:
+                        collab_participants = [collab_target]
+                    else:
+                        collab_participants = self._pm_orchestrator._select_debate_participants(
+                            plan.dept_hints, request_text
+                        )
+                    if collab_participants:
+                        participants_display = ", ".join(collab_participants)
+                        await self.display.send_reply(
+                            update.message,
+                            f"🤝 협업을 시작합니다\n주제: {request_text[:100]}\n참여: {participants_display}",
+                        )
+                        for p in collab_participants:
+                            await self._pm_orchestrator.collab_dispatch(
+                                parent_task_id=parent_id,
+                                task=request_text,
+                                target_org=p,
+                                requester_org=self.org_id,
+                                context="",
+                                chat_id=update.effective_chat.id,
+                            )
+                        return
 
                 if plan.interaction_mode == "debate" and ENABLE_DISCUSSION_PROTOCOL:
                     participants = self._pm_orchestrator._select_debate_participants(
