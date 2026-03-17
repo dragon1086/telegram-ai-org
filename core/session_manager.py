@@ -70,6 +70,37 @@ class SessionManager:
         out = self._run_tmux("has-session", "-t", name)
         return not out  # has-session은 성공 시 출력 없음, 실패 시 에러 출력
 
+    def generate_mcp_config(self, team_id: str, db_path: str) -> str:
+        """봇별 MCP 설정 파일을 생성하고 경로를 반환한다.
+        Claude CLI --mcp-config 플래그에 전달할 JSON 파일.
+        """
+        import json
+        import pathlib
+
+        mcp_dir = pathlib.Path.home() / ".ai-org" / "mcp"
+        mcp_dir.mkdir(parents=True, exist_ok=True)
+
+        server_script = str(pathlib.Path(__file__).parent.parent / "tools" / "memory_mcp_server.py")
+        python_exe = str(pathlib.Path(__file__).parent.parent / ".venv" / "bin" / "python")
+
+        config = {
+            "mcpServers": {
+                "memory": {
+                    "command": python_exe,
+                    "args": [server_script],
+                    "env": {
+                        "DB_PATH": db_path,
+                        "BOT_ID": team_id,
+                    },
+                }
+            }
+        }
+
+        config_path = mcp_dir / f"{team_id}.json"
+        config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+        logger.debug(f"[SessionManager] MCP 설정 생성: {config_path}")
+        return str(config_path)
+
     def ensure_session(self, team_id: str, disable_omc: bool = False) -> str:
         """세션이 없으면 생성 + claude 시작. 세션 이름 반환."""
         name = self.session_name(team_id)
@@ -79,8 +110,11 @@ class SessionManager:
             env_prefix = "CLAUDECODE= "
             if disable_omc:
                 env_prefix += "DISABLE_OMC=1 "
+            db_path = str(Path.home() / ".ai-org" / f"context_{team_id}.db")
+            mcp_config_path = self.generate_mcp_config(team_id, db_path=db_path)
             self._run_tmux("send-keys", "-t", name,
-                           f"{env_prefix}{claude_cli} --dangerously-skip-permissions", "Enter")
+                           f"{env_prefix}{claude_cli} --dangerously-skip-permissions"
+                           f" --mcp-config {mcp_config_path}", "Enter")
             # 프롬프트 나올 때까지 폴링 (sleep 고정 제거)
             ready = self._wait_for_prompt(name, timeout=PROMPT_TIMEOUT)
             if ready:
