@@ -148,6 +148,7 @@ class TelegramRelay:
         # PM 오케스트레이터 모드 — ENABLE_PM_ORCHESTRATOR + context_db 필요
         self._pm_orchestrator = None
         self._synthesizing: set = set()  # 합성 중복 방지 (이벤트 드리븐 + 폴러 공유)
+        self._collab_injecting: set[str] = set()
         self._uploaded_artifacts: set[str] = set()  # 중복 파일 업로드 방지
         self._pending_confirmation: dict = {}  # {chat_id: {action, task_ids, expires}}
         self._is_pm_org = ENABLE_PM_ORCHESTRATOR and org_id not in KNOWN_DEPTS
@@ -1232,6 +1233,77 @@ class TelegramRelay:
                     )
                 except Exception as exc:
                     logger.warning(f"[auto_upload:{self.org_id}] 업로드 실패 {artifact}: {exc}")
+
+    async def _upload_artifacts_to(
+        self, result: str, token: str, chat_id: int
+    ) -> None:
+        """Cross-org artifact upload — calls upload_file directly, bypasses resolve_delivery_target."""
+        from core.artifact_pipeline import extract_local_artifact_paths, prepare_upload_bundle
+        from tools.telegram_uploader import upload_file
+        for raw in extract_local_artifact_paths(result):
+            for p in prepare_upload_bundle(raw):
+                if p not in self._uploaded_artifacts:
+                    caption = f"📎 {self.org_id} 산출물: {p.name}"
+                    await upload_file(token, int(chat_id), str(p), caption)
+                    self._uploaded_artifacts.add(p)
+
+    async def _inject_collab_result(self, task_info: dict) -> None:
+        """When a collab PM_TASK completes, inject result back to the requester org."""
+        metadata = task_info.get("metadata") or {}
+        if not metadata.get("collab"):
+            return
+        if metadata.get("result_injected"):
+            return
+        task_id = task_info.get("task_id") or task_info.get("id", "")
+        collab_requester = metadata.get("collab_requester")
+        if not collab_requester:
+            logger.warning(f"[collab_inject:{self.org_id}] {task_id} — collab_requester 없음")
+            return
+        if task_id in self._collab_injecting:
+            return
+        self._collab_injecting.add(task_id)
+        try:
+            from core.orchestration_config import load_orchestration_config
+            cfg = load_orchestration_config()
+            requester_org = cfg.get_org(collab_requester)
+            if requester_org is None:
+                logger.warning(
+                    f"[collab_inject:{self.org_id}] {task_id} — "
+                    f"requester org '{collab_requester}' config 없음"
+                )
+                return
+            requester_token = requester_org.token
+            requester_chat_id = requester_org.chat_id
+            if not requester_token or not requester_chat_id:
+                logger.warning(
+                    f"[collab_inject:{self.org_id}] {task_id} — "
+                    f"requester org '{collab_requester}' token/chat_id 없음"
+                )
+                return
+            result_text = (task_info.get("result") or "")[:1000]
+            task_desc = (task_info.get("description") or "")[:200]
+            message = (
+                f"🤝 [{self.org_id}] 협업 결과 도착\n"
+                f"태스크: {task_desc}\n\n"
+                f"{result_text}"
+            )
+            import telegram
+            bot = telegram.Bot(token=requester_token)
+            await bot.send_message(chat_id=requester_chat_id, text=message)
+            if "[ARTIFACT:" in (task_info.get("result") or ""):
+                await self._upload_artifacts_to(
+                    task_info.get("result", ""), requester_token, requester_chat_id
+                )
+            await self.context_db.update_pm_task_metadata(task_id, {"result_injected": True})
+            logger.info(
+                f"[collab_inject:{self.org_id}] {task_id} → {collab_requester} 완료"
+            )
+        except Exception as exc:
+            logger.warning(
+                f"[collab_inject:{self.org_id}] {task_id} 주입 실패: {exc}"
+            )
+        finally:
+            self._collab_injecting.discard(task_id)
 
     # ── 메시지 처리 ────────────────────────────────────────────────────────
 
@@ -2780,6 +2852,7 @@ class TelegramRelay:
         logger.info(f"[PM_DONE 이벤트] {task_id} 완료 수신 → 합성 체크")
         try:
             task_info = await self.context_db.get_pm_task(task_id)
+            asyncio.create_task(self._inject_collab_result(task_info))
             if not task_info or not task_info.get("parent_id"):
                 return
             parent_id = task_info["parent_id"]
@@ -2836,6 +2909,12 @@ class TelegramRelay:
                     if parent_id in self._synthesizing:
                         continue
                     siblings = await self.context_db.get_subtasks(parent_id)
+                    for sibling in siblings:
+                        if (
+                            sibling.get("status") == "done"
+                            and (sibling.get("metadata") or {}).get("collab")
+                        ):
+                            asyncio.create_task(self._inject_collab_result(sibling))
                     if siblings and all(s["status"] == "done" for s in siblings):
                         self._synthesizing.add(parent_id)
                         logger.info(f"[SynthesisPoller] {parent_id} 전체 완료 감지 → 합성 시작")
