@@ -3000,6 +3000,10 @@ class TelegramRelay:
         except Exception as e:
             logger.error(f"[{self.org_id}] PM_TASK {task_id} 실행 실패: {e}")
             await self.context_db.update_pm_task_status(task_id, "failed", result=str(e))
+            # Performance DB 업데이트 (실패)
+            import asyncio as _asyncio
+            from core.pm_orchestrator import _record_bot_perf as _rbp
+            _asyncio.create_task(_rbp(self.context_db, task_id, success=False))
             # 실패 알림
             if self.app and self.app.bot:
                 fail_prefix = f"{requester_mention} " if requester_mention else ""

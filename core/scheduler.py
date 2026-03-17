@@ -28,16 +28,19 @@ class OrgScheduler:
         send_text: Callable[[str], Coroutine[Any, Any, None]],
         execute_callback: Optional[Callable[[str], Coroutine[Any, Any, str]]] = None,
         claim_manager=None,
+        context_db=None,
     ) -> None:
         """
         Args:
             send_text: Telegram 메시지 전송 코루틴 (TelegramRelay.send_text 또는 동일 시그니처).
             execute_callback: 사용자 태스크 실행 코루틴 (태스크 설명 → 결과 문자열). 없으면 알림만.
             claim_manager: ClaimManager 인스턴스. 제공 시 매시간 파일 정리 잡 등록.
+            context_db: ContextDB 인스턴스. 미제공 시 weekly_bot_business_retro에서 자동 생성.
         """
         self._send_text = send_text
         self._execute_callback = execute_callback
         self._claim_manager = claim_manager
+        self._context_db = context_db
         self.scheduler = AsyncIOScheduler(timezone=KST)
         self._register_jobs()
 
@@ -79,6 +82,13 @@ class OrgScheduler:
         self.scheduler.add_job(
             lambda: asyncio.create_task(self._cleanup_old_conversations()),
             "interval", weeks=1, id="conversation_cleanup",
+            replace_existing=True,
+        )
+        self.scheduler.add_job(
+            self._weekly_bot_business_retro,
+            CronTrigger(day_of_week="mon", hour=9, minute=10, timezone=KST),
+            id="weekly_bot_business_retro",
+            misfire_grace_time=300,
             replace_existing=True,
         )
 
@@ -347,6 +357,26 @@ class OrgScheduler:
     async def _fire_daily_insight(self) -> None:
         """일일 인사이트 — message_bus 연결 시 DAILY_INSIGHT 이벤트 발행."""
         logger.warning("[OrgScheduler] _fire_daily_insight: message_bus 미연결 상태로 호출됨. 무시.")
+
+    async def _weekly_bot_business_retro(self) -> None:
+        """매주 월요일 09:10 KST — 봇 비즈니스 회고."""
+        logger.info("[OrgScheduler] weekly_bot_business_retro 시작")
+        try:
+            from core.bot_business_retro import BotBusinessRetro
+            db = self._context_db
+            if db is None:
+                from core.context_db import ContextDB
+                db = ContextDB()
+                await db.initialize()
+            retro = BotBusinessRetro(db)
+            results = await retro.generate_weekly()
+            if results:
+                msg = retro.format_telegram(results)
+                await self._safe_send(msg)
+            else:
+                logger.info("[OrgScheduler] 봇 성과 데이터 없음, 회고 스킵")
+        except Exception as e:
+            logger.error(f"[OrgScheduler] weekly_bot_business_retro 실패: {e}")
 
     async def _safe_send(self, text: str) -> None:
         try:

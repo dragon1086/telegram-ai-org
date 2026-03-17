@@ -47,7 +47,18 @@ _FALLBACK_INSTRUCTIONS: dict[str, str] = {
 
 
 def _load_bot_configs(bots_dir: Path | None = None) -> list[dict]:
-    """bots/*.yaml 파일들을 로드. 실패 시 빈 리스트."""
+    """bots/*.yaml 파일들을 로드하여 봇 설정 딕셔너리 리스트 반환.
+
+    Bot Loading Flow:
+        1. bots/ 디렉토리의 모든 .yaml 파일을 스캔
+        2. 각 YAML에서 org_id, dept_name, engine, role, instruction 추출
+        3. KNOWN_DEPTS, BOT_ENGINE_MAP, DEPT_ROLES, DEPT_INSTRUCTIONS 딕셔너리 구성
+        4. workers.yaml은 레거시 파일로, 현재 런타임에서 사용하지 않음
+        5. ~/.claude/agents/는 봇 내부 Claude Code sub-agent 위임용 (조직 봇 정의 아님)
+
+    Returns:
+        list[dict]: 각 봇 설정 딕셔너리 (org_id, dept_name, engine 등 포함)
+    """
     target = bots_dir or _BOTS_DIR
     if not target.is_dir():
         return []

@@ -1,3 +1,15 @@
-# 동적 에이전트 시스템 사용 — 별도 워커 봇 토큰 불필요
-# PM봇이 ~/.claude/agents/ 페르소나를 동적으로 로드하여 팀 구성
+# workers.yaml — 의도적으로 비어 있음
+#
+# 봇 정의는 bots/*.yaml 파일에서 관리됩니다.
+# /setup 명령어로 등록된 봇은 organizations.yaml → bots/*.yaml 순으로 저장됩니다.
+#
+# Bot Loading Flow:
+#   1. core/constants.py의 _load_bot_configs()가 bots/ 디렉토리를 스캔
+#   2. KNOWN_DEPTS, BOT_ENGINE_MAP, DEPT_ROLES, DEPT_INSTRUCTIONS 딕셔너리 구성
+#   3. PM 오케스트레이터가 이 딕셔너리로 태스크를 적합한 봇에 라우팅
+#
+# ~/.claude/agents/ 는 봇 내부의 Claude Code sub-agent 위임용이며,
+# 최상위 조직 봇 정의와는 무관합니다.
+#
+# 이 파일은 레거시 호환용으로 유지되며, 런타임에서 참조하지 않습니다.
 workers: []
