@@ -249,6 +249,14 @@ class TelegramRelay:
             self._nl_parser = NLScheduleParser()
             self._org_scheduler.load_user_schedules(self._schedule_store)
 
+        # WarmSessionPool — 엔진 타입에 맞게 세션/러너 예열
+        from core.session_manager import WarmSessionPool
+        self._warm_pool = WarmSessionPool(
+            session_manager=self.session_manager,
+            org_id=org_id,
+            engine=self.engine,
+        )
+
     async def _pm_send_message(
         self,
         chat_id: int,
@@ -2498,6 +2506,12 @@ class TelegramRelay:
         if self._org_scheduler is not None:
             self._org_scheduler.start()
             logger.info(f"[{self.org_id}] OrgScheduler 시작됨")
+
+        # WarmSessionPool 예열 시작 (엔진별 분기)
+        if self._warm_pool is not None:
+            import asyncio as _asyncio
+            _asyncio.create_task(self._warm_pool.start())
+            logger.info(f"[{self.org_id}] WarmSessionPool 예열 시작 (engine={self.engine})")
 
     async def _store_pending_confirmation(self, action: str, task_ids: list, description: str = "") -> None:
         """pm_bot 제안 상태 저장 (5분 유효). 사용자 긍정 응답 시 _execute_pending_confirmation 실행."""

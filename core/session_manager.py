@@ -466,14 +466,23 @@ class SessionManager:
 
 class WarmSessionPool:
     """
-    세션 1개를 항상 예열 상태로 유지.
-    get_warm_session() 호출 시 즉시 반환 후 백그라운드에서 다음 세션 예열.
+    엔진별 예열 풀.
+    - claude-code: tmux 세션 1개를 항상 예열 상태로 유지.
+    - codex: CodexRunner 인스턴스를 미리 생성해두고 workdir 확보.
+      (Codex는 매 호출마다 subprocess spawn — 지속 세션 없음)
     """
 
-    def __init__(self, session_manager: "SessionManager", org_id: str) -> None:
+    def __init__(
+        self,
+        session_manager: "SessionManager",
+        org_id: str,
+        engine: str = "claude-code",
+    ) -> None:
         self._sm = session_manager
         self._org_id = org_id
-        self._warm: str | None = None   # pre-warmed session_id
+        self._engine = engine
+        self._warm: str | None = None   # claude-code: pre-warmed session_id
+        self._warm_runner = None         # codex: pre-created CodexRunner instance
         self._preheating = False
 
     async def start(self) -> None:
@@ -482,9 +491,12 @@ class WarmSessionPool:
 
     async def get_warm_session(self) -> str | None:
         """
-        예열된 세션 ID 반환. 없으면 None (caller가 cold-start).
+        [claude-code 전용] 예열된 세션 ID 반환. 없으면 None (caller가 cold-start).
         반환 후 즉시 다음 예열 시작.
+        Codex 엔진에서는 항상 None 반환 (CodexRunner는 get_warm_runner() 사용).
         """
+        if self._engine != "claude-code":
+            return None
         if self._warm:
             session_id = self._warm
             self._warm = None
@@ -492,18 +504,47 @@ class WarmSessionPool:
             return session_id
         return None
 
+    def get_warm_runner(self):
+        """
+        [codex 전용] 미리 생성된 CodexRunner 반환. 없으면 None.
+        반환 후 즉시 다음 예열 시작.
+        """
+        if self._engine != "codex":
+            return None
+        if self._warm_runner is not None:
+            runner = self._warm_runner
+            self._warm_runner = None
+            asyncio.create_task(self._preheat())
+            return runner
+        return None
+
     async def _preheat(self) -> None:
         if self._preheating:
             return
         self._preheating = True
         try:
-            # ensure_session은 동기 함수 + time.sleep 포함 → 이벤트 루프 블로킹 방지
-            session_id = await asyncio.to_thread(self._sm.ensure_session, self._org_id)
-            self._warm = session_id
-            logger.debug(
-                f"[WarmPool:{self._org_id}] 세션 예열 완료: {session_id[:8] if session_id else 'N/A'}"
-            )
+            if self._engine == "codex":
+                await self._preheat_codex()
+            else:
+                await self._preheat_claude()
         except Exception as e:
             logger.warning(f"[WarmPool:{self._org_id}] 예열 실패: {e}")
         finally:
             self._preheating = False
+
+    async def _preheat_claude(self) -> None:
+        """claude-code: tmux 세션 예열."""
+        # ensure_session은 동기 함수 + time.sleep 포함 → 이벤트 루프 블로킹 방지
+        session_id = await asyncio.to_thread(self._sm.ensure_session, self._org_id)
+        self._warm = session_id
+        logger.debug(
+            f"[WarmPool:{self._org_id}] claude 세션 예열 완료: {session_id[:8] if session_id else 'N/A'}"
+        )
+
+    async def _preheat_codex(self) -> None:
+        """codex: CodexRunner 인스턴스 생성 + workdir 확보."""
+        from tools.codex_runner import CodexRunner
+        self._warm_runner = CodexRunner()
+        logger.debug(
+            f"[WarmPool:{self._org_id}] codex runner 예열 완료 (workdir={self._warm_runner.workdir})"
+        )
