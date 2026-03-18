@@ -1,6 +1,7 @@
 """실패 패턴 기록 + 재발 방지 시스템."""
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -139,3 +140,36 @@ class LessonMemory:
             what_went_wrong=row[3], how_to_prevent=row[4],
             worker=row[5], created_at=row[6], resolved=bool(row[7])
         )
+
+    # ------------------------------------------------------------------
+    # Async API — wrappers around sync helpers via run_in_executor.
+    # Preferred for calling from async contexts.
+    # ------------------------------------------------------------------
+
+    async def arecord(
+        self, task_description: str, category: str,
+        what_went_wrong: str, how_to_prevent: str, worker: str = "",
+    ) -> "Lesson":
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.record(
+                task_description, category, what_went_wrong, how_to_prevent, worker
+            ),
+        )
+
+    async def aget_relevant(self, task_description: str, limit: int = 3) -> list["Lesson"]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_relevant, task_description, limit)
+
+    async def aget_recent_failures(self, days: int = 7) -> list["Lesson"]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_recent_failures, days)
+
+    async def aget_category_stats(self) -> dict[str, int]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_category_stats)
+
+    async def amark_resolved(self, lesson_id: str) -> None:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.mark_resolved, lesson_id)

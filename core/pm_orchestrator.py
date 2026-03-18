@@ -993,7 +993,22 @@ class PMOrchestrator:
                 rationale=rationale,
                 parent_metadata=parent_metadata,
             )
-            # 구조화 프롬프트 생성
+            # 구조화 프롬프트 생성 — AgentPersonaMemory 강점/약점 주입
+            _persona_ctx = ""
+            if self._apm is not None:
+                try:
+                    _loop = asyncio.get_running_loop()
+                    _stats = await _loop.run_in_executor(
+                        None, self._apm.get_stats, st.assigned_dept,
+                    )
+                    if _stats and (_stats.strengths or _stats.weaknesses):
+                        _dname = KNOWN_DEPTS.get(st.assigned_dept, st.assigned_dept)
+                        if _stats.strengths:
+                            _persona_ctx += f"\n[{_dname} 강점]: {', '.join(_stats.strengths)}"
+                        if _stats.weaknesses:
+                            _persona_ctx += f"\n[{_dname} 약점]: {', '.join(_stats.weaknesses)}"
+                except Exception as _apm_e:
+                    logger.debug(f"[PM] persona context 조회 실패 (무시): {_apm_e}")
             structured = await self._prompt_gen.generate(
                 description=st.description,
                 dept=st.assigned_dept,
@@ -1001,6 +1016,7 @@ class PMOrchestrator:
                     f"상위 목표: {task_packet.get('original_request', '')[:400]}\n"
                     f"현재 배정 목표: {task_packet.get('goal', '')[:300]}\n"
                     f"사용자 기대: {'; '.join(task_packet.get('user_expectations', [])[:4])}"
+                    f"{_persona_ctx}"
                 ).strip(),
             )
             full_description = structured.render()
@@ -1164,15 +1180,181 @@ class PMOrchestrator:
     async def _discussion_summarize(
         self, parent_id: str, results: list[dict], chat_id: int,
     ) -> None:
-        """discussion 모드 완료 시 PM이 간단한 요약만 생성. 판단/결론 없음."""
+        """discussion 모드 라운드 관리. 라운드가 남으면 핑퐁 재발행, 아니면 최종 요약."""
         perspectives = [r.get("result", "") for r in results if r.get("result")]
         if not perspectives:
             await self._db.update_pm_task_status(parent_id, "done", result="")
             return
+
+        parent = await self._db.get_pm_task(parent_id)
+        parent_meta = parent.get("metadata", {}) if parent else {}
+        max_rounds: int = int(parent_meta.get("discussion_rounds", 1))
+        current_round: int = int(parent_meta.get("discussion_current_round", 1))
+        topic: str = parent_meta.get("discussion_topic", "")
+
+        if current_round < max_rounds:
+            round_summary = await self._synthesizer.summarize_discussion(perspectives)
+            next_round = current_round + 1
+            follow_up = await self._generate_discussion_followup(topic, round_summary, next_round)
+            has_conflict = await self._detect_discussion_conflict(perspectives)
+            if has_conflict:
+                logger.info(f"[PM] discussion {parent_id} 라운드 {current_round}: 의견 충돌 감지")
+                if chat_id:
+                    await self._send(chat_id, "🔥 *의견 충돌 감지* — 다음 라운드에서 구체적 반박 요청")
+            await self._db.update_pm_task_metadata(
+                parent_id, {"discussion_current_round": next_round}
+            )
+            if chat_id:
+                await self._send(
+                    chat_id,
+                    f"💬 *라운드 {current_round} 요약*\n{round_summary or '의견 수렴 중...'}"
+                    f"\n\n➡️ 라운드 {next_round} 시작",
+                )
+            participants: list[str] = parent_meta.get("discussion_participants", [])
+            if participants:
+                await self._redispatch_discussion_round(
+                    parent_id, follow_up, participants, chat_id, next_round, max_rounds,
+                )
+            return
+
         summary = await self._synthesizer.summarize_discussion(perspectives)
         if summary and chat_id:
             await self._send(chat_id, f"💬 *토론 요약*\n{summary}")
         await self._db.update_pm_task_status(parent_id, "done", result=summary or "")
+
+    async def _generate_discussion_followup(
+        self, topic: str, round_summary: str, next_round: int,
+    ) -> str:
+        """다음 라운드 follow-up 질문 생성. LLM 실패 시 기본 문자열 반환."""
+        if self._decision_client is None:
+            return f"[라운드 {next_round}] {topic}"
+        prompt = (
+            f"토론 주제: {topic}\n"
+            f"라운드 요약: {round_summary[:300]}\n\n"
+            f"다음 라운드({next_round})를 위한 간결한 follow-up 질문을 한 문장으로 작성하세요. "
+            f"판단이나 결론 없이 탐색적 질문만 사용하세요."
+        )
+        try:
+            return await asyncio.wait_for(
+                self._decision_client.complete(prompt), timeout=20.0,
+            )
+        except Exception as _e:
+            logger.debug(f"[PM] follow-up 질문 생성 실패 (무시): {_e}")
+            return f"[라운드 {next_round}] {topic}"
+
+    async def _detect_discussion_conflict(self, perspectives: list[str]) -> bool:
+        """perspectives에서 의견 충돌 감지. LLM 우선, 실패 시 키워드 fallback."""
+        if not perspectives or len(perspectives) < 2:
+            return False
+
+        _CONFLICT_KEYWORDS = [
+            "반대", "다르다", "아니다", "하지만", "그러나", "반면",
+            "disagree", "however", "but", "contrast", "oppose",
+        ]
+
+        # LLM 판단 시도
+        if self._decision_client is not None:
+            prompt = (
+                "다음 의견들에서 명확한 의견 충돌(서로 상반된 주장)이 있는지 판단하세요.\n"
+                + "\n".join(f"[{i+1}] {p[:200]}" for i, p in enumerate(perspectives))
+                + "\n\n충돌이 있으면 'YES', 없으면 'NO'로만 답하세요."
+            )
+            try:
+                answer = await asyncio.wait_for(
+                    self._decision_client.complete(prompt), timeout=15.0,
+                )
+                return "yes" in answer.lower()
+            except Exception as _e:
+                logger.debug(f"[PM] conflict 감지 LLM 실패 (키워드 fallback): {_e}")
+
+        # 키워드 fallback
+        combined = " ".join(perspectives).lower()
+        return any(kw in combined for kw in _CONFLICT_KEYWORDS)
+
+    async def _redispatch_discussion_round(
+        self,
+        parent_id: str,
+        topic: str,
+        participants: list[str],
+        chat_id: int,
+        current_round: int,
+        max_rounds: int,
+    ) -> None:
+        """discussion 다음 라운드 서브태스크 재발행."""
+        try:
+            cfg = load_orchestration_config(force_reload=True)
+            org_map = {org.id: org for org in cfg.list_orgs()}
+        except Exception as _e:
+            logger.warning(f"[PM] discussion round {current_round} org_map 로드 실패: {_e}")
+            org_map = {}
+
+        for bot_id in participants:
+            org = org_map.get(bot_id)
+            dept_name = org.dept_name if org else bot_id
+            prompt = (
+                f"{topic}\n\n"
+                f"[자유 토론 라운드 {current_round}/{max_rounds}] 당신은 {dept_name}입니다. "
+                f"이 주제에 대해 자유롭게 의견을 나눠주세요."
+            )
+            tid = await self._next_task_id()
+            await self._db.create_pm_task(
+                task_id=tid,
+                description=prompt,
+                assigned_dept=bot_id,
+                created_by=self._org_id,
+                parent_id=parent_id,
+                metadata={
+                    "interaction_mode": "discussion",
+                    "discussion_topic": topic,
+                    "discussion_round": current_round,
+                },
+            )
+            await self._db.update_pm_task_status(tid, "assigned")
+            dept_mention = self._org_mention(bot_id)
+            try:
+                await self._send(
+                    chat_id,
+                    f"{dept_mention} [PM_TASK:{tid}|dept:{bot_id}] "
+                    f"토론 라운드 {current_round} 참여 요청: {prompt[:200]}",
+                )
+            except Exception as _e:
+                logger.warning(f"[PM] discussion round {current_round} 태스크 {tid} 알림 실패: {_e}")
+            logger.info(f"[PM] discussion 라운드 {current_round} 태스크 발송: {tid} → {bot_id}")
+
+    async def _check_stale_subtasks(
+        self, parent_id: str, stale_threshold_sec: float = 300.0,
+    ) -> list[str]:
+        """assigned 상태인 채로 threshold 이상 지난 서브태스크 ID 반환 + 경고 로그."""
+        from datetime import datetime, UTC, timedelta
+        try:
+            subtasks = await self._db.get_subtasks(parent_id)
+        except Exception as _e:
+            logger.debug(f"[PM] stale check 실패 (무시): {_e}")
+            return []
+
+        stale_ids: list[str] = []
+        cutoff = datetime.now(UTC) - timedelta(seconds=stale_threshold_sec)
+
+        for st in subtasks:
+            if st.get("status") != "assigned":
+                continue
+            updated_raw = st.get("updated_at") or st.get("created_at", "")
+            if not updated_raw:
+                continue
+            try:
+                updated = datetime.fromisoformat(updated_raw.replace("Z", "+00:00"))
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=UTC)
+                if updated < cutoff:
+                    stale_ids.append(st["id"])
+                    logger.warning(
+                        f"[PM] stale 서브태스크 감지: {st['id']} "
+                        f"(assigned {int((datetime.now(UTC) - updated).total_seconds())}초 전)"
+                    )
+            except (ValueError, TypeError):
+                pass
+
+        return stale_ids
 
     async def _synthesize_and_act(
         self, parent_task_id: str, subtasks: list[dict], chat_id: int,
@@ -1183,6 +1365,10 @@ class PMOrchestrator:
         original_request = parent["description"][:500] if parent else ""
 
         parent_meta = parent.get("metadata", {}) if parent else {}
+        # 스탈니스 체크 — assigned 상태로 오래된 서브태스크 경고
+        stale = await self._check_stale_subtasks(parent_task_id)
+        if stale:
+            logger.warning(f"[PM] _synthesize_and_act {parent_task_id}: stale 서브태스크 {stale}")
         if parent_meta.get("debate"):
             await self._debate_synthesize(parent_task_id, parent_meta, subtasks, chat_id)
             return
@@ -1615,6 +1801,7 @@ class PMOrchestrator:
         topic: str,
         dept_hints: list[str],
         chat_id: int,
+        rounds: int = 2,
     ) -> list[str]:
         """자유 토론 모드 — PM 약한 진행, 강제 결론 없음.
 
@@ -1642,7 +1829,13 @@ class PMOrchestrator:
             description=topic,
             assigned_dept=self._org_id,
             created_by=self._org_id,
-            metadata={"interaction_mode": "discussion", "discussion_topic": topic},
+            metadata={
+                "interaction_mode": "discussion",
+                "discussion_topic": topic,
+                "discussion_rounds": rounds,
+                "discussion_current_round": 1,
+                "discussion_participants": participants,
+            },
         )
 
         try:
