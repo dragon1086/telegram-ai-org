@@ -321,6 +321,18 @@ class ContextDB:
             rows = await cursor.fetchall()
             return [self._decode_pm_task_row(r) for r in rows]
 
+    async def get_active_parent_tasks(self) -> list[dict]:
+        """활성 상태의 루트(부모 없는) 태스크 목록 조회 (StalenessChecker 및 backpressure용)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM pm_tasks WHERE parent_id IS NULL "
+                "AND status IN ('running', 'assigned', 'pending') "
+                "ORDER BY created_at",
+            )
+            rows = await cursor.fetchall()
+            return [self._decode_pm_task_row(r) for r in rows]
+
     async def add_dependency(self, task_id: str, depends_on: str) -> None:
         """태스크 의존성 추가."""
         async with aiosqlite.connect(self.db_path) as db:
