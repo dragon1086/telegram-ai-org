@@ -48,6 +48,24 @@ bash scripts/start_all.sh
 | `orchestration.yaml` | 오케스트레이션 설정 |
 | `tasks/lessons.md` | 누적 운영 레슨 (반드시 읽을 것) |
 
+## 스킬 전략
+
+`skills/` 디렉토리의 프로젝트 전용 스킬을 활용한다. 전체 목록: `skills/README.md`
+
+| 스킬 | 트리거 | 용도 |
+|------|--------|------|
+| `pm-task-dispatch` | '업무배분', 'pm dispatch' | PM 태스크 배분 |
+| `pm-discussion` | '토론', 'discuss' | 다봇 토론 조율 |
+| `quality-gate` | '품질검사', 'quality gate' | 배포 전 품질 검사 |
+| `weekly-review` | '주간회의', 'weekly review' | 주간회의 자율 진행 |
+| `retro` | '회고', 'retrospective' | 스프린트 회고 |
+| `engineering-review` | '코드리뷰', 'code review' | 코드 품질 검토 |
+| `harness-audit` | '하네스 감사', 'harness audit' | 시스템 신뢰성 감사 |
+| `loop-checkpoint` | '체크포인트', 'checkpoint' | 루프 상태 저장/재개 |
+| `autonomous-skill-proxy` | '자율모드', 'autonomous mode' | 인터랙티브 스킬 자동 응답 |
+
+**핵심 원칙**: 자율 에이전트는 `AskUserQuestion`을 요구하는 스킬(brainstorming 등) 대신 비인터랙티브 대체 스킬을 사용한다.
+
 ## 개발 규칙
 
 - 변경 범위를 최소화. 타깃 이외 영역 리팩토링 금지.

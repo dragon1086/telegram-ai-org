@@ -78,6 +78,27 @@ bash scripts/start_all.sh
 
 ---
 
+## 스킬 전략
+
+`skills/` 디렉토리에 프로젝트 전용 스킬이 있다. 자율 에이전트는 상황에 맞는 스킬을 적극 활용한다.
+
+| 상황 | 사용 스킬 |
+|------|-----------|
+| 태스크 배분이 필요할 때 | `pm-task-dispatch` |
+| 여러 봇 의견 조율이 필요할 때 | `pm-discussion` |
+| 코드 병합/배포 전 | `quality-gate` |
+| 매주 금요일 | `weekly-review` |
+| 스프린트 끝날 때 | `retro` |
+| 코드 리뷰 요청 시 | `engineering-review` |
+| 시스템 점검 시 | `harness-audit` |
+| 장시간 루프 실행 시 | `loop-checkpoint` |
+
+### 자율 에이전트 스킬 실행 원칙
+- **인터랙티브 스킬 금지**: brainstorming, deep-interview 등 `AskUserQuestion`을 사용하는 스킬은 자율 모드에서 직접 호출하지 않는다.
+- **대체 스킬 사용**: 대신 `brainstorming-auto`, `pm-discussion` 등 비인터랙티브 버전을 사용한다.
+- **AUTONOMOUS_MODE 원칙**: 불확실하면 합리적 기본값으로 진행하고 로그를 남긴다. 멈추지 않는다.
+- **스킬 상세**: `skills/README.md` 참조
+
 ## 개발 규칙
 
 - 변경 범위를 최소화. 타깃 이외 영역 리팩토링 금지.
