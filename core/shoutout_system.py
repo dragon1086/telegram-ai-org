@@ -1,6 +1,7 @@
 """팀원 칭찬 기록 + 자동 MVP 선정 시스템."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 import sqlite3
@@ -174,3 +175,27 @@ class ShoutoutSystem:
             task_id=row[4],
             created_at=row[5],
         )
+
+    # ------------------------------------------------------------------
+    # Async API — wrappers around sync helpers via run_in_executor.
+    # ------------------------------------------------------------------
+
+    async def agive_shoutout(
+        self, from_agent: str, to_agent: str, reason: str, task_id: str = "",
+    ) -> "Shoutout":
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: self.give_shoutout(from_agent, to_agent, reason, task_id)
+        )
+
+    async def aget_top_recipients(self, days: int = 7) -> list[tuple[str, int]]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_top_recipients, days)
+
+    async def aweekly_mvp(self) -> str | None:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.weekly_mvp)
+
+    async def aget_received(self, agent_id: str, limit: int = 10) -> list["Shoutout"]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_received, agent_id, limit)
