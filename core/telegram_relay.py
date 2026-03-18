@@ -159,10 +159,17 @@ class TelegramRelay:
             # Decision client는 메인 실행 세션과 분리된 전용 세션 사용
             # (동일 세션 공유 시 동시 --resume 충돌로 code=1 발생)
             _decision_session_store = SessionStore(f"{org_id}_decision")
-            self._pm_decision_client = PMDecisionClient(
+            _raw_decision_client = PMDecisionClient(
                 org_id=org_id,
                 engine=self.engine,
                 session_store=_decision_session_store,
+            )
+            # LLMCostTracker로 래핑 — 비용 추적 + circuit breaker
+            from core.llm_cost_tracker import LLMCostTracker as _LLMCostTracker
+            self._pm_decision_client = _LLMCostTracker(
+                wrapped=_raw_decision_client,
+                send_func=self._send_message if hasattr(self, "_send_message") else None,
+                chat_id=self.chat_id if hasattr(self, "chat_id") else None,
             )
             self._team_builder.set_decision_client(self._pm_decision_client)
             if self._is_pm_org:
@@ -784,7 +791,8 @@ class TelegramRelay:
             "- 첫 문단에서 질문이나 불만에 바로 답한다.\n"
             "- 링크, 경로, 내부 문서 위치만 던지지 말고 핵심 내용을 먼저 설명한다.\n"
             "- 필요한 경우 무엇을 확인했고 무엇을 바꿀지 다음 조치를 분명히 적는다.\n"
-            "- 간단한 질문·확인·상태 문의는 직접 답하고 불필요한 위임을 하지 않는다.\n\n"
+            "- 간단한 질문·확인·상태 문의는 직접 답하고 불필요한 위임을 하지 않는다.\n"
+            "- 단, 코드·스크립트·예제 작성 요청 및 REST API 설계·엔드포인트 설계 요청은 반드시 @aiorg_engineering_bot에 위임한다. PM이 직접 코드/API 설계 금지.\n\n"
             f"{context_packet}"
         )
         prompt = text + replied_context

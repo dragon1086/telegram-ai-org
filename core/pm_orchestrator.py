@@ -23,8 +23,11 @@ from core.structured_prompt import StructuredPromptGenerator
 from core.pm_decision import DecisionClientProtocol
 from core.pm_identity import PMIdentity
 from core.telegram_user_guardrail import ensure_user_friendly_output, extract_local_artifact_paths
+from core.staleness_checker import StalenessChecker
 
 ENABLE_PM_ORCHESTRATOR = os.environ.get("ENABLE_PM_ORCHESTRATOR", "0") == "1"
+MAX_REWORK_RETRIES = int(os.environ.get("MAX_REWORK_RETRIES", "2"))
+MAX_CONCURRENT_PARENT_TASKS = int(os.environ.get("MAX_CONCURRENT_PARENT_TASKS", "5"))
 
 
 @dataclass
@@ -126,6 +129,12 @@ class PMOrchestrator:
             self._apm = _APM()
         except Exception as _apm_err:
             logger.debug(f"[PM] AgentPersonaMemory 초기화 실패 (무시): {_apm_err}")
+        # StalenessChecker — 백그라운드 루프로 stale 서브태스크 자동 감지
+        self._staleness_checker = StalenessChecker(context_db)
+        try:
+            self._staleness_checker.start()
+        except Exception as _sc_err:
+            logger.warning(f"[PM] StalenessChecker 시작 실패 (무시): {_sc_err}")
 
     @property
     def decision_client(self) -> DecisionClientProtocol | None:
@@ -156,7 +165,7 @@ class PMOrchestrator:
     _BASE_DEPT_KEYWORDS: dict[str, list[str]] = {
         "aiorg_product_bot": ["기획", "스펙", "요구사항", "prd", "plan"],
         "aiorg_research_bot": ["리서치", "research", "시장조사", "레퍼런스", "reference", "경쟁사", "벤치마크", "문서요약", "자료조사"],
-        "aiorg_engineering_bot": ["개발", "구현", "코딩", "코드", "api", "build", "fix", "버그"],
+        "aiorg_engineering_bot": ["개발", "구현", "코딩", "코드", "api", "build", "fix", "버그", "파이썬", "python", "예제", "스크립트", "함수", "메서드", "알고리즘", "컴프리헨션", "프로그래밍", "클래스", "모듈", "리스트", "딕셔너리"],
         "aiorg_design_bot": ["디자인", "ui", "ux", "화면", "레이아웃", "design"],
         "aiorg_growth_bot": ["성장", "마케팅", "분석", "지표", "growth", "marketing"],
         "aiorg_ops_bot": ["운영", "배포", "인프라", "모니터링", "deploy", "ops"],
@@ -311,8 +320,16 @@ class PMOrchestrator:
             if lane not in valid_lanes:
                 lane = "single_org_execution"
 
+            # 코딩/예제/API 설계 요청은 LLM이 direct_answer로 분류해도 강제 위임
+            if lane == "direct_answer" and self._has_coding_request(user_message):
+                lane = "single_org_execution"
+                if "aiorg_engineering_bot" not in dept_hints:
+                    dept_hints = ["aiorg_engineering_bot"] + dept_hints
+
             route = data.get("route", "delegate")
             if route not in {"direct_reply", "local_execution", "delegate"}:
+                route = "delegate"
+            if lane == "single_org_execution" and route == "direct_reply":
                 route = "delegate"
 
             complexity = data.get("complexity", "medium")
@@ -391,6 +408,18 @@ class PMOrchestrator:
         "토론", "찬반", "debate", "비교해봐", "vs", "의견 충돌", "두 팀의", "관점을", "비교하면",
     ]
 
+    # 코딩·예제·API 설계 요청 → 항상 engineering bot으로 강제 위임
+    _CODING_OVERRIDE_KEYWORDS: list[str] = [
+        "예제", "샘플", "코드", "스크립트", "구현해", "작성해줘", "만들어줘", "짜줘",
+        "rest api", "endpoint", "엔드포인트", "api 설계", "api 명세",
+        "함수", "메서드", "클래스", "알고리즘", "컴프리헨션",
+        "파이썬", "python", "javascript", "js ", "sql", "쿼리",
+    ]
+
+    def _has_coding_request(self, text: str) -> bool:
+        t = text.lower()
+        return any(kw in t for kw in self._CODING_OVERRIDE_KEYWORDS)
+
     _DISCUSSION_RELAY_KEYWORDS = [
         "봇들끼리", "얘기해봐", "자율 토론", "토의해봐", "봇끼리", "서로 논의",
     ]
@@ -447,6 +476,8 @@ class PMOrchestrator:
         if len(dept_hints) >= 2 or any(token in text for token in ("여러 조직", "협업", "기획하고", "디자인하고", "개발하고", "조율")):
             return "multi_org_execution"
         if any(token in text for token in ("왜", "무엇", "어떻게", "설명", "상태", "현황", "가능해", "?")):
+            if self._has_coding_request(text):
+                return "single_org_execution"
             return "direct_answer"
         return "single_org_execution"
 
@@ -572,7 +603,7 @@ class PMOrchestrator:
                 confidence=0.8,
             )
 
-        if is_question and action_hits == 0:
+        if is_question and action_hits == 0 and not self._has_coding_request(text):
             return RequestPlan(
                 lane="direct_answer",
                 route="direct_reply",
@@ -767,7 +798,7 @@ class PMOrchestrator:
         from core.agent_persona_memory import TASK_TYPE_VOCAB
         lower = user_message.lower()
         type_keywords: dict[str, list[str]] = {
-            "coding": ["코딩", "코드", "개발", "구현", "fix", "버그", "build", "테스트"],
+            "coding": ["코딩", "코드", "개발", "구현", "fix", "버그", "build", "테스트", "파이썬", "python", "예제", "스크립트", "함수", "메서드", "알고리즘", "컴프리헨션", "프로그래밍"],
             "design": ["디자인", "ui", "ux", "화면", "design", "레이아웃"],
             "research": ["리서치", "research", "조사", "분석", "벤치마크", "비교"],
             "planning": ["기획", "스펙", "prd", "plan", "요구사항", "로드맵"],
@@ -971,6 +1002,18 @@ class PMOrchestrator:
                 ),
             )
             return []
+        # Backpressure: 새 루트 태스크가 MAX_CONCURRENT_PARENT_TASKS 초과 시 거부
+        try:
+            _active = await self._db.get_active_parent_tasks()
+            _others = [p for p in _active if p["id"] != parent_task_id]
+            if len(_others) >= MAX_CONCURRENT_PARENT_TASKS:
+                await self._send(
+                    chat_id,
+                    "⚠️ 현재 처리 중인 태스크가 많습니다. 잠시 후 다시 요청해주세요.",
+                )
+                return []
+        except Exception as _bp_e:
+            logger.debug(f"[PM] backpressure check 실패 (무시): {_bp_e}")
         parent_task = await self._db.get_pm_task(parent_task_id)
         parent_metadata = parent_task.get("metadata", {}) if parent_task else {}
         parent_description = parent_task.get("description", "") if parent_task else ""
@@ -1130,7 +1173,23 @@ class PMOrchestrator:
         if task_info and task_info.get("parent_id"):
             parent_id = task_info["parent_id"]
             siblings = await self._db.get_subtasks(parent_id)
-            if all(s["status"] == "done" for s in siblings):
+            task_meta = task_info.get("metadata") or {}
+            # discussion 모드: 현재 라운드 서브태스크만 완료 체크 (이전 라운드 done 간섭 방지)
+            if task_meta.get("interaction_mode") == "discussion":
+                current_round = task_meta.get("discussion_round")
+                if current_round is not None:
+                    round_siblings = [
+                        s for s in siblings
+                        if s.get("metadata", {}).get("discussion_round") == current_round
+                    ]
+                    all_done = bool(round_siblings) and all(
+                        s["status"] == "done" for s in round_siblings
+                    )
+                else:
+                    all_done = all(s["status"] == "done" for s in siblings)
+            else:
+                all_done = all(s["status"] == "done" for s in siblings)
+            if all_done:
                 await self._synthesize_and_act(parent_id, siblings, chat_id)
             else:
                 await self._send(chat_id, await self.build_status_snapshot(parent_id))
@@ -1181,16 +1240,25 @@ class PMOrchestrator:
         self, parent_id: str, results: list[dict], chat_id: int,
     ) -> None:
         """discussion 모드 라운드 관리. 라운드가 남으면 핑퐁 재발행, 아니면 최종 요약."""
-        perspectives = [r.get("result", "") for r in results if r.get("result")]
-        if not perspectives:
-            await self._db.update_pm_task_status(parent_id, "done", result="")
-            return
-
+        # parent 먼저 조회 — current_round 기준으로 perspectives 필터링 필요
         parent = await self._db.get_pm_task(parent_id)
         parent_meta = parent.get("metadata", {}) if parent else {}
         max_rounds: int = int(parent_meta.get("discussion_rounds", 1))
         current_round: int = int(parent_meta.get("discussion_current_round", 1))
         topic: str = parent_meta.get("discussion_topic", "")
+        # 현재 라운드 서브태스크 결과만 추출 (이전 라운드 중복 제외)
+        # discussion_round가 없는 결과는 backward compat으로 포함
+        perspectives = [
+            r.get("result", "") for r in results
+            if r.get("result")
+            and (
+                r.get("metadata", {}).get("discussion_round") is None
+                or r.get("metadata", {}).get("discussion_round") == current_round
+            )
+        ]
+        if not perspectives:
+            await self._db.update_pm_task_status(parent_id, "done", result="")
+            return
 
         if current_round < max_rounds:
             round_summary = await self._synthesizer.summarize_discussion(perspectives)
@@ -1288,14 +1356,43 @@ class PMOrchestrator:
             logger.warning(f"[PM] discussion round {current_round} org_map 로드 실패: {_e}")
             org_map = {}
 
+        # 이전 라운드 발언 컨텍스트 수집 (라운드 2부터)
+        prev_round_context = ""
+        if current_round > 1:
+            try:
+                all_subtasks = await self._db.get_subtasks(parent_id)
+                prev_utterances = [
+                    f"- {KNOWN_DEPTS.get(st.get('assigned_dept', ''), st.get('assigned_dept', '?'))}: "
+                    f"{(st.get('result') or '')[:300]}"
+                    for st in all_subtasks
+                    if st.get("metadata", {}).get("discussion_round") == current_round - 1
+                    and st.get("status") == "done"
+                    and st.get("result")
+                ]
+                if prev_utterances:
+                    context_text = "\n".join(prev_utterances)
+                    if len(context_text) > 2000:
+                        context_text = context_text[:2000] + "..."
+                    prev_round_context = f"[이전 라운드 발언]\n{context_text}\n\n"
+            except Exception as _ctx_e:
+                logger.debug(f"[PM] 이전 라운드 컨텍스트 조회 실패 (무시): {_ctx_e}")
+
         for bot_id in participants:
             org = org_map.get(bot_id)
             dept_name = org.dept_name if org else bot_id
-            prompt = (
-                f"{topic}\n\n"
-                f"[자유 토론 라운드 {current_round}/{max_rounds}] 당신은 {dept_name}입니다. "
-                f"이 주제에 대해 자유롭게 의견을 나눠주세요."
-            )
+            if prev_round_context:
+                prompt = (
+                    f"{prev_round_context}"
+                    f"{topic}\n\n"
+                    f"[자유 토론 라운드 {current_round}/{max_rounds}] 당신은 {dept_name}입니다. "
+                    f"위 발언들을 참고하여, 동의/반박/보완할 점을 중심으로 의견을 나눠주세요."
+                )
+            else:
+                prompt = (
+                    f"{topic}\n\n"
+                    f"[자유 토론 라운드 {current_round}/{max_rounds}] 당신은 {dept_name}입니다. "
+                    f"이 주제에 대해 자유롭게 의견을 나눠주세요."
+                )
             tid = await self._next_task_id()
             await self._db.create_pm_task(
                 task_id=tid,
@@ -1458,31 +1555,63 @@ class PMOrchestrator:
                     parent_task_id, "done", result=report,
                 )
         elif synthesis.judgment == SynthesisJudgment.INSUFFICIENT:
-            await self._send(
-                chat_id,
-                f"⚠️ 결과 부족 — 추가 작업 배분 중...\n"
-                f"사유: {synthesis.reasoning}\n\n{user_friendly_report}\n\n현재까지의 통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
-            )
+            rework_count = int(parent_meta.get("rework_count", 0))
             if run_id:
                 try:
                     runbook.advance_phase(run_id, note="결과 부족으로 verification phase에서 추가 작업 필요")
                 except Exception as e:
                     logger.warning(f"[PM] runbook 진행 실패 ({run_id}): {e}")
-            if synthesis.follow_up_tasks:
-                follow_ups = [
-                    SubTask(
-                        description=ft["description"],
-                        assigned_dept=ft["dept"],
-                        workdir=parent_workdir,
-                    )
-                    for ft in synthesis.follow_up_tasks
-                ]
-                await self._db.update_pm_task_status(
-                    parent_task_id, "done", result=synthesis.summary,
+            if rework_count < MAX_REWORK_RETRIES:
+                # 재작업 루프: parent는 "running" 유지 (done으로 마킹하지 않음)
+                new_rework_count = rework_count + 1
+                await self._db.update_pm_task_metadata(
+                    parent_task_id, {"rework_count": new_rework_count}
                 )
-                await self.dispatch(parent_task_id, follow_ups, chat_id)
+                await self._send(
+                    chat_id,
+                    f"⚠️ 결과 부족 — 추가 작업 배분 중... (재작업 {new_rework_count}/{MAX_REWORK_RETRIES})\n"
+                    f"사유: {synthesis.reasoning}\n\n{user_friendly_report}\n\n"
+                    f"현재까지의 통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
+                )
+                if synthesis.follow_up_tasks:
+                    follow_ups = [
+                        SubTask(
+                            description=ft["description"],
+                            assigned_dept=ft["dept"],
+                            workdir=parent_workdir,
+                        )
+                        for ft in synthesis.follow_up_tasks
+                    ]
+                else:
+                    # LLM이 follow-up을 안 줬으면 완료된 서브태스크를 "보완 필요" 프롬프트로 재발행
+                    follow_ups = [
+                        SubTask(
+                            description=(
+                                f"[보완 필요] {st.get('metadata', {}).get('original_description', st.get('description', ''))}\n\n"
+                                f"이전 결과가 충분하지 않습니다. 더 구체적이고 완성도 높은 결과를 제출해주세요.\n"
+                                f"이전 결과 요약: {(st.get('result') or '')[:200]}"
+                            ),
+                            assigned_dept=st["assigned_dept"],
+                            workdir=parent_workdir,
+                        )
+                        for st in subtasks
+                        if st.get("assigned_dept") and st.get("status") == "done"
+                    ]
+                if follow_ups:
+                    # parent를 "running" 상태로 유지한 채 follow-up 서브태스크 발행
+                    await self.dispatch(parent_task_id, follow_ups, chat_id)
+                else:
+                    logger.warning(f"[PM] INSUFFICIENT retry {parent_task_id}: follow-up 없음, done 처리")
+                    await self._db.update_pm_task_status(
+                        parent_task_id, "done", result=synthesis.summary,
+                    )
             else:
-                # LLM이 follow-up을 안 줬으면 보고만
+                # 최대 재시도 횟수 도달 — 최선의 결과로 done 처리
+                await self._send(
+                    chat_id,
+                    f"⚠️ 자동 보완 한계 ({MAX_REWORK_RETRIES}회) 도달. 현재 최선의 결과를 전달합니다.\n\n"
+                    f"{user_friendly_report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
+                )
                 await self._db.update_pm_task_status(
                     parent_task_id, "done", result=synthesis.summary,
                 )
@@ -1801,7 +1930,7 @@ class PMOrchestrator:
         topic: str,
         dept_hints: list[str],
         chat_id: int,
-        rounds: int = 2,
+        rounds: int = 3,
     ) -> list[str]:
         """자유 토론 모드 — PM 약한 진행, 강제 결론 없음.
 
