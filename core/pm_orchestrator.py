@@ -1288,7 +1288,9 @@ class PMOrchestrator:
         summary = await self._synthesizer.summarize_discussion(perspectives)
         if summary and chat_id:
             await self._send(chat_id, f"💬 *토론 요약*\n{summary}")
-        await self._db.update_pm_task_status(parent_id, "done", result=summary or "")
+        # 최종 라운드 완료 → 전체 subtask 결과로 PM 통합 보고서 생성
+        # (_skip_discussion_gate=True 로 재귀 방지)
+        await self._synthesize_and_act(parent_id, results, chat_id, _skip_discussion_gate=True)
 
     async def _generate_discussion_followup(
         self, topic: str, round_summary: str, next_round: int,
@@ -1454,9 +1456,17 @@ class PMOrchestrator:
         return stale_ids
 
     async def _synthesize_and_act(
-        self, parent_task_id: str, subtasks: list[dict], chat_id: int,
+        self,
+        parent_task_id: str,
+        subtasks: list[dict],
+        chat_id: int,
+        _skip_discussion_gate: bool = False,
     ) -> None:
-        """부서 결과를 합성하고 판단에 따라 후속 조치."""
+        """부서 결과를 합성하고 판단에 따라 후속 조치.
+
+        _skip_discussion_gate=True 는 _discussion_summarize 최종 라운드에서
+        재귀 호출 없이 전체 synthesis를 수행할 때만 사용한다.
+        """
         # 원래 요청 복원
         parent = await self._db.get_pm_task(parent_task_id)
         original_request = parent["description"][:500] if parent else ""
@@ -1470,7 +1480,7 @@ class PMOrchestrator:
             await self._debate_synthesize(parent_task_id, parent_meta, subtasks, chat_id)
             return
 
-        if parent_meta.get("interaction_mode") == "discussion":
+        if parent_meta.get("interaction_mode") == "discussion" and not _skip_discussion_gate:
             await self._discussion_summarize(parent_task_id, subtasks, chat_id)
             return
 
@@ -1519,11 +1529,25 @@ class PMOrchestrator:
                         seen_paths.add(path)
                         subtask_artifact_markers += f"\n[ARTIFACT:{path}]"
 
+        # 사용자가 볼 수 있는 산출물 목록 (ARTIFACT 마커와 별도로 채팅에 표시)
+        _extra_paths = [
+            m.split("[ARTIFACT:")[1].rstrip("]")
+            for m in subtask_artifact_markers.split("\n")
+            if "[ARTIFACT:" in m
+        ]
+        _all_artifact_paths = [artifact_path] + _extra_paths
+        _artifact_names = [Path(p).name for p in _all_artifact_paths if p]
+        _artifact_list_note = (
+            f"\n\n📎 첨부 산출물 ({len(_artifact_names)}개): "
+            + ", ".join(f"`{n}`" for n in _artifact_names)
+        ) if _artifact_names else ""
+
         if synthesis.judgment == SynthesisJudgment.SUFFICIENT:
             report = user_friendly_report
             await self._send(
                 chat_id,
-                f"✅ 모든 부서 작업 완료!\n\n{report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
+                f"✅ 모든 부서 작업 완료!\n\n{report}{_artifact_list_note}\n\n"
+                f"통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
             )
             if run_id:
                 try:

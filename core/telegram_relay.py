@@ -1296,7 +1296,7 @@ class TelegramRelay:
                     f"requester org '{collab_requester}' token/chat_id 없음"
                 )
                 return
-            result_text = (task_info.get("result") or "")[:1000]
+            result_text = (task_info.get("result") or "")[:3000]
             task_desc = (task_info.get("description") or "")[:200]
             message = (
                 f"🤝 [{self.org_id}] 협업 결과 도착\n"
