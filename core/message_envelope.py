@@ -109,3 +109,48 @@ class MessageEnvelope:
         pattern = r"\[([A-Z_]+):([^\]]*)\]"
         matches = re.findall(pattern, raw_text)
         return {tag_type: value for tag_type, value in matches}
+
+
+class EnvelopeManager:
+    """DB-backed 봉투 저장/조회 (E2 — DB 경유 라우팅)."""
+
+    def __init__(self, db) -> None:
+        # db: ContextDB 인스턴스 (duck typing)
+        self._db = db
+
+    async def save(self, message_id: int, envelope: MessageEnvelope) -> None:
+        """봉투를 DB에 저장."""
+        import json
+        import aiosqlite
+        wire = envelope.to_wire()
+        metadata_json = json.dumps(wire.get("metadata", {}), ensure_ascii=False)
+        async with aiosqlite.connect(self._db.db_path) as db:
+            await db.execute(
+                """INSERT OR REPLACE INTO message_envelopes
+                   (telegram_message_id, task_id, metadata)
+                   VALUES (?, ?, ?)""",
+                (message_id, envelope.task_id, metadata_json),
+            )
+            await db.commit()
+
+    async def load(self, message_id: int) -> "MessageEnvelope | None":
+        """DB에서 봉투 조회. 없으면 None."""
+        import json
+        import aiosqlite
+        async with aiosqlite.connect(self._db.db_path) as db:
+            async with db.execute(
+                "SELECT task_id, metadata FROM message_envelopes WHERE telegram_message_id = ?",
+                (message_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+        if row is None:
+            return None
+        task_id, metadata_json = row
+        metadata = json.loads(metadata_json) if metadata_json else {}
+        return MessageEnvelope(
+            content="",
+            sender_bot="",
+            intent="",
+            task_id=task_id,
+            metadata=metadata,
+        )

@@ -77,3 +77,61 @@ def test_tc_e5_extract_legacy_tags_graceful_fallback():
     raw = "안녕하세요! 오늘 회의 어떠셨나요?"
     result = MessageEnvelope.extract_legacy_tags(raw)
     assert result == {}
+
+
+import pytest
+from core.context_db import ContextDB
+from core.message_envelope import EnvelopeManager
+
+
+@pytest.mark.asyncio
+async def test_tc_e6_envelope_manager_save_and_load(tmp_path):
+    """TC-E6: EnvelopeManager.save() 후 load() 왕복 검증."""
+    db = ContextDB(db_path=tmp_path / "test.db")
+    await db.initialize()
+    manager = EnvelopeManager(db)
+
+    envelope = MessageEnvelope.wrap(
+        content="작업 시작합니다.",
+        sender_bot="dev_bot",
+        intent="TASK_ACCEPT",
+        task_id="T-100",
+    )
+    await manager.save(100, envelope)
+    loaded = await manager.load(100)
+
+    assert loaded is not None
+    assert loaded.task_id == "T-100"
+
+
+@pytest.mark.asyncio
+async def test_tc_e7_envelope_manager_load_missing(tmp_path):
+    """TC-E7: 존재하지 않는 message_id → None 반환."""
+    db = ContextDB(db_path=tmp_path / "test.db")
+    await db.initialize()
+    manager = EnvelopeManager(db)
+
+    result = await manager.load(9999)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_tc_e8_envelope_manager_metadata_roundtrip(tmp_path):
+    """TC-E8: metadata JSON 직렬화/역직렬화 검증."""
+    db = ContextDB(db_path=tmp_path / "test.db")
+    await db.initialize()
+    manager = EnvelopeManager(db)
+
+    envelope = MessageEnvelope(
+        content="테스트",
+        sender_bot="pm_bot",
+        intent="COLLAB_REQUEST",
+        task_id="T-200",
+        metadata={"priority": "high", "dept": "engineering"},
+    )
+    await manager.save(200, envelope)
+    loaded = await manager.load(200)
+
+    assert loaded is not None
+    assert loaded.metadata["priority"] == "high"
+    assert loaded.metadata["dept"] == "engineering"
