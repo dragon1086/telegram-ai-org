@@ -1263,12 +1263,31 @@ class PMOrchestrator:
         if current_round < max_rounds:
             round_summary = await self._synthesizer.summarize_discussion(perspectives)
             next_round = current_round + 1
-            follow_up = await self._generate_discussion_followup(topic, round_summary, next_round)
-            has_conflict = await self._detect_discussion_conflict(perspectives)
+            # 충돌/합의 독립 감지 (순차 게이팅 아님)
+            has_conflict, conflict_points = await self._detect_discussion_conflict(perspectives)
+            has_consensus = await self._detect_discussion_consensus(perspectives)
+
             if has_conflict:
                 logger.info(f"[PM] discussion {parent_id} 라운드 {current_round}: 의견 충돌 감지")
                 if chat_id:
                     await self._send(chat_id, "🔥 *의견 충돌 감지* — 다음 라운드에서 구체적 반박 요청")
+
+            # 합의 도달 AND 충돌 없음 → 조기 종료 (충돌+합의 동시 = 모순 신호, 계속 진행)
+            if has_consensus and not has_conflict:
+                logger.info(f"[PM] discussion {parent_id} 라운드 {current_round}: 합의 도달 — 조기 종료")
+                if chat_id:
+                    await self._send(
+                        chat_id,
+                        f"✅ *합의 도달* — 토론 조기 종료 (라운드 {current_round}/{max_rounds})\n\n"
+                        f"💬 *최종 요약*\n{round_summary or '의견 수렴 완료'}",
+                    )
+                await self._db.update_pm_task_status(parent_id, "done", result=round_summary or "")
+                return
+
+            follow_up = await self._generate_discussion_followup(
+                topic, round_summary, next_round,
+                has_conflict=has_conflict, conflict_points=conflict_points,
+            )
             await self._db.update_pm_task_metadata(
                 parent_id, {"discussion_current_round": next_round}
             )
@@ -1294,15 +1313,24 @@ class PMOrchestrator:
 
     async def _generate_discussion_followup(
         self, topic: str, round_summary: str, next_round: int,
+        has_conflict: bool = False, conflict_points: str = "",
     ) -> str:
         """다음 라운드 follow-up 질문 생성. LLM 실패 시 기본 문자열 반환."""
         if self._decision_client is None:
+            if has_conflict and conflict_points:
+                return f"[라운드 {next_round}] {topic} (충돌 포인트: {conflict_points})"
             return f"[라운드 {next_round}] {topic}"
+        conflict_instruction = ""
+        if has_conflict and conflict_points:
+            conflict_instruction = (
+                f"\n\n다음 의견 차이를 중심으로 반박하도록 유도하세요: {conflict_points[:200]}"
+            )
         prompt = (
             f"토론 주제: {topic}\n"
             f"라운드 요약: {round_summary[:300]}\n\n"
             f"다음 라운드({next_round})를 위한 간결한 follow-up 질문을 한 문장으로 작성하세요. "
             f"판단이나 결론 없이 탐색적 질문만 사용하세요."
+            f"{conflict_instruction}"
         )
         try:
             return await asyncio.wait_for(
@@ -1310,12 +1338,18 @@ class PMOrchestrator:
             )
         except Exception as _e:
             logger.debug(f"[PM] follow-up 질문 생성 실패 (무시): {_e}")
+            if has_conflict and conflict_points:
+                return f"[라운드 {next_round}] {topic} (충돌 포인트: {conflict_points})"
             return f"[라운드 {next_round}] {topic}"
 
-    async def _detect_discussion_conflict(self, perspectives: list[str]) -> bool:
-        """perspectives에서 의견 충돌 감지. LLM 우선, 실패 시 키워드 fallback."""
+    async def _detect_discussion_conflict(self, perspectives: list[str]) -> tuple[bool, str]:
+        """perspectives에서 의견 충돌 감지. LLM 우선, 실패 시 키워드 fallback.
+
+        Returns:
+            (has_conflict, conflict_points) — conflict_points는 충돌 요약 문자열 (없으면 "").
+        """
         if not perspectives or len(perspectives) < 2:
-            return False
+            return False, ""
 
         _CONFLICT_KEYWORDS = [
             "반대", "다르다", "아니다", "하지만", "그러나", "반면",
@@ -1327,7 +1361,52 @@ class PMOrchestrator:
             prompt = (
                 "다음 의견들에서 명확한 의견 충돌(서로 상반된 주장)이 있는지 판단하세요.\n"
                 + "\n".join(f"[{i+1}] {p[:200]}" for i, p in enumerate(perspectives))
-                + "\n\n충돌이 있으면 'YES', 없으면 'NO'로만 답하세요."
+                + "\n\n충돌이 있으면 'YES: [충돌 포인트 한 줄 요약]', 없으면 'NO'로만 답하세요."
+            )
+            try:
+                answer = await asyncio.wait_for(
+                    self._decision_client.complete(prompt), timeout=15.0,
+                )
+                lower = answer.lower()
+                if lower.startswith("yes"):
+                    conflict_points = ""
+                    if ":" in answer:
+                        conflict_points = answer.split(":", 1)[1].strip()
+                    return True, conflict_points
+                return False, ""
+            except Exception as _e:
+                logger.debug(f"[PM] conflict 감지 LLM 실패 (키워드 fallback): {_e}")
+
+        # 키워드 fallback — 매칭된 키워드 주변 문맥 반환
+        combined = " ".join(perspectives).lower()
+        for kw in _CONFLICT_KEYWORDS:
+            idx = combined.find(kw)
+            if idx != -1:
+                start = max(0, idx - 30)
+                end = min(len(combined), idx + len(kw) + 60)
+                snippet = combined[start:end].strip()
+                return True, snippet
+        return False, ""
+
+    async def _detect_discussion_consensus(self, perspectives: list[str]) -> bool:
+        """perspectives에서 합의/수렴 감지. LLM 우선, 실패 시 키워드 fallback.
+
+        키워드 fallback: 명시적 합의 키워드가 있을 때만 True 반환.
+        """
+        if not perspectives or len(perspectives) < 2:
+            return False
+
+        _CONSENSUS_KEYWORDS = [
+            "동의", "합의", "agreed", "맞아요", "동의합니다",
+            "agree", "consensus", "맞습니다", "그렇습니다",
+        ]
+
+        # LLM 판단 시도
+        if self._decision_client is not None:
+            prompt = (
+                "다음 의견들이 충분히 수렴(합의)되었는지 판단하세요.\n"
+                + "\n".join(f"[{i+1}] {p[:200]}" for i, p in enumerate(perspectives))
+                + "\n\n합의가 이루어졌으면 'YES', 아직 의견 차이가 있으면 'NO'로만 답하세요."
             )
             try:
                 answer = await asyncio.wait_for(
@@ -1335,11 +1414,11 @@ class PMOrchestrator:
                 )
                 return "yes" in answer.lower()
             except Exception as _e:
-                logger.debug(f"[PM] conflict 감지 LLM 실패 (키워드 fallback): {_e}")
+                logger.debug(f"[PM] consensus 감지 LLM 실패 (키워드 fallback): {_e}")
 
-        # 키워드 fallback
+        # 키워드 fallback — 명시적 합의 키워드가 있을 때만 True
         combined = " ".join(perspectives).lower()
-        return any(kw in combined for kw in _CONFLICT_KEYWORDS)
+        return any(kw in combined for kw in _CONSENSUS_KEYWORDS)
 
     async def _redispatch_discussion_round(
         self,
@@ -2016,7 +2095,7 @@ class PMOrchestrator:
                 assigned_dept=bot_id,
                 created_by=self._org_id,
                 parent_id=parent_id,
-                metadata={"interaction_mode": "discussion", "discussion_topic": topic},
+                metadata={"interaction_mode": "discussion", "discussion_topic": topic, "discussion_round": 1},
             )
             await self._db.update_pm_task_status(tid, "assigned")
             task_ids.append(tid)
