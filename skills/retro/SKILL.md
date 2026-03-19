@@ -1,6 +1,6 @@
 ---
 name: retro
-description: "AI 조직의 스프린트/프로젝트 회고를 자율적으로 진행하는 스킬. Triggers: '회고', 'retro', 'retrospective', 'post-mortem'"
+description: "Use after completing a sprint, project, or major milestone to run a structured retrospective. Collects Start/Stop/Continue and 5-Whys from all bots. Triggers: '회고', 'retro', 'retrospective', 'post-mortem', after sprint end or project completion"
 ---
 
 # Retro (회고 스킬)

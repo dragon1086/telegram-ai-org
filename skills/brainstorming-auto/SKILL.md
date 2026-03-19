@@ -1,6 +1,6 @@
 ---
 name: brainstorming-auto
-description: "brainstorming 스킬의 자율 실행 버전. 사용자 입력 없이 컨텍스트 기반으로 설계 문서를 자동 생성한다. Triggers: 'brainstorm auto', 'auto design', '자동 설계', 'autonomous brainstorm'"
+description: "Use instead of brainstorming when running in autonomous mode with no human available to answer clarifying questions. Produces design docs without user approval gates. Triggers: 'auto design', '자동 설계', 'autonomous brainstorm', 'brainstorm without user', when brainstorming is needed in a headless/automated context"
 ---
 
 # Brainstorming Auto (자율 브레인스토밍)

@@ -1,6 +1,6 @@
 ---
 name: pm-discussion
-description: "PM이 여러 봇 사이의 토론을 조율하고 컨센서스를 이끌어내는 스킬. Triggers: 'pm discussion', 'discuss', '토론', '회의', 'debate', '논의'"
+description: "Use when multiple department bots need to debate or align on a decision, with the PM facilitating. Runs Diverge→Synthesize→Converge without human input. Triggers: 'pm discussion', '토론', 'discuss', '회의', 'debate', '논의', when bots need to reach consensus on a technical or business decision"
 ---
 
 # PM Discussion (토론 조율 스킬)

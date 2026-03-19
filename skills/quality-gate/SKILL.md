@@ -1,6 +1,6 @@
 ---
 name: quality-gate
-description: "코드 변경 전 자동 품질 검사 게이트. 테스트+린트+타입체크를 실행하고 통과 여부를 보고한다. Triggers: 'quality gate', 'quality check', '품질검사', 'QA gate', 'pre-commit check'"
+description: "Use before merging code or deploying to production. Runs ruff lint + pytest + import validation and reports PASS/WARN/FAIL. Triggers: 'quality gate', 'quality check', '품질검사', 'QA gate', 'pre-merge check', 'pre-deploy', before any git merge or deploy"
 ---
 
 # Quality Gate (품질 게이트)

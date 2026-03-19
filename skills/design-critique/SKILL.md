@@ -1,6 +1,6 @@
 ---
 name: design-critique
-description: "디자인실 봇 전용 디자인 리뷰 스킬. Triggers: 'design review', '디자인 리뷰', 'design critique', 'UX review', 'UI 검토'"
+description: "Use when reviewing UI/UX deliverables for accessibility, consistency, and usability. Checks WCAG compliance. Triggers: 'design review', '디자인 리뷰', 'design critique', 'UX review', 'UI 검토', 'accessibility check'"
 ---
 
 # Design Critique (디자인 리뷰 스킬)

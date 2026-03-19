@@ -1,6 +1,6 @@
 ---
 name: growth-analysis
-description: "성장실 봇 전용 성장 지표 분석 스킬. Triggers: 'growth analysis', '성장분석', 'metrics analysis', '지표분석', 'growth'"
+description: "Use when analyzing growth metrics, user retention, or conversion funnels. Produces data-driven recommendations. Triggers: 'growth analysis', '성장분석', 'metrics analysis', '지표분석', 'growth', 'retention', 'conversion'"
 ---
 
 # Growth Analysis (성장분석 스킬)

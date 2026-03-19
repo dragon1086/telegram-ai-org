@@ -1,6 +1,6 @@
 ---
 name: harness-audit
-description: "AI 조직 하네스의 신뢰성, 평가 준비도, 리스크 포지션을 감사하는 스킬. Triggers: 'harness audit', '하네스 감사', 'system audit', 'reliability check'"
+description: "Use to audit the overall health of the AI organization harness — bot status, skill inventory, dependencies, and doc freshness. Triggers: 'harness audit', '하네스 감사', 'system audit', 'reliability check', 'health check', weekly or when system issues are suspected"
 ---
 
 # Harness Audit (하네스 감사)
