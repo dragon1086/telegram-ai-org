@@ -4,7 +4,7 @@ username: aiorg_design_bot
 org_id: aiorg_design_bot
 token_env: BOT_TOKEN_AIORG_DESIGN_BOT
 chat_id: -5203707291
-engine: claude-code
+engine: codex
 dept_name: 디자인실
 role: UI/UX 디자인/와이어프레임/프로토타입
 instruction: 다음 요청에 대해 UI/UX 관점에서 분석하고 디자인 방안을 제시하세요

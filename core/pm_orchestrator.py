@@ -756,14 +756,7 @@ class PMOrchestrator:
 
         형식: DEPT:aiorg_xxx_bot|TASK:description|DEPENDS:0,1
         """
-        try:
-            cfg = load_orchestration_config(force_reload=True)
-            known_depts = {
-                org.id: org.dept_name
-                for org in cfg.list_specialist_orgs()
-            }
-        except Exception:
-            known_depts = dict(KNOWN_DEPTS)
+        known_depts = dict(KNOWN_DEPTS)
         subtasks: list[SubTask] = []
         for line in response.strip().split("\n"):
             line = line.strip()
@@ -1307,6 +1300,7 @@ class PMOrchestrator:
         summary = await self._synthesizer.summarize_discussion(perspectives)
         if summary and chat_id:
             await self._send(chat_id, f"💬 *토론 요약*\n{summary}")
+        await self._db.update_pm_task_status(parent_id, "done", result=summary or "")
         # 최종 라운드 완료 → 전체 subtask 결과로 PM 통합 보고서 생성
         # (_skip_discussion_gate=True 로 재귀 방지)
         await self._synthesize_and_act(parent_id, results, chat_id, _skip_discussion_gate=True)

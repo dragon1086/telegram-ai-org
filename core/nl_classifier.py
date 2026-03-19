@@ -59,5 +59,7 @@ class NLClassifier:
         if has_action:
             return ClassifyResult(Intent.TASK, 0.8, "keyword")
 
-        # 4) 나머지 -> LLM에 위임 (길이 기반 휴리스틱 제거)
-        return ClassifyResult(None, 0.0, "needs_llm")
+        # 4) 길이 기반 휴리스틱: 긴 텍스트는 태스크, 짧은 비매칭은 채팅
+        if len(text_stripped) > 15:
+            return ClassifyResult(Intent.TASK, 0.5, "heuristic")
+        return ClassifyResult(Intent.CHAT, 0.5, "heuristic")

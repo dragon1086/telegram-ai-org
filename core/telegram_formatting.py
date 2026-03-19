@@ -17,9 +17,7 @@ def split_message(text: str, max_len: int) -> list[str]:
     if len(body) <= max_len:
         return [body]
 
-    suffix_len = len(_CONTINUATION)
-    # 중간 청크는 suffix 공간을 확보해야 하므로 effective_len을 줄임
-    effective_len = max_len - suffix_len
+    effective_len = max_len
 
     def _find_breakpoint(chunk: str, limit: int) -> int:
         lower_bound = max(1, int(limit * 0.55))
@@ -38,7 +36,7 @@ def split_message(text: str, max_len: int) -> list[str]:
         if not piece:
             piece = remaining[:effective_len].rstrip()
             cut = len(piece)
-        chunks.append(piece + _CONTINUATION)
+        chunks.append(piece)
         remaining = remaining[cut:].lstrip()
     if remaining:
         chunks.append(remaining)
