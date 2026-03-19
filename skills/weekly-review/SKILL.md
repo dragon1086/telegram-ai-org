@@ -33,5 +33,21 @@ AI 조직의 주간회의를 PM이 자율적으로 진행한다.
 ### Step 4: Rocky에게 보고
 텔레그램으로 주간 요약 전송
 
+### Step 5: 로그 저장 (US-203 통합)
+주간회의 완료 즉시 결과를 JSONL 로그에 기록한다:
+
+```bash
+python skills/weekly-review/scripts/save-log.py '{"week": "YYYY-WW", "summary": "...", "highlights": [], "blockers": []}'
+```
+
+- `week`: ISO 주차 형식 (예: `2026-W12`)
+- `summary`: 이번 주 전체 요약 (200자 이내)
+- `highlights`: Top 3 성과 목록
+- `blockers`: 미해결 블로커 목록
+- 저장 경로: `skills/weekly-review/data/weekly-log.jsonl`
+- fcntl.flock으로 원자적 append — 동시 실행 안전
+
+> 이 단계는 선택이 아닌 필수다. Step 4(보고) 직후 반드시 실행한다.
+
 ## 자동 스케줄
 매주 금요일 17:00 KST 자동 실행 (스케줄러와 연동 시)

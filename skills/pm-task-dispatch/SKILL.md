@@ -49,8 +49,29 @@ UI/UX/디자인   → 디자인실 (aiorg_design_bot)
 2. 병렬 실행 가능한 부분 식별
 3. 순서대로 배분 (병렬 가능한 것은 동시 배분)
 
+## Prerequisites
+
+배분 대상이 코드 변경 또는 배포를 포함하는 경우, **quality-gate 스킬을 먼저 실행**하라.
+
+```
+적용 기준:
+- 태스크가 코드 수정/버그픽스/기능 추가인 경우
+- 배포(deploy) 또는 병합(merge)이 포함된 경우
+- 개발실 봇에 배분하기 전 반드시 quality-gate 통과 확인
+
+실행 순서:
+1. quality-gate 스킬 실행 → PASS 확인
+2. PASS 시에만 pm-task-dispatch Step 1 진행
+3. FAIL 시 → 개발실에 수정 요청 후 재검사
+```
+
+> 이유: `.claude/settings.local.json` allowlist가 PreToolUse 훅을 무력화할 수 있으므로,
+> 훅 대신 이 지침으로 quality-gate 실행을 보장한다.
+
 ## 안티패턴
 - ❌ 모든 태스크를 개발실에만 배분
 - ❌ 의존성 고려 없이 동시 배분
+- ❌ quality-gate 없이 코드 변경 배분
 - ✅ 태스크 성격에 맞는 봇 선정
 - ✅ 명확한 기대 산출물 명시
+- ✅ 코드/배포 태스크는 quality-gate 먼저

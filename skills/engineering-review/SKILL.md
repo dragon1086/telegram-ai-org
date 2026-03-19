@@ -16,6 +16,20 @@ description: "Use when the engineering bot needs to review code changes before m
 - [ ] async: 기존 async 패턴 유지하는가
 - [ ] 비밀: 하드코딩된 토큰/키 없는가
 
+## Prerequisites
+
+코드 변경이 완료된 후, **engineering-review 전에 quality-gate 스킬을 먼저 실행**하라.
+
+```
+실행 순서:
+1. quality-gate 스킬 실행 (린트 + 테스트 + import 검증)
+2. quality-gate PASS → engineering-review 체크리스트 진행
+3. quality-gate FAIL → 수정 후 재실행 (리뷰 진행 불가)
+```
+
+> quality-gate는 객관적 자동 검사, engineering-review는 주관적 코드 품질 판단.
+> 두 단계를 분리하여 리뷰어가 통과 불가 코드를 검토하는 낭비를 방지한다.
+
 ## 자동 실행
 ```bash
 .venv/bin/ruff check .
