@@ -58,11 +58,18 @@ def test_tc_e3_roundtrip_from_wire():
 
 
 def test_tc_e4_extract_legacy_tags_parses_collab_request():
-    """TC-E4: 기존 [TYPE:value] 태그 파싱 성공."""
+    """TC-E4: 기존 [TYPE:value] 태그 파싱 성공 (다중 태그 지원, type→value dict 형식)."""
     raw = "도움 요청드립니다 [COLLAB_REQUEST:bot_a] 확인 부탁해요"
     result = MessageEnvelope.extract_legacy_tags(raw)
-    assert result["type"] == "COLLAB_REQUEST"
-    assert result["value"] == "bot_a"
+    assert result["COLLAB_REQUEST"] == "bot_a"
+
+
+def test_tc_e4b_extract_legacy_tags_multiple():
+    """TC-E4b: 다중 태그 파싱 성공."""
+    raw = "[COLLAB_REQUEST:bot_a] [TEAM:dev]"
+    result = MessageEnvelope.extract_legacy_tags(raw)
+    assert result["COLLAB_REQUEST"] == "bot_a"
+    assert result["TEAM"] == "dev"
 
 
 def test_tc_e5_extract_legacy_tags_graceful_fallback():

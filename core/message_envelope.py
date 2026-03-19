@@ -101,13 +101,11 @@ class MessageEnvelope:
 
     @staticmethod
     def extract_legacy_tags(raw_text: str) -> dict[str, str]:
-        """기존 [TYPE:value] 형식 태그를 파싱한다.
+        """기존 [TYPE:value] 형식 태그를 파싱한다 (다중 태그 지원).
 
-        예: '[COLLAB_REQUEST:bot_a]' → {'type': 'COLLAB_REQUEST', 'value': 'bot_a'}
+        예: '[COLLAB_REQUEST:bot_a] [TEAM:dev]' → {'COLLAB_REQUEST': 'bot_a', 'TEAM': 'dev'}
         태그가 없으면 {} 반환 (graceful fallback).
         """
         pattern = r"\[([A-Z_]+):([^\]]*)\]"
-        match = re.search(pattern, raw_text)
-        if match:
-            return {"type": match.group(1), "value": match.group(2)}
-        return {}
+        matches = re.findall(pattern, raw_text)
+        return {tag_type: value for tag_type, value in matches}

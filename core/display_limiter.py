@@ -8,11 +8,14 @@ feature flag: USE_DISPLAY_LIMITER 환경변수 (기본: true)
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from dataclasses import dataclass
 from enum import Enum
 
 from loguru import logger
+
+_METADATA_TAG_RE = re.compile(r'\[[A-Z_]+:[^\]]*\]')
 
 
 class MessagePriority(Enum):
@@ -88,6 +91,7 @@ class DisplayLimiter:
         text: str,
         reply_to_message_id: int | None = None,
     ) -> object:
+        text = _METADATA_TAG_RE.sub('', text).strip()
         kwargs = {"chat_id": chat_id, "text": text}
         if reply_to_message_id is not None:
             kwargs["reply_to_message_id"] = reply_to_message_id
