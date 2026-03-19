@@ -1,0 +1,12 @@
+{
+  "autonomous_mode": false,
+  "default_responses": {
+    "brainstorming_purpose": "현재 태스크 컨텍스트에서 자동 추론",
+    "brainstorming_constraints": "기존 아키텍처 유지, 변경 최소화",
+    "brainstorming_success_criteria": "태스크 요구사항 충족 + 테스트 통과",
+    "design_approval": "auto_approve_in_autonomous_mode"
+  },
+  "proxy_bot": "aiorg_pm_bot",
+  "max_retry_without_input": 3,
+  "fallback_strategy": "use_reasonable_defaults"
+}

@@ -1,6 +1,6 @@
 ---
 name: pm-task-dispatch
-description: "PM이 태스크를 적합한 조직 봇에 체계적으로 배분하는 스킬. Triggers: 'pm dispatch', 'task assign', '업무배분', '태스크 배분', 'assign task', 'dispatch'"
+description: "Use when the PM bot receives a task and needs to route it to the right department bot. Analyzes task type and assigns to engineering/design/growth/ops/research/product. Triggers: 'pm dispatch', '업무배분', 'assign task', '태스크 배분', 'route task', when a new request needs to be delegated to a specialist bot"
 ---
 
 # PM Task Dispatch (업무배분 스킬)

@@ -1,6 +1,6 @@
 ---
 name: loop-checkpoint
-description: "장시간 자율 루프 실행 중 상태를 저장하고 재개 가능하게 하는 체크포인트 스킬. Triggers: 'checkpoint', 'loop checkpoint', '체크포인트', 'save state', 'resume'"
+description: "Use during long-running autonomous loops to save progress state so execution can resume after interruption. Triggers: 'checkpoint', 'loop checkpoint', '체크포인트', 'save state', 'resume', automatically every 30 minutes during ralph/ultrawork loops"
 ---
 
 # Loop Checkpoint (루프 체크포인트)

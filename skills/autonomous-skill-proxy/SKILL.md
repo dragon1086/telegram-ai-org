@@ -1,6 +1,6 @@
 ---
 name: autonomous-skill-proxy
-description: "자율 에이전트가 인터랙티브 스킬(brainstorming 등)을 만났을 때 사용자 입력 없이 컨텍스트 기반으로 자동 응답하는 프록시 패턴. Triggers: 'autonomous mode', 'skip interactive', '자율모드', 'non-interactive skill'"
+description: "Use when a coding agent running autonomously (--dangerously-skip-permissions) encounters an interactive skill that requires user input and would block execution. Triggers: '자율모드', 'autonomous mode', 'skip interactive', 'non-interactive skill', when AUTONOMOUS_MODE=true is set"
 ---
 
 # Autonomous Skill Proxy (자율 스킬 프록시)

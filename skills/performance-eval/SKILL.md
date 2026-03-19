@@ -1,6 +1,6 @@
 ---
 name: performance-eval
-description: "AI 조직 봇들의 성과를 평가하고 개선 방향을 제시하는 스킬. Triggers: '성과평가', '평가', 'performance eval', 'evaluation', '봇 평가'"
+description: "Use to evaluate how well each department bot is performing over a period. Scores bots on completion rate, quality, speed, collaboration, and learning. Triggers: '성과평가', '평가', 'performance eval', 'evaluation', '봇 평가', 'bot performance'"
 ---
 
 # Performance Eval (성과평가 스킬)

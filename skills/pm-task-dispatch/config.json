@@ -1,0 +1,25 @@
+{
+  "chat_id": "-5203707291",
+  "default_timeout_hours": 24,
+  "routing_matrix": {
+    "코드": "aiorg_engineering_bot",
+    "API": "aiorg_engineering_bot",
+    "버그": "aiorg_engineering_bot",
+    "디자인": "aiorg_design_bot",
+    "UI": "aiorg_design_bot",
+    "마케팅": "aiorg_growth_bot",
+    "지표": "aiorg_growth_bot",
+    "운영": "aiorg_ops_bot",
+    "인프라": "aiorg_ops_bot",
+    "조사": "aiorg_research_bot",
+    "분석": "aiorg_research_bot",
+    "기획": "aiorg_product_bot",
+    "PRD": "aiorg_product_bot"
+  },
+  "urgency_keywords": {
+    "즉시": "urgent",
+    "긴급": "urgent",
+    "오늘": "today",
+    "이번주": "this_week"
+  }
+}

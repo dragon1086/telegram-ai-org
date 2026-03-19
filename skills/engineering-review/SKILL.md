@@ -1,6 +1,6 @@
 ---
 name: engineering-review
-description: "개발실 봇 전용 코드리뷰 스킬. 변경사항을 체계적으로 검토한다. Triggers: 'code review', '코드리뷰', 'review code', 'code check'"
+description: "Use when the engineering bot needs to review code changes before merging. Runs lint, tests, and a structured checklist. Triggers: 'code review', '코드리뷰', 'review code', 'code check', 'PR review', before merging any code change"
 ---
 
 # Engineering Review (코드리뷰 스킬)
