@@ -180,6 +180,13 @@ class ContextDB:
                     PRIMARY KEY (bot_id, week)
                 );
                 CREATE INDEX IF NOT EXISTS idx_bot_perf_week ON bot_performance(week);
+
+                CREATE TABLE IF NOT EXISTS message_envelopes (
+                    telegram_message_id INTEGER PRIMARY KEY,
+                    task_id TEXT,
+                    metadata TEXT DEFAULT '{}',
+                    created_at TEXT DEFAULT (datetime('now'))
+                );
             """)
             await db.commit()
 
