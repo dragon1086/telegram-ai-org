@@ -173,6 +173,7 @@ async def test_discussion_summarize_final_round() -> None:
 
     orc._synthesizer = MagicMock()
     orc._synthesizer.summarize_discussion = AsyncMock(return_value="최종 토론 요약")
+    orc._synthesize_and_act = AsyncMock()
 
     results = [
         {"result": "bot_a 2라운드 의견", "assigned_dept": "bot_a"},

@@ -107,7 +107,7 @@ async def test_direct_mode_heuristic(orchestrator):
 
 @pytest.mark.asyncio
 async def test_delegate_mode_heuristic(orchestrator):
-    plan = await orchestrator.plan_request("여러 조직이 협업해서 기획하고 개발하고 마케팅해줘")
+    plan = await orchestrator.plan_request("여러 조직이 기획하고 개발하고 마케팅해줘")
     assert plan.interaction_mode == "delegate"
 
 

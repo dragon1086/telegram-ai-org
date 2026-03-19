@@ -118,6 +118,7 @@ async def test_discussion_summarize_sends_and_marks_done() -> None:
     orc = _make_orchestrator()
     orc._synthesizer = MagicMock()
     orc._synthesizer.summarize_discussion = AsyncMock(return_value="토론 요약 내용")
+    orc._synthesize_and_act = AsyncMock()
 
     results = [{"result": "의견1"}, {"result": "의견2"}]
     await orc._discussion_summarize("parent-123", results, chat_id=456)
