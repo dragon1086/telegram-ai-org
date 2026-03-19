@@ -201,6 +201,113 @@ class TestWeeklyReviewSkill:
         assert gotchas.exists(), "gotchas.md 없음"
 
 
+class TestUS201GotchasFiles:
+    """US-201: 9개 스킬에 gotchas.md가 추가되었는지 확인"""
+
+    ALL_SKILLS = [
+        "brainstorming-auto", "design-critique", "engineering-review",
+        "growth-analysis", "harness-audit", "loop-checkpoint",
+        "performance-eval", "pm-discussion", "retro",
+        # 기존 gotchas.md 보유 스킬
+        "quality-gate", "pm-task-dispatch", "autonomous-skill-proxy", "weekly-review"
+    ]
+
+    @pytest.fixture
+    def skills_dir(self):
+        return Path(__file__).parent.parent / "skills"
+
+    def test_all_skills_have_gotchas(self, skills_dir):
+        """13개 스킬 모두 gotchas.md 존재 확인"""
+        missing = []
+        for skill_name in self.ALL_SKILLS:
+            gotchas_file = skills_dir / skill_name / "gotchas.md"
+            if not gotchas_file.exists():
+                missing.append(skill_name)
+        assert not missing, f"gotchas.md 없는 스킬: {missing}"
+
+    def test_gotchas_have_minimum_content(self, skills_dir):
+        """각 gotchas.md에 최소 3개 gotcha 포함 확인 (## 헤딩 기준)"""
+        for skill_name in self.ALL_SKILLS:
+            gotchas_file = skills_dir / skill_name / "gotchas.md"
+            if gotchas_file.exists():
+                content = gotchas_file.read_text()
+                # "## Gotcha" 형식 또는 "## 1." 같은 번호 헤딩 모두 허용
+                gotcha_count = content.count("## Gotcha")
+                if gotcha_count == 0:
+                    # 번호 기반 헤딩 ("## 1.", "## 2." 등) 카운트
+                    import re
+                    gotcha_count = len(re.findall(r"^## \d+[\.:]", content, re.MULTILINE))
+                assert gotcha_count >= 3, \
+                    f"{skill_name}/gotchas.md에 Gotcha가 {gotcha_count}개뿐 (최소 3개 필요)"
+
+
+class TestUS204SaveLogScript:
+    """US-204: weekly-review save-log.py 존재 및 기능 확인"""
+
+    @pytest.fixture
+    def skills_dir(self):
+        return Path(__file__).parent.parent / "skills"
+
+    def test_save_log_script_exists(self, skills_dir):
+        """save-log.py 파일 존재 확인"""
+        script = skills_dir / "weekly-review" / "scripts" / "save-log.py"
+        assert script.exists(), "skills/weekly-review/scripts/save-log.py 없음"
+
+    def test_save_log_is_executable(self, skills_dir):
+        """save-log.py 실행 권한 확인"""
+        import os
+        script = skills_dir / "weekly-review" / "scripts" / "save-log.py"
+        if script.exists():
+            assert os.access(script, os.X_OK), "save-log.py가 실행 가능하지 않음"
+
+    def test_save_log_uses_flock(self, skills_dir):
+        """save-log.py에 fcntl.flock 사용 확인"""
+        script = skills_dir / "weekly-review" / "scripts" / "save-log.py"
+        if script.exists():
+            content = script.read_text()
+            assert "flock" in content, "save-log.py에 flock 사용 없음 (race condition 위험)"
+
+    def test_save_log_creates_jsonl(self, skills_dir, tmp_path):
+        """save-log.py 실행 시 JSONL 파일 생성 확인"""
+        import subprocess, json
+        script = skills_dir / "weekly-review" / "scripts" / "save-log.py"
+        if not script.exists():
+            return
+
+        test_data = json.dumps({"week": "2026-W99", "test": True})
+        result = subprocess.run(
+            [".venv/bin/python", str(script), test_data],
+            cwd=skills_dir.parent,  # 프로젝트 루트
+            capture_output=True,
+            text=True
+        )
+        assert result.returncode == 0, f"save-log.py 실행 실패: {result.stderr}"
+        assert "OK" in result.stdout or "appended" in result.stdout.lower(), \
+            f"예상 출력 없음: {result.stdout}"
+
+
+class TestUS202QualityGateIntegration:
+    """US-202: quality-gate 지침 강화 확인"""
+
+    @pytest.fixture
+    def skills_dir(self):
+        return Path(__file__).parent.parent / "skills"
+
+    def test_quality_gate_skill_has_when_to_run_first(self, skills_dir):
+        """quality-gate/SKILL.md에 'When to Run First' 섹션 존재"""
+        skill_md = skills_dir / "quality-gate" / "SKILL.md"
+        content = skill_md.read_text()
+        assert "When to Run First" in content or "Prerequisites" in content, \
+            "quality-gate/SKILL.md에 실행 시점 가이드 없음"
+
+    def test_pm_task_dispatch_references_quality_gate(self, skills_dir):
+        """pm-task-dispatch/SKILL.md에 quality-gate 선행 실행 언급"""
+        skill_md = skills_dir / "pm-task-dispatch" / "SKILL.md"
+        content = skill_md.read_text()
+        assert "quality-gate" in content.lower(), \
+            "pm-task-dispatch/SKILL.md에 quality-gate 언급 없음"
+
+
 class TestEnvExample:
     """.env.example 검증."""
 
