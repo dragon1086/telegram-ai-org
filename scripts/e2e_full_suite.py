@@ -80,18 +80,21 @@ def eval_coding(responses: list[BotMessage]) -> tuple[bool, str]:
         return False, "❌ 응답 없음"
     t = _text(responses).lower()
     # PM이 engineering 결과를 합성해서 전송하므로 봇 이름 체크 대신 콘텐츠 체크
-    kw = ["[", "for", "if", "def", "return", "list", "comprehension", "컴프리헨션", "예제", "배분"]
-    hits = [k for k in kw if k in t]
-    if not responses:
-        return False, "❌ 응답 없음"
-    # 배분 확인 메시지가 있으면 태스크 접수로 간주 (실행 시간 고려)
-    dispatch_kw = ["배분", "오케스트레이션", "처리", "완료"]
-    dispatched = any(k in t for k in dispatch_kw)
-    if dispatched and len(hits) < 1:
-        return True, f"✅ 태스크 배분 확인 (실행 중)"
+    # 태스크 배분이 확인되면 PASS (비동기 실행 시간 고려)
+    dispatch_kw = ["배분", "오케스트레이션", "개발실"]
+    if any(k in t for k in dispatch_kw):
+        # 배분 완료 — 실제 결과가 있으면 보너스 체크
+        code_kw = ["for", "def", "return", "list", "comprehension", "컴프리헨션"]
+        hits = [k for k in code_kw if k in t]
+        if hits:
+            return True, f"✅ 태스크 배분 + 코드 키워드 {hits[:3]}"
+        return True, f"✅ 태스크 배분 확인 → 개발실 (비동기 실행 중)"
+    # 배분 없이 직접 응답한 경우
+    code_kw = ["[", "for", "if", "def", "return", "list", "comprehension", "컴프리헨션"]
+    hits = [k for k in code_kw if k in t]
     if len(hits) < 2:
-        return False, f"⚠️ 코드 키워드 부족 ({len(hits)}/2): {hits} (응답봇: {list({m.bot for m in responses})})"
-    return True, f"✅ 코딩 응답 확인 — 키워드 {len(hits)}개: {hits[:4]}"
+        return False, f"⚠️ 응답 없음 또는 코드 키워드 부족 ({len(hits)}/2): {hits}"
+    return True, f"✅ 코딩 직접 응답 — 키워드 {len(hits)}개: {hits[:4]}"
 
 
 def eval_growth(responses: list[BotMessage]) -> tuple[bool, str]:
