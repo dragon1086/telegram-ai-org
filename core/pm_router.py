@@ -9,8 +9,7 @@ Returns structured PMRoute dataclass consumed by telegram_relay.py.
 from __future__ import annotations
 
 import json
-import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal, Any
 
 from loguru import logger

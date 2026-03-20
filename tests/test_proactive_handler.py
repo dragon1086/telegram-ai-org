@@ -69,7 +69,8 @@ async def test_event_suppressed_outside_active_hours():
 
 def test_active_hours_yaml_parsed():
     """bots/*.yaml active_hours 파싱 확인"""
-    import yaml, os
+    import yaml
+    import os
     bot_yamls = [f for f in os.listdir("bots") if f.endswith(".yaml")]
     assert len(bot_yamls) > 0
     for fname in bot_yamls:

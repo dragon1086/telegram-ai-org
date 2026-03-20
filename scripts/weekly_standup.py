@@ -176,13 +176,13 @@ def build_standup_message(tasks: list[dict], hist: list[dict]) -> tuple[str, str
 
     lines_tg += [
         "",
-        f"🏆 *이번 주 MVP*",
+        "🏆 *이번 주 MVP*",
         mvp_text,
         "",
-        f"💡 *반복 실패 패턴*",
+        "💡 *반복 실패 패턴*",
         lesson_text,
         "",
-        f"🎯 *이번 주 목표*",
+        "🎯 *이번 주 목표*",
         *plan_lines_tg,
         "",
         "✅ 이번 주도 화이팅! 🚀",

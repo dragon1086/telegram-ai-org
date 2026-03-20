@@ -5,8 +5,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import sqlite3
-import uuid
-import json
 from collections import Counter
 
 from core.lesson_memory import LessonMemory

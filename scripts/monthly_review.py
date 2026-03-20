@@ -152,7 +152,7 @@ def update_roadmap(suggestion: str, month_label: str) -> None:
     else:
         content = f"# ROADMAP\n\n{suggestion}"
     roadmap_path.write_text(content, encoding="utf-8")
-    print(f"[monthly] ROADMAP.md 업데이트 완료")
+    print("[monthly] ROADMAP.md 업데이트 완료")
 
 
 # ── 메시지 생성 ───────────────────────────────────────────────────────────

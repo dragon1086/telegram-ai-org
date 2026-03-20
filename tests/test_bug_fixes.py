@@ -1,12 +1,8 @@
 """Phase1 bug fix verification tests."""
 from __future__ import annotations
 
-import asyncio
-import json
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -22,7 +18,7 @@ def _write_agent(directory: Path, name: str, description: str) -> None:
 def test_dynamic_team_builder_count_string(tmp_path: Path):
     """count='two' 같은 비정수 값이 들어와도 크래시 없이 fallback(1)되는지 확인."""
     from core.agent_catalog import AgentCatalog
-    from core.dynamic_team_builder import DynamicTeamBuilder, ExecutionMode
+    from core.dynamic_team_builder import DynamicTeamBuilder
 
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir()

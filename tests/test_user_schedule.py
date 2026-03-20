@@ -1,8 +1,6 @@
 """자연어 스케줄 등록 인터페이스 테스트."""
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 import sqlite3
 
 import pytest
@@ -153,10 +151,8 @@ def test_schedule_store_wal(store):
 
 # ── OrgScheduler 동적 job 테스트 ──────────────────────────────────────────
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from core.scheduler import OrgScheduler
-from core.user_schedule_store import UserSchedule
 
 
 @pytest.fixture

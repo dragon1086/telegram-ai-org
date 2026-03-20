@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Callable, Awaitable, Any
+from typing import Callable, Awaitable
 
 from loguru import logger
 

@@ -23,7 +23,6 @@ def main() -> None:
     # 설정 로드
     config_file = Path.home() / ".ai-org" / "config.yaml"
     if config_file.exists():
-        import re
         text = config_file.read_text(encoding="utf-8")
         for line in text.splitlines():
             line = line.strip()

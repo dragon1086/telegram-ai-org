@@ -11,7 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.context_db import ContextDB
-from core.verification import CrossModelVerifier, VerificationResult, BOT_ENGINE_MAP
+from core.verification import CrossModelVerifier, BOT_ENGINE_MAP
 
 
 @pytest.fixture

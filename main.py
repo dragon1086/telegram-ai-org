@@ -4,7 +4,6 @@
 아키텍처: Python봇은 얇은 relay, 진짜 두뇌는 tmux 상주 Claude Code.
 진입점: TelegramRelay 사용 (core/pm_bot.py의 PMBot는 DEPRECATED)
 """
-import logging
 import os
 import time
 from pathlib import Path

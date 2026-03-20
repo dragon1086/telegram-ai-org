@@ -11,7 +11,6 @@ import argparse
 import asyncio
 import json
 import sys
-import os
 from datetime import datetime, UTC
 from pathlib import Path
 

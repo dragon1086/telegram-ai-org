@@ -1,13 +1,10 @@
 """P2PMessenger + SharedMemory 단위 테스트."""
 from __future__ import annotations
 
-import asyncio
-import json
 import tempfile
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 
 from core.message_bus import MessageBus, EventType
 from core.p2p_messenger import P2PMessage, P2PMessenger

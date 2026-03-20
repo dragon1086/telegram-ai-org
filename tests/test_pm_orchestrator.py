@@ -15,7 +15,7 @@ from core.context_db import ContextDB
 from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
 from core.memory_manager import MemoryManager
-from core.pm_orchestrator import PMOrchestrator, SubTask, KNOWN_DEPTS
+from core.pm_orchestrator import PMOrchestrator, SubTask
 
 
 @pytest.fixture
