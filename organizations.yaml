@@ -37,7 +37,9 @@ organizations:
   team:
     preferred_agents: []
     avoid_agents: []
-    preferred_skills: []
+    preferred_skills:
+    - design-critique
+    - brainstorming-auto
     max_team_size: 3
     guidance: 접근성(WCAG) 준수. 디자인 시스템 일관성 유지.
   collaboration:
@@ -80,7 +82,9 @@ organizations:
   team:
     preferred_agents: []
     avoid_agents: []
-    preferred_skills: []
+    preferred_skills:
+    - engineering-review
+    - quality-gate
     max_team_size: 3
     guidance: 항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호.
   collaboration:
@@ -122,7 +126,8 @@ organizations:
   team:
     preferred_agents: []
     avoid_agents: []
-    preferred_skills: []
+    preferred_skills:
+    - growth-analysis
     max_team_size: 3
     guidance: 데이터 기반 의사결정. 지표 변화 추적 필수.
   collaboration:
@@ -165,7 +170,8 @@ organizations:
   team:
     preferred_agents: []
     avoid_agents: []
-    preferred_skills: []
+    preferred_skills:
+    - harness-audit
     max_team_size: 3
     guidance: 배포 전 항상 테스트. 인프라 변경은 단계적으로.
   collaboration:
@@ -207,7 +213,12 @@ organizations:
   team:
     preferred_agents: []
     avoid_agents: []
-    preferred_skills: []
+    preferred_skills:
+    - pm-task-dispatch
+    - pm-discussion
+    - weekly-review
+    - retro
+    - performance-eval
     max_team_size: 5
     guidance: 태스크 분해 후 적절한 부서에 위임. 크로스-팀 협업 우선.
   collaboration:
@@ -249,7 +260,8 @@ organizations:
   team:
     preferred_agents: []
     avoid_agents: []
-    preferred_skills: []
+    preferred_skills:
+    - brainstorming-auto
     max_team_size: 3
     guidance: 요구사항 명확화 우선. PRD 작성 후 구현 위임.
   collaboration:
@@ -295,6 +307,7 @@ organizations:
     max_team_size: 3
     preferred_skills: []
     guidance: 조사 범위, 출처, 비교표, 핵심 인사이트를 반드시 남긴다.
+    # research_bot은 범용이라 특정 스킬 없음 — 태스크별 동적 매칭
   collaboration:
     peers: []
     announce_plan: true
