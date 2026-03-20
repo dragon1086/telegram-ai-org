@@ -34,6 +34,8 @@ ORCHESTRATOR_ONLY_COMMANDS = [
     BotCommand("resume_schedule", "스케줄 재개 (예: /resume_schedule 2)"),
 ]
 
+# /org set-tone 은 /org 서브커맨드이므로 별도 BotCommand 없이 /org 도움말에 포함됨
+
 
 def get_bot_commands(kind: str) -> list[BotCommand]:
     if kind == "orchestrator":
