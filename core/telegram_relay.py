@@ -768,6 +768,89 @@ class TelegramRelay:
         except Exception:
             return
 
+    async def _handle_set_bot_tone_nl(self, update: Update, text: str) -> None:
+        """NL 말투/성격 설정 요청 처리. 봇 이름과 말투 지시를 파싱해 direction 업데이트."""
+        if update.message is None:
+            return
+
+        # 알려진 봇 이름(dept_name) → org_id 매핑 구성
+        try:
+            cfg = load_orchestration_config(force_reload=True)
+            name_to_id: dict[str, str] = {
+                org.dept_name: org.id for org in cfg.list_specialist_orgs()
+            }
+        except Exception as _e:
+            logger.warning(f"[set_bot_tone] org 목록 로드 실패: {_e}")
+            name_to_id = {}
+
+        # 텍스트에서 봇 이름 탐색
+        matched_org_id: str | None = None
+        matched_dept: str | None = None
+        for dept_name, org_id in name_to_id.items():
+            if dept_name in text:
+                matched_org_id = org_id
+                matched_dept = dept_name
+                break
+
+        if matched_org_id is None:
+            await update.message.reply_text(
+                "봇 이름을 찾지 못했어요.\n"
+                "예) '성장실 봇 말투를 데이터 지향적으로 바꿔줘'\n"
+                "또는 `/org set-tone <봇이름> <말투지시>` 명령어를 사용하세요.",
+                parse_mode="Markdown",
+            )
+            return
+
+        # 말투 지시 추출: 봇 이름 + 말투 키워드 제거 후 나머지
+        import re as _re
+        tone_kws = [
+            "말투를", "말투로", "말투 바꿔줘", "말투 바꿔", "말투 변경해줘", "말투 변경",
+            "말투 설정해줘", "말투 설정", "말투", "톤 설정해줘", "톤 설정", "톤을", "톤으로",
+            "성격 바꿔줘", "성격 바꿔", "성격 변경해줘", "성격 변경", "성격을", "성격으로",
+            "어투를", "어투로", "어투", "봇", "바꿔줘", "변경해줘", "설정해줘",
+        ]
+        tone_text = text
+        for kw in [matched_dept] + tone_kws:
+            tone_text = tone_text.replace(kw, " ")
+        tone_instruction = _re.sub(r"\s+", " ", tone_text).strip()
+
+        if not tone_instruction:
+            await update.message.reply_text(
+                f"{matched_dept} 봇의 말투 지시를 입력해주세요.\n"
+                "예) '성장실 봇 말투를 데이터 지향적이고 직설적으로 바꿔줘'",
+            )
+            return
+
+        # direction에 말투 지시 주입 (기존 direction 보존 + 말투 섹션 추가/교체)
+        target_identity = PMIdentity(matched_org_id)
+        current_direction = target_identity._data.get("direction", "") or ""
+        # 기존 말투 섹션이 있으면 교체, 없으면 추가
+        tone_marker = "[말투/성격]"
+        if tone_marker in current_direction:
+            new_direction = _re.sub(
+                r"\[말투/성격\].*?(\n|$)", f"{tone_marker} {tone_instruction}\n", current_direction
+            ).strip()
+        else:
+            new_direction = (
+                (current_direction + f"\n{tone_marker} {tone_instruction}").strip()
+                if current_direction
+                else f"{tone_marker} {tone_instruction}"
+            )
+
+        target_identity.update({"direction": new_direction})
+        try:
+            _sync_identity_to_canonical_config(matched_org_id, target_identity._data)
+            _refresh_legacy_bot_configs()
+        except Exception as _sync_err:
+            logger.warning(f"[set_bot_tone] canonical sync 실패: {_sync_err}")
+
+        await update.message.reply_text(
+            f"✅ *{matched_dept}* 봇 말투 업데이트!\n\n"
+            f"말투 지시: `{tone_instruction}`\n\n"
+            f"현재 방향성:\n{new_direction}",
+            parse_mode="Markdown",
+        )
+
     async def _reply_with_pm_chat(
         self,
         update: Update,
@@ -1481,6 +1564,13 @@ class TelegramRelay:
         else:
             is_greeting = False
             is_task = len(text) > 5
+
+        # 1-A. 말투/성격 설정 의도 → PM 봇만 처리
+        if USE_NL_CLASSIFIER and _intent == Intent.SET_BOT_TONE and self._is_pm_org:
+            if not self.claim_manager.try_claim(message_id, self.org_id):
+                return
+            await self._handle_set_bot_tone_nl(update, text)
+            return
 
         # 2. 인사 → default PM만 claim 후 응답
         if is_greeting:
@@ -3450,6 +3540,69 @@ class TelegramRelay:
                 await update.message.reply_text(msg, parse_mode="Markdown")
             return
 
+        # /org set-tone <봇이름> <말투지시> — 봇 말투/성격 설정
+        if arg.lower().startswith("set-tone") or arg.lower().startswith("set_tone"):
+            tone_parts = arg.split(None, 2)  # ["set-tone", <봇이름>, <말투지시>]
+            if len(tone_parts) < 3:
+                await update.message.reply_text(
+                    "사용법: `/org set-tone <봇이름> <말투지시>`\n"
+                    "예) `/org set-tone 성장실 데이터 지향적이고 직설적으로`",
+                    parse_mode="Markdown",
+                )
+                return
+            target_name = tone_parts[1].strip()
+            tone_instruction = tone_parts[2].strip()
+
+            # 봇 이름 → org_id 매핑
+            try:
+                _cfg = load_orchestration_config(force_reload=True)
+                _name_to_id: dict[str, str] = {
+                    org.dept_name: org.id for org in _cfg.list_specialist_orgs()
+                }
+                # org_id 직접 입력도 허용
+                _id_set = {org.id for org in _cfg.list_specialist_orgs()}
+            except Exception as _e:
+                logger.warning(f"[/org set-tone] org 목록 로드 실패: {_e}")
+                _name_to_id = {}
+                _id_set = set()
+
+            target_org_id = _name_to_id.get(target_name) or (target_name if target_name in _id_set else None)
+            if target_org_id is None:
+                known = ", ".join(_name_to_id.keys()) or "알 수 없음"
+                await update.message.reply_text(
+                    f"봇 이름 '{target_name}'을 찾지 못했어요.\n"
+                    f"알려진 봇: {known}",
+                )
+                return
+
+            import re as _re
+            _tone_identity = PMIdentity(target_org_id)
+            _cur_dir = _tone_identity._data.get("direction", "") or ""
+            _marker = "[말투/성격]"
+            if _marker in _cur_dir:
+                _new_dir = _re.sub(
+                    r"\[말투/성격\].*?(\n|$)", f"{_marker} {tone_instruction}\n", _cur_dir
+                ).strip()
+            else:
+                _new_dir = (
+                    (_cur_dir + f"\n{_marker} {tone_instruction}").strip()
+                    if _cur_dir else f"{_marker} {tone_instruction}"
+                )
+            _tone_identity.update({"direction": _new_dir})
+            try:
+                _sync_identity_to_canonical_config(target_org_id, _tone_identity._data)
+                _refresh_legacy_bot_configs()
+            except Exception as _sync_err:
+                logger.warning(f"[/org set-tone] canonical sync 실패: {_sync_err}")
+            dept_display = target_name
+            await update.message.reply_text(
+                f"✅ *{dept_display}* 봇 말투 업데이트!\n\n"
+                f"말투 지시: `{tone_instruction}`\n\n"
+                f"현재 방향성:\n{_new_dir}",
+                parse_mode="Markdown",
+            )
+            return
+
         # /org add <이름> [engine] — 새 조직 등록
         if arg.lower().startswith("add ") or arg.lower() == "add":
             add_parts = arg.split(None, 2)  # ["add", <name>, <engine?>]
@@ -3734,6 +3887,8 @@ class TelegramRelay:
                 f"🔧 **설정**\n"
                 f"`/org` — 조직 정체성 조회·설정\n"
                 f"  예) `/org@{bot_name} 프로덕트PM|기획,UX|사용자중심`\n"
+                f"`/org set-tone <봇이름> <말투지시>` — 봇 말투/성격 설정\n"
+                f"  예) `/org set-tone 성장실 데이터 지향적이고 직설적으로`\n"
                 f"`/pm` — `/org`와 동일 (하위 호환)\n\n"
                 f"📊 **조회**\n"
                 f"`/status` — 봇 상태 확인\n"
