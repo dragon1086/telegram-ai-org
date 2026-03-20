@@ -37,3 +37,7 @@ htmlcov/
 .omc/
 WEEKLY_REPORT*.md
 .worktrees/
+
+# 임시 세션/리포트 파일
+.e2e_session*.session
+.omx/reports/
