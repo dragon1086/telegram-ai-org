@@ -157,6 +157,16 @@ def classify_stuck(pane: str) -> tuple[str, str, str]:
     recent = "\n".join(lines[-30:]).lower()
     context = "\n".join(lines[-40:])
 
+    # 0) idle/대기 상태 감지 — 봇이 할 일 없이 대기 중이면 건드리지 않음
+    #    프롬프트 직전 3줄만 검사하여 오탐 최소화
+    idle_area = "\n".join(lines[-4:]).lower()
+    idle_markers = (
+        "대기합니다", "대기 중", "대기하겠", "기다리겠",
+        "추가 지시", "waiting for instruction", "standing by",
+    )
+    if any(m in idle_area for m in idle_markers):
+        return "none", "", ""
+
     # 1) fresh 세션 감지
     is_fresh = len(lines) <= 10 and any(
         marker in recent for marker in FRESH_SESSION_MARKERS
@@ -165,9 +175,9 @@ def classify_stuck(pane: str) -> tuple[str, str, str]:
         return "fresh", FRESH_NUDGE, context
 
     # 2) 안전한 패턴 매칭 (y/n 등) — 프롬프트 직전 5줄에서만 매칭
-    prompt_area = "\n".join(lines[-5:]).lower()
+    safe_area = "\n".join(lines[-5:]).lower()
     for pattern, reply in SAFE_PATTERNS.items():
-        if pattern.lower() in prompt_area:
+        if pattern.lower() in safe_area:
             return "safe", reply, context
 
     # 3) 판단 필요한 질문 패턴
