@@ -256,7 +256,7 @@ async def main() -> None:
     # LLM 인사이트 생성
     llm_insight = await _llm_insights(tasks)
     if llm_insight:
-        print(f"[retro] LLM 인사이트 생성 완료")
+        print("[retro] LLM 인사이트 생성 완료")
 
     tg_msg, md_content, retro_data = build_retro(tasks, llm_insight=llm_insight)
     save_to_shared_memory(retro_data)

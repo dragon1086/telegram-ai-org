@@ -101,7 +101,7 @@ def eval_coding(responses: list[BotMessage]) -> tuple[bool, str]:
         hits = [k for k in code_kw if k in t]
         if hits:
             return True, f"✅ 태스크 배분 + 코드 키워드 {hits[:3]}"
-        return True, f"✅ 태스크 배분 확인 → 개발실 (비동기 실행 중)"
+        return True, "✅ 태스크 배분 확인 → 개발실 (비동기 실행 중)"
     # 배분 없이 직접 응답한 경우
     code_kw = ["[", "for", "if", "def", "return", "list", "comprehension", "컴프리헨션"]
     hits = [k for k in code_kw if k in t]
@@ -204,11 +204,11 @@ def eval_rest_api(responses: list[BotMessage]) -> tuple[bool, str]:
     http_hits = [k for k in http_kw if k in t]
     path_hits = [k for k in path_kw if k in t]
     if dispatched and len(http_hits) < 2:
-        return True, f"✅ 태스크 배분 확인 (실행 중)"
+        return True, "✅ 태스크 배분 확인 (실행 중)"
     if len(http_hits) < 2:
         return False, f"⚠️ HTTP 메서드 부족 ({len(http_hits)}/2): {http_hits}"
     if not path_hits:
-        return False, f"⚠️ API 경로 키워드 없음"
+        return False, "⚠️ API 경로 키워드 없음"
     return True, f"✅ HTTP {http_hits} + 경로 {path_hits[:2]}"
 
 
@@ -662,8 +662,8 @@ def write_report(results: list[ScenarioResult]) -> None:
     lines += [
         "## 성공 기준 평가",
         "",
-        f"| 레벨 | 기준 | 결과 |",
-        f"|------|------|------|",
+        "| 레벨 | 기준 | 결과 |",
+        "|------|------|------|",
         f"| 최소 합격 (P0 전부 PASS) | S1,S2,S5,S7,S8 | {'✅ PASS' if min_viable else '❌ FAIL'} |",
         f"| 목표 (P0+P1 PASS) | S1~S9 | {'✅ PASS' if target else '❌ FAIL'} |",
         f"| 완전 (S1~S11 PASS) | 전체 | {'✅ PASS' if full else '❌ FAIL'} |",

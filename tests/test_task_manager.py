@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.task_manager import Task, TaskManager, TaskStatus
+from core.task_manager import TaskManager, TaskStatus
 
 
 @pytest.mark.asyncio

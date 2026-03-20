@@ -1,7 +1,6 @@
 """LLM 분해 + 키워드 fallback 테스트."""
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -10,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.pm_orchestrator import PMOrchestrator, SubTask, KNOWN_DEPTS
+from core.pm_orchestrator import PMOrchestrator, KNOWN_DEPTS
 
 
 class _FakeDecisionClient:

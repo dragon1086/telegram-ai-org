@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import time
-import pytest
 
-from core.worker_health import WorkerHealthMonitor, WorkerStatus, DLQEntry
+from core.worker_health import WorkerHealthMonitor, WorkerStatus
 
 
 class TestWorkerHealthBasic:

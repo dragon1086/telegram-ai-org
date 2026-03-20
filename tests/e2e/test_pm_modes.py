@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.pm_orchestrator import PMOrchestrator, SubTask
+from core.pm_orchestrator import PMOrchestrator
 from core.pm_router import PMRouter
 
 

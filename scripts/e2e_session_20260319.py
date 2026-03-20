@@ -309,23 +309,23 @@ def write_report(results: list[ScenarioResult]) -> Path:
     lines: list[str] = []
 
     lines += [
-        f"# E2E 세션 테스트 리포트 — 2026-03-19",
-        f"",
+        "# E2E 세션 테스트 리포트 — 2026-03-19",
+        "",
         f"실행 시각: {now}",
-        f"",
-        f"## 변경사항 요약",
-        f"",
-        f"- **A**: `core/pm_identity.py` — AgentPersonaMemory 성과 데이터 → 봇 시스템 프롬프트 주입",
-        f"- **B**: `core/pm_orchestrator.py` — Discussion 멀티라운드 핑퐁 (라운드 메타데이터 버그 픽스 + 조기 종료 + follow-up 강화)",
-        f"",
-        f"## 요약 대시보드",
-        f"",
-        f"| 항목 | 값 |",
-        f"|------|-----|",
+        "",
+        "## 변경사항 요약",
+        "",
+        "- **A**: `core/pm_identity.py` — AgentPersonaMemory 성과 데이터 → 봇 시스템 프롬프트 주입",
+        "- **B**: `core/pm_orchestrator.py` — Discussion 멀티라운드 핑퐁 (라운드 메타데이터 버그 픽스 + 조기 종료 + follow-up 강화)",
+        "",
+        "## 요약 대시보드",
+        "",
+        "| 항목 | 값 |",
+        "|------|-----|",
         f"| 총 시나리오 | {total} |",
         f"| 통과 | {passed}/{total} |",
         f"| 통과율 | {passed/total*100:.0f}% |",
-        f"",
+        "",
     ]
 
     # P0 실패 강조
@@ -370,21 +370,21 @@ def write_report(results: list[ScenarioResult]) -> Path:
         status = "PASS" if r.passed else "FAIL"
         lines += [
             f"### [{r.scenario_id}] {r.description} — {status}",
-            f"",
+            "",
             f"- **우선순위**: {r.priority}",
             f"- **전송 메시지**: `{r.message_sent}`",
             f"- **소요시간**: {r.elapsed_sec:.1f}s",
             f"- **평가**: {r.eval_note}",
             f"- **응답 수**: {len(r.responses)}개",
             f"- **응답 봇**: {list({m.bot for m in r.responses}) or ['없음']}",
-            f"",
+            "",
         ]
 
         # 에러 패턴 상세
         errors = _detect_errors(r.responses)
         if errors:
             lines += [
-                f"**에러 패턴 감지됨:**",
+                "**에러 패턴 감지됨:**",
                 "",
             ]
             for err in errors:

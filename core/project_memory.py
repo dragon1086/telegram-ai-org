@@ -11,7 +11,7 @@ import tempfile
 import time
 from collections import Counter
 from pathlib import Path
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 from typing import Any
 
 from loguru import logger

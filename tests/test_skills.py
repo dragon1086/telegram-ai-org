@@ -269,7 +269,8 @@ class TestUS204SaveLogScript:
 
     def test_save_log_creates_jsonl(self, skills_dir, tmp_path):
         """save-log.py 실행 시 JSONL 파일 생성 확인"""
-        import subprocess, json
+        import subprocess
+        import json
         script = skills_dir / "weekly-review" / "scripts" / "save-log.py"
         if not script.exists():
             return

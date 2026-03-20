@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import argparse
-import glob as _glob
 import json
 import os
 import shutil
@@ -17,7 +16,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from core.setup_registration import (
+from core.setup_registration import (  # noqa: F401 — re-exported as module attrs (ctx.*)
     ensure_orchestration_config,
     parse_setup_identity,
     refresh_legacy_bot_configs,
@@ -260,10 +259,10 @@ def step_pm_bot(existing: dict[str, str]) -> tuple[str, str]:
             print("  " + "─" * 44)
             print("  ⚠️  중요: Privacy Mode 반드시 해제하세요!")
             print("  " + "─" * 44)
-            print(f"  1. 텔레그램에서 @BotFather 채팅 열기")
-            print(f"  2. /setprivacy 입력")
+            print("  1. 텔레그램에서 @BotFather 채팅 열기")
+            print("  2. /setprivacy 입력")
             print(f"  3. @{bot_info.get('username', 'your_bot')} 선택")
-            print(f"  4. Disable 클릭")
+            print("  4. Disable 클릭")
             print()
             print("  ℹ️  Privacy Mode가 켜져 있으면 봇이 /명령어만 받고")
             print("     일반 메시지에는 응답하지 않습니다.")
@@ -358,7 +357,7 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
             chat_id = pm_chat_id
         else:
             while True:
-                token = ask(f"  PM 봇 토큰")
+                token = ask("  PM 봇 토큰")
                 if not token:
                     warn("토큰을 입력해주세요.")
                     continue
@@ -374,7 +373,7 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
                         break
 
             while True:
-                chat_id = ask(f"  그룹 채팅방 ID")
+                chat_id = ask("  그룹 채팅방 ID")
                 if chat_id.lstrip("-").isdigit():
                     break
                 warn("숫자만 입력하세요.")
@@ -396,7 +395,8 @@ def step_org_structure(pm_token: str, pm_chat_id: str) -> list[dict]:
 
 def _auto_start_bots() -> None:
     """설정 완료 후 canonical organizations를 읽어 봇 기동."""
-    import subprocess, time
+    import subprocess
+    import time
 
     from core.orchestration_config import load_orchestration_config
 
@@ -594,7 +594,7 @@ def step_agent_hints() -> None:
 
     if "5" in choices or not choices:
         AGENT_HINTS_FILE.write_text(FULL_HINTS_YAML, encoding="utf-8")
-        ok(f"agent_hints.yaml 생성 (전체 프로파일)")
+        ok("agent_hints.yaml 생성 (전체 프로파일)")
         return
 
     selected_keys: list[str] = []
@@ -648,7 +648,8 @@ def step_agency_agents() -> None:
         print("  " + dim(r'find /tmp/agency-agents -name "*.md" ! -path "*/examples/*" -exec cp {} ~/.claude/agents/ \;'))
         return
 
-    import subprocess as _sp, tempfile, shutil
+    import subprocess as _sp
+    import tempfile
     tmp = Path(tempfile.mkdtemp()) / "agency-agents"
     info("다운로드 중...")
     result = _sp.run(

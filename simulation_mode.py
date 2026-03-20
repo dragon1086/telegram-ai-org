@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -170,7 +169,7 @@ async def run_planner_demo(workers: list[dict] | None = None) -> None:
     demo_request = "prism-mobile 다크모드 + 분석 리포트 동시에 만들어줘"
 
     print(f"\n{'─' * 54}")
-    print(f"📋 TaskPlanner 데모")
+    print("📋 TaskPlanner 데모")
     print(f"입력: {demo_request}")
     print(f"{'─' * 54}\n")
 
@@ -327,7 +326,7 @@ async def run_memory_test() -> None:
 
     # 테스트용 파일 정리
     mm.path.unlink(missing_ok=True)
-    print(f"\n🧹 테스트 파일 정리 완료")
+    print("\n🧹 테스트 파일 정리 완료")
     print(f"{'─' * 54}\n")
 
 

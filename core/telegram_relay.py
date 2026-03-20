@@ -40,10 +40,9 @@ from core.collab_request import (
     is_collab_request, make_collab_request_v2, make_collab_claim,
     make_collab_done, parse_collab_request, is_placeholder_collab,
 )
-from core.keywords import GREETING_KW, ACTION_KW
 from core.display_limiter import DisplayLimiter
 from core.nl_classifier import NLClassifier, Intent
-from core.pm_router import PMRouter, PMRoute
+from core.pm_router import PMRouter
 from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR, KNOWN_DEPTS
 from core.orchestration_config import load_orchestration_config
 from core.orchestration_runbook import OrchestrationRunbook
@@ -1896,7 +1895,7 @@ class TelegramRelay:
             return
 
         # 4. 담당 선언 + 실행 (모델 기반 팀 구성)
-        await self.display.send_reply(update.message, f"저희가 맡을게요! 팀 꾸리는 중이에요 ✋")
+        await self.display.send_reply(update.message, "저희가 맡을게요! 팀 꾸리는 중이에요 ✋")
         run_id = self._create_runbook(text)
         self._advance_runbook(run_id, "요청 접수 후 planning phase로 이동")
         team_config = await self._build_team_config(text)
@@ -2371,7 +2370,6 @@ class TelegramRelay:
             )
             return
         try:
-            from core.nl_schedule_parser import ParseError
             from apscheduler.triggers.cron import CronTrigger as _CronTrigger
             parsed = self._nl_parser.parse(text)
             # cron 표현식 유효성 검증 (APScheduler로 실제 파싱 시도)

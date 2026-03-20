@@ -1,13 +1,12 @@
 """크로스 조직 브릿지 — 조직 간 메시지 라우팅."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal
+from dataclasses import dataclass
 
 from loguru import logger
 
 from core.message_envelope import MessageEnvelope
-from core.message_schema import OrgMessage, MsgType
+from core.message_schema import OrgMessage
 from core.org_registry import OrgRegistry, Organization
 
 

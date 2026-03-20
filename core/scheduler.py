@@ -206,7 +206,7 @@ class OrgScheduler:
                 save_markdown,
                 save_to_shared_memory,
             )
-            from datetime import datetime, timedelta, timezone, UTC
+            from datetime import datetime, timedelta, timezone
 
             # 이번 주 월요일부터 오늘까지 태스크 집계
             tasks = get_today_tasks()  # 오늘 기준 — 주간 집계는 별도 구현
@@ -250,7 +250,7 @@ class OrgScheduler:
                     ss.auto_shoutout(
                         task_id="weekly_retro",
                         winner=mvp,
-                        reason=f"이번 주 최고 성과를 거둔 팀원입니다!",
+                        reason="이번 주 최고 성과를 거둔 팀원입니다!",
                         all_participants=all_agents,
                     )
             except Exception as e2:
@@ -267,7 +267,6 @@ class OrgScheduler:
 
     def load_user_schedules(self, store: "UserScheduleStore") -> None:
         """앱 시작 시 저장된 사용자 스케줄 복원."""
-        from core.user_schedule_store import UserSchedule
         for sched in store.get_enabled():
             try:
                 self._add_user_job(sched)

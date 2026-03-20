@@ -5,7 +5,6 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-import pytest
 
 
 # ── LessonMemory 테스트 ───────────────────────────────────────────────────

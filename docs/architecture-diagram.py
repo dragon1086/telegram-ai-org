@@ -9,10 +9,8 @@ import os
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+from matplotlib.patches import FancyBboxPatch
 from matplotlib.font_manager import FontProperties
-import matplotlib.patheffects as pe
 
 # ---------------------------------------------------------------------------
 # Font setup
