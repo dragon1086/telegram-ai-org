@@ -244,9 +244,12 @@ async def run_scenario(
 
     collected: list[BotMessage] = []
     stop = [False]
+    sent_msg_id = [0]  # cross-contamination 방지: 전송 메시지 ID 이후만 수집
 
     async def handler(event, _c=collected, _s=stop):
         if _s[0]:
+            return
+        if event.message.id <= sent_msg_id[0]:
             return
         sender = await event.get_sender()
         if sender and getattr(sender, "bot", False):
@@ -268,7 +271,8 @@ async def run_scenario(
 
     t0 = time.time()
     _start_time[0] = t0
-    await client.send_message(CHAT_ID, msg)
+    sent = await client.send_message(CHAT_ID, msg)
+    sent_msg_id[0] = sent.id
     await asyncio.sleep(timeout)
     stop[0] = True
     elapsed = time.time() - t0
