@@ -70,8 +70,11 @@ class MessageEnvelope:
     # 표시 / 직렬화
 
     def to_display(self) -> str:
-        """Telegram에 표시할 자연어 텍스트만 반환 (메타데이터 숨김)."""
-        return self.content
+        """Telegram에 표시할 자연어 텍스트만 반환 (메타데이터 숨김).
+
+        [TYPE:value] 형식의 레거시 메타데이터 태그를 제거한다.
+        """
+        return re.sub(r"\[[A-Z_]+:[^\]]*\]", "", self.content).strip()
 
     def to_wire(self) -> dict[str, Any]:
         """봇 내부 통신용 직렬화 — 전체 메타데이터 포함."""
