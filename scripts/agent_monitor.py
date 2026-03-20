@@ -277,11 +277,12 @@ def monitor_loop(poll_interval: int = POLL_INTERVAL, stuck_threshold: int = STUC
             send_keys(session, window, response)
 
             # 텔레그램 알림
-            short_ctx = context[-200:].replace("\n", " ")
+            short_ctx = context[-150:].strip().replace("\n", "\n  ")
+            bot_name = session.replace(SESSION_PREFIX, "")
             send_telegram(
-                f"{session} (창:{window}) {stuck_min}분 블락\n"
-                f"컨텍스트: ...{short_ctx}\n"
-                f"자동응답: {response}"
+                f"🔒 {bot_name} — {stuck_min}분째 블락 감지\n\n"
+                f"📋 컨텍스트:\n  ...{short_ctx}\n\n"
+                f"💬 자동 응답:\n  {response}"
             )
 
             # 상태 업데이트
