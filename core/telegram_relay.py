@@ -3893,7 +3893,9 @@ class TelegramRelay:
                 f"📊 **조회**\n"
                 f"`/status` — 봇 상태 확인\n"
                 f"`/team` — 전체 팀 현황\n"
-                f"`/agents` — 에이전트 목록\n\n"
+                f"`/agents` — 에이전트 목록\n"
+                f"`/history [N]` — 최근 태스크 이력 (기본 10개)\n"
+                f"`/stats` — 봇별 성과 대시보드\n\n"
                 f"⚙️ **관리 (총괄PM만)**\n"
                 f"`/setup` — 새 조직 봇 등록 마법사\n"
                 f"`/sessions [org]` — 세션 현황\n"
@@ -3906,6 +3908,58 @@ class TelegramRelay:
                 + multibot_hint
             )
             await update.message.reply_text(msg, parse_mode="Markdown")
+            return
+
+        # /history [N] — 최근 태스크 이력 조회
+        if cmd == "/history":
+            if self.context_db is None:
+                await update.message.reply_text("❌ DB가 초기화되지 않았습니다.")
+                return
+            try:
+                limit = int(arg) if arg.strip().isdigit() else 10
+                limit = max(1, min(limit, 50))
+            except ValueError:
+                limit = 10
+            tasks = await self.context_db.get_recent_pm_tasks(limit)
+            if not tasks:
+                await update.message.reply_text("📋 태스크 이력이 없습니다.")
+                return
+            status_icons = {
+                "done": "✅", "running": "🔄", "assigned": "📨",
+                "pending": "⏳", "failed": "❌", "needs_review": "⚠️",
+            }
+            from core.constants import KNOWN_DEPTS
+            lines = [f"📋 **최근 태스크 이력** (최대 {limit}개)\n"]
+            for t in tasks:
+                icon = status_icons.get(t["status"], "•")
+                dept = KNOWN_DEPTS.get(t.get("assigned_dept") or "", t.get("assigned_dept") or "?")
+                desc = (t["description"] or "")[:60].replace("\n", " ")
+                ts = (t.get("updated_at") or "")[:16].replace("T", " ")
+                lines.append(f"{icon} `{t['id']}` [{ts}] **{dept}**\n   {desc}")
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+            return
+
+        # /stats — 봇별 성과 대시보드
+        if cmd == "/stats":
+            if self.context_db is None:
+                await update.message.reply_text("❌ DB가 초기화되지 않았습니다.")
+                return
+            perf_list = await self.context_db.get_all_bot_performance()
+            if not perf_list:
+                await update.message.reply_text("📊 아직 기록된 성과 데이터가 없습니다.")
+                return
+            from core.constants import KNOWN_DEPTS
+            lines = ["📊 **봇별 성과 대시보드**\n"]
+            for p in perf_list:
+                bot_id = p.get("bot_id", "?")
+                bot_name = KNOWN_DEPTS.get(bot_id, bot_id)
+                total = p.get("task_count", 0)
+                success = p.get("success_count", 0)
+                pct = round(success / total * 100) if total > 0 else 0
+                avg_lat = p.get("avg_latency_sec", 0.0) or 0.0
+                lat_str = f" | 평균 {avg_lat:.1f}s" if avg_lat > 0 else ""
+                lines.append(f"• **{bot_name}**: 태스크 {total}건 | 성공 {success}건 ({pct}%){lat_str}")
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
             return
 
         # /setup fallback — ConversationHandler entry가 안 잡히는 경우 대비
