@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""agent_monitor.py — aiorg Claude agent tmux 세션 감시 + 자동 응답 데몬.
+"""agent_monitor.py — aiorg Claude agent tmux 세션 감시 + 3단계 자동 처리 데몬.
 
 동작:
   1. 30초마다 aiorg_aiorg_* tmux 세션 모든 창 캡처
-  2. 콘텐츠가 STUCK_THRESHOLD(180초)간 변화 없고 질문 패턴 감지 시
-  3. claude -p (Haiku) 로 자연어 응답 생성 → tmux send-keys 주입
+  2. 콘텐츠가 STUCK_THRESHOLD(180초)간 변화 없고 입력 대기 감지 시
+  3. 3단계 자동 처리:
+     a) 안전한 패턴 (y/n, 계속 등) → 규칙 기반 고정 응답 주입
+     b) 판단 필요한 질문 → 에이전트 자기 판단 유도 메시지 주입
+     c) fresh 세션 (할 일 없음) → HEARTBEAT.md 확인 지시 주입
   4. 텔레그램 알림 + 로그 기록
 
 사용법:
@@ -33,14 +36,34 @@ STATE_FILE = Path("/tmp/agent-monitor-state.json")
 LOG_FILE = Path.home() / ".ai-org" / "agent-monitor.log"
 PID_FILE = Path("/tmp/agent-monitor.pid")
 
-# 질문 패턴 (한/영 혼합)
+# ── 3단계 응답 분류 ───────────────────────────────────────────────────────────
+# SAFE: 규칙 기반 고정 응답 (LLM 불필요)
+SAFE_PATTERNS: dict[str, str] = {
+    "y/n": "y",
+    "yes/no": "yes",
+    "? (y": "y",
+    "[y/n]": "y",
+    "[yes/no]": "yes",
+    "confirm": "yes",
+    "proceed": "yes",
+    "계속": "네",
+    "진행": "네",
+    "확인": "네",
+    "실행": "네",
+}
+
+# QUESTION: 판단 필요한 질문 패턴 → 에이전트 자기 판단 유도
 QUESTION_PATTERNS = [
-    "할까요", "하시겠습니까", "하겠습니까", "재시작", "종료", "확인",
-    "선택", "입력하세요", "계속", "진행", "삭제", "실행",
-    "y/n", "yes/no", "? (y", "[y/n]", "[yes/no]",
+    "할까요", "하시겠습니까", "하겠습니까", "선택", "입력하세요",
     "would you like", "do you want", "should i", "shall i",
-    "confirm", "proceed",
+    "재시작", "종료", "삭제",
 ]
+
+# 에이전트 자기 판단 유도 메시지
+NUDGE_MESSAGE = "입력 대기 상태야. 안전한 기본값으로 스스로 판단해서 진행해. 위험한 작업(삭제, 프로덕션 변경)은 하지 마."
+
+# fresh 세션 → HEARTBEAT 확인 지시
+FRESH_NUDGE = "HEARTBEAT.md를 읽고 할당된 태스크가 있으면 진행해. 없으면 대기해."
 
 logging.basicConfig(
     level=logging.INFO,
@@ -112,78 +135,44 @@ def extract_meaningful_lines(pane: str) -> list[str]:
 FRESH_SESSION_MARKERS = ("claude code", "sonnet", "haiku", "opus", "bypass permissions on")
 
 
-def is_waiting_for_input(pane: str) -> tuple[bool, str]:
-    """(대기 중 여부, 관련 컨텍스트 텍스트) 반환."""
+def classify_stuck(pane: str) -> tuple[str, str, str]:
+    """stuck 유형 분류. 반환: (action, response, context).
+
+    action 값:
+      "none"  — 입력 대기 아님, 무시
+      "safe"  — 안전한 패턴 매칭, 고정 응답 주입
+      "nudge" — 판단 필요, 자기 판단 유도 메시지 주입
+      "fresh" — 새 세션, HEARTBEAT 확인 지시 주입
+    """
     lines = extract_meaningful_lines(pane)
     if not lines:
-        return False, ""
+        return "none", "", ""
 
     last_line = lines[-1]
-    # Claude Code 프롬프트(❯)에서 멈춘 상태인지 확인
     at_prompt = last_line in ("❯", "") or last_line.endswith("❯")
     if not at_prompt:
-        return False, ""
+        return "none", "", ""
 
-    # 최근 30줄에서 질문 패턴 탐색
     recent = "\n".join(lines[-30:]).lower()
-    has_question = any(p.lower() in recent for p in QUESTION_PATTERNS)
+    context = "\n".join(lines[-40:])
 
-    # fresh 세션 감지: 시작 직후 배너만 있고 대화 내용 없는 상태
-    # (봇 재시작 후 Claude Code 세션이 초기화되어 아무 임무도 없는 경우)
-    is_fresh_session = len(lines) <= 10 and any(
+    # 1) fresh 세션 감지
+    is_fresh = len(lines) <= 10 and any(
         marker in recent for marker in FRESH_SESSION_MARKERS
     )
+    if is_fresh:
+        return "fresh", FRESH_NUDGE, context
 
-    # 최근 콘텐츠를 LLM에 넘길 텍스트로
-    context = "\n".join(lines[-40:])
-    return has_question or is_fresh_session, context
+    # 2) 안전한 패턴 매칭 (y/n 등)
+    for pattern, reply in SAFE_PATTERNS.items():
+        if pattern.lower() in recent:
+            return "safe", reply, context
 
+    # 3) 판단 필요한 질문 패턴
+    if any(p.lower() in recent for p in QUESTION_PATTERNS):
+        return "nudge", NUDGE_MESSAGE, context
 
-# ── LLM 응답 생성 ─────────────────────────────────────────────────────────────
-
-def generate_response(session: str, context: str) -> str:
-    """claude -p Haiku 로 적절한 응답 생성."""
-    bot_name = session.replace(SESSION_PREFIX, "").replace("_", " ")
-
-    prompt = f"""당신은 AI 조직 자율 에이전트 모니터입니다.
-아래 tmux 세션의 Claude 코딩 에이전트가 사용자 입력을 기다리고 있습니다.
-
-세션: {session} (봇: {bot_name})
-에이전트 최근 출력:
----
-{context}
----
-
-규칙:
-- 봇 프로세스 재시작 확인 → 현재 상황 파악해 답변 (보통 봇이 이미 실행 중이면 "아니오")
-- 위험 작업(데이터 삭제, 프로덕션 DB 수정 등) → 반드시 "아니오"
-- 일반 작업 계속/진행 확인 → "네, 계속 진행해"
-- 정보 입력 요구 → 상황에 맞는 합리적 기본값 제시
-- 불분명한 경우 → "현재 상황 파악 후 안전한 기본값으로 진행해줘"
-
-응답은 짧게 (1-2문장). 설명 없이 답변만 출력."""
-
-    claude_bin = Path.home() / ".local" / "bin" / "claude"
-    if not claude_bin.exists():
-        claude_bin = Path("claude")
-
-    try:
-        result = subprocess.run(
-            [str(claude_bin), "-p", "--model", "claude-haiku-4-5-20251001",
-             "--dangerously-skip-permissions"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        response = result.stdout.strip()
-        if response:
-            return response
-    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-        log.warning(f"LLM 호출 실패: {e}")
-
-    # 폴백: 안전한 기본값
-    return "현재 상황 파악 후 안전한 기본값으로 진행해줘"
+    return "none", "", ""
 
 
 # ── Telegram 알림 ─────────────────────────────────────────────────────────────
@@ -274,26 +263,27 @@ def monitor_loop(poll_interval: int = POLL_INTERVAL, stuck_threshold: int = STUC
             if now - last_responded < RESPONSE_COOLDOWN:
                 continue
 
-            waiting, context = is_waiting_for_input(pane)
-            if not waiting:
+            action, response, context = classify_stuck(pane)
+            if action == "none":
                 continue
 
-            # ── 자동 응답 실행 ────────────────────────────────────────
+            # ── 3단계 자동 처리 ──────────────────────────────────────
             stuck_min = int(stuck_secs / 60)
-            log.info(f"[{key}] {stuck_min}분 입력 대기 감지 → 자동 응답 생성 중...")
+            bot_name = session.replace(SESSION_PREFIX, "")
+            short_ctx = context[-150:].strip().replace("\n", "\n  ")
 
-            response = generate_response(session, context)
-            log.info(f"[{key}] 응답: {response!r}")
+            log.info(f"[{key}] {stuck_min}분 입력 대기 → {action}: {response!r}")
 
+            # send_keys로 응답 주입
             send_keys(session, window, response)
 
             # 텔레그램 알림
-            short_ctx = context[-150:].strip().replace("\n", "\n  ")
-            bot_name = session.replace(SESSION_PREFIX, "")
+            action_label = {"safe": "자동 응답", "nudge": "자기 판단 유도", "fresh": "HEARTBEAT 확인"}
             send_telegram(
-                f"🔒 {bot_name} — {stuck_min}분째 블락 감지\n\n"
+                f"🔒 {bot_name} — {stuck_min}분째 입력 대기\n\n"
                 f"📋 컨텍스트:\n  ...{short_ctx}\n\n"
-                f"💬 자동 응답:\n  {response}"
+                f"🤖 조치: {action_label.get(action, action)}\n"
+                f"💬 주입: {response}"
             )
 
             # 상태 업데이트
