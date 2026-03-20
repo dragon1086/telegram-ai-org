@@ -46,10 +46,12 @@ SAFE_PATTERNS: dict[str, str] = {
     "[yes/no]": "yes",
     "confirm": "yes",
     "proceed": "yes",
-    "계속": "네",
-    "진행": "네",
-    "확인": "네",
-    "실행": "네",
+    "계속할까요": "네",
+    "진행할까요": "네",
+    "확인해주세요": "네",
+    "실행할까요": "네",
+    "커밋할까요": "네",
+    "삭제할까요": "아니오",
 }
 
 # QUESTION: 판단 필요한 질문 패턴 → 에이전트 자기 판단 유도
@@ -70,7 +72,6 @@ logging.basicConfig(
     format="%(asctime)s [monitor] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
-        logging.StreamHandler(),
         logging.FileHandler(LOG_FILE, encoding="utf-8"),
     ],
 )
@@ -163,9 +164,10 @@ def classify_stuck(pane: str) -> tuple[str, str, str]:
     if is_fresh:
         return "fresh", FRESH_NUDGE, context
 
-    # 2) 안전한 패턴 매칭 (y/n 등)
+    # 2) 안전한 패턴 매칭 (y/n 등) — 프롬프트 직전 5줄에서만 매칭
+    prompt_area = "\n".join(lines[-5:]).lower()
     for pattern, reply in SAFE_PATTERNS.items():
-        if pattern.lower() in recent:
+        if pattern.lower() in prompt_area:
             return "safe", reply, context
 
     # 3) 판단 필요한 질문 패턴
