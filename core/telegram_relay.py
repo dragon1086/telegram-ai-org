@@ -1507,9 +1507,13 @@ class TelegramRelay:
 
         message_id = str(update.message.message_id)
         # 봇 시작 이전 메시지 무시 (pending updates 방지)
-        if update.message.date and update.message.date.timestamp() < self._start_time - 5:
-            logger.debug(f"[{self.org_id}] 오래된 메시지 무시 (message_id={message_id})")
+        # 재시작에 30초+ 소요되므로 grace period를 120초로 설정
+        _msg_ts = update.message.date.timestamp() if update.message.date else 0
+        if _msg_ts and _msg_ts < self._start_time - 120:
+            logger.debug(f"[{self.org_id}] 오래된 메시지 무시 (message_id={message_id}, age={self._start_time - _msg_ts:.0f}s)")
             return
+        if _msg_ts and _msg_ts < self._start_time:
+            logger.info(f"[{self.org_id}] 재시작 중 수신 메시지 복구 처리 (message_id={message_id}, age={self._start_time - _msg_ts:.0f}s)")
         logger.info(f"텔레그램 수신 [{self.org_id}]: {text[:80]}")
 
         # LLM 기반 라우팅 (pm_bot 전용)

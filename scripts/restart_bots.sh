@@ -5,6 +5,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== 봇 안전 재시작 시작 ==="
 bash "$SCRIPT_DIR/bot_control.sh" stop all
+
+# agent_monitor도 함께 종료 (start_all.sh에서 새로 시작됨)
+MONITOR_PID_FILE="/tmp/agent-monitor.pid"
+if [ -f "$MONITOR_PID_FILE" ]; then
+  _mpid="$(cat "$MONITOR_PID_FILE" 2>/dev/null)"
+  if [ -n "$_mpid" ] && ps -p "$_mpid" > /dev/null 2>&1; then
+    kill "$_mpid" 2>/dev/null && echo "✅ agent_monitor 종료 (PID: $_mpid)" || true
+  fi
+  rm -f "$MONITOR_PID_FILE"
+fi
+
 sleep 1
 
 # 모든 aiorg 봇 tmux 세션 종료 (메인 + claude 서브세션, context 완전 리셋)
