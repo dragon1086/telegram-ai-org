@@ -98,3 +98,34 @@ class TestNeedsLlm:
     def test_action_keyword_triggers_task(self, classifier):
         result = classifier.classify("오늘 회의에서 나온 내용을 정리해주면 좋겠는데")
         assert result.intent == Intent.TASK
+
+
+class TestSetBotTone:
+    def test_말투_바꿔(self, classifier):
+        result = classifier.classify("성장실 봇 말투를 데이터 지향적이고 직설적으로 바꿔줘")
+        assert result.intent == Intent.SET_BOT_TONE
+
+    def test_말투_설정(self, classifier):
+        result = classifier.classify("개발실 말투 설정 간결하고 기술적으로")
+        assert result.intent == Intent.SET_BOT_TONE
+
+    def test_성격_바꿔(self, classifier):
+        result = classifier.classify("운영실 봇 성격을 차분하고 정확하게 바꿔줘")
+        assert result.intent == Intent.SET_BOT_TONE
+
+    def test_톤_설정(self, classifier):
+        result = classifier.classify("디자인실 톤 설정 감성적이고 친근하게")
+        assert result.intent == Intent.SET_BOT_TONE
+
+    def test_어투(self, classifier):
+        result = classifier.classify("기획실 봇 어투를 격식체로 변경해줘")
+        assert result.intent == Intent.SET_BOT_TONE
+
+    def test_english_set_tone(self, classifier):
+        result = classifier.classify("set tone for growth bot to be concise")
+        assert result.intent == Intent.SET_BOT_TONE
+
+    def test_confidence_high(self, classifier):
+        result = classifier.classify("성장실 봇 말투를 직설적으로 바꿔줘")
+        assert result.confidence >= 0.9
+        assert result.source == "keyword"

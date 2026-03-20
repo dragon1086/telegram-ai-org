@@ -21,6 +21,7 @@ class Intent(Enum):
     REJECT = "reject"
     CANCEL = "cancel"
     CHAT = "chat"
+    SET_BOT_TONE = "set_bot_tone"
 
 
 COMMAND_PATTERNS: dict[Intent, list[str]] = {
@@ -29,6 +30,14 @@ COMMAND_PATTERNS: dict[Intent, list[str]] = {
     Intent.REJECT: ["반려", "reject", "다시 해", "수정해줘", "고쳐줘"],
     Intent.CANCEL: ["취소", "cancel", "그만", "중단", "멈춰"],
 }
+
+# 말투/성격 설정 의도 감지 키워드 (봇 이름 + 말투 지시가 함께 있는 경우)
+_TONE_KEYWORDS = [
+    "말투", "말투를", "말투로", "말투 바꿔", "말투 변경", "말투 설정",
+    "톤 설정", "톤을", "성격 바꿔", "성격 변경", "성격을", "성격으로",
+    "어투", "어투를", "어투로",
+    "tone", "set tone", "set-tone",
+]
 
 
 @dataclass
@@ -43,6 +52,10 @@ class NLClassifier:
 
     def classify(self, text: str) -> ClassifyResult:
         text_stripped = text.strip()
+
+        # 0) 말투/성격 설정 의도 감지 (우선순위 높음)
+        if any(kw in text_stripped for kw in _TONE_KEYWORDS):
+            return ClassifyResult(Intent.SET_BOT_TONE, 0.95, "keyword")
 
         # 1) greeting (기존 keywords.py 재활용)
         if any(kw in text_stripped for kw in GREETING_KW) and len(text_stripped) < 15:
