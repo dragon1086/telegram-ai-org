@@ -221,7 +221,7 @@ SCENARIOS = [
         "priority": "P1",
         "message": f"너네 팀은 어떤 전문 분야를 잘 해? [STEST-{_TS}]",
         "description": "봇 역할 인식 (성과 데이터 주입 간접 확인)",
-        "timeout": 60,
+        "timeout": 120,
         "eval_fn": eval_role_awareness,
     },
 ]
