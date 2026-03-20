@@ -461,6 +461,18 @@ class ContextDB:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
+    async def get_recent_pm_tasks(self, limit: int = 10) -> list[dict]:
+        """최근 PM 태스크 이력 조회 (updated_at DESC)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT id, description, assigned_dept, status, created_at, updated_at "
+                "FROM pm_tasks ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
     async def check_convergence(self, discussion_id: str) -> bool:
         """현재 라운드에 COUNTER 메시지가 없으면 수렴으로 판정."""
         disc = await self.get_discussion(discussion_id)
