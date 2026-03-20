@@ -57,6 +57,7 @@ from core.telegram_user_guardrail import (
     extract_local_artifact_paths,
 )
 from core.session_registry import SessionRegistry
+from core.message_envelope import MessageEnvelope, EnvelopeManager
 from core.p2p_messenger import P2PMessenger
 from core.discussion_parser import is_discussion_message, parse_discussion_tags
 from core.discussion import ENABLE_DISCUSSION_PROTOCOL
@@ -281,7 +282,9 @@ class TelegramRelay:
         4000자 초과 메시지는 split_message로 분할 전송.
         """
         if self.app and self.app.bot:
-            visible_text = ARTIFACT_MARKER_RE.sub("", text).strip() or "첨부 파일을 전송합니다."
+            raw = ARTIFACT_MARKER_RE.sub("", text).strip() or "첨부 파일을 전송합니다."
+            env = MessageEnvelope.wrap(content=raw, sender_bot=self.org_id, intent="DIRECT_REPLY")
+            visible_text = env.to_display()
             sent = None
             first = True
             for chunk in split_message(visible_text, 4000):
@@ -292,6 +295,9 @@ class TelegramRelay:
                     reply_to_message_id=reply_to_message_id if first else None,
                 )
                 first = False
+            if sent is not None and self.context_db is not None:
+                mgr = EnvelopeManager(self.context_db)
+                await mgr.save(sent.message_id, env)
             await self._auto_upload(text, self.token, chat_id)
             return sent
         return None
