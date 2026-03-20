@@ -61,3 +61,14 @@ while IFS=$'\t' read -r ORG_ID TOKEN CHAT_ID; do
 done <<< "$BOT_ROWS"
 
 echo "=== 모든 조직 봇 시작 완료 ==="
+
+# agent_monitor 데몬 시작 (aiorg Claude agent 세션 stuck 감지 + 자동 응답)
+MONITOR_PID_FILE="/tmp/agent-monitor.pid"
+if [ -f "$MONITOR_PID_FILE" ] && ps -p "$(cat "$MONITOR_PID_FILE" 2>/dev/null)" > /dev/null 2>&1; then
+  echo "✅ agent_monitor 이미 실행 중 (PID: $(cat "$MONITOR_PID_FILE"))"
+else
+  nohup "$PYTHON_BIN" "$SCRIPT_DIR/agent_monitor.py" \
+    >> "$HOME/.ai-org/agent-monitor.log" 2>&1 &
+  echo $! > "$MONITOR_PID_FILE"
+  echo "▶ agent_monitor 시작 (PID: $!)"
+fi
