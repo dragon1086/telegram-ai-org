@@ -3245,7 +3245,12 @@ class TelegramRelay:
                 f"Task ID: {task_id}\n"
                 f"담당 조직: {dept_name}\n"
                 f"실행 지시: {description}\n\n"
-                f"{task_packet}"
+                f"{task_packet}\n\n"
+                f"## 자율 실행 규칙\n"
+                f"- 사용자 확인 없이 자율적으로 판단하여 완료하라.\n"
+                f"- 완료 후 \"커밋할까요?\", \"계속할까요?\" 같은 확인 질문을 하지 마라.\n"
+                f"- 작업이 끝나면 결과를 요약 보고하고 즉시 종료하라.\n"
+                f"- 위험한 작업(프로덕션 변경, 데이터 삭제)만 피하고, 나머지는 스스로 결정하라.\n"
             )
 
             response = await self._execute_with_team_config(
