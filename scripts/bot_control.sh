@@ -58,9 +58,25 @@ case "${1:-}" in
     if [ "$TARGET" = "all" ]; then
       bash "$SCRIPT_DIR/restart_bots.sh"
     else
-      stop_one "$TARGET"
+      "$PYTHON_BIN" scripts/bot_manager.py stop "$TARGET" || true
       sleep 1
-      bash "$SCRIPT_DIR/start_all.sh"
+      # 개별 봇 재시작: orchestration config에서 token/chat_id 조회 후 start
+      "$PYTHON_BIN" - "$TARGET" <<'PY'
+import sys
+from core.orchestration_config import load_orchestration_config
+from scripts.bot_manager import start_bot
+
+target = sys.argv[1]
+cfg = load_orchestration_config(force_reload=True)
+for org in cfg.list_orgs():
+    if org.id == target:
+        pid = start_bot(token=org.token, org_id=org.id, chat_id=org.chat_id)
+        print(f"✅ {org.id} 재시작 (PID={pid})")
+        break
+else:
+    print(f"❌ {target} 조직을 찾을 수 없습니다.")
+    sys.exit(1)
+PY
     fi
     ;;
   status)
