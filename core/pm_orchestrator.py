@@ -1141,6 +1141,20 @@ class PMOrchestrator:
         # Performance DB 업데이트 (성공)
         asyncio.create_task(_record_bot_perf(self._db, task_id, success=True))
 
+        # Effectiveness tracking: 적용된 교훈의 효과 점수 업데이트
+        try:
+            task_info = await self._db.get_pm_task(task_id)
+            if task_info:
+                from core.lesson_memory import LessonMemory
+                _lm_eff = LessonMemory()
+                await _lm_eff.aupdate_effectiveness(
+                    worker=task_info.get("assigned_dept", ""),
+                    task_description=task_info.get("description", ""),
+                    success=True,
+                )
+        except Exception as _eff_e:
+            logger.debug(f"[PM] effectiveness tracking 실패 (무시): {_eff_e}")
+
         # 새로 unblock된 태스크 발송
         for tid in newly_ready:
             task = await self._db.get_pm_task(tid)

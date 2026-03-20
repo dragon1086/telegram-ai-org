@@ -196,6 +196,40 @@ class LessonMemory:
                 [(lid,) for lid in lesson_ids],
             )
 
+    def update_effectiveness(self, worker: str, task_description: str,
+                             success: bool) -> None:
+        """태스크 완료 후, 적용된 교훈의 effectiveness_score를 업데이트.
+
+        최근 briefing에서 주입된 교훈(applied_count > 0) 중
+        이 태스크와 관련된 교훈의 점수를 조정한다.
+        성공 시 +0.1, 실패 시 -0.05 (0.0~1.0 범위 유지).
+        """
+        keywords = set(task_description.lower().split())
+        with sqlite3.connect(self.db_path, timeout=10) as conn:
+            rows = conn.execute(
+                "SELECT id, task_description, what_went_wrong, effectiveness_score "
+                "FROM lessons WHERE applied_count > 0 AND resolved=0"
+            ).fetchall()
+            delta = 0.1 if success else -0.05
+            updated = []
+            for row in rows:
+                text = (row[1] + " " + row[2]).lower()
+                if sum(1 for kw in keywords if kw in text) > 0:
+                    new_score = max(0.0, min(1.0, row[3] + delta))
+                    updated.append((new_score, row[0]))
+            if updated:
+                conn.executemany(
+                    "UPDATE lessons SET effectiveness_score=? WHERE id=?",
+                    updated,
+                )
+
+    async def aupdate_effectiveness(self, worker: str, task_description: str,
+                                    success: bool) -> None:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, lambda: self.update_effectiveness(worker, task_description, success),
+        )
+
     def _row_to_lesson(self, row) -> Lesson:
         return Lesson(
             id=row[0], task_description=row[1], category=row[2],
