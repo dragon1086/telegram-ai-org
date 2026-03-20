@@ -902,20 +902,20 @@ class PMOrchestrator:
         parent_metadata: dict[str, Any] | None = None,
     ) -> None:
         """태스크 분배 전 계획을 먼저 텔레그램에 보여준다."""
-        lines = ["📋 **PM 실행 계획**\n"]
+        lines = ["📋 **이렇게 나눠서 진행할게요!**\n"]
         requester = self._requester_mention(parent_metadata)
         if requester:
             lines.append(f"요청자: {requester}")
         if rationale:
-            lines.append(f"왜 이렇게 처리하나: {rationale}")
+            lines.append(f"({rationale})")
             lines.append("")
         for i, st in enumerate(subtasks):
             dept_name = KNOWN_DEPTS.get(st.assigned_dept, st.assigned_dept)
             dept_mention = self._org_mention(st.assigned_dept)
             desc_short = st.description[:100].replace("\n", " ")
-            deps = f" (의존: {','.join(st.depends_on)})" if st.depends_on else ""
+            deps = f" (→ {','.join(st.depends_on)} 완료 후)" if st.depends_on else ""
             lines.append(f"{i+1}. {dept_mention} **{dept_name}**: {desc_short}{deps}")
-        lines.append(f"\n총 {len(subtasks)}개 서브태스크 → 실행 시작합니다.")
+        lines.append(f"\n{len(subtasks)}개 팀에 나눠서 바로 시작할게요 🙌")
         try:
             await self._send(
                 chat_id,

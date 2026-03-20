@@ -1575,10 +1575,6 @@ class TelegramRelay:
                         route_kind="local_execution",
                     )
                     self._append_runbook(run_id, "Planning brief", brief, phase_name="planning")
-                    await self.display.send_reply(
-                        update.message,
-                        brief,
-                    )
                     self._advance_runbook(run_id, "계획 공유 완료, design phase로 이동")
                     self._append_runbook(
                         run_id,
@@ -1816,10 +1812,6 @@ class TelegramRelay:
             route_kind="local_execution",
         )
         self._append_runbook(run_id, "Planning brief", brief, phase_name="planning")
-        await self.display.send_reply(
-            update.message,
-            brief,
-        )
         self._advance_runbook(run_id, "계획 공유 완료, design phase로 이동")
         self._append_runbook(
             run_id,
@@ -1829,7 +1821,7 @@ class TelegramRelay:
         )
         self._advance_runbook(run_id, "설계 공유 완료, implementation phase로 이동")
 
-        progress_msg = await self.display.send_reply(update.message, "⚙️ 처리 중...")
+        progress_msg = await self.display.send_reply(update.message, "알겠어요, 바로 시작할게요! ⚙️")
         history: list[str] = []
         last_edit = time.time()
         progress_interval = self._progress_interval()
