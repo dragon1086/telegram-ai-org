@@ -66,6 +66,7 @@ class DisplayLimiter:
         priority: MessagePriority = MessagePriority.IMMEDIATE,
         reply_to_message_id: int | None = None,
     ) -> object:
+        text = _METADATA_TAG_RE.sub('', text).strip()
         kwargs = {}
         if reply_to_message_id is not None:
             kwargs["reply_to_message_id"] = reply_to_message_id
