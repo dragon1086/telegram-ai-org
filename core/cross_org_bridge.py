@@ -6,6 +6,7 @@ from typing import Literal
 
 from loguru import logger
 
+from core.message_envelope import MessageEnvelope
 from core.message_schema import OrgMessage, MsgType
 from core.org_registry import OrgRegistry, Organization
 
@@ -91,9 +92,16 @@ class CrossOrgBridge:
             logger.warning(f"대상 조직 group_chat_id 없음: {target_org.name}")
             return
 
-        # OrgMessage 텍스트에 크로스 조직 헤더 추가
+        # OrgMessage 텍스트에 크로스 조직 헤더 추가 후 envelope으로 정규화
         header = f"[{cross_msg.from_org} → {cross_msg.to_org}]\n"
-        telegram_text = header + cross_msg.inner.to_telegram_text()
+        raw_text = header + cross_msg.inner.to_telegram_text()
+        env = MessageEnvelope.wrap(
+            content=raw_text,
+            sender_bot=cross_msg.from_org,
+            intent=cross_msg.inner.msg_type.value if cross_msg.inner.msg_type else "CROSS_ORG",
+            task_id=cross_msg.inner.task_id,
+        )
+        telegram_text = env.to_display()
 
         try:
             await app.bot.send_message(  # type: ignore[attr-defined]
