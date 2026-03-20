@@ -43,5 +43,5 @@ WEEKLY_REPORT*.md
 .omx/reports/
 
 # 자동생성 오케스트레이션 런 로그
-docs/orchestration-v2/runs/
-.ai-org/runs/
+docs/orchestration-v2/
+.ai-org/
