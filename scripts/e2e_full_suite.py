@@ -39,6 +39,19 @@ SESSION_FILE = Path(__file__).parent.parent / ".e2e_session"
 
 _TS = datetime.now().strftime("%H%M%S")
 
+# ── 타임아웃 상수 (mock 기반 E2E — 실제 봇 불필요) ─────────────────────────────
+# P0: 직접 응답 / 빠른 배분 확인
+T_QUICK = 15     # 인사, /status, 에러핸들링
+T_P0_FAST = 60   # collab (배분 확인 수준)
+T_P0_SLOW = 120  # 코딩, REST API (engineering 봇 실행)
+# P1: 오케스트레이션 확인
+T_P1_FAST = 30   # clarify (모호한 요청)
+T_P1_MID = 60    # growth, design (단일 부서 위임)
+T_P1_DISC = 120  # discussion (토론 시작 확인)
+T_P1_COMPLEX = 150  # 복잡한 멀티봇 아키텍처 요청
+# P2
+T_P2 = 15        # 에러 핸들링 (응답 불요)
+
 
 # ── 데이터 모델 ──────────────────────────────────────────────────────────────
 @dataclass
@@ -246,7 +259,7 @@ SCENARIOS: list[dict] = [
         "priority": "P0",
         "message": f"안녕! [{_TS}]",
         "description": "인사 / Direct Answer",
-        "timeout": 30,
+        "timeout": T_QUICK,
         "eval_fn": eval_greeting,
         "expect_response": True,
     },
@@ -255,7 +268,7 @@ SCENARIOS: list[dict] = [
         "priority": "P0",
         "message": f"파이썬 리스트 컴프리헨션 예제 3개 만들어줘 [{_TS}]",
         "description": "단일 부서 위임 — 코딩 (engineering 봇)",
-        "timeout": 360,
+        "timeout": T_P0_SLOW,
         "eval_fn": eval_coding,
         "expect_response": True,
     },
@@ -264,7 +277,7 @@ SCENARIOS: list[dict] = [
         "priority": "P1",
         "message": f"SaaS 제품의 Product-Led Growth 핵심 전략 3가지만 정리해줘 [{_TS}]",
         "description": "단일 부서 위임 — 성장/마케팅 (growth 봇)",
-        "timeout": 150,
+        "timeout": T_P1_MID,
         "eval_fn": eval_growth,
         "expect_response": True,
     },
@@ -273,7 +286,7 @@ SCENARIOS: list[dict] = [
         "priority": "P1",
         "message": f"모바일 앱 온보딩 화면 UX 개선 포인트 알려줘 [{_TS}]",
         "description": "단일 부서 위임 — 디자인 (design 봇)",
-        "timeout": 150,
+        "timeout": T_P1_MID,
         "eval_fn": eval_design,
         "expect_response": True,
     },
@@ -285,7 +298,7 @@ SCENARIOS: list[dict] = [
             f"엔지니어링팀과 그로스팀이 협업해서 기술 스택 + 초기 마케팅 채널을 같이 제안해줘 [{_TS}]"
         ),
         "description": "멀티 부서 Collab 모드",
-        "timeout": 120,
+        "timeout": T_P0_FAST,
         "eval_fn": eval_collab,
         "expect_response": True,
     },
@@ -297,7 +310,7 @@ SCENARIOS: list[dict] = [
             f"봇들끼리 얘기해봐 [{_TS}]"
         ),
         "description": "Discussion 모드 — 봇 간 토론 후 PM 요약",
-        "timeout": 300,
+        "timeout": T_P1_DISC,
         "eval_fn": eval_discussion,
         "expect_response": True,
     },
@@ -306,7 +319,7 @@ SCENARIOS: list[dict] = [
         "priority": "P0",
         "message": f"간단한 Todo 앱 REST API 엔드포인트 목록 설계해줘 [{_TS}]",
         "description": "REST API 설계 요청 — engineering 봇 위임",
-        "timeout": 360,
+        "timeout": T_P0_SLOW,
         "eval_fn": eval_rest_api,
         "expect_response": True,
     },
@@ -315,7 +328,7 @@ SCENARIOS: list[dict] = [
         "priority": "P0",
         "message": "/status",
         "description": "/status 명령어",
-        "timeout": 30,
+        "timeout": T_QUICK,
         "eval_fn": eval_status,
         "expect_response": True,
     },
@@ -324,7 +337,7 @@ SCENARIOS: list[dict] = [
         "priority": "P1",
         "message": f"도와줘 [{_TS}]",
         "description": "모호한 요청 — Clarify 분기",
-        "timeout": 60,
+        "timeout": T_P1_FAST,
         "eval_fn": eval_clarify,
         "expect_response": True,
     },
@@ -336,7 +349,7 @@ SCENARIOS: list[dict] = [
             f"프론트엔드, 백엔드, AI 파이프라인, 인프라, 모니터링까지 모두 포함해서 [{_TS}]"
         ),
         "description": "매우 긴 태스크 — 복잡도 high, 멀티봇",
-        "timeout": 360,
+        "timeout": T_P1_COMPLEX,
         "eval_fn": eval_complex,
         "expect_response": True,
     },
@@ -345,7 +358,7 @@ SCENARIOS: list[dict] = [
         "priority": "P2",
         "message": f"... [{_TS}]",
         "description": "에러 핸들링 — 빈 의미 메시지 (크래시 없음 확인)",
-        "timeout": 30,
+        "timeout": T_P2,
         "eval_fn": eval_error_handling,
         "expect_response": False,
     },
