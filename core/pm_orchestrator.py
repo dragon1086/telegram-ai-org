@@ -27,7 +27,7 @@ from core.staleness_checker import StalenessChecker
 
 ENABLE_PM_ORCHESTRATOR = os.environ.get("ENABLE_PM_ORCHESTRATOR", "0") == "1"
 MAX_REWORK_RETRIES = int(os.environ.get("MAX_REWORK_RETRIES", "2"))
-MAX_CONCURRENT_PARENT_TASKS = int(os.environ.get("MAX_CONCURRENT_PARENT_TASKS", "5"))
+MAX_CONCURRENT_PARENT_TASKS = int(os.environ.get("MAX_CONCURRENT_PARENT_TASKS", "10"))
 
 
 @dataclass
@@ -1002,7 +1002,7 @@ class PMOrchestrator:
             if len(_others) >= MAX_CONCURRENT_PARENT_TASKS:
                 await self._send(
                     chat_id,
-                    "⚠️ 현재 처리 중인 태스크가 많습니다. 잠시 후 다시 요청해주세요.",
+                    "지금 일이 좀 몰려있어요 😅 잠깐만 기다려주시면 바로 봐드릴게요!",
                 )
                 return []
         except Exception as _bp_e:

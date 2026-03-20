@@ -796,7 +796,7 @@ class TelegramRelay:
             f"{context_packet}"
         )
         prompt = text + replied_context
-        progress_msg = await self.display.send_reply(update.message, "🧠 확인 중...")
+        progress_msg = await self.display.send_reply(update.message, "잠깐요, 한번 볼게요 🧠")
         history: list[str] = []
         last_edit = 0.0
         progress_interval = self._progress_interval()
@@ -1330,7 +1330,7 @@ class TelegramRelay:
         async def _send_progress():
             await asyncio.sleep(delay)
             try:
-                await self.display.send_reply(update.message, "🤔 분석 중...")
+                await self.display.send_reply(update.message, "어디 보자... 🤔")
             except Exception:
                 pass
 
@@ -1563,7 +1563,7 @@ class TelegramRelay:
                     return
 
                 if plan.route == "local_execution":
-                    await self.display.send_reply(update.message, "🧠 PM이 직접 처리합니다. 팀 구성 중...")
+                    await self.display.send_reply(update.message, "제가 직접 해볼게요! 팀 꾸리는 중이에요 🧠")
                     run_id = self._create_runbook(request_text)
                     self._advance_runbook(run_id, "요청 접수 후 planning phase로 이동")
                     team_config = await self._build_team_config(request_text)
@@ -1587,7 +1587,7 @@ class TelegramRelay:
                         phase_name="design",
                     )
                     self._advance_runbook(run_id, "설계 공유 완료, implementation phase로 이동")
-                    progress_msg = await self.display.send_reply(update.message, "⚙️ 처리 중...")
+                    progress_msg = await self.display.send_reply(update.message, "알겠어요, 바로 시작할게요! ⚙️")
                     history: list[str] = []
                     last_edit = time.time()
                     progress_interval = self._progress_interval()
@@ -1606,7 +1606,7 @@ class TelegramRelay:
                             try:
                                 await self.display.edit_progress(
                                     progress_msg,
-                                    f"🛰️ 중간보고\n\n{display}",
+                                    f"중간 상황 공유할게요!\n\n{display}",
                                     agent_id=self.org_id,
                                 )
                                 last_edit = time.time()
@@ -1629,7 +1629,7 @@ class TelegramRelay:
                     )
                     self._advance_runbook(run_id, "실행 완료, verification phase로 이동")
                     try:
-                        await progress_msg.edit_text("✅ 완료!")
+                        await progress_msg.edit_text("다 됐어요! ✅")
                     except Exception:
                         pass
                     response = await self._handle_collab_tags(
@@ -1733,7 +1733,7 @@ class TelegramRelay:
                         )
                         return
 
-                await self.display.send_reply(update.message, "📋 여러 조직 협업이 필요해 보여 오케스트레이션으로 넘깁니다.")
+                await self.display.send_reply(update.message, "여러 팀이 같이 해야 할 것 같아서 오케스트레이터한테 넘길게요 📋")
                 run_id = self._create_runbook(request_text)
                 conversation_context = await self._build_conversation_context_packet(
                     text,
@@ -1796,7 +1796,7 @@ class TelegramRelay:
                 )
                 await self.display.send_reply(
                     update.message,
-                    f"✅ {len(subtasks)}개 조직에 태스크 배분 완료: {dept_list}",
+                    f"{dept_list}에 부탁드렸어요 🙌 각 팀에서 처리해줄 거예요!",
                 )
             except Exception as e:
                 logger.error(f"[PM] 오케스트레이터 분해 실패: {e}")
@@ -1804,7 +1804,7 @@ class TelegramRelay:
             return
 
         # 4. 담당 선언 + 실행 (모델 기반 팀 구성)
-        await self.display.send_reply(update.message, f"✋ {self.org_id} 담당 — 팀 구성 중...")
+        await self.display.send_reply(update.message, f"저희가 맡을게요! 팀 꾸리는 중이에요 ✋")
         run_id = self._create_runbook(text)
         self._advance_runbook(run_id, "요청 접수 후 planning phase로 이동")
         team_config = await self._build_team_config(text)
@@ -1848,7 +1848,7 @@ class TelegramRelay:
                 try:
                     await self.display.edit_progress(
                         progress_msg,
-                        f"🛰️ 중간보고\n\n{display}",
+                        f"중간 상황 공유할게요!\n\n{display}",
                         agent_id=self.org_id,
                     )
                     last_edit = time.time()
@@ -1872,7 +1872,7 @@ class TelegramRelay:
         self._advance_runbook(run_id, "실행 완료, verification phase로 이동")
 
         try:
-            await progress_msg.edit_text("✅ 완료!")
+            await progress_msg.edit_text("다 됐어요! ✅")
         except Exception:
             pass
 
@@ -2099,7 +2099,7 @@ class TelegramRelay:
             if time.time() - last_edit > progress_interval:
                 display = "\n".join(history[-history_limit:])
                 try:
-                    await progress_msg.edit_text(f"🛰️ 중간보고\n\n{display}")
+                    await progress_msg.edit_text(f"중간 상황 공유할게요!\n\n{display}")
                     last_edit = time.time()
                 except Exception:
                     pass
@@ -2121,7 +2121,7 @@ class TelegramRelay:
         self._advance_runbook(run_id, "첨부파일 실행 완료, verification phase 이동")
 
         try:
-            await progress_msg.edit_text("✅ 완료!")
+            await progress_msg.edit_text("다 됐어요! ✅")
         except Exception:
             pass
 
@@ -3321,7 +3321,7 @@ class TelegramRelay:
             if time.time() - last_edit > progress_interval:
                 try:
                     await progress_msg.edit_text(
-                        "🛰️ 협업 중간보고\n\n" + "\n".join(history[-history_limit:])
+                        "협업 진행 상황 공유할게요!\n\n" + "\n".join(history[-history_limit:])
                     )
                     last_edit = time.time()
                 except Exception:
