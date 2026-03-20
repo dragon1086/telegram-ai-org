@@ -198,7 +198,9 @@ class PMOrchestrator:
                     "direction": data.get("direction") or org.direction or "",
                     "instruction": instruction,
                 }
-            return profiles
+            if profiles:
+                return profiles
+            logger.warning("[PM] orchestration.yaml에 specialist org 없음, 상수 fallback 사용")
         except Exception as e:
             logger.warning(f"[PM] live dept profile 로드 실패, 상수 fallback 사용: {e}")
 
