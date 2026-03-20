@@ -3270,6 +3270,15 @@ class TelegramRelay:
             if briefing_text:
                 system_prompt += f"\n{briefing_text}\n"
 
+            # 봇에 매핑된 스킬 컨텍스트 주입
+            try:
+                from core.skill_loader import build_skill_context
+                skill_ctx = build_skill_context(self.org_id, description)
+                if skill_ctx:
+                    system_prompt += f"\n{skill_ctx}\n"
+            except Exception as _se:
+                logger.debug(f"[{self.org_id}] 스킬 로딩 실패 (무시): {_se}")
+
             response = await self._execute_with_team_config(
                 task=description,
                 system_prompt=system_prompt,
