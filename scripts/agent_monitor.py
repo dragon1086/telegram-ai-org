@@ -84,9 +84,9 @@ def get_aiorg_sessions() -> list[tuple[str, int]]:
     try:
         out = subprocess.check_output(
             ["tmux", "list-windows", "-a", "-F", "#{session_name}:#{window_index}"],
-            text=True, stderr=subprocess.DEVNULL,
+            text=True, stderr=subprocess.DEVNULL, timeout=10,
         )
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return []
     results = []
     for line in out.strip().splitlines():
@@ -103,9 +103,9 @@ def capture_pane(session: str, window: int) -> str:
     try:
         return subprocess.check_output(
             ["tmux", "capture-pane", "-t", f"{session}:{window}", "-p", "-S", "-60"],
-            text=True, stderr=subprocess.DEVNULL,
+            text=True, stderr=subprocess.DEVNULL, timeout=10,
         )
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return ""
 
 
@@ -223,76 +223,84 @@ def monitor_loop(poll_interval: int = POLL_INTERVAL, stuck_threshold: int = STUC
     state = load_state()
 
     while True:
-        sessions = get_aiorg_sessions()
+        try:
+            sessions = get_aiorg_sessions()
+        except Exception as _e:
+            log.warning(f"세션 목록 조회 실패: {_e}")
+            time.sleep(poll_interval)
+            continue
         now = time.time()
 
         for (session, window) in sessions:
-            key = f"{session}:{window}"
-            pane = capture_pane(session, window)
-            if not pane.strip():
-                continue
+            try:
+                key = f"{session}:{window}"
+                pane = capture_pane(session, window)
+                if not pane.strip():
+                    continue
 
-            h = pane_hash(pane)
-            sess = state.get(key, {})
-            last_hash = sess.get("hash", "")
-            last_changed = sess.get("last_changed", now)
-            last_responded = sess.get("last_responded", 0)
-            responded_hash = sess.get("responded_hash", "")
+                h = pane_hash(pane)
+                sess = state.get(key, {})
+                last_hash = sess.get("hash", "")
+                last_changed = sess.get("last_changed", now)
+                last_responded = sess.get("last_responded", 0)
+                responded_hash = sess.get("responded_hash", "")
 
-            if h != last_hash:
-                # 내용 변경 → 상태 갱신
+                if h != last_hash:
+                    # 내용 변경 → 상태 갱신
+                    state[key] = {
+                        "hash": h,
+                        "last_changed": now,
+                        "last_responded": last_responded,
+                        "responded_hash": responded_hash,
+                    }
+                    continue
+
+                # 내용 고정 → stuck 시간 계산
+                stuck_secs = now - last_changed
+                if stuck_secs < stuck_threshold:
+                    continue
+
+                # 이미 응답한 컨텍스트인지 확인 (중복 방지)
+                context_h = pane_hash(pane[-3000:])
+                if context_h == responded_hash:
+                    continue
+
+                # 응답 쿨다운 확인
+                if now - last_responded < RESPONSE_COOLDOWN:
+                    continue
+
+                action, response, context = classify_stuck(pane)
+                if action == "none":
+                    continue
+
+                # ── 3단계 자동 처리 ──────────────────────────────────────
+                stuck_min = int(stuck_secs / 60)
+                bot_name = session.replace(SESSION_PREFIX, "")
+                short_ctx = context[-150:].strip().replace("\n", "\n  ")
+
+                log.info(f"[{key}] {stuck_min}분 입력 대기 → {action}: {response!r}")
+
+                # send_keys로 응답 주입
+                send_keys(session, window, response)
+
+                # 텔레그램 알림
+                action_label = {"safe": "자동 응답", "nudge": "자기 판단 유도", "fresh": "HEARTBEAT 확인"}
+                send_telegram(
+                    f"🔒 {bot_name} — {stuck_min}분째 입력 대기\n\n"
+                    f"📋 컨텍스트:\n  ...{short_ctx}\n\n"
+                    f"🤖 조치: {action_label.get(action, action)}\n"
+                    f"💬 주입: {response}"
+                )
+
+                # 상태 업데이트
                 state[key] = {
                     "hash": h,
                     "last_changed": now,
-                    "last_responded": last_responded,
-                    "responded_hash": responded_hash,
+                    "last_responded": now,
+                    "responded_hash": context_h,
                 }
-                continue
-
-            # 내용 고정 → stuck 시간 계산
-            stuck_secs = now - last_changed
-            if stuck_secs < stuck_threshold:
-                continue
-
-            # 이미 응답한 컨텍스트인지 확인 (중복 방지)
-            context_h = pane_hash(pane[-3000:])
-            if context_h == responded_hash:
-                continue
-
-            # 응답 쿨다운 확인
-            if now - last_responded < RESPONSE_COOLDOWN:
-                continue
-
-            action, response, context = classify_stuck(pane)
-            if action == "none":
-                continue
-
-            # ── 3단계 자동 처리 ──────────────────────────────────────
-            stuck_min = int(stuck_secs / 60)
-            bot_name = session.replace(SESSION_PREFIX, "")
-            short_ctx = context[-150:].strip().replace("\n", "\n  ")
-
-            log.info(f"[{key}] {stuck_min}분 입력 대기 → {action}: {response!r}")
-
-            # send_keys로 응답 주입
-            send_keys(session, window, response)
-
-            # 텔레그램 알림
-            action_label = {"safe": "자동 응답", "nudge": "자기 판단 유도", "fresh": "HEARTBEAT 확인"}
-            send_telegram(
-                f"🔒 {bot_name} — {stuck_min}분째 입력 대기\n\n"
-                f"📋 컨텍스트:\n  ...{short_ctx}\n\n"
-                f"🤖 조치: {action_label.get(action, action)}\n"
-                f"💬 주입: {response}"
-            )
-
-            # 상태 업데이트
-            state[key] = {
-                "hash": h,
-                "last_changed": now,
-                "last_responded": now,
-                "responded_hash": context_h,
-            }
+            except Exception as _e:
+                log.warning(f"[{session}:{window}] 처리 실패: {_e}")
 
         save_state(state)
         time.sleep(poll_interval)
