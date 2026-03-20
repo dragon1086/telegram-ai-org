@@ -295,14 +295,14 @@ def monitor_loop(poll_interval: int = POLL_INTERVAL, stuck_threshold: int = STUC
                 # send_keys로 응답 주입
                 send_keys(session, window, response)
 
-                # 텔레그램 알림
-                action_label = {"safe": "자동 응답", "nudge": "자기 판단 유도", "fresh": "HEARTBEAT 확인"}
-                send_telegram(
-                    f"🔒 {bot_name} — {stuck_min}분째 입력 대기\n\n"
-                    f"📋 컨텍스트:\n  ...{short_ctx}\n\n"
-                    f"🤖 조치: {action_label.get(action, action)}\n"
-                    f"💬 주입: {response}"
-                )
+                # 텔레그램 알림 — fresh(세션 재시작)만 알림, safe/nudge는 로그만
+                if action == "fresh":
+                    send_telegram(
+                        f"🔒 {bot_name} — {stuck_min}분째 입력 대기\n\n"
+                        f"📋 컨텍스트:\n  ...{short_ctx}\n\n"
+                        f"🤖 조치: HEARTBEAT 확인 (세션 재시작)\n"
+                        f"💬 주입: {response}"
+                    )
 
                 # 상태 업데이트
                 state[key] = {
