@@ -1,6 +1,6 @@
 # Integration Test Report — 2026-03-17
 
-Generated: 2026-03-17 23:17:51
+Generated: 2026-03-19 18:50:01
 
 ## Executive Summary
 
@@ -10,27 +10,27 @@ Generated: 2026-03-17 23:17:51
 | Passed | 6 |
 | Failed | 0 |
 | Pass rate | 100% |
-| Avg response time | 34.7 ms |
+| Avg response time | 36.3 ms |
 
 ## Per-Scenario Results
 
 | # | Scenario | Status | Lane | Route | Dept Hints | Time (ms) | Notes |
 |---|----------|--------|------|-------|------------|-----------|-------|
-| 1 | coding_bug_request | PASS | single_org_execution | local_execution | aiorg_engineering_bot | 32 | OK |
-| 2 | greeting | PASS | single_org_execution | local_execution | — | 29 | OK |
-| 3 | research_request | PASS | single_org_execution | local_execution | — | 29 | OK |
-| 4 | planning_request | PASS | single_org_execution | delegate | aiorg_engineering_bot | 45 | OK |
-| 5 | multi_dept_request | PASS | multi_org_execution | delegate | aiorg_engineering_bot, aiorg_growth_bot | 44 | OK |
+| 1 | coding_bug_request | PASS | single_org_execution | local_execution | aiorg_engineering_bot | 31 | OK |
+| 2 | greeting | PASS | single_org_execution | local_execution | — | 30 | OK |
+| 3 | research_request | PASS | single_org_execution | local_execution | aiorg_engineering_bot | 31 | OK |
+| 4 | planning_request | PASS | single_org_execution | delegate | aiorg_engineering_bot | 48 | OK |
+| 5 | multi_dept_request | PASS | multi_org_execution | delegate | aiorg_engineering_bot, aiorg_growth_bot | 47 | OK |
 | 6 | ambiguous_request | PASS | single_org_execution | local_execution | — | 29 | OK |
 
 ## Performance Metrics
 
-- **coding_bug_request**: 32.0 ms
-- **greeting**: 29.2 ms
-- **research_request**: 28.9 ms
-- **planning_request**: 44.7 ms
-- **multi_dept_request**: 44.2 ms
-- **ambiguous_request**: 29.4 ms
+- **coding_bug_request**: 31.5 ms
+- **greeting**: 30.4 ms
+- **research_request**: 31.3 ms
+- **planning_request**: 48.5 ms
+- **multi_dept_request**: 46.7 ms
+- **ambiguous_request**: 29.1 ms
 
 ## Routing Details
 
@@ -59,7 +59,7 @@ Generated: 2026-03-17 23:17:51
 - **Lane**: `single_org_execution`
 - **Route**: `local_execution`
 - **Complexity**: `low`
-- **Dept hints**: []
+- **Dept hints**: ['aiorg_engineering_bot']
 - **Confidence**: 0.7
 - **Rationale**: 집중된 단일 작업이라 PM이 직접 처리하는 편이 더 빠릅니다.
 - **LLM called**: True
