@@ -3244,6 +3244,15 @@ class TelegramRelay:
 
         # Claude Code / Codex로 태스크 실행
         try:
+            # Pre-task briefing: 관련 과거 교훈 주입
+            briefing_text = ""
+            try:
+                from core.lesson_memory import LessonMemory
+                _lm = LessonMemory()
+                briefing_text = await _lm.aget_briefing(description, worker=self.org_id)
+            except Exception as _be:
+                logger.debug(f"[{self.org_id}] briefing 조회 실패 (무시): {_be}")
+
             system_prompt = self.identity.build_system_prompt()
             task_packet = await self._build_delegated_task_packet(task_info)
             system_prompt += (
@@ -3258,6 +3267,8 @@ class TelegramRelay:
                 f"- 작업이 끝나면 결과를 요약 보고하고 즉시 종료하라.\n"
                 f"- 위험한 작업(프로덕션 변경, 데이터 삭제)만 피하고, 나머지는 스스로 결정하라.\n"
             )
+            if briefing_text:
+                system_prompt += f"\n{briefing_text}\n"
 
             response = await self._execute_with_team_config(
                 task=description,
@@ -3287,6 +3298,20 @@ class TelegramRelay:
             full_result = (response or "(완료)")
             await self.context_db.update_pm_task_status(task_id, "done", result=full_result)
             logger.info(f"[{self.org_id}] PM_TASK {task_id} 완료")
+
+            # Post-task debrief: 성공 교훈 자동 기록
+            try:
+                from core.lesson_memory import LessonMemory
+                _lm_post = LessonMemory()
+                await _lm_post.arecord_success(
+                    task_description=description[:200],
+                    category="approach",
+                    what_went_well=f"태스크 {task_id} 정상 완료",
+                    reuse_tip=full_result[:300],
+                    worker=self.org_id,
+                )
+            except Exception as _de:
+                logger.debug(f"[{self.org_id}] 성공 교훈 기록 실패 (무시): {_de}")
 
             # 결과를 채팅방에 공유
             # pm_bot은 "✅ [X] 태스크 T-xxx 완료" 패턴을 파싱해서 on_task_complete 트리거
@@ -3328,6 +3353,20 @@ class TelegramRelay:
             import asyncio as _asyncio
             from core.pm_orchestrator import _record_bot_perf as _rbp
             _asyncio.create_task(_rbp(self.context_db, task_id, success=False))
+            # Post-task debrief: 실패 교훈 자동 기록
+            try:
+                from core.lesson_memory import LessonMemory
+                _lm_fail = LessonMemory()
+                await _lm_fail.arecord(
+                    task_description=description[:200],
+                    category="other",
+                    what_went_wrong=str(e)[:300],
+                    how_to_prevent=f"태스크 {task_id} 실패 패턴 확인 필요",
+                    worker=self.org_id,
+                    outcome="failure",
+                )
+            except Exception:
+                pass
             # 실패 알림
             if self.app and self.app.bot:
                 fail_prefix = f"{requester_mention} " if requester_mention else ""
