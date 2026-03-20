@@ -41,3 +41,7 @@ WEEKLY_REPORT*.md
 # 임시 세션/리포트 파일
 .e2e_session*.session
 .omx/reports/
+
+# 자동생성 오케스트레이션 런 로그
+docs/orchestration-v2/runs/
+.ai-org/runs/
