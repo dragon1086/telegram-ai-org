@@ -190,7 +190,7 @@ class SessionManager:
 
         try:
             content = await asyncio.wait_for(
-                self._wait_for_output(output_file, progress_callback=progress_callback),
+                self._wait_for_output(output_file, progress_callback=progress_callback, session_name=name),
                 timeout=timeout or OUTPUT_TIMEOUT,
             )
         except asyncio.TimeoutError:
@@ -240,9 +240,15 @@ class SessionManager:
         self,
         output_file: Path,
         progress_callback: Callable[[str], Awaitable[None]] | None = None,
+        session_name: str | None = None,
     ) -> str:
-        """출력 파일에 __DONE__ 마커 나타날 때까지 대기."""
+        """출력 파일에 __DONE__ 마커 나타날 때까지 대기.
+
+        session_name이 주어지면 tmux 세션이 살아있는지 주기적으로 확인하여
+        프로세스 사망 시 무한 대기를 방지한다.
+        """
         last_size = 0
+        _dead_check_counter = 0
         while True:
             await asyncio.sleep(0.5)
             if output_file.exists():
@@ -260,6 +266,21 @@ class SessionManager:
                             logger.warning(f"shell progress_callback 오류: {cb_err}")
                 if "__DONE__" in content:
                     return content.replace("__DONE__", "").strip()
+
+            # 10초마다 tmux 세션 생존 확인 (0.5초 * 20 = 10초)
+            _dead_check_counter += 1
+            if session_name and _dead_check_counter % 20 == 0:
+                try:
+                    subprocess.check_output(
+                        ["tmux", "has-session", "-t", session_name],
+                        stderr=subprocess.DEVNULL, timeout=5,
+                    )
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                    logger.warning(f"tmux 세션 사망 감지: {session_name} — 대기 중단")
+                    if output_file.exists():
+                        content = output_file.read_text(encoding="utf-8")
+                        return content.replace("__DONE__", "").strip()
+                    return ""
 
     # ── 컨텍스트 재주입 재시작 ────────────────────────────────────────────
 
