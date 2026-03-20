@@ -122,6 +122,7 @@ async def test_plan_request_single_org_forces_local_execution(setup, monkeypatch
             return []
 
     monkeypatch.setattr("core.pm_orchestrator.load_orchestration_config", lambda force_reload=False: _EmptyConfig())
+    monkeypatch.setattr("core.pm_orchestrator.KNOWN_DEPTS", {})
     orch, db, send_fn = setup
 
     plan = await orch.plan_request("기획하고 디자인하고 개발해줘")
@@ -136,6 +137,7 @@ async def test_decompose_returns_empty_without_specialists(setup, monkeypatch):
             return []
 
     monkeypatch.setattr("core.pm_orchestrator.load_orchestration_config", lambda force_reload=False: _EmptyConfig())
+    monkeypatch.setattr("core.pm_orchestrator.KNOWN_DEPTS", {})
     orch, db, send_fn = setup
 
     subtasks = await orch.decompose("기획하고 개발해줘")
