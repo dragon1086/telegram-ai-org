@@ -109,6 +109,9 @@ def extract_meaningful_lines(pane: str) -> list[str]:
     return lines
 
 
+FRESH_SESSION_MARKERS = ("claude code", "sonnet", "haiku", "opus", "bypass permissions on")
+
+
 def is_waiting_for_input(pane: str) -> tuple[bool, str]:
     """(대기 중 여부, 관련 컨텍스트 텍스트) 반환."""
     lines = extract_meaningful_lines(pane)
@@ -118,14 +121,22 @@ def is_waiting_for_input(pane: str) -> tuple[bool, str]:
     last_line = lines[-1]
     # Claude Code 프롬프트(❯)에서 멈춘 상태인지 확인
     at_prompt = last_line in ("❯", "") or last_line.endswith("❯")
+    if not at_prompt:
+        return False, ""
 
     # 최근 30줄에서 질문 패턴 탐색
     recent = "\n".join(lines[-30:]).lower()
     has_question = any(p.lower() in recent for p in QUESTION_PATTERNS)
 
+    # fresh 세션 감지: 시작 직후 배너만 있고 대화 내용 없는 상태
+    # (봇 재시작 후 Claude Code 세션이 초기화되어 아무 임무도 없는 경우)
+    is_fresh_session = len(lines) <= 10 and any(
+        marker in recent for marker in FRESH_SESSION_MARKERS
+    )
+
     # 최근 콘텐츠를 LLM에 넘길 텍스트로
     context = "\n".join(lines[-40:])
-    return at_prompt and has_question, context
+    return has_question or is_fresh_session, context
 
 
 # ── LLM 응답 생성 ─────────────────────────────────────────────────────────────
