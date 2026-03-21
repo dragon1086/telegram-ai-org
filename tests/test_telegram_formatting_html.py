@@ -166,3 +166,47 @@ def test_mixed_bold_italic_in_paragraph() -> None:
     assert "<b><i>핵심 변경점</i></b>" in result
     assert "──────────" in result
     assert "일반 텍스트" in result
+
+
+# ── blockquote ─────────────────────────────────────────────────────────────
+
+def test_blockquote_single_line() -> None:
+    """> text → <blockquote>text</blockquote>"""
+    result = markdown_to_html("> 참고 사항입니다.")
+    assert result == "<blockquote>참고 사항입니다.</blockquote>"
+
+
+def test_blockquote_multiline_merged() -> None:
+    """연속된 > 줄은 하나의 <blockquote>로 병합"""
+    text = "> 첫 번째 줄\n> 두 번째 줄"
+    result = markdown_to_html(text)
+    assert result == "<blockquote>첫 번째 줄\n두 번째 줄</blockquote>"
+
+
+def test_blockquote_with_bold() -> None:
+    """> **bold** 내부 포맷 변환 확인"""
+    result = markdown_to_html("> **중요 내용**")
+    assert "<blockquote>" in result
+    assert "<b>중요 내용</b>" in result
+
+
+def test_blockquote_surrounded_by_text() -> None:
+    """blockquote 앞뒤 일반 텍스트는 유지"""
+    text = "일반 텍스트\n\n> 인용 문구\n\n이후 텍스트"
+    result = markdown_to_html(text)
+    assert "<blockquote>인용 문구</blockquote>" in result
+    assert "일반 텍스트" in result
+    assert "이후 텍스트" in result
+
+
+def test_blockquote_not_triggered_in_middle_of_text() -> None:
+    """줄 중간의 > 는 blockquote로 변환하지 않음 (x > 5 같은 표현식)"""
+    result = markdown_to_html("if x &gt; 5: pass")
+    assert "<blockquote>" not in result
+
+
+def test_blockquote_empty_gt() -> None:
+    """&gt; 단독 줄 (내용 없는 blockquote) 처리"""
+    text = "> "
+    result = markdown_to_html(text)
+    assert "<blockquote>" in result
