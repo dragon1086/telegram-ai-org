@@ -21,12 +21,14 @@ sleep 1
 # 모든 aiorg 봇 tmux 세션 종료 (메인 + claude 서브세션, context 완전 리셋)
 # aiorg_global 제외 — 전역 설정 세션
 echo "--- aiorg tmux 세션 정리 중 (context 완전 리셋) ---"
-tmux list-sessions -F "#{session_name}" 2>/dev/null \
-  | grep -E '^aiorg_' \
-  | grep -v '^aiorg_global$' \
-  | while read -r sess; do
-      tmux kill-session -t "$sess" 2>/dev/null && echo "✅ 종료: $sess" || true
-    done
+aiorg_sessions="$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -E '^aiorg_' | grep -v '^aiorg_global$' || true)"
+if [ -n "$aiorg_sessions" ]; then
+  echo "$aiorg_sessions" | while read -r sess; do
+    tmux kill-session -t "$sess" 2>/dev/null && echo "✅ 종료: $sess" || true
+  done
+else
+  echo "· tmux 세션 없음 (이미 정리됨)"
+fi
 
 # session JSON 파일에서 context 관련 필드 리셋 (context_budget 0% 초기화)
 echo "--- session 파일 context 리셋 중 ---"
