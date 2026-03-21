@@ -64,7 +64,7 @@ from core.dispatch_engine import ENABLE_AUTO_DISPATCH
 from core.verification import ENABLE_CROSS_VERIFICATION
 from core.goal_tracker import ENABLE_GOAL_TRACKER
 from core.task_poller import TaskPoller
-from core.telegram_formatting import split_message, markdown_to_html
+from core.telegram_formatting import split_message, markdown_to_html, format_for_telegram
 from core.setup_registration import (
     default_identity_for_org,
     parse_setup_identity,
@@ -798,7 +798,7 @@ class TelegramRelay:
                 markdown_to_html(
                     "봇 이름을 찾지 못했어요.\n"
                     "예) '성장실 봇 말투를 데이터 지향적으로 바꿔줘'\n"
-                    "또는 <code>/org set-tone &lt;봇이름&gt; &lt;말투지시&gt;</code> 명령어를 사용하세요."
+                    "또는 `/org set-tone <봇이름> <말투지시>` 명령어를 사용하세요."
                 ),
                 parse_mode="HTML",
             )
@@ -983,7 +983,7 @@ class TelegramRelay:
         chunks = split_message(reply.strip() or "알겠습니다.", 3800)  # HTML 태그 팽창 여유 (~4096 한도)
         first = chunks[0]
         try:
-            await progress_msg.edit_text(markdown_to_html(first), parse_mode="HTML")
+            await progress_msg.edit_text(format_for_telegram(first), parse_mode="HTML")
         except Exception:
             await self.display.send_reply(update.effective_message, first)
         for chunk in chunks[1:]:
@@ -2311,7 +2311,7 @@ class TelegramRelay:
                 decision_client=self._pm_decision_client if self._is_pm_org else None,
             )
             for chunk in split_message(response, 3800):  # HTML 태그 팽창 여유 (~4096 한도)
-                await msg.reply_text(markdown_to_html(chunk), parse_mode="HTML")
+                await msg.reply_text(format_for_telegram(chunk), parse_mode="HTML")
             await self._auto_upload("\n".join(upload_candidates), self.token, self.allowed_chat_id)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
         self._append_runbook(
@@ -3588,10 +3588,10 @@ class TelegramRelay:
         )
         summary = response[:300]
         done_text = f"{requester_mention} {make_collab_done(self.org_id, summary)}".strip()
-        await update.message.reply_text(markdown_to_html(done_text), parse_mode="HTML")
+        await update.message.reply_text(format_for_telegram(done_text), parse_mode="HTML")
         if response and len(response) > 300:
             for chunk in split_message(response[300:], 3800):  # HTML 태그 팽창 여유 (~4096 한도)
-                await update.message.reply_text(markdown_to_html(chunk), parse_mode="HTML")
+                await update.message.reply_text(format_for_telegram(chunk), parse_mode="HTML")
         self._append_runbook(
             run_id,
             "Verification summary",

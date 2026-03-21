@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.telegram_formatting import escape_html, markdown_to_html
+from core.telegram_formatting import escape_html, markdown_to_html, format_for_telegram
 
 
 # ── escape_html ────────────────────────────────────────────────────────────
@@ -356,3 +356,68 @@ def test_header_hierarchy_visual_distinction() -> None:
     assert "<b>▸ 중제목</b>" in result
     # H3: 단순 bold
     assert "<b>소제목</b>" in result
+
+
+# ── format_for_telegram (통합 함수) ─────────────────────────────────────────
+
+def test_format_for_telegram_strips_team_tag() -> None:
+    """[TEAM:...] 메타데이터 태그를 제거하고 마크다운을 HTML로 변환한다."""
+    text = "[TEAM:solo]\n\n**결론:** 작업 완료했습니다."
+    result = format_for_telegram(text)
+    assert "[TEAM:" not in result
+    assert "<b>결론:</b>" in result
+
+
+def test_format_for_telegram_strips_collab_tag() -> None:
+    """[COLLAB:...] 태그를 제거한다."""
+    text = "[COLLAB:디자인 요청|맥락: 현재 작업]\n\n진행 중입니다."
+    result = format_for_telegram(text)
+    assert "[COLLAB:" not in result
+    assert "진행 중입니다." in result
+
+
+def test_format_for_telegram_strips_multiple_tags() -> None:
+    """여러 메타데이터 태그를 모두 제거한다."""
+    text = "[TEAM:agent1,agent2]\n[COLLAB:작업]\n\n**본문** 내용"
+    result = format_for_telegram(text)
+    assert "[TEAM:" not in result
+    assert "[COLLAB:" not in result
+    assert "<b>본문</b>" in result
+
+
+def test_format_for_telegram_preserves_markdown_rendering() -> None:
+    """메타데이터 태그 제거 후에도 마크다운이 올바르게 변환된다."""
+    text = (
+        "[TEAM:T-global-091]\n\n"
+        "## 분석 결과\n\n"
+        "- **parse_mode**: HTML 통일 ✅\n"
+        "> 변경 완료\n"
+    )
+    result = format_for_telegram(text)
+    assert "[TEAM:" not in result
+    assert "<b>▸ 분석 결과</b>" in result
+    assert "• <b>parse_mode</b>:" in result
+    assert "<blockquote>변경 완료</blockquote>" in result
+
+
+def test_format_for_telegram_empty_string() -> None:
+    """빈 문자열은 그대로 반환한다."""
+    assert format_for_telegram("") == ""
+
+
+def test_format_for_telegram_no_metadata_tag_unchanged() -> None:
+    """메타데이터 태그 없는 텍스트는 markdown_to_html과 동일한 결과를 낸다."""
+    text = "**볼드** 텍스트와 `인라인 코드`"
+    assert format_for_telegram(text) == markdown_to_html(text)
+
+
+def test_format_for_telegram_hardcoded_html_not_double_escaped() -> None:
+    """마크다운 포맷 사용 시 올바른 HTML이 생성된다 (이중 이스케이프 없음)."""
+    # 올바른 방식: 마크다운으로 작성 → format_for_telegram 변환
+    text = "또는 `/org set-tone <봇이름> <말투지시>` 명령어를 사용하세요."
+    result = format_for_telegram(text)
+    # backtick → <code>, angle brackets → escaped safely
+    assert "<code>/org set-tone" in result
+    assert "&lt;봇이름&gt;" in result
+    # 이중 이스케이프 없음
+    assert "&amp;lt;" not in result
