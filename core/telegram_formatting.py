@@ -64,11 +64,16 @@ def markdown_to_html(text: str) -> str:
     # Bold: **text** 또는 __text__
     text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text, flags=re.DOTALL)
     text = re.sub(r"__(.+?)__", r"<b>\1</b>", text, flags=re.DOTALL)
-    # Italic: *text* 또는 _text_ (단, ** 처리 후라 * 하나만 남음)
+    # Italic: *text* (단, ** 처리 후라 * 하나만 남음)
     text = re.sub(r"\*([^*\n]+?)\*", r"<i>\1</i>", text)
-    text = re.sub(r"_([^_\n]+?)_", r"<i>\1</i>", text)
+    # Italic: _text_ — 단어 경계로 제한하여 snake_case 오인식 방지
+    # (?<!\w) : 앞이 단어 문자가 아님 (공백/구두점/줄 시작)
+    # (?!\w) : 뒤가 단어 문자가 아님
+    text = re.sub(r"(?<!\w)_([^_\n]+?)_(?!\w)", r"<i>\1</i>", text)
     # 링크: [text](url)
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
+    # 취소선: ~~text~~
+    text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
 
     # 5. 플레이스홀더 복원
     for i, block in enumerate(fenced_blocks):

@@ -8,6 +8,7 @@ from loguru import logger
 from core.message_envelope import MessageEnvelope
 from core.message_schema import OrgMessage
 from core.org_registry import OrgRegistry, Organization
+from core.telegram_formatting import markdown_to_html
 
 
 @dataclass
@@ -105,7 +106,8 @@ class CrossOrgBridge:
         try:
             await app.bot.send_message(  # type: ignore[attr-defined]
                 chat_id=target_org.group_chat_id,
-                text=telegram_text,
+                text=markdown_to_html(telegram_text),
+                parse_mode="HTML",
             )
             logger.info(f"크로스 조직 메시지 전달 완료 → {target_org.name}")
         except Exception as e:
