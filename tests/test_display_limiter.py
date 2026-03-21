@@ -24,7 +24,7 @@ async def test_send_reply_immediate():
     limiter = DisplayLimiter(debounce_sec=5.0)
     msg = FakeMessage()
     await limiter.send_reply(msg, "hello", priority=MessagePriority.IMMEDIATE)
-    msg.reply_text.assert_awaited_once_with("hello")
+    msg.reply_text.assert_awaited_once_with("hello", parse_mode="HTML")
 
 
 @pytest.mark.asyncio
@@ -32,7 +32,7 @@ async def test_send_to_chat_always_immediate():
     limiter = DisplayLimiter(debounce_sec=5.0)
     bot = AsyncMock()
     await limiter.send_to_chat(bot, chat_id=123, text="collab msg")
-    bot.send_message.assert_awaited_once_with(chat_id=123, text="collab msg")
+    bot.send_message.assert_awaited_once_with(chat_id=123, text="collab msg", parse_mode="HTML")
 
 
 @pytest.mark.asyncio
@@ -43,6 +43,7 @@ async def test_send_to_chat_with_reply_to():
     bot.send_message.assert_awaited_once_with(
         chat_id=123,
         text="collab msg",
+        parse_mode="HTML",
         reply_to_message_id=9,
     )
 
@@ -56,7 +57,11 @@ async def test_send_to_chat_retries_without_reply_on_missing_target():
     await limiter.send_to_chat(bot, chat_id=123, text="collab msg", reply_to_message_id=9)
 
     assert bot.send_message.await_count == 2
-    assert bot.send_message.await_args_list[1].kwargs == {"chat_id": 123, "text": "collab msg"}
+    assert bot.send_message.await_args_list[1].kwargs == {
+        "chat_id": 123,
+        "text": "collab msg",
+        "parse_mode": "HTML",
+    }
 
 
 @pytest.mark.asyncio
@@ -69,6 +74,7 @@ async def test_send_reply_retries_without_reply_on_missing_target():
 
     assert msg.reply_text.await_count == 2
     assert msg.reply_text.await_args_list[1].args == ("hello",)
+    assert msg.reply_text.await_args_list[1].kwargs == {"parse_mode": "HTML"}
 
 
 @pytest.mark.asyncio

@@ -64,7 +64,7 @@ from core.dispatch_engine import ENABLE_AUTO_DISPATCH
 from core.verification import ENABLE_CROSS_VERIFICATION
 from core.goal_tracker import ENABLE_GOAL_TRACKER
 from core.task_poller import TaskPoller
-from core.telegram_formatting import split_message
+from core.telegram_formatting import split_message, markdown_to_html
 from core.setup_registration import (
     default_identity_for_org,
     parse_setup_identity,
@@ -795,10 +795,12 @@ class TelegramRelay:
 
         if matched_org_id is None:
             await update.message.reply_text(
-                "봇 이름을 찾지 못했어요.\n"
-                "예) '성장실 봇 말투를 데이터 지향적으로 바꿔줘'\n"
-                "또는 `/org set-tone <봇이름> <말투지시>` 명령어를 사용하세요.",
-                parse_mode="Markdown",
+                markdown_to_html(
+                    "봇 이름을 찾지 못했어요.\n"
+                    "예) '성장실 봇 말투를 데이터 지향적으로 바꿔줘'\n"
+                    "또는 <code>/org set-tone &lt;봇이름&gt; &lt;말투지시&gt;</code> 명령어를 사용하세요."
+                ),
+                parse_mode="HTML",
             )
             return
 
@@ -846,10 +848,12 @@ class TelegramRelay:
             logger.warning(f"[set_bot_tone] canonical sync 실패: {_sync_err}")
 
         await update.message.reply_text(
-            f"✅ *{matched_dept}* 봇 말투 업데이트!\n\n"
-            f"말투 지시: `{tone_instruction}`\n\n"
-            f"현재 방향성:\n{new_direction}",
-            parse_mode="Markdown",
+            markdown_to_html(
+                f"✅ **{matched_dept}** 봇 말투 업데이트!\n\n"
+                f"말투 지시: `{tone_instruction}`\n\n"
+                f"현재 방향성:\n{new_direction}"
+            ),
+            parse_mode="HTML",
         )
 
     async def _reply_with_pm_chat(
@@ -968,7 +972,7 @@ class TelegramRelay:
         chunks = split_message(reply.strip() or "알겠습니다.", 4000)
         first = chunks[0]
         try:
-            await progress_msg.edit_text(first)
+            await progress_msg.edit_text(markdown_to_html(first), parse_mode="HTML")
         except Exception:
             await self.display.send_reply(update.message, first)
         for chunk in chunks[1:]:
@@ -2262,11 +2266,13 @@ class TelegramRelay:
 
         if initialized:
             await update.message.reply_text(
-                "🤖 **PM Bot 온라인**\n\n"
-                "tmux 세션에서 Claude Code가 실행 중입니다.\n"
-                "무엇이든 말씀하세요 — 메시지를 Claude에게 전달합니다.\n\n"
-                "/status — 세션 상태 확인",
-                parse_mode="Markdown",
+                markdown_to_html(
+                    "🤖 **PM Bot 온라인**\n\n"
+                    "tmux 세션에서 Claude Code가 실행 중입니다.\n"
+                    "무엇이든 말씀하세요 — 메시지를 Claude에게 전달합니다.\n\n"
+                    "/status — 세션 상태 확인"
+                ),
+                parse_mode="HTML",
             )
         else:
             await update.message.reply_text("✅ 이미 실행 중인 세션에 연결됩니다.")
@@ -2405,14 +2411,15 @@ class TelegramRelay:
         if not schedules:
             await update.message.reply_text("등록된 스케줄이 없습니다.")
             return
-        lines = ["📋 *등록된 스케줄 목록*\n"]
+        lines = ["<b>📋 등록된 스케줄 목록</b>\n"]
         for s in schedules:
+            from core.telegram_formatting import escape_html as _esc
             status = "✅" if s.enabled else "⏸️"
-            lines.append(f"{status} ID:{s.id} | `{s.cron_expr}` | {s.task_description}")
+            lines.append(f"{status} ID:{s.id} | <code>{_esc(s.cron_expr)}</code> | {_esc(s.task_description)}")
         lines.append(
-            "\n취소: /cancel\\_schedule [id]  일시중지: /pause\\_schedule [id]  재개: /resume\\_schedule [id]"
+            "\n취소: /cancel_schedule [id]  일시중지: /pause_schedule [id]  재개: /resume_schedule [id]"
         )
-        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
     async def on_command_cancel_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """/cancel_schedule [id] — 스케줄 영구 삭제."""
@@ -2647,9 +2654,9 @@ class TelegramRelay:
             [InlineKeyboardButton("❌ 취소", callback_data="setup_cancel")],
         ]
         await update.message.reply_text(
-            "🔧 *봇 설정 마법사*\n\n원하는 작업을 선택하세요:",
+            "<b>🔧 봇 설정 마법사</b>\n\n원하는 작업을 선택하세요:",
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
         return SETUP_MENU
 
@@ -2672,16 +2679,16 @@ class TelegramRelay:
                 f"`/org add@{bot_name} <이름> [engine]`\n\n"
                 f"💡 그룹방에서는 `/명령어@{bot_name}` 형식으로 사용하세요."
             )
-            await query.edit_message_text(msg, parse_mode="Markdown")
+            await query.edit_message_text(markdown_to_html(msg), parse_mode="HTML")
             return ConversationHandler.END
 
         elif query.data == "setup_add":
             await query.edit_message_text(
-                "🤖 *새 조직 봇 추가*\n\n"
+                "<b>🤖 새 조직 봇 추가</b>\n\n"
                 "BotFather에서 발급받은 토큰을 입력하세요:\n\n"
                 "⚠️ 보안: 토큰 메시지는 즉시 삭제됩니다.\n"
                 "취소하려면 /cancel 을 입력하세요.",
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
             return SETUP_AWAIT_TOKEN
 
@@ -2728,12 +2735,14 @@ class TelegramRelay:
             [InlineKeyboardButton("3️⃣ Auto (자동 결정)", callback_data="engine_auto")],
         ]
         await processing_msg.edit_text(
-            f"✅ 봇 확인: *@{username}*\n\n"
-            f"⚙️ *실행 엔진을 선택하세요:*\n\n"
-            f"1️⃣ `claude-code` — 복잡한 작업, 고품질 *(기본)*\n"
-            f"2️⃣ `codex` — 단순한 작업, 저렴\n"
-            f"3️⃣ `auto` — LLM이 자동 결정",
-            parse_mode="Markdown",
+            markdown_to_html(
+                f"✅ 봇 확인: **@{username}**\n\n"
+                f"⚙️ **실행 엔진을 선택하세요:**\n\n"
+                f"1️⃣ `claude-code` — 복잡한 작업, 고품질 *(기본)*\n"
+                f"2️⃣ `codex` — 단순한 작업, 저렴\n"
+                f"3️⃣ `auto` — LLM이 자동 결정"
+            ),
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
         return SETUP_AWAIT_ENGINE
@@ -2755,12 +2764,14 @@ class TelegramRelay:
         identity = default_identity_for_org(username)
         specialty_text = ",".join(identity.specialties) if identity.specialties else ""
         await query.edit_message_text(
-            f"✅ 엔진 선택: `{engine}` — {_engine_labels.get(engine, engine)}\n\n"
-            "🏷️ *조직 정체성을 입력하세요.*\n"
-            "형식: `역할|전문분야1,전문분야2|방향성`\n\n"
-            f"기본값:\n`{identity.role}|{specialty_text}|{identity.direction}`\n\n"
-            "기본값을 그대로 쓰려면 `기본` 이라고 입력하세요.",
-            parse_mode="Markdown",
+            markdown_to_html(
+                f"✅ 엔진 선택: `{engine}` — {_engine_labels.get(engine, engine)}\n\n"
+                "🏷️ **조직 정체성을 입력하세요.**\n"
+                "형식: `역할|전문분야1,전문분야2|방향성`\n\n"
+                f"기본값:\n`{identity.role}|{specialty_text}|{identity.direction}`\n\n"
+                "기본값을 그대로 쓰려면 `기본` 이라고 입력하세요."
+            ),
+            parse_mode="HTML",
         )
         return SETUP_AWAIT_IDENTITY
 
@@ -2802,16 +2813,18 @@ class TelegramRelay:
             await _set_org_bot_commands(token, kind=org_kind)
 
             await processing_msg.edit_text(
-                f"✅ *@{username} 등록 완료!*\n\n"
-                f"봇 이름: {bot_display}\n"
-                f"역할: {identity.role}\n"
-                f"전문분야: {', '.join(identity.specialties) or '미설정'}\n"
-                f"엔진: `{engine}` ({_engine_labels.get(engine, engine)})\n"
-                f"PID: {pid}\n\n"
-                "canonical config / PM identity / bot commands 동기화 완료\n"
-                "봇이 시작되었습니다. 그룹방에 초대하면 자동으로 초기화됩니다.\n"
-                "별도 `/org` 나 `/start` 초기 설정은 필요하지 않습니다.",
-                parse_mode="Markdown",
+                markdown_to_html(
+                    f"✅ **@{username} 등록 완료!**\n\n"
+                    f"봇 이름: {bot_display}\n"
+                    f"역할: {identity.role}\n"
+                    f"전문분야: {', '.join(identity.specialties) or '미설정'}\n"
+                    f"엔진: `{engine}` ({_engine_labels.get(engine, engine)})\n"
+                    f"PID: {pid}\n\n"
+                    "canonical config / PM identity / bot commands 동기화 완료\n"
+                    "봇이 시작되었습니다. 그룹방에 초대하면 자동으로 초기화됩니다.\n"
+                    "별도 `/org` 나 `/start` 초기 설정은 필요하지 않습니다."
+                ),
+                parse_mode="HTML",
             )
         except Exception as e:
             logger.error(f"봇 등록 실패: {e}")
@@ -3548,9 +3561,11 @@ class TelegramRelay:
                 # default_handler가 경고 메시지 (설정 변경 없이)
                 if arg and arg.lower() != "status":
                     await update.message.reply_text(
-                        f"⚠️ PM이 {pm_count}개 있습니다. 특정 PM을 지정해주세요:\n"
-                        f"`/org@봇이름 역할|전문분야|방향성`",
-                        parse_mode="Markdown"
+                        markdown_to_html(
+                            f"⚠️ PM이 {pm_count}개 있습니다. 특정 PM을 지정해주세요:\n"
+                            f"`/org@봇이름 역할|전문분야|방향성`"
+                        ),
+                        parse_mode="HTML"
                     )
                     return
 
@@ -3559,20 +3574,20 @@ class TelegramRelay:
                 me = await context.bot.get_me()
                 bot_name = me.username or "봇이름"
                 msg = (
-                    f"🏢 *{self.org_id} 조직 정체성*\n\n"
+                    f"🏢 <b>{self.org_id} 조직 정체성</b>\n\n"
                     f"현재 설정:\n"
                     f"• 역할: {d.get('role','미설정')}\n"
                     f"• 전문분야: {', '.join(d.get('specialties', [])) or '미설정'}\n"
                     f"• 방향성: {d.get('direction','미설정')}\n\n"
                     f"⚙️ 설정 방법:\n"
-                    f"`/org@{bot_name} 프로덕트PM|기획,UX|사용자중심`\n\n"
-                    f"형식: `역할|전문분야1,분야2|방향성`\n"
+                    f"<code>/org@{bot_name} 프로덕트PM|기획,UX|사용자중심</code>\n\n"
+                    f"형식: <code>역할|전문분야1,분야2|방향성</code>\n"
                     f"예시:\n"
                     f"  • 개발PM|백엔드,API|빠른출시\n"
                     f"  • 디자인PM|UI,UX|사용자경험\n"
                     f"  • 마케팅PM|콘텐츠,SNS|성장"
                 )
-                await update.message.reply_text(msg, parse_mode="Markdown")
+                await update.message.reply_text(msg, parse_mode="HTML")
             else:
                 # 자유 텍스트 → 정체성 업데이트 (빈 필드 skip)
                 parts = [p.strip() for p in arg.split("|")]
@@ -3593,13 +3608,13 @@ class TelegramRelay:
                     logger.warning(f"/org canonical sync 실패: {_sync_err}")
                 d = self.identity._data
                 msg = (
-                    f"✅ *{self.org_id} 정체성 업데이트!*\n\n"
+                    f"✅ <b>{self.org_id} 정체성 업데이트!</b>\n\n"
                     f"역할: {d.get('role','')}\n"
                     f"전문분야: {', '.join(d.get('specialties', []))}\n"
                     f"방향성: {d.get('direction','')}\n\n"
                     f"이제 이 방향성으로 팀을 구성할게요 🤖"
                 )
-                await update.message.reply_text(msg, parse_mode="Markdown")
+                await update.message.reply_text(msg, parse_mode="HTML")
             return
 
         # /org set-tone <봇이름> <말투지시> — 봇 말투/성격 설정
@@ -3607,9 +3622,9 @@ class TelegramRelay:
             tone_parts = arg.split(None, 2)  # ["set-tone", <봇이름>, <말투지시>]
             if len(tone_parts) < 3:
                 await update.message.reply_text(
-                    "사용법: `/org set-tone <봇이름> <말투지시>`\n"
-                    "예) `/org set-tone 성장실 데이터 지향적이고 직설적으로`",
-                    parse_mode="Markdown",
+                    "<code>사용법: /org set-tone &lt;봇이름&gt; &lt;말투지시&gt;</code>\n"
+                    "예) <code>/org set-tone 성장실 데이터 지향적이고 직설적으로</code>",
+                    parse_mode="HTML",
                 )
                 return
             target_name = tone_parts[1].strip()
@@ -3658,10 +3673,12 @@ class TelegramRelay:
                 logger.warning(f"[/org set-tone] canonical sync 실패: {_sync_err}")
             dept_display = target_name
             await update.message.reply_text(
-                f"✅ *{dept_display}* 봇 말투 업데이트!\n\n"
-                f"말투 지시: `{tone_instruction}`\n\n"
-                f"현재 방향성:\n{_new_dir}",
-                parse_mode="Markdown",
+                markdown_to_html(
+                    f"✅ **{dept_display}** 봇 말투 업데이트!\n\n"
+                    f"말투 지시: `{tone_instruction}`\n\n"
+                    f"현재 방향성:\n{_new_dir}"
+                ),
+                parse_mode="HTML",
             )
             return
 
@@ -3670,9 +3687,9 @@ class TelegramRelay:
             add_parts = arg.split(None, 2)  # ["add", <name>, <engine?>]
             if len(add_parts) < 2:
                 await update.message.reply_text(
-                    "사용법: `/org add <이름> [engine]`\n"
-                    "engine: `claude-code` (기본) | `codex` | `auto`",
-                    parse_mode="Markdown"
+                    "<code>사용법: /org add &lt;이름&gt; [engine]</code>\n"
+                    "engine: <code>claude-code</code> (기본) | <code>codex</code> | <code>auto</code>",
+                    parse_mode="HTML"
                 )
                 return
             new_org_id = add_parts[1].strip()
@@ -3680,9 +3697,9 @@ class TelegramRelay:
             _valid_engines = {"claude-code", "codex", "auto"}
             if raw_engine not in _valid_engines:
                 await update.message.reply_text(
-                    f"⚠️ 알 수 없는 engine: `{raw_engine}`\n"
-                    f"사용 가능: `claude-code` | `codex` | `auto`",
-                    parse_mode="Markdown"
+                    markdown_to_html(f"⚠️ 알 수 없는 engine: `{raw_engine}`\n"
+                    "사용 가능: `claude-code` | `codex` | `auto`"),
+                    parse_mode="HTML"
                 )
                 return
             try:
@@ -3698,9 +3715,11 @@ class TelegramRelay:
                 )
                 _engine_labels = {"claude-code": "Claude Code", "codex": "Codex", "auto": "자동 결정"}
                 await update.message.reply_text(
-                    f"✅ **{new_org_id}** 조직 등록 완료!\n"
-                    f"engine: `{raw_engine}` ({_engine_labels.get(raw_engine, raw_engine)})",
-                    parse_mode="Markdown"
+                    markdown_to_html(
+                        f"✅ **{new_org_id}** 조직 등록 완료!\n"
+                        f"engine: `{raw_engine}` ({_engine_labels.get(raw_engine, raw_engine)})"
+                    ),
+                    parse_mode="HTML"
                 )
             except Exception as _e:
                 logger.error(f"조직 등록 실패: {_e}")
@@ -3716,12 +3735,12 @@ class TelegramRelay:
             for a in agents:
                 cat = a.stem.split("-")[0]
                 by_cat.setdefault(cat, []).append(a.stem.split("-", 1)[-1])
-            msg = f"🤖 **에이전트 {len(agents)}개**\n\n"
+            msg = f"🤖 <b>에이전트 {len(agents)}개</b>\n\n"
             for cat, names in sorted(by_cat.items()):
                 preview = ", ".join(names[:4])
                 suffix = f" +{len(names)-4}" if len(names) > 4 else ""
-                msg += f"**{cat}** ({len(names)}): {preview}{suffix}\n"
-            await update.message.reply_text(msg[:4000], parse_mode="Markdown")
+                msg += f"<b>{cat}</b> ({len(names)}): {preview}{suffix}\n"
+            await update.message.reply_text(msg[:4000], parse_mode="HTML")
             return
 
         # /team — 현재 전략
@@ -3734,8 +3753,8 @@ class TelegramRelay:
                 "solo": "단독 실행",
             }
             await update.message.reply_text(
-                f"⚙️ 현재 팀 전략: **{desc.get(s, s)}**",
-                parse_mode="Markdown",
+                f"⚙️ 현재 팀 전략: <b>{desc.get(s, s)}</b>",
+                parse_mode="HTML",
             )
             return
 
@@ -3862,17 +3881,17 @@ class TelegramRelay:
                     self.identity.update(new_data)
                     d = self.identity._data
                     await update.message.reply_text(
-                        f"✅ *{self.org_id} 정체성 업데이트!*\n\n"
+                        f"✅ <b>{self.org_id} 정체성 업데이트!</b>\n\n"
                         f"역할: {d.get('role','')}\n"
                         f"전문분야: {', '.join(d.get('specialties',[]))}\n"
                         f"방향성: {d.get('direction','')}\n\n"
-                        f"💡 앞으로는 `/org` 명령어를 사용해주세요.",
-                        parse_mode="Markdown"
+                        f"💡 앞으로는 <code>/org</code> 명령어를 사용해주세요.",
+                        parse_mode="HTML"
                     )
                 else:
                     await update.message.reply_text(
-                        "사용법: `/org@봇이름 역할|전문분야1,분야2|방향성`",
-                        parse_mode="Markdown"
+                        "<code>사용법: /org@봇이름 역할|전문분야1,분야2|방향성</code>",
+                        parse_mode="HTML"
                     )
             else:
                 # 현재 상태 + 리다이렉트 안내
@@ -3880,13 +3899,13 @@ class TelegramRelay:
                 bot_name = me.username or "봇이름"
                 d = self.identity._data
                 await update.message.reply_text(
-                    f"ℹ️ `/pm` 명령어는 `/org`로 통합되었습니다.\n\n"
+                    f"ℹ️ <code>/pm</code> 명령어는 <code>/org</code>로 통합되었습니다.\n\n"
                     f"현재 설정:\n"
                     f"• 역할: {d.get('role','미설정')}\n"
                     f"• 전문분야: {', '.join(d.get('specialties', [])) or '미설정'}\n"
                     f"• 방향성: {d.get('direction','미설정')}\n\n"
-                    f"⚙️ 설정: `/org@{bot_name} 역할|전문분야|방향성`",
-                    parse_mode="Markdown"
+                    f"⚙️ 설정: <code>/org@{bot_name} 역할|전문분야|방향성</code>",
+                    parse_mode="HTML"
                 )
             return
 
@@ -3897,36 +3916,38 @@ class TelegramRelay:
             sub_arg = parts[1] if len(parts) > 1 else ""
 
             if sub == "show" or not arg:
+                from core.telegram_formatting import escape_html as _esc
                 prompt_text = self.identity.build_system_prompt()
                 await update.message.reply_text(
-                    f"📋 **현재 시스템 프롬프트 ({self.org_id})**\n\n{prompt_text[:3000]}",
-                    parse_mode="Markdown",
+                    f"📋 <b>현재 시스템 프롬프트 ({self.org_id})</b>\n\n<pre>{_esc(prompt_text[:3000])}</pre>",
+                    parse_mode="HTML",
                 )
             elif sub == "add" and sub_arg:
+                from core.telegram_formatting import escape_html as _esc
                 current = self.identity._data.get("direction", "") or ""
                 new_direction = (current + "\n" + sub_arg).strip() if current else sub_arg
                 self.identity.update({"direction": new_direction})
                 await update.message.reply_text(
-                    f"✅ direction에 추가됨:\n`{sub_arg}`\n\n현재 방향성:\n{new_direction}",
-                    parse_mode="Markdown",
+                    f"✅ direction에 추가됨:\n<code>{_esc(sub_arg)}</code>\n\n현재 방향성:\n{_esc(new_direction)}",
+                    parse_mode="HTML",
                 )
             elif sub == "set" and sub_arg:
+                from core.telegram_formatting import escape_html as _esc
                 self.identity.update({"direction": sub_arg})
                 await update.message.reply_text(
-                    f"✅ direction 교체됨:\n`{sub_arg}`",
-                    parse_mode="Markdown",
+                    f"✅ direction 교체됨:\n<code>{_esc(sub_arg)}</code>",
+                    parse_mode="HTML",
                 )
             elif sub == "reset":
                 self.identity.update({"direction": ""})
                 await update.message.reply_text("✅ direction 초기화됨.")
             else:
                 await update.message.reply_text(
-                    "사용법:\n"
-                    "`/prompt show` — 현재 시스템 프롬프트 표시\n"
-                    "`/prompt add <텍스트>` — direction에 추가\n"
-                    "`/prompt set <텍스트>` — direction 전체 교체\n"
-                    "`/prompt reset` — direction 초기화",
-                    parse_mode="Markdown",
+                    "<code>/prompt show</code> — 현재 시스템 프롬프트 표시\n"
+                    "<code>/prompt add &lt;텍스트&gt;</code> — direction에 추가\n"
+                    "<code>/prompt set &lt;텍스트&gt;</code> — direction 전체 교체\n"
+                    "<code>/prompt reset</code> — direction 초기화",
+                    parse_mode="HTML",
                 )
             return
 
@@ -3937,39 +3958,39 @@ class TelegramRelay:
             bot_name = me.username or "봇이름"
             pm_count = int(_os.environ.get("PM_COUNT", "1"))
             multibot_hint = (
-                f"\n🤖 **그룹방 멀티봇 사용법**\n"
-                f"`/명령어@{bot_name}` — 이 봇에게만 명령\n"
-                f"`@{bot_name} 메시지` — 이 봇에게 메시지\n"
+                f"\n🤖 <b>그룹방 멀티봇 사용법</b>\n"
+                f"<code>/명령어@{bot_name}</code> — 이 봇에게만 명령\n"
+                f"<code>@{bot_name} 메시지</code> — 이 봇에게 메시지\n"
                 f"봇 목록: PM_COUNT={pm_count}개 활성 중"
             ) if pm_count > 1 else (
-                f"\n💡 그룹방에선 `/명령어@{bot_name}` 형식 사용 권장"
+                f"\n💡 그룹방에선 <code>/명령어@{bot_name}</code> 형식 사용 권장"
             )
             msg = (
-                f"📋 **명령어 안내**\n\n"
-                f"🔧 **설정**\n"
-                f"`/org` — 조직 정체성 조회·설정\n"
-                f"  예) `/org@{bot_name} 프로덕트PM|기획,UX|사용자중심`\n"
-                f"`/org set-tone <봇이름> <말투지시>` — 봇 말투/성격 설정\n"
-                f"  예) `/org set-tone 성장실 데이터 지향적이고 직설적으로`\n"
-                f"`/pm` — `/org`와 동일 (하위 호환)\n\n"
-                f"📊 **조회**\n"
-                f"`/status` — 봇 상태 확인\n"
-                f"`/team` — 전체 팀 현황\n"
-                f"`/agents` — 에이전트 목록\n"
-                f"`/history [N]` — 최근 태스크 이력 (기본 10개)\n"
-                f"`/stats` — 봇별 성과 대시보드\n\n"
-                f"⚙️ **관리 (총괄PM만)**\n"
-                f"`/setup` — 새 조직 봇 등록 마법사\n"
-                f"`/sessions [org]` — 세션 현황\n"
-                f"`/verbose 0|1|2` — 진행 노출 레벨\n"
-                f"`/context_budget` — 세션 예산 요약\n"
-                f"`/session_policy [org]` — 세션 정책 확인\n"
-                f"`/compact [org]` — 세션 압축/정리\n"
-                f"`/reset_session [org]` — 세션 메타데이터 초기화\n"
-                f"`/reset` — 세션 초기화\n"
+                f"📋 <b>명령어 안내</b>\n\n"
+                f"🔧 <b>설정</b>\n"
+                f"<code>/org</code> — 조직 정체성 조회·설정\n"
+                f"  예) <code>/org@{bot_name} 프로덕트PM|기획,UX|사용자중심</code>\n"
+                f"<code>/org set-tone &lt;봇이름&gt; &lt;말투지시&gt;</code> — 봇 말투/성격 설정\n"
+                f"  예) <code>/org set-tone 성장실 데이터 지향적이고 직설적으로</code>\n"
+                f"<code>/pm</code> — <code>/org</code>와 동일 (하위 호환)\n\n"
+                f"📊 <b>조회</b>\n"
+                f"<code>/status</code> — 봇 상태 확인\n"
+                f"<code>/team</code> — 전체 팀 현황\n"
+                f"<code>/agents</code> — 에이전트 목록\n"
+                f"<code>/history [N]</code> — 최근 태스크 이력 (기본 10개)\n"
+                f"<code>/stats</code> — 봇별 성과 대시보드\n\n"
+                f"⚙️ <b>관리 (총괄PM만)</b>\n"
+                f"<code>/setup</code> — 새 조직 봇 등록 마법사\n"
+                f"<code>/sessions [org]</code> — 세션 현황\n"
+                f"<code>/verbose 0|1|2</code> — 진행 노출 레벨\n"
+                f"<code>/context_budget</code> — 세션 예산 요약\n"
+                f"<code>/session_policy [org]</code> — 세션 정책 확인\n"
+                f"<code>/compact [org]</code> — 세션 압축/정리\n"
+                f"<code>/reset_session [org]</code> — 세션 메타데이터 초기화\n"
+                f"<code>/reset</code> — 세션 초기화\n"
                 + multibot_hint
             )
-            await update.message.reply_text(msg, parse_mode="Markdown")
+            await update.message.reply_text(msg, parse_mode="HTML")
             return
 
         # /history [N] — 최근 태스크 이력 조회
@@ -3991,14 +4012,15 @@ class TelegramRelay:
                 "pending": "⏳", "failed": "❌", "needs_review": "⚠️",
             }
             from core.constants import KNOWN_DEPTS
-            lines = [f"📋 **최근 태스크 이력** (최대 {limit}개)\n"]
+            from core.telegram_formatting import escape_html as _esc
+            lines = [f"📋 <b>최근 태스크 이력</b> (최대 {limit}개)\n"]
             for t in tasks:
                 icon = status_icons.get(t["status"], "•")
                 dept = KNOWN_DEPTS.get(t.get("assigned_dept") or "", t.get("assigned_dept") or "?")
-                desc = (t["description"] or "")[:60].replace("\n", " ")
+                desc = _esc((t["description"] or "")[:60].replace("\n", " "))
                 ts = (t.get("updated_at") or "")[:16].replace("T", " ")
-                lines.append(f"{icon} `{t['id']}` [{ts}] **{dept}**\n   {desc}")
-            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+                lines.append(f"{icon} <code>{_esc(t['id'])}</code> [{ts}] <b>{_esc(dept)}</b>\n   {desc}")
+            await update.message.reply_text("\n".join(lines), parse_mode="HTML")
             return
 
         # /stats — 봇별 성과 대시보드
@@ -4011,7 +4033,7 @@ class TelegramRelay:
                 await update.message.reply_text("📊 아직 기록된 성과 데이터가 없습니다.")
                 return
             from core.constants import KNOWN_DEPTS
-            lines = ["📊 **봇별 성과 대시보드**\n"]
+            lines = ["📊 <b>봇별 성과 대시보드</b>\n"]
             for p in perf_list:
                 bot_id = p.get("bot_id", "?")
                 bot_name = KNOWN_DEPTS.get(bot_id, bot_id)
@@ -4020,8 +4042,8 @@ class TelegramRelay:
                 pct = round(success / total * 100) if total > 0 else 0
                 avg_lat = p.get("avg_latency_sec", 0.0) or 0.0
                 lat_str = f" | 평균 {avg_lat:.1f}s" if avg_lat > 0 else ""
-                lines.append(f"• **{bot_name}**: 태스크 {total}건 | 성공 {success}건 ({pct}%){lat_str}")
-            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+                lines.append(f"• <b>{bot_name}</b>: 태스크 {total}건 | 성공 {success}건 ({pct}%){lat_str}")
+            await update.message.reply_text("\n".join(lines), parse_mode="HTML")
             return
 
         # /setup fallback — ConversationHandler entry가 안 잡히는 경우 대비
