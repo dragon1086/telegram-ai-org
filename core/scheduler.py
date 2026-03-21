@@ -116,6 +116,12 @@ class OrgScheduler:
             id="arch_advisor_monthly", misfire_grace_time=7200,
             replace_existing=True,
         )
+        self.scheduler.add_job(
+            self._routing_optimizer_daily,
+            CronTrigger(hour=3, minute=0, timezone=KST),
+            id="routing_optimizer_daily", misfire_grace_time=1800,
+            replace_existing=True,
+        )
 
     # ── 잡 구현 ──────────────────────────────────────────────────────────────
 
@@ -465,6 +471,18 @@ class OrgScheduler:
                 await self._safe_send(result.stdout)
         except Exception as e:
             logger.error(f"[OrgScheduler] arch_advisor_monthly 실패: {e}")
+
+    async def _routing_optimizer_daily(self) -> None:
+        """매일 03:00 KST — RoutingOptimizer 제안 생성 및 Telegram 보고."""
+        logger.info("[OrgScheduler] routing_optimizer_daily 시작")
+        try:
+            from core.routing_optimizer import RoutingOptimizer
+            opt = RoutingOptimizer()
+            proposal = opt.generate_proposal()
+            if proposal:
+                await self._safe_send(opt.format_for_telegram(proposal))
+        except Exception as e:
+            logger.error(f"[OrgScheduler] routing_optimizer_daily 실패: {e}")
 
     async def _safe_send(self, text: str) -> None:
         try:
