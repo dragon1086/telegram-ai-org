@@ -2122,3 +2122,65 @@ class PMOrchestrator:
             logger.info(f"[PM] discussion 태스크 발송: {tid} → {bot_id}")
 
         return task_ids
+
+    async def _handle_improve_status(self, chat_id: int) -> str:
+        """자가개선 상태를 수집·평가하고 요약 메시지를 반환한다.
+
+        ImprovementBus로 신호를 수집하고, EvalRunner로 스킬 평가 결과를 더해
+        하나의 상태 요약 문자열을 만든다. 결과는 chat_id로 전송된다.
+
+        Args:
+            chat_id: 결과를 보낼 Telegram chat ID.
+
+        Returns:
+            전송된 상태 요약 문자열.
+        """
+        from core.improvement_bus import ImprovementBus
+        from core.eval_runner import EvalRunner
+
+        try:
+            bus = ImprovementBus(dry_run=True)
+            signals = bus.collect_signals()
+            report = bus.run(signals)
+            bus_text = bus.format_report(report)
+        except Exception as e:
+            logger.warning(f"[PM] ImprovementBus 오류: {e}")
+            bus_text = f"[ImprovementBus 오류] {e}"
+
+        try:
+            runner = EvalRunner()
+            eval_results = runner.score_all_skills()
+            eval_text = runner.format_results(eval_results) if eval_results else "평가할 스킬 없음"
+        except Exception as e:
+            logger.warning(f"[PM] EvalRunner 오류: {e}")
+            eval_text = f"[EvalRunner 오류] {e}"
+
+        summary = f"{bus_text}\n\n{eval_text}"
+
+        try:
+            await self._send(chat_id, summary)
+        except Exception as e:
+            logger.warning(f"[PM] improve_status 전송 실패: {e}")
+
+        return summary
+
+    async def _handle_routing_approve(self, update, context) -> None:
+        """대기 중인 라우팅 제안을 nl_classifier에 적용."""
+        from core.routing_approval_store import RoutingApprovalStore
+        from core.nl_keyword_applier import NLKeywordApplier
+        store = RoutingApprovalStore()
+        proposal = store.load_pending()
+        if not proposal:
+            await update.message.reply_text("대기 중인 라우팅 제안 없음.")
+            return
+        applier = NLKeywordApplier()
+        result = applier.apply(proposal.get("keyword_additions", {}))
+        store.clear()
+        await update.message.reply_text(f"✅ 라우팅 키워드 적용 완료:\n{result}")
+
+    async def _handle_routing_reject(self, update, context) -> None:
+        """대기 중인 라우팅 제안을 거절하고 삭제."""
+        from core.routing_approval_store import RoutingApprovalStore
+        store = RoutingApprovalStore()
+        store.clear()
+        await update.message.reply_text("❌ 라우팅 제안 거절됨. 다음 분석 시까지 대기.")

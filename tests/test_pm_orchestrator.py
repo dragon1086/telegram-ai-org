@@ -339,3 +339,13 @@ async def test_detect_relevant_depts_includes_research_when_research_bot_is_regi
     hints = orch._detect_relevant_depts("최근 코딩에이전트 시장조사와 레퍼런스 조사가 필요해. 리서치 조직을 활용해서 정리해줘")
 
     assert "aiorg_research_bot" in hints
+
+
+@pytest.mark.asyncio
+async def test_improve_status_handler_exists(setup):
+    orch, db, send_fn = setup
+    assert hasattr(orch, "_handle_improve_status"), "PMOrchestrator에 _handle_improve_status 메서드가 없다"
+    result = await orch._handle_improve_status(chat_id=12345)
+    assert isinstance(result, str)
+    assert len(result) > 0
+    send_fn.assert_called()
