@@ -164,6 +164,7 @@ class OrchestrationConfig:
         self.session_policies: dict[str, dict[str, Any]] = {}
         self.runtime: dict[str, Any] = {}
         self.legacy_exports: dict[str, Any] = {}
+        self.global_instructions: str = ""
 
     def load(self) -> "OrchestrationConfig":
         self._load_orchestration()
@@ -182,6 +183,7 @@ class OrchestrationConfig:
         raw = self._load_yaml(self.orchestration_path)
         self.runtime = raw.get("runtime", {})
         self.legacy_exports = raw.get("legacy_exports", {})
+        self.global_instructions = raw.get("global_instructions", "")
         self.backend_policies = raw.get("backend_policies", {})
         self.session_policies = raw.get("session_policies", {})
         self.team_profiles = {

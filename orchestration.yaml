@@ -2,6 +2,20 @@ schema_version: 1
 runtime:
   docs_root: docs/orchestration-v2
   run_state_root: .ai-org/runs
+
+# 모든 엔진(claude-code, codex, gemini)의 시스템 프롬프트에 주입되는 글로벌 규칙.
+# CLAUDE.md/AGENTS.md를 자동으로 읽지 않는 엔진(gemini 등)에도 적용된다.
+global_instructions: |
+  ## Git 워크트리 워크플로 (필수)
+  이 프로젝트를 수정하는 모든 봇/세션에 적용된다.
+  현재 브랜치가 main이 아닌 상태에서 새 태스크(= 현재 브랜치 작업과 무관한 요청)를 받으면:
+  1. git branch --show-current 로 현재 브랜치 확인. main이면 평소대로 진행.
+  2. main이 아니면 워크트리 생성: git worktree add .worktrees/<task-slug> main && cd .worktrees/<task-slug> && git checkout -b fix/<task-slug>
+  3. 워크트리 안에서 작업 → 테스트 → 커밋.
+  4. 프로젝트 루트로 이동 후 main에 머지: git checkout main && git merge fix/<task-slug> --no-ff
+  5. 정리: git worktree remove .worktrees/<task-slug> && git branch -d fix/<task-slug>
+  6. 원래 브랜치로 복귀.
+  판단: 현재 브랜치 작업의 연장이면 그냥 계속. 무관한 새 요청이면 워크트리 필수. 확신 없으면 워크트리.
 phase_policies:
   default:
     order:
