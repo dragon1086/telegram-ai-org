@@ -250,8 +250,19 @@ class ImprovementBus:
         if self.dry_run:
             return f"[dry_run] {label}"
 
-        # 실제 action: 현재는 로그 + Telegram 보고용 메시지 생성
-        # Phase 3 이후 각 Improver 클래스가 여기서 호출됨
+        # priority >= 8이고 code 타겟이면 자동 수정 시도
+        if signal.priority >= 8 and signal.target.startswith("code:"):
+            from core.self_code_improver import SelfCodeImprover
+            target_file = signal.target.replace("code:", "")
+            improver = SelfCodeImprover()
+            result = improver.fix(
+                target=target_file,
+                error_summary=signal.suggested_action,
+                related_files=[target_file],
+            )
+            if result and result.success:
+                return f"[auto_fixed] {label} branch={result.branch}"
+
         return label
 
     def _log_report(self, report: ImprovementReport) -> None:
