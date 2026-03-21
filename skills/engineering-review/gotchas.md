@@ -21,3 +21,13 @@
 **상황**: async def 함수 내부에서 blocking I/O 호출(예: `requests.get`, `time.sleep`)을 사용하는 코드를 리뷰할 때
 **증상**: Ruff는 이 패턴을 잡지 못함. 코드 품질 체크리스트만 통과시키고 실제 봇 실행 시 이벤트 루프 블로킹 발생
 **해결**: 리뷰 체크리스트에 "async 함수 내 동기 blocking 호출 확인" 항목 추가. `requests` 대신 `aiohttp`, `time.sleep` 대신 `asyncio.sleep` 사용 여부를 수동 확인
+
+## Gotcha 5: 기존 파일에 코드 추가 시 import 누락
+**상황**: 기존 모듈에 새 코드를 추가하면서 `logger`, `json`, `datetime` 등을 사용할 때
+**증상**: 해당 모듈에 import가 없는데도 IDE 자동완성이나 다른 파일 패턴을 무의식적으로 따라 사용. 코드 리뷰에서 놓치면 런타임 `NameError` 발생 (예: T-224 context_db.py `logger` 미import → 태스크 lease claim 전면 실패)
+**해결**: 새 코드에서 사용하는 모든 이름이 해당 파일의 import 섹션에 있는지 확인. 특히 프로젝트의 로깅 패턴 확인 — 이 프로젝트는 `from loguru import logger` 사용. Python 3.14에서는 조건부 분기 안의 import도 함수 전체 스코프에 영향주므로 함수 최상단에 배치할 것
+
+## Gotcha 6: Python 3.14 조건부 import로 인한 UnboundLocalError
+**상황**: 함수 내 여러 조건 분기에서 `from X import Y`를 하고, 일부 분기에서는 import 없이 Y를 사용할 때
+**증상**: Python 3.14에서 `from X import Y`가 한 분기에라도 있으면 Y를 함수 전체에서 local로 마킹. 해당 import 분기를 타지 않으면 `UnboundLocalError: cannot access local variable 'Y'` (예: telegram_relay.py RunContext 사건)
+**해결**: 함수 내에서 사용하는 import는 반드시 함수 최상단에 한 번만 배치. 조건부 분기 안에 import를 넣지 말 것

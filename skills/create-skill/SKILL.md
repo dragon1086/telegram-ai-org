@@ -81,12 +81,43 @@ agent: {Explore|Plan|general-purpose}
 
 ## Step 4: 파일 생성
 
-1. `skills/{name}/SKILL.md` 생성
+1. `skills/{name}/SKILL.md` 생성 (필수)
 2. `.claude/skills/{name}` 심볼릭 링크 생성:
    ```bash
    ln -sf ../../skills/{name}/ .claude/skills/{name}
    ```
-3. 필요 시 supporting 파일 추가 (`skills/{name}/reference.md` 등)
+3. Supporting 파일 추가 (아래 가이드 참조)
+
+### Supporting 파일 구조
+
+스킬은 SKILL.md 하나만으로도 작동하지만, 복잡한 스킬은 아래 파일을 조합한다:
+
+```
+skills/{name}/
+├── SKILL.md              # 필수 — 스킬 본체 (frontmatter + 실행 절차)
+├── gotchas.md            # 권장 — 이 스킬 사용 시 자주 발생하는 실수와 해결책
+├── references/           # 선택 — 참조 문서 (라우팅 테이블, API 스펙 등)
+│   └── bot-routing.md
+├── templates/            # 선택 — 출력 템플릿 (보고서, 회고 등)
+│   └── report-template.md
+└── scripts/              # 선택 — 스킬 전용 CLI/자동화 스크립트
+    └── validate.sh
+```
+
+**gotchas.md 작성 규칙:**
+- 제목: `# {스킬 이름} — Gotchas`
+- 각 항목: `## Gotcha N: {제목}` + **상황/증상/해결** 3단 구성
+- 실제 인시던트 기반으로 작성 (가상 시나리오 금지)
+- 에러 수정 후 `error-gotcha` 스킬로 자동 추가 가능
+
+**references/ 작성 규칙:**
+- SKILL.md가 2000줄을 넘길 때 분리
+- 자주 변경되는 데이터(라우팅, 설정값)는 별도 파일로
+
+**scripts/ 작성 규칙:**
+- 스킬이 자동 실행하는 검증/생성 스크립트
+- 반드시 `set -euo pipefail` (bash) 또는 적절한 에러 핸들링
+- 프로젝트 venv 사용: `.venv/bin/python` 경로 명시
 
 ## Step 5: 검증
 
