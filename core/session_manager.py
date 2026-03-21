@@ -14,6 +14,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from loguru import logger
+from tools.base_runner import RunnerFactory, BaseRunner
 
 SESSION_PREFIX = "aiorg"
 OUTPUT_TIMEOUT = 120  # 응답 대기 최대 초
@@ -46,7 +47,8 @@ class SessionManager:
     # ── tmux 헬퍼 ─────────────────────────────────────────────────────────
 
     def _run_tmux(self, *args: str) -> str:
-        """tmux 명령 실행. stdout 반환. 실패 시 빈 문자열."""
+        """DEPRECATED: tmux-based execution replaced by SDK runners.
+        tmux 명령 실행. stdout 반환. 실패 시 빈 문자열."""
         try:
             result = subprocess.run(
                 ["tmux", *args],
@@ -60,6 +62,7 @@ class SessionManager:
             return ""
 
     def _tmux_available(self) -> bool:
+        """DEPRECATED: tmux-based execution replaced by SDK runners."""
         return bool(self._run_tmux("-V"))
 
     # ── 세션 관리 ─────────────────────────────────────────────────────────
@@ -102,7 +105,8 @@ class SessionManager:
         return str(config_path)
 
     def ensure_session(self, team_id: str, disable_omc: bool = False) -> str:
-        """세션이 없으면 생성 + claude 시작. 세션 이름 반환."""
+        """DEPRECATED: tmux-based execution replaced by SDK runners.
+        세션이 없으면 생성 + claude 시작. 세션 이름 반환."""
         name = self.session_name(team_id)
         if not self.session_exists(team_id):
             self._run_tmux("new-session", "-d", "-s", name, "-x", "220", "-y", "50")
@@ -147,7 +151,8 @@ class SessionManager:
         return [s for s in out.splitlines() if s.startswith(SESSION_PREFIX + "_")]
 
     def ensure_shell_session(self, team_id: str, purpose: str = "exec") -> str:
-        """일반 쉘 명령 실행용 tmux 세션을 준비한다."""
+        """DEPRECATED: tmux-based execution replaced by SDK runners.
+        일반 쉘 명령 실행용 tmux 세션을 준비한다."""
         if not self._tmux_available():
             raise RuntimeError("tmux unavailable")
         name = self.shell_session_name(team_id, purpose)
@@ -190,7 +195,7 @@ class SessionManager:
 
         try:
             content = await asyncio.wait_for(
-                self._wait_for_output(output_file, progress_callback=progress_callback),
+                self._wait_for_output(output_file, progress_callback=progress_callback, session_name=name),
                 timeout=timeout or OUTPUT_TIMEOUT,
             )
         except asyncio.TimeoutError:
@@ -240,9 +245,15 @@ class SessionManager:
         self,
         output_file: Path,
         progress_callback: Callable[[str], Awaitable[None]] | None = None,
+        session_name: str | None = None,
     ) -> str:
-        """출력 파일에 __DONE__ 마커 나타날 때까지 대기."""
+        """출력 파일에 __DONE__ 마커 나타날 때까지 대기.
+
+        session_name이 주어지면 tmux 세션이 살아있는지 주기적으로 확인하여
+        프로세스 사망 시 무한 대기를 방지한다.
+        """
         last_size = 0
+        _dead_check_counter = 0
         while True:
             await asyncio.sleep(0.5)
             if output_file.exists():
@@ -260,6 +271,21 @@ class SessionManager:
                             logger.warning(f"shell progress_callback 오류: {cb_err}")
                 if "__DONE__" in content:
                     return content.replace("__DONE__", "").strip()
+
+            # 10초마다 tmux 세션 생존 확인 (0.5초 * 20 = 10초)
+            _dead_check_counter += 1
+            if session_name and _dead_check_counter % 20 == 0:
+                try:
+                    subprocess.check_output(
+                        ["tmux", "has-session", "-t", session_name],
+                        stderr=subprocess.DEVNULL, timeout=5,
+                    )
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                    logger.warning(f"tmux 세션 사망 감지: {session_name} — 대기 중단")
+                    if output_file.exists():
+                        content = output_file.read_text(encoding="utf-8")
+                        return content.replace("__DONE__", "").strip()
+                    return ""
 
     # ── 컨텍스트 재주입 재시작 ────────────────────────────────────────────
 
@@ -625,9 +651,11 @@ class WarmSessionPool:
 
     async def get_warm_session(self) -> str | None:
         """
-        [claude-code 전용] 예열된 세션 ID 반환. 없으면 None (caller가 cold-start).
-        반환 후 즉시 다음 예열 시작.
-        Codex 엔진에서는 항상 None 반환 (CodexRunner는 get_warm_runner() 사용).
+        DEPRECATED: tmux 세션 ID 반환 방식은 SDK runner 방식으로 교체됨.
+        하위 호환을 위해 유지. get_warm_runner() 사용 권장.
+
+        claude-code 엔진: runner 캐시 존재 시 내부 마커 문자열 반환.
+        다른 엔진: 항상 None 반환.
         """
         if self._engine != "claude-code":
             return None
@@ -638,13 +666,12 @@ class WarmSessionPool:
             return session_id
         return None
 
-    def get_warm_runner(self):
+    def get_warm_runner(self) -> "BaseRunner | None":
         """
-        [codex 전용] 미리 생성된 CodexRunner 반환. 없으면 None.
+        미리 생성된 BaseRunner 인스턴스 반환. 없으면 None.
+        claude-code, codex, gemini 엔진 모두 지원.
         반환 후 즉시 다음 예열 시작.
         """
-        if self._engine != "codex":
-            return None
         if self._warm_runner is not None:
             runner = self._warm_runner
             self._warm_runner = None
@@ -659,6 +686,8 @@ class WarmSessionPool:
         try:
             if self._engine == "codex":
                 await self._preheat_codex()
+            elif self._engine == "gemini":
+                await self._preheat_gemini()
             else:
                 await self._preheat_claude()
         except Exception as e:
@@ -667,18 +696,24 @@ class WarmSessionPool:
             self._preheating = False
 
     async def _preheat_claude(self) -> None:
-        """claude-code: tmux 세션 예열."""
-        # ensure_session은 동기 함수 + time.sleep 포함 → 이벤트 루프 블로킹 방지
-        session_id = await asyncio.to_thread(self._sm.ensure_session, self._org_id)
-        self._warm = session_id
+        """claude-code: BaseRunner 인스턴스 캐시 (RunnerFactory 경유)."""
+        runner = await asyncio.to_thread(RunnerFactory.create, "claude-code")
+        self._warm_runner = runner
+        self._warm = f"runner:{self._org_id}"
         logger.debug(
-            f"[WarmPool:{self._org_id}] claude 세션 예열 완료: {session_id[:8] if session_id else 'N/A'}"
+            f"[WarmPool:{self._org_id}] claude-code runner 예열 완료"
         )
 
     async def _preheat_codex(self) -> None:
-        """codex: CodexRunner 인스턴스 생성 + workdir 확보."""
-        from tools.codex_runner import CodexRunner
-        self._warm_runner = CodexRunner()
+        """codex: RunnerFactory 경유 CodexRunner 인스턴스 생성 + workdir 확보."""
+        self._warm_runner = RunnerFactory.create("codex")
         logger.debug(
-            f"[WarmPool:{self._org_id}] codex runner 예열 완료 (workdir={self._warm_runner.workdir})"
+            f"[WarmPool:{self._org_id}] codex runner 예열 완료"
+        )
+
+    async def _preheat_gemini(self) -> None:
+        """gemini: RunnerFactory 경유 GeminiRunner 인스턴스 생성."""
+        self._warm_runner = RunnerFactory.create("gemini")
+        logger.debug(
+            f"[WarmPool:{self._org_id}] gemini runner 예열 완료"
         )
