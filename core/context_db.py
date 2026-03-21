@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aiosqlite
+from loguru import logger
 
 DEFAULT_DB_PATH = Path(os.environ.get("CONTEXT_DB_PATH", "~/.ai-org/context.db")).expanduser()
 
