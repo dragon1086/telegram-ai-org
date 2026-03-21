@@ -43,30 +43,48 @@ class SelfCodeImprover:
         self._run_git(["checkout", "-b", branch])
 
         prompt = self._build_prompt(target, error_summary, related_files)
+        result: FixResult | None = None
 
-        for attempt in range(1, MAX_ATTEMPTS + 1):
-            logger.info(f"[SelfCodeImprover] {target} 시도 {attempt}/{MAX_ATTEMPTS}")
-            if not self._run_claude(prompt):
-                continue
-            passed, output = self._run_tests()
-            if passed:
-                commit_hash = self._commit_and_push(branch, target, attempt)
-                self._record_rate_limit(target)
-                self._signal_restart(target)
-                return FixResult(
-                    target=target, success=True,
-                    branch=branch, commit_hash=commit_hash, attempts=attempt,
-                )
-            prompt = self._build_prompt(target, error_summary, related_files, output)
+        try:
+            for attempt in range(1, MAX_ATTEMPTS + 1):
+                logger.info(f"[SelfCodeImprover] {target} 시도 {attempt}/{MAX_ATTEMPTS}")
+                if not self._run_claude(prompt):
+                    continue
+                passed, output = self._run_tests()
+                if passed:
+                    commit_hash = self._commit_and_push(branch, target, attempt)
+                    self._record_rate_limit(target)
+                    self._signal_restart(target)
+                    result = FixResult(
+                        target=target, success=True,
+                        branch=branch, commit_hash=commit_hash, attempts=attempt,
+                    )
+                    return result
+                prompt = self._build_prompt(target, error_summary, related_files, output)
 
-        self._run_git(["checkout", "main"])
-        self._run_git(["branch", "-D", branch])
-        logger.error(f"[SelfCodeImprover] {target} 자동 수정 실패 — 원복")
-        return FixResult(
-            target=target, success=False,
-            branch=branch, commit_hash="", attempts=MAX_ATTEMPTS,
-            error_message="max attempts reached",
-        )
+            logger.error(f"[SelfCodeImprover] {target} 자동 수정 실패 — 원복")
+            result = FixResult(
+                target=target, success=False,
+                branch=branch, commit_hash="", attempts=MAX_ATTEMPTS,
+                error_message="max attempts reached",
+            )
+            return result
+        finally:
+            self._return_to_main(branch, success=result is not None and result.success)
+
+    def _return_to_main(self, branch: str, *, success: bool) -> None:
+        """작업 완료 후 main (또는 main의 HEAD)으로 복귀. 워크트리 충돌 대응."""
+        try:
+            self._run_git(["checkout", "main"])
+        except Exception:
+            # bot-runtime 워크트리가 main을 점유 중이면 detached HEAD로 복귀
+            main_hash = subprocess.check_output(
+                ["git", "rev-parse", "main"], cwd=REPO_ROOT, text=True,
+            ).strip()
+            self._run_git(["checkout", "--detach", main_hash])
+            logger.info(f"[SelfCodeImprover] main 워크트리 충돌 → detached HEAD ({main_hash[:7]})")
+        if not success:
+            self._run_git(["branch", "-D", branch])
 
     def _build_prompt(
         self,
