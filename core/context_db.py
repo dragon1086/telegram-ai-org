@@ -582,6 +582,10 @@ class ContextDB:
                     continue
                 if task["status"] != "running":
                     continue
+                # ── Expired lease reclaim: attempt 횟수 초과 시 스킵 ──
+                attempt_count = metadata.get("attempt_count", 0)
+                if attempt_count >= self.MAX_TASK_ATTEMPTS:
+                    continue
                 lease_until = metadata.get("lease_expires_at")
                 if not lease_until:
                     continue
@@ -592,18 +596,45 @@ class ContextDB:
                     result.append(task)
             return result
 
+    MAX_TASK_ATTEMPTS = 3  # 최대 lease claim 횟수 — 초과 시 자동 failed 처리
+
     async def claim_pm_task_lease(
         self,
         task_id: str,
         owner: str,
         ttl_seconds: float,
     ) -> dict | None:
-        """태스크 lease를 획득한다. 이미 유효한 lease가 있으면 None."""
+        """태스크 lease를 획득한다. 이미 유효한 lease가 있으면 None.
+
+        무한 재시작 루프 방지: attempt_count가 MAX_TASK_ATTEMPTS를 초과하면
+        태스크를 자동으로 'failed' 상태로 전환하고 None을 반환한다.
+        """
         task = await self.get_pm_task(task_id)
         if task is None:
             return None
         metadata = dict(task.get("metadata") or {})
         now = datetime.now(UTC)
+
+        # ── 무한 루프 방지: attempt 횟수 체크 ──
+        attempt_count = metadata.get("attempt_count", 0) + 1
+        if attempt_count > self.MAX_TASK_ATTEMPTS:
+            logger.warning(
+                f"[ContextDB] 태스크 {task_id} 최대 시도 횟수 초과 "
+                f"({attempt_count}/{self.MAX_TASK_ATTEMPTS}) — 자동 failed 처리"
+            )
+            metadata["fail_reason"] = (
+                f"최대 실행 시도 횟수 초과 ({self.MAX_TASK_ATTEMPTS}회). "
+                "무한 재시작 루프 방지를 위해 자동 중단됨."
+            )
+            now_iso = _utcnow_iso()
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    "UPDATE pm_tasks SET status='failed', metadata=?, updated_at=? WHERE id=?",
+                    (json.dumps(metadata, ensure_ascii=False), now_iso, task_id),
+                )
+                await db.commit()
+            return None
+
         lease_until_raw = metadata.get("lease_expires_at")
         lease_owner = metadata.get("lease_owner")
         if lease_until_raw and lease_owner and lease_owner != owner:
@@ -617,6 +648,7 @@ class ContextDB:
             "lease_owner": owner,
             "lease_expires_at": (now + timedelta(seconds=ttl_seconds)).isoformat(),
             "lease_heartbeat_at": now.isoformat(),
+            "attempt_count": attempt_count,
         })
         now_iso = _utcnow_iso()
         async with aiosqlite.connect(self.db_path) as db:
