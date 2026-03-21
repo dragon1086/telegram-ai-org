@@ -110,12 +110,16 @@ async def _send_telegram(text: str) -> None:
         print(text)
         return
     try:
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from core.telegram_formatting import markdown_to_html
         from telegram import Bot
         bot = Bot(token=BOT_TOKEN)
         await bot.send_message(
             chat_id=GROUP_CHAT_ID,
-            text=text,
-            parse_mode="Markdown",
+            text=markdown_to_html(text),
+            parse_mode="HTML",
         )
         print("[morning_goals] Telegram 전송 완료")
     except Exception as e:

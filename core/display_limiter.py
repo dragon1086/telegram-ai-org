@@ -15,6 +15,8 @@ from enum import Enum
 
 from loguru import logger
 
+from core.telegram_formatting import markdown_to_html
+
 _METADATA_TAG_RE = re.compile(r'\[[A-Z_]+:[^\]]*\]')
 
 
@@ -67,15 +69,16 @@ class DisplayLimiter:
         reply_to_message_id: int | None = None,
     ) -> object:
         text = _METADATA_TAG_RE.sub('', text).strip()
-        kwargs = {}
+        html_text = markdown_to_html(text)
+        kwargs: dict = {"parse_mode": "HTML"}
         if reply_to_message_id is not None:
             kwargs["reply_to_message_id"] = reply_to_message_id
         try:
-            return await message.reply_text(text, **kwargs)
+            return await message.reply_text(html_text, **kwargs)
         except Exception as e:
             if reply_to_message_id is not None and self._should_retry_without_reply(e):
                 logger.warning(f"reply 대상 메시지를 찾지 못해 일반 응답으로 재시도: {e}")
-                return await message.reply_text(text)
+                return await message.reply_text(html_text, parse_mode="HTML")
             raise
 
     async def edit_progress(self, progress_msg: object, text: str,
@@ -93,7 +96,8 @@ class DisplayLimiter:
         reply_to_message_id: int | None = None,
     ) -> object:
         text = _METADATA_TAG_RE.sub('', text).strip()
-        kwargs = {"chat_id": chat_id, "text": text}
+        html_text = markdown_to_html(text)
+        kwargs: dict = {"chat_id": chat_id, "text": html_text, "parse_mode": "HTML"}
         if reply_to_message_id is not None:
             kwargs["reply_to_message_id"] = reply_to_message_id
         try:
@@ -101,7 +105,7 @@ class DisplayLimiter:
         except Exception as e:
             if reply_to_message_id is not None and self._should_retry_without_reply(e):
                 logger.warning(f"reply 대상 메시지를 찾지 못해 일반 전송으로 재시도: {e}")
-                return await bot.send_message(chat_id=chat_id, text=text)
+                return await bot.send_message(chat_id=chat_id, text=html_text, parse_mode="HTML")
             raise
 
     @staticmethod

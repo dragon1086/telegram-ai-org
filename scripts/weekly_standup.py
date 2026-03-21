@@ -209,13 +209,17 @@ def build_standup_message(tasks: list[dict], hist: list[dict]) -> tuple[str, str
 
 async def send_telegram(text: str) -> None:
     try:
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from core.telegram_formatting import markdown_to_html
         from telegram import Bot
         bot = Bot(token=BOT_TOKEN)
         async with bot:
             await bot.send_message(
                 chat_id=GROUP_CHAT_ID,
-                text=text,
-                parse_mode="Markdown",
+                text=markdown_to_html(text),
+                parse_mode="HTML",
             )
         print(f"[standup] Telegram 전송 완료 ({len(text)}자)")
     except Exception as e:

@@ -1,8 +1,82 @@
 """텔레그램 출력용 경량 포맷팅 유틸리티."""
 from __future__ import annotations
 
+import re
 
 _CONTINUATION = "…(이어짐)"  # 청크가 잘릴 때 말미에 붙는 연출 문자열
+
+
+def escape_html(text: str) -> str:
+    """HTML 특수문자를 텔레그램 HTML parse_mode용으로 이스케이프한다.
+
+    텔레그램 HTML 모드에서 이스케이프가 필요한 문자: & < >
+    """
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def markdown_to_html(text: str) -> str:
+    """LLM이 생성한 표준 마크다운을 텔레그램 HTML parse_mode용으로 변환한다.
+
+    처리 순서:
+    1. 펜스 코드 블록(```...```) → <pre>...</pre>
+    2. 인라인 코드(`...`) → <code>...</code>
+    3. 나머지 텍스트 HTML 이스케이프 (& < >)
+    4. **bold** / *italic* / ### Header / [link](url) 변환
+    5. 플레이스홀더 복원
+
+    지원 변환:
+    - **text** / __text__ → <b>text</b>
+    - *text* / _text_ → <i>text</i>
+    - `code` → <code>code</code>
+    - ```...``` → <pre>...</pre>
+    - [text](url) → <a href="url">text</a>
+    - # ~ ###### Header → <b>Header</b>
+    """
+    if not text:
+        return text
+
+    # 1. 펜스 코드 블록 추출 및 플레이스홀더 치환
+    fenced_blocks: list[str] = []
+
+    def _save_fenced(m: re.Match) -> str:
+        content = escape_html(m.group(1) if m.group(1) is not None else "")
+        fenced_blocks.append(f"<pre>{content}</pre>")
+        return f"\x00FENCED{len(fenced_blocks) - 1}\x00"
+
+    text = re.sub(r"```(?:\w+)?\n?([\s\S]*?)```", _save_fenced, text)
+
+    # 2. 인라인 코드 추출 및 플레이스홀더 치환
+    inline_codes: list[str] = []
+
+    def _save_inline(m: re.Match) -> str:
+        content = escape_html(m.group(1))
+        inline_codes.append(f"<code>{content}</code>")
+        return f"\x00INLINE{len(inline_codes) - 1}\x00"
+
+    text = re.sub(r"`([^`\n]+)`", _save_inline, text)
+
+    # 3. 나머지 텍스트 HTML 이스케이프
+    text = escape_html(text)
+
+    # 4. 마크다운 → HTML 변환
+    # 헤더 (# ~ ######) → <b>
+    text = re.sub(r"^#{1,6}\s+(.+)$", r"<b>\1</b>", text, flags=re.MULTILINE)
+    # Bold: **text** 또는 __text__
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text, flags=re.DOTALL)
+    text = re.sub(r"__(.+?)__", r"<b>\1</b>", text, flags=re.DOTALL)
+    # Italic: *text* 또는 _text_ (단, ** 처리 후라 * 하나만 남음)
+    text = re.sub(r"\*([^*\n]+?)\*", r"<i>\1</i>", text)
+    text = re.sub(r"_([^_\n]+?)_", r"<i>\1</i>", text)
+    # 링크: [text](url)
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
+
+    # 5. 플레이스홀더 복원
+    for i, block in enumerate(fenced_blocks):
+        text = text.replace(f"\x00FENCED{i}\x00", block)
+    for i, block in enumerate(inline_codes):
+        text = text.replace(f"\x00INLINE{i}\x00", block)
+
+    return text
 
 
 def split_message(text: str, max_len: int) -> list[str]:
