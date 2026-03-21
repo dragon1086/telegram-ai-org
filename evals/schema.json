@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Skill Eval Schema",
+  "description": "스킬 품질 평가 정의 파일 스키마",
+  "type": "object",
+  "required": ["skill", "version", "scenarios", "baseline"],
+  "properties": {
+    "skill": { "type": "string", "description": "스킬 이름 (디렉토리명과 동일)" },
+    "version": { "type": "string", "description": "eval 버전" },
+    "baseline": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10,
+      "description": "현재 기준 점수. 개선 후 이 값보다 높으면 keep"
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "input", "expected"],
+        "properties": {
+          "id":       { "type": "string" },
+          "input":    { "type": "string", "description": "테스트 입력 시나리오" },
+          "expected": { "type": "string", "description": "기대 동작 또는 핵심 키워드" },
+          "weight":   { "type": "number", "minimum": 0.1, "maximum": 5.0, "default": 1.0 },
+          "tags":     { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "description": "추가 평가 지표 (선택)",
+      "properties": {
+        "clarity_score":   { "type": "string" },
+        "coverage_score":  { "type": "string" },
+        "gotcha_penalty":  { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "skill": "weekly-review",
+  "version": "1.0",
+  "baseline": 7.0,
+  "scenarios": [
+    { "id": "w001", "input": "주간 성과 수집", "expected": "collect", "weight": 1.5 },
+    { "id": "w002", "input": "봇 상태 보고", "expected": "bot status", "weight": 1.3 },
+    { "id": "w003", "input": "주간 리포트 생성", "expected": "report", "weight": 1.5 },
+    { "id": "w004", "input": "KST 금요일 17:00 실행", "expected": "friday", "weight": 1.0 },
+    { "id": "w005", "input": "Telegram 보고", "expected": "telegram", "weight": 1.2 },
+    { "id": "w006", "input": "주간 로그 저장", "expected": "weekly-log", "weight": 1.0 },
+    { "id": "w007", "input": "성공률 집계", "expected": "success", "weight": 1.2 }
+  ]
+}

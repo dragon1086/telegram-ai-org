@@ -1693,8 +1693,14 @@ class TelegramRelay:
                     progress_interval = self._progress_interval()
                     history_limit = self._progress_history_limit()
 
+                    _heartbeat_ts = time.time()  # 마지막 활동 시각
+                    _idle_timeout = int(os.environ.get("BOT_IDLE_TIMEOUT_SEC", "120"))  # 무응답 타임아웃
+                    _max_timeout = int(os.environ.get("BOT_MAX_TIMEOUT_SEC", "1800"))  # 절대 상한 30분
+                    _exec_start = time.time()
+
                     async def on_progress(line: str) -> None:
-                        nonlocal last_edit
+                        nonlocal last_edit, _heartbeat_ts
+                        _heartbeat_ts = time.time()  # 하트비트 갱신
                         if not self._show_progress():
                             return
                         stripped = self._clean_progress_line(line)
@@ -1713,13 +1719,57 @@ class TelegramRelay:
                             except Exception:
                                 pass
 
-                    response = await self._execute_with_team_config(
-                        task=request_text,
-                        system_prompt=self.identity.build_system_prompt(),
-                        team_config=team_config,
-                        progress_callback=on_progress,
-                        route_kind="local_execution",
-                    )
+                    async def _watchdog_loop() -> None:
+                        """progress 하트비트 감시 — 무응답 시 실행 취소."""
+                        while True:
+                            await asyncio.sleep(10)
+                            idle = time.time() - _heartbeat_ts
+                            elapsed = time.time() - _exec_start
+                            if idle > _idle_timeout:
+                                raise asyncio.TimeoutError(f"무응답 {idle:.0f}초 (한도 {_idle_timeout}s)")
+                            if elapsed > _max_timeout:
+                                raise asyncio.TimeoutError(f"총 실행 {elapsed:.0f}초 (한도 {_max_timeout}s)")
+
+                    try:
+                        exec_task = asyncio.ensure_future(
+                            self._execute_with_team_config(
+                                task=request_text,
+                                system_prompt=self.identity.build_system_prompt(),
+                                team_config=team_config,
+                                progress_callback=on_progress,
+                                route_kind="local_execution",
+                            )
+                        )
+                        watchdog_task = asyncio.ensure_future(_watchdog_loop())
+                        done, pending = await asyncio.wait(
+                            [exec_task, watchdog_task],
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        for t in pending:
+                            t.cancel()
+                        # watchdog이 먼저 끝났으면 TimeoutError가 raise됨
+                        if watchdog_task in done:
+                            watchdog_task.result()  # re-raise TimeoutError
+                        response = exec_task.result()
+                    except asyncio.TimeoutError as te:
+                        elapsed = time.time() - _exec_start
+                        logger.error(f"[{self.org_id}] 실행 타임아웃 ({te}, 경과 {elapsed:.0f}s) — 자동 복구")
+                        self.claim_manager.release_text_hash(text_hash)
+                        try:
+                            await progress_msg.edit_text(f"⏰ {te}\n다시 시도해주세요.")
+                        except Exception:
+                            pass
+                        self._complete_runbook(run_id, f"타임아웃: {te}")
+                        return
+                    except Exception as exec_err:
+                        logger.exception(f"[{self.org_id}] 실행 중 에러 — 자동 복구: {exec_err}")
+                        self.claim_manager.release_text_hash(text_hash)
+                        try:
+                            await progress_msg.edit_text(f"❌ 실행 에러: {str(exec_err)[:200]}")
+                        except Exception:
+                            pass
+                        self._complete_runbook(run_id, f"실행 에러: {exec_err}")
+                        return
                     upload_candidates = extract_local_artifact_paths(response or "")
                     self._append_runbook(
                         run_id,
@@ -1900,6 +1950,7 @@ class TelegramRelay:
                 )
             except Exception as e:
                 logger.exception(f"[PM] 오케스트레이터 분해 실패: {e}")
+                self.claim_manager.release_text_hash(text_hash)
                 await self.display.send_reply(update.message, f"❌ 태스크 분해 실패: {e}")
             return
 

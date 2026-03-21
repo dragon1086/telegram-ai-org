@@ -1,0 +1,13 @@
+{
+  "skill": "quality-gate",
+  "version": "1.0",
+  "baseline": 7.5,
+  "scenarios": [
+    { "id": "q001", "input": "ruff 린트 실행", "expected": "ruff", "weight": 1.5 },
+    { "id": "q002", "input": "pytest 전체 실행", "expected": "pytest", "weight": 1.5 },
+    { "id": "q003", "input": "import 유효성 검사", "expected": "import", "weight": 1.2 },
+    { "id": "q004", "input": "PASS WARN FAIL 결과 판정", "expected": "PASS", "weight": 1.5 },
+    { "id": "q005", "input": "배포 전 게이트 통과 여부", "expected": "deploy", "weight": 1.3 },
+    { "id": "q006", "input": "머지 전 품질 체크", "expected": "merge", "weight": 1.3 }
+  ]
+}
