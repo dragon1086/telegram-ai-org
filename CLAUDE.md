@@ -107,6 +107,41 @@ bash scripts/start_all.sh
 - 줄 길이: Ruff 설정 기준 100자.
 - 동작 변경 시 `README.md`, `ARCHITECTURE.md` 동기화.
 
+## Git 워크트리 워크플로 (필수)
+
+> **이 프로젝트를 수정하는 모든 봇/세션에 적용된다.**
+
+현재 브랜치가 `main`이 아닌 상태에서 **새 태스크**(= 현재 브랜치 작업과 무관한 요청)를 받으면, 반드시 아래 절차를 따른다.
+
+### 절차
+
+1. **브랜치 확인**: `git branch --show-current` — `main`이면 평소대로 진행.
+2. **워크트리 생성**: `main`이 아니면 임시 워크트리를 만든다.
+   ```bash
+   git worktree add .worktrees/<task-slug> main
+   cd .worktrees/<task-slug>
+   git checkout -b fix/<task-slug>
+   ```
+3. **작업 수행**: 워크트리 안에서 코드 수정 → 테스트 → 커밋.
+4. **main에 머지**:
+   ```bash
+   cd <project-root>
+   git checkout main
+   git merge fix/<task-slug> --no-ff -m "merge: <설명>"
+   ```
+5. **정리**:
+   ```bash
+   git worktree remove .worktrees/<task-slug>
+   git branch -d fix/<task-slug>
+   ```
+6. **원래 브랜치 복귀**: 기존 작업 브랜치로 `git checkout` 복귀.
+
+### 판단 기준
+
+- 현재 브랜치 작업의 **연장선**이면 → 그냥 현재 브랜치에서 계속.
+- 현재 브랜치와 **무관한 새 요청**이면 → 워크트리 절차 필수.
+- 확신이 없으면 → 워크트리를 쓴다 (안전한 쪽 선택).
+
 ## 자주 보는 파일 묶음
 
 PM/라우팅 수정 시:
