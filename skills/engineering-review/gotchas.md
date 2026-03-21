@@ -31,3 +31,19 @@
 **상황**: 함수 내 여러 조건 분기에서 `from X import Y`를 하고, 일부 분기에서는 import 없이 Y를 사용할 때
 **증상**: Python 3.14에서 `from X import Y`가 한 분기에라도 있으면 Y를 함수 전체에서 local로 마킹. 해당 import 분기를 타지 않으면 `UnboundLocalError: cannot access local variable 'Y'` (예: telegram_relay.py RunContext 사건)
 **해결**: 함수 내에서 사용하는 import는 반드시 함수 최상단에 한 번만 배치. 조건부 분기 안에 import를 넣지 말 것
+
+## ⚠️ Gotcha 7 [절대 금지]: 서버 재기동 · 브랜치 푸시 · 브랜치 머지 자체 수행 금지
+**상황**: 코드 수정 후 리뷰를 마치면 "커밋 → 푸시 → 재기동"까지 이어서 진행하려는 충동이 생길 때
+**증상**: 개발실이 `git push`, `git merge`, `bash scripts/restart_bots.sh` 또는 `request_restart.sh` 를 직접 실행 → 스스로 kill되거나 무한 루프 재실행 (T-224 사례)
+**규칙**: 개발실은 **코드 수정과 로컬 커밋까지만** 담당. 아래 세 가지는 반드시 운영실(@aiorg_ops_bot)에 위임 요청:
+```
+❌ 개발실 자체 수행 금지:
+  - git push origin <branch>
+  - git merge <branch>
+  - bash scripts/restart_bots.sh / scripts/bot_control.sh
+  - bash scripts/request_restart.sh
+
+✅ 개발실 완료 후 운영실에 위임:
+  "[COLLAB:브랜치 머지 및 전체 재기동 요청|맥락: 개발실 코드 수정 완료]"
+```
+**해결**: engineering-review 스킬의 마지막 단계는 항상 운영실 위임 메시지 작성으로 끝낼 것
