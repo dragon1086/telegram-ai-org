@@ -21,6 +21,21 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).parent.parent
 PID_DIR = Path.home() / ".ai-org" / "bots"
 
+# 봇 전용 워크트리 경로 (main 브랜치 고정)
+_BOT_RUNTIME_WORKTREE = ".worktrees/bot-runtime"
+
+
+def _resolve_runtime_dir() -> Path:
+    """봇 실행용 디렉토리 결정.
+
+    .worktrees/bot-runtime 워크트리가 존재하면 항상 main 브랜치 코드로 실행.
+    없으면 PROJECT_DIR 폴백 (기존 동작).
+    """
+    candidate = PROJECT_DIR / _BOT_RUNTIME_WORKTREE
+    if candidate.is_dir() and (candidate / "main.py").exists():
+        return candidate
+    return PROJECT_DIR
+
 
 def _runtime_pid_file(org_id: str) -> Path:
     return Path(f"/tmp/telegram-ai-org-{org_id}.pid")
@@ -104,13 +119,14 @@ def start_bot(token: str, org_id: str, chat_id: int) -> int:
         "TELEGRAM_GROUP_CHAT_ID": str(chat_id),
         "PM_ORG_NAME": org_id,
     }
+    runtime_dir = _resolve_runtime_dir()
     proc = subprocess.Popen(
-        [sys.executable, str(PROJECT_DIR / "main.py")],
+        [sys.executable, str(runtime_dir / "main.py")],
         env=env,
         stdin=subprocess.DEVNULL,
         stdout=open(Path.home() / ".ai-org" / f"{org_id}.log", "a"),
         stderr=subprocess.STDOUT,
-        cwd=str(PROJECT_DIR),
+        cwd=str(runtime_dir),
         start_new_session=True,
     )
     (PID_DIR / f"{org_id}.pid").write_text(str(proc.pid))
@@ -158,7 +174,8 @@ def stop_bot(org_id: str) -> bool:
 
 
 def restart_all_bots() -> None:
-    restart_script = PROJECT_DIR / "scripts" / "restart_bots.sh"
+    runtime_dir = _resolve_runtime_dir()
+    restart_script = runtime_dir / "scripts" / "restart_bots.sh"
     subprocess.run(["bash", str(restart_script)], check=False)
 
 
