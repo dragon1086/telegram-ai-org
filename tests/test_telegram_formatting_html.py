@@ -114,3 +114,55 @@ def test_code_block_not_double_processed() -> None:
     result = markdown_to_html("```\n*not italic*\n```")
     assert "<i>" not in result
     assert "*not italic*" in result or "not italic" in result
+
+
+# ── 추가 패턴 (bold+italic, 수평선, 테이블 구분자) ─────────────────────────────
+
+def test_bold_italic_triple_asterisk() -> None:
+    """***text*** → <b><i>text</i></b>"""
+    result = markdown_to_html("***굵은 이탤릭***")
+    assert result == "<b><i>굵은 이탤릭</i></b>"
+
+
+def test_bold_italic_triple_underscore() -> None:
+    """___text___ → <b><i>text</i></b>"""
+    result = markdown_to_html("___굵은 이탤릭___")
+    assert result == "<b><i>굵은 이탤릭</i></b>"
+
+
+def test_horizontal_rule_dashes() -> None:
+    """--- 단독 줄 → 유니코드 구분선"""
+    result = markdown_to_html("위\n---\n아래")
+    assert "──────────" in result
+    assert "---" not in result
+
+
+def test_horizontal_rule_asterisks() -> None:
+    """*** 단독 줄 → 유니코드 구분선 (수평선으로 처리)"""
+    result = markdown_to_html("위\n***\n아래")
+    assert "──────────" in result
+
+
+def test_table_separator_stripped() -> None:
+    """|---|---| 테이블 구분자 행 제거"""
+    text = "| 이름 | 값 |\n|------|------|\n| A | 1 |"
+    result = markdown_to_html(text)
+    assert "|------|" not in result
+    assert "| 이름 | 값 |" in result
+    assert "| A | 1 |" in result
+
+
+def test_strikethrough() -> None:
+    """~~text~~ → <s>text</s>"""
+    result = markdown_to_html("~~삭제~~")
+    assert result == "<s>삭제</s>"
+
+
+def test_mixed_bold_italic_in_paragraph() -> None:
+    """실제 LLM 출력 패턴: 헤더 + 볼드이탤릭 + 수평선 혼합"""
+    text = "## 결론\n\n***핵심 변경점***: 이스케이프 처리\n\n---\n\n일반 텍스트"
+    result = markdown_to_html(text)
+    assert "<b>결론</b>" in result
+    assert "<b><i>핵심 변경점</i></b>" in result
+    assert "──────────" in result
+    assert "일반 텍스트" in result

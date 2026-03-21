@@ -7,6 +7,7 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 from core.context_db import ContextDB
 from core.message_schema import OrgMessage
+from core.telegram_formatting import markdown_to_html
 
 
 class WorkerBot:
@@ -68,7 +69,8 @@ class WorkerBot:
         )
         await self.app.bot.send_message(
             chat_id=self.group_chat_id,
-            text=msg.to_telegram_text(),
+            text=markdown_to_html(msg.to_telegram_text()),
+            parse_mode="HTML",
         )
         logger.info(f"{self.handle} 보고 전송: {task_id}")
 
@@ -85,7 +87,8 @@ class WorkerBot:
         )
         await self.app.bot.send_message(
             chat_id=self.group_chat_id,
-            text=msg.to_telegram_text(),
+            text=markdown_to_html(msg.to_telegram_text()),
+            parse_mode="HTML",
         )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
