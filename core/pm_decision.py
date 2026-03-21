@@ -20,13 +20,13 @@ class DecisionClientProtocol(Protocol):
 
 
 def _resolve_engine(org_id: str, engine: str) -> str:
-    if engine in {"claude-code", "codex"}:
+    if engine in {"claude-code", "codex", "gemini"}:
         return engine
     try:
         org = load_orchestration_config().get_org(org_id)
     except Exception:
         org = None
-    if org and org.preferred_engine in {"claude-code", "codex"}:
+    if org and org.preferred_engine in {"claude-code", "codex", "gemini"}:
         return org.preferred_engine
     return "claude-code"
 
@@ -67,12 +67,8 @@ class PMDecisionClient:
     def _get_runner(self):
         if self._runner is not None:
             return self._runner
-        if self.engine == "codex":
-            from tools.codex_runner import CodexRunner
-            self._runner = CodexRunner()
-        else:
-            from tools.claude_code_runner import ClaudeCodeRunner
-            self._runner = ClaudeCodeRunner()
+        from tools.base_runner import RunnerFactory
+        self._runner = RunnerFactory.create(self.engine)
         return self._runner
 
     async def complete(
@@ -88,19 +84,20 @@ class PMDecisionClient:
         if system_prompt:
             combined_system = f"{combined_system}\n\n{system_prompt}"
 
+        from tools.base_runner import RunContext
+
         if self.engine == "codex":
             full_prompt = f"{combined_system}\n\n{prompt}"
-            return await runner.run(
-                full_prompt,
+            return await runner.run(RunContext(
+                prompt=full_prompt,
                 workdir=resolved_workdir,
-                workdir_hint=prompt,
-            )
+            ))
 
-        return await runner.run_single(
-            prompt,
+        return await runner.run_single(RunContext(
+            prompt=prompt,
             system_prompt=combined_system,
             org_id=self.org_id,
             session_store=self._session_store,
             global_context=None,
             workdir=resolved_workdir,
-        )
+        ))

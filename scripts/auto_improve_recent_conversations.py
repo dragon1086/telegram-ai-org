@@ -29,8 +29,7 @@ from scripts.review_recent_conversations import (
     build_report,
     collect_recent_log_lines,
 )
-from tools.claude_code_runner import ClaudeCodeRunner
-from tools.codex_runner import CodexRunner
+from tools.base_runner import RunnerFactory, RunContext
 from tools.telegram_uploader import upload_file
 
 
@@ -273,9 +272,9 @@ async def apply_actions(
 ) -> list[str]:
     logs: list[str] = []
     if engine == "codex":
-        runner = CodexRunner(workdir=str(worktree_dir))
+        runner = RunnerFactory.create("codex", workdir=str(worktree_dir))
     else:
-        runner = ClaudeCodeRunner(workdir=str(worktree_dir))
+        runner = RunnerFactory.create("claude-code", workdir=str(worktree_dir))
     for index, action in enumerate(plan.actions, start=1):
         files_text = "\n".join(f"- {path}" for path in action.files) or "- no explicit file hints"
         task = (
@@ -291,17 +290,16 @@ async def apply_actions(
             f"Source review report:\n{review_report[:6000]}"
         )
         if engine == "codex":
-            result = await runner.run(task, workdir=str(worktree_dir), workdir_hint=task)
+            result = await runner.run(RunContext(prompt=task, workdir=str(worktree_dir)))
         else:
-            result = await runner.run_task(
-                task,
+            result = await runner.run_task(RunContext(
+                prompt=task,
+                workdir=str(worktree_dir),
                 system_prompt=(
                     "You are running an unattended repository self-improvement job. "
                     "Keep scope narrow, produce reviewable diffs, and do not undo unrelated changes."
                 ),
-                org_id=org_id,
-                workdir=str(worktree_dir),
-            )
+            ))
         logs.append(result)
     return logs
 
