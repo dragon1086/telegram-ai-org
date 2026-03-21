@@ -863,6 +863,8 @@ class TelegramRelay:
         replied_context: str = "",
     ) -> None:
         """가벼운 질문/상태 확인은 PM이 직접 대답한다."""
+        from tools.base_runner import RunContext  # 함수 전체에서 사용
+
         if update.message is None:
             return
         db_context = await self._build_pm_db_context()
@@ -913,7 +915,6 @@ class TelegramRelay:
         reply = ""
         used_codex = self.engine == "codex"
         try:
-            from tools.base_runner import RunContext
             if self.engine == "codex":
                 runner = self._make_codex_runner()
                 reply = await asyncio.wait_for(
@@ -1075,6 +1076,8 @@ class TelegramRelay:
         workdir: str | None = None,
         route_kind: str = "local_execution",
     ) -> str:
+        from tools.base_runner import RunContext  # 함수 전체에서 사용 — 조건부 분기에 넣으면 UnboundLocalError
+
         backend = self._resolve_execution_backend(route_kind, team_config, task)
         tmux_available = self.session_manager.status().get("tmux", False)
         agent_names = [persona.name for persona in team_config.agents]
@@ -1102,7 +1105,6 @@ class TelegramRelay:
                     system_prompt = f"{system_prompt}\n\n{ctx_prompt}".strip()
             if system_prompt:
                 prompt = f"{system_prompt}\n\n{prompt}"
-            from tools.base_runner import RunContext
             result = await runner.run(RunContext(
                 prompt=prompt,
                 workdir=workdir,
@@ -1164,7 +1166,6 @@ class TelegramRelay:
                     shell_team_id=self.org_id if backend == "tmux_batch" else None,
                 )
             else:
-                from tools.base_runner import RunContext
                 result = await runner.run(RunContext(prompt=f"{system_prompt}\n\n{task}".strip() if system_prompt else task, workdir=workdir))
             self._apply_runner_metrics(runner)
             await self._maybe_emit_session_alert(self.org_id)
@@ -1181,7 +1182,6 @@ class TelegramRelay:
                     shell_team_id=self.org_id if backend == "tmux_batch" else None,
                 )
             else:
-                from tools.base_runner import RunContext
                 result = await runner.run(RunContext(prompt=f"{system_prompt}\n\n{task}".strip() if system_prompt else task, workdir=workdir))
             self._apply_runner_metrics(runner)
             await self._maybe_emit_session_alert(self.org_id)
