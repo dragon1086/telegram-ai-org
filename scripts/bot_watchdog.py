@@ -27,7 +27,10 @@ RESTART_COUNT_RESET_AFTER = 600  # 10분 동안 안정적이면 카운터 리셋
 PID_FILE = Path("/tmp/bot-watchdog.pid")
 
 PROJECT_DIR = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_DIR))
+# bot-runtime 워크트리 우선 사용
+_BOT_RUNTIME = PROJECT_DIR / ".worktrees" / "bot-runtime"
+RUNTIME_DIR = _BOT_RUNTIME if (_BOT_RUNTIME / "main.py").exists() else PROJECT_DIR
+sys.path.insert(0, str(RUNTIME_DIR))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -198,7 +201,7 @@ class BotWatchdog:
 
 
 if __name__ == "__main__":
-    os.chdir(PROJECT_DIR)
+    os.chdir(RUNTIME_DIR)
     once = "--once" in sys.argv
     watchdog = BotWatchdog()
     watchdog.run(once=once)

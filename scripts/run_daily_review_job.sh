@@ -3,7 +3,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$PROJECT_DIR"
+
+# bot-runtime 워크트리 우선 사용
+BOT_RUNTIME="$PROJECT_DIR/.worktrees/bot-runtime"
+if [ -d "$BOT_RUNTIME/core" ]; then
+  cd "$BOT_RUNTIME"
+else
+  cd "$PROJECT_DIR"
+fi
 
 PYTHON_BIN="./.venv/bin/python"
 [ ! -x "$PYTHON_BIN" ] && PYTHON_BIN="python3"
