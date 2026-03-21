@@ -3,9 +3,25 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$PROJECT_DIR"
 
 echo "=== telegram-ai-org 봇 시작 ==="
+
+# ── bot-runtime 워크트리 설정 (main 브랜치 고정) ──────────────────────────
+BOT_RUNTIME="$PROJECT_DIR/.worktrees/bot-runtime"
+if [ ! -d "$BOT_RUNTIME/core" ]; then
+  echo "▶ bot-runtime 워크트리 생성 (main 고정)..."
+  mkdir -p "$PROJECT_DIR/.worktrees"
+  git -C "$PROJECT_DIR" worktree add "$BOT_RUNTIME" main 2>/dev/null || true
+fi
+# main 최신화
+git -C "$BOT_RUNTIME" checkout main 2>/dev/null || true
+git -C "$BOT_RUNTIME" pull --ff-only 2>/dev/null || true
+# .venv, .env symlink (워크트리에는 없으므로)
+[ ! -e "$BOT_RUNTIME/.venv" ] && ln -s "$PROJECT_DIR/.venv" "$BOT_RUNTIME/.venv"
+[ -f "$PROJECT_DIR/.env" ] && [ ! -e "$BOT_RUNTIME/.env" ] && ln -s "$PROJECT_DIR/.env" "$BOT_RUNTIME/.env"
+echo "✅ bot-runtime 워크트리 준비 완료 (main)"
+
+cd "$BOT_RUNTIME"
 
 CONFIG="$HOME/.ai-org/config.yaml"
 LOADED_SOURCES=()
