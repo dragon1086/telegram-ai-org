@@ -1,6 +1,10 @@
 ---
 name: quality-gate
 description: "Use before merging code or deploying to production. Runs ruff lint + pytest + import validation and reports PASS/WARN/FAIL. Triggers: 'quality gate', 'quality check', '품질검사', 'QA gate', 'pre-merge check', 'pre-deploy', before any git merge or deploy"
+hooks:
+  PostToolUse:
+    - matcher: "Write"
+      hook: "bash skills/quality-gate/scripts/lint-only.sh"
 ---
 
 # Quality Gate (품질 게이트)

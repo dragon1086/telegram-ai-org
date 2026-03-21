@@ -37,7 +37,7 @@ AI 조직의 주간회의를 PM이 자율적으로 진행한다.
 주간회의 완료 즉시 결과를 JSONL 로그에 기록한다:
 
 ```bash
-python skills/weekly-review/scripts/save-log.py '{"week": "YYYY-WW", "summary": "...", "highlights": [], "blockers": []}'
+python skills/_shared/save-log.py '{"week": "YYYY-WW", "summary": "...", "highlights": [], "blockers": []}' skills/weekly-review/data/weekly-log.jsonl
 ```
 
 - `week`: ISO 주차 형식 (예: `2026-W12`)
