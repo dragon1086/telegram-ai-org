@@ -771,7 +771,7 @@ class TelegramRelay:
 
     async def _handle_set_bot_tone_nl(self, update: Update, text: str) -> None:
         """NL 말투/성격 설정 요청 처리. 봇 이름과 말투 지시를 파싱해 direction 업데이트."""
-        if update.message is None:
+        if update.effective_message is None:
             return
 
         # 알려진 봇 이름(dept_name) → org_id 매핑 구성
@@ -794,7 +794,7 @@ class TelegramRelay:
                 break
 
         if matched_org_id is None:
-            await update.message.reply_text(
+            await update.effective_message.reply_text(
                 markdown_to_html(
                     "봇 이름을 찾지 못했어요.\n"
                     "예) '성장실 봇 말투를 데이터 지향적으로 바꿔줘'\n"
@@ -818,7 +818,7 @@ class TelegramRelay:
         tone_instruction = _re.sub(r"\s+", " ", tone_text).strip()
 
         if not tone_instruction:
-            await update.message.reply_text(
+            await update.effective_message.reply_text(
                 f"{matched_dept} 봇의 말투 지시를 입력해주세요.\n"
                 "예) '성장실 봇 말투를 데이터 지향적이고 직설적으로 바꿔줘'",
             )
@@ -847,7 +847,7 @@ class TelegramRelay:
         except Exception as _sync_err:
             logger.warning(f"[set_bot_tone] canonical sync 실패: {_sync_err}")
 
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             markdown_to_html(
                 f"✅ **{matched_dept}** 봇 말투 업데이트!\n\n"
                 f"말투 지시: `{tone_instruction}`\n\n"
@@ -865,7 +865,7 @@ class TelegramRelay:
         """가벼운 질문/상태 확인은 PM이 직접 대답한다."""
         from tools.base_runner import RunContext  # 함수 전체에서 사용
 
-        if update.message is None:
+        if update.effective_message is None:
             return
         db_context = await self._build_pm_db_context()
         await self._queue_retry_candidates_from_db_context(db_context)
@@ -886,7 +886,7 @@ class TelegramRelay:
             f"{context_packet}"
         )
         prompt = text + replied_context
-        progress_msg = await self.display.send_reply(update.message, "잠깐요, 한번 볼게요 🧠")
+        progress_msg = await self.display.send_reply(update.effective_message, "잠깐요, 한번 볼게요 🧠")
         history: list[str] = []
         last_edit = 0.0
         progress_interval = self._progress_interval()
@@ -975,9 +975,9 @@ class TelegramRelay:
         try:
             await progress_msg.edit_text(markdown_to_html(first), parse_mode="HTML")
         except Exception:
-            await self.display.send_reply(update.message, first)
+            await self.display.send_reply(update.effective_message, first)
         for chunk in chunks[1:]:
-            await self.display.send_reply(update.message, chunk)
+            await self.display.send_reply(update.effective_message, chunk)
 
     async def _build_team_config(self, task: str):
         prefs = self.identity.get_team_preferences()
@@ -1423,7 +1423,7 @@ class TelegramRelay:
         async def _send_progress():
             await asyncio.sleep(delay)
             try:
-                await self.display.send_reply(update.message, "어디 보자... 🤔")
+                await self.display.send_reply(update.effective_message, "어디 보자... 🤔")
             except Exception:
                 pass
 
@@ -1441,7 +1441,7 @@ class TelegramRelay:
         """
         ack_msg = None
         try:
-            ack_msg = await self.display.send_reply(update.message, "🤔 분석 중...")
+            ack_msg = await self.display.send_reply(update.effective_message, "🤔 분석 중...")
         except Exception:
             pass  # ACK 실패해도 처리는 계속
 
@@ -1456,14 +1456,14 @@ class TelegramRelay:
 
     async def on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """메시지 수신 → confidence scoring → claim → 응답."""
-        if update.message is None or update.effective_chat is None:
+        if update.effective_message is None or update.effective_chat is None:
             return
 
         # 허용된 채팅만 처리
         if update.effective_chat.id != self.allowed_chat_id:
             return
 
-        text = update.message.text or ""
+        text = update.effective_message.text or ""
         if not text:
             return
 
@@ -1471,17 +1471,17 @@ class TelegramRelay:
         if self.context_db is not None:
             try:
                 import asyncio as _asyncio
-                _sender = update.message.from_user
+                _sender = update.effective_message.from_user
                 _asyncio.create_task(
                     self.context_db.insert_conversation_message(
-                        msg_id=update.message.message_id,
-                        chat_id=str(update.message.chat_id),
+                        msg_id=update.effective_message.message_id,
+                        chat_id=str(update.effective_message.chat_id),
                         user_id=str(_sender.id) if _sender else "unknown",
                         bot_id=self.org_id,
                         role="bot" if (_sender and _sender.is_bot) else "user",
                         is_bot=bool(_sender and _sender.is_bot),
                         content=text[:4000],
-                        timestamp=update.message.date.isoformat(),
+                        timestamp=update.effective_message.date.isoformat(),
                     )
                 )
             except Exception:
@@ -1493,7 +1493,7 @@ class TelegramRelay:
             return
 
         # 봇 메시지 처리 — 협업 요청, [PM_TASK:...], 토론 태그 수락
-        sender = update.message.from_user
+        sender = update.effective_message.from_user
         if sender and sender.is_bot:
             if is_collab_request(text):
                 await self._handle_collab_request(text, update, context)
@@ -1510,10 +1510,10 @@ class TelegramRelay:
             logger.debug(f"[{self.org_id}] PM 오케스트레이터 활성 — 일반 사용자 메시지 무시")
             return
 
-        message_id = str(update.message.message_id)
+        message_id = str(update.effective_message.message_id)
         # 봇 시작 이전 메시지 무시 (pending updates 방지)
         # 재시작에 30초+ 소요되므로 grace period를 120초로 설정
-        _msg_ts = update.message.date.timestamp() if update.message.date else 0
+        _msg_ts = update.effective_message.date.timestamp() if update.effective_message.date else 0
         if _msg_ts and _msg_ts < self._start_time - 120:
             logger.debug(f"[{self.org_id}] 오래된 메시지 무시 (message_id={message_id}, age={self._start_time - _msg_ts:.0f}s)")
             return
@@ -1529,10 +1529,10 @@ class TelegramRelay:
                 "replied_to": None,
             }
             # replied_to 컨텍스트 미리 수집
-            if (update.message.reply_to_message
-                    and update.message.reply_to_message.from_user
-                    and update.message.reply_to_message.from_user.is_bot):
-                _pre_replied = update.message.reply_to_message.text or ""
+            if (update.effective_message.reply_to_message
+                    and update.effective_message.reply_to_message.from_user
+                    and update.effective_message.reply_to_message.from_user.is_bot):
+                _pre_replied = update.effective_message.reply_to_message.text or ""
                 if _pre_replied:
                     _route_ctx["replied_to"] = _pre_replied[:200]
             _route = await self._router.route(text, _route_ctx)
@@ -1546,9 +1546,9 @@ class TelegramRelay:
                         return
 
             elif _route.action == "retry_task":
-                if (update.message.reply_to_message and
-                        update.message.reply_to_message.from_user and
-                        update.message.reply_to_message.from_user.is_bot):
+                if (update.effective_message.reply_to_message and
+                        update.effective_message.reply_to_message.from_user and
+                        update.effective_message.reply_to_message.from_user.is_bot):
                     if self.claim_manager.try_claim(message_id, self.org_id):
                         await self._handle_retry_request(text, _route_ctx.get("replied_to") or "", update, task_id_hint=_route.task_id)
                         return
@@ -1558,10 +1558,10 @@ class TelegramRelay:
 
         # 봇 메시지에 답장 처리 (pm_bot 전용)
         if (self._pm_orchestrator is not None
-                and update.message.reply_to_message
-                and update.message.reply_to_message.from_user
-                and update.message.reply_to_message.from_user.is_bot):
-            replied_text = update.message.reply_to_message.text or ""
+                and update.effective_message.reply_to_message
+                and update.effective_message.reply_to_message.from_user
+                and update.effective_message.reply_to_message.from_user.is_bot):
+            replied_text = update.effective_message.reply_to_message.text or ""
             # 재시도 아닌 답장 → 답장한 메시지 내용을 context로 주입
             if replied_text:
                 _replied_context = f"\n\n[답장 대상 메시지]\n{replied_text[:300]}"
@@ -1653,7 +1653,7 @@ class TelegramRelay:
                     )
                     if disc_ids:
                         await self.display.send_reply(
-                            update.message,
+                            update.effective_message,
                             f"💬 자유 토론을 시작합니다\n주제: {request_text[:100]}",
                         )
                         return
@@ -1667,7 +1667,7 @@ class TelegramRelay:
                     return
 
                 if plan.route == "local_execution":
-                    await self.display.send_reply(update.message, "제가 직접 해볼게요! 팀 꾸리는 중이에요 🧠")
+                    await self.display.send_reply(update.effective_message, "제가 직접 해볼게요! 팀 꾸리는 중이에요 🧠")
                     run_id = self._create_runbook(request_text)
                     self._advance_runbook(run_id, "요청 접수 후 planning phase로 이동")
                     team_config = await self._build_team_config(request_text)
@@ -1687,7 +1687,7 @@ class TelegramRelay:
                         phase_name="design",
                     )
                     self._advance_runbook(run_id, "설계 공유 완료, implementation phase로 이동")
-                    progress_msg = await self.display.send_reply(update.message, "알겠어요, 바로 시작할게요! ⚙️")
+                    progress_msg = await self.display.send_reply(update.effective_message, "알겠어요, 바로 시작할게요! ⚙️")
                     history: list[str] = []
                     last_edit = time.time()
                     progress_interval = self._progress_interval()
@@ -1756,7 +1756,9 @@ class TelegramRelay:
                         logger.error(f"[{self.org_id}] 실행 타임아웃 ({te}, 경과 {elapsed:.0f}s) — 자동 복구")
                         self.claim_manager.release_text_hash(text_hash)
                         try:
-                            await progress_msg.edit_text(f"⏰ {te}\n다시 시도해주세요.")
+                            await progress_msg.edit_text(
+                                markdown_to_html(f"⏰ {te}\n다시 시도해주세요."), parse_mode="HTML"
+                            )
                         except Exception:
                             pass
                         self._complete_runbook(run_id, f"타임아웃: {te}")
@@ -1765,7 +1767,9 @@ class TelegramRelay:
                         logger.exception(f"[{self.org_id}] 실행 중 에러 — 자동 복구: {exec_err}")
                         self.claim_manager.release_text_hash(text_hash)
                         try:
-                            await progress_msg.edit_text(f"❌ 실행 에러: {str(exec_err)[:200]}")
+                            await progress_msg.edit_text(
+                                markdown_to_html(f"❌ 실행 에러: {str(exec_err)[:200]}"), parse_mode="HTML"
+                            )
                         except Exception:
                             pass
                         self._complete_runbook(run_id, f"실행 에러: {exec_err}")
@@ -1787,7 +1791,7 @@ class TelegramRelay:
                         bot=context.bot,
                         chat_id=update.effective_chat.id,
                         requester_mention=self._user_mention(update.effective_user),
-                        reply_to_message_id=update.message.message_id if update.message else None,
+                        reply_to_message_id=update.effective_message.message_id,
                     )
                     if response:
                         response = await ensure_user_friendly_output(
@@ -1796,7 +1800,7 @@ class TelegramRelay:
                             decision_client=self._pm_decision_client,
                         )
                         for chunk in split_message(response, 3800):  # HTML 태그 팽창 여유 (~4096 한도)
-                            await self.display.send_reply(update.message, chunk)
+                            await self.display.send_reply(update.effective_message, chunk)
                         await self._auto_upload("\n".join(upload_candidates), self.token, update.effective_chat.id)
                     self._append_runbook(
                         run_id,
@@ -1835,7 +1839,7 @@ class TelegramRelay:
                     if collab_participants:
                         participants_display = ", ".join(collab_participants)
                         await self.display.send_reply(
-                            update.message,
+                            update.effective_message,
                             f"🤝 협업을 시작합니다\n주제: {request_text[:100]}\n참여: {participants_display}",
                         )
                         for p in collab_participants:
@@ -1856,7 +1860,7 @@ class TelegramRelay:
                     if len(participants) >= 2:
                         bot_names = ", ".join(participants)
                         await self.display.send_reply(
-                            update.message,
+                            update.effective_message,
                             f"🥊 토론을 시작합니다\n"
                             f"주제: {request_text[:100]}\n"
                             f"참여 봇: {bot_names}",
@@ -1883,7 +1887,7 @@ class TelegramRelay:
                         )
                         return
 
-                await self.display.send_reply(update.message, "여러 팀이 같이 해야 할 것 같아서 오케스트레이터한테 넘길게요 📋")
+                await self.display.send_reply(update.effective_message, "여러 팀이 같이 해야 할 것 같아서 오케스트레이터한테 넘길게요 📋")
                 run_id = self._create_runbook(request_text)
                 conversation_context = await self._build_conversation_context_packet(
                     text,
@@ -1912,7 +1916,7 @@ class TelegramRelay:
                         "original_request": text[:2000],
                         "conversation_context": conversation_context,
                         "user_expectations": user_expectations,
-                        "source_message_id": update.message.message_id if update.message else None,
+                        "source_message_id": update.effective_message.message_id,
                         "requester_mention": self._user_mention(update.effective_user),
                         "source_org_mention": self._org_mention(self.org_id),
                     },
@@ -1945,17 +1949,17 @@ class TelegramRelay:
                     phase_name="implementation",
                 )
                 await self.display.send_reply(
-                    update.message,
+                    update.effective_message,
                     f"{dept_list}에 부탁드렸어요 🙌 각 팀에서 처리해줄 거예요!",
                 )
             except Exception as e:
                 logger.exception(f"[PM] 오케스트레이터 분해 실패: {e}")
                 self.claim_manager.release_text_hash(text_hash)
-                await self.display.send_reply(update.message, f"❌ 태스크 분해 실패: {e}")
+                await self.display.send_reply(update.effective_message, f"❌ 태스크 분해 실패: {e}")
             return
 
         # 4. 담당 선언 + 실행 (모델 기반 팀 구성)
-        await self.display.send_reply(update.message, "저희가 맡을게요! 팀 꾸리는 중이에요 ✋")
+        await self.display.send_reply(update.effective_message, "저희가 맡을게요! 팀 꾸리는 중이에요 ✋")
         run_id = self._create_runbook(text)
         self._advance_runbook(run_id, "요청 접수 후 planning phase로 이동")
         team_config = await self._build_team_config(text)
@@ -1976,7 +1980,7 @@ class TelegramRelay:
         )
         self._advance_runbook(run_id, "설계 공유 완료, implementation phase로 이동")
 
-        progress_msg = await self.display.send_reply(update.message, "알겠어요, 바로 시작할게요! ⚙️")
+        progress_msg = await self.display.send_reply(update.effective_message, "알겠어요, 바로 시작할게요! ⚙️")
         history: list[str] = []
         last_edit = time.time()
         progress_interval = self._progress_interval()
@@ -2028,7 +2032,7 @@ class TelegramRelay:
             bot=context.bot,
             chat_id=update.effective_chat.id,
             requester_mention=self._user_mention(update.effective_user),
-            reply_to_message_id=update.message.message_id if update.message else None,
+            reply_to_message_id=update.effective_message.message_id,
         )
 
         if response:
@@ -2038,7 +2042,7 @@ class TelegramRelay:
                 decision_client=self._pm_decision_client if self._is_pm_org else None,
             )
             for chunk in split_message(response, 3800):  # HTML 태그 팽창 여유 (~4096 한도)
-                await self.display.send_reply(update.message, chunk)
+                await self.display.send_reply(update.effective_message, chunk)
             await self._auto_upload("\n".join(upload_candidates), self.token, update.effective_chat.id)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
             if self.bus:
@@ -2677,7 +2681,7 @@ class TelegramRelay:
         if errors:
             msg += f"• 실패: {', '.join(errors)}\n"
         msg += "\n🔄 재시작 중..."
-        await update.message.reply_text(msg)
+        await update.message.reply_text(markdown_to_html(msg), parse_mode="HTML")
 
         import asyncio as _asyncio
         restart_script = project_dir / "scripts" / "restart_bots.sh"
