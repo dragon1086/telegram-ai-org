@@ -25,6 +25,7 @@ CHECK_INTERVAL = 30  # 초
 MAX_RESTART_PER_BOT = 5  # 연속 재시작 한도 (무한루프 방지)
 RESTART_COUNT_RESET_AFTER = 600  # 10분 동안 안정적이면 카운터 리셋
 PID_FILE = Path("/tmp/bot-watchdog.pid")
+RESTART_FLAG = Path.home() / ".ai-org" / "restart_requested"
 
 PROJECT_DIR = Path(__file__).parent.parent
 # bot-runtime 워크트리 우선 사용
@@ -129,6 +130,50 @@ class BotWatchdog:
         log.info(f"시그널 수신 ({signum}), 종료 중...")
         self.running = False
 
+    def _check_restart_flag(self) -> bool:
+        """deferred restart 플래그 확인. 있으면 재기동 실행 후 True 반환."""
+        if not RESTART_FLAG.exists():
+            return False
+        try:
+            data = json.loads(RESTART_FLAG.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            data = {}
+        RESTART_FLAG.unlink(missing_ok=True)
+
+        target = data.get("target", "all")
+        reason = data.get("reason", "")
+        requested_by = data.get("requested_by", "unknown")
+        log.info(f"재기동 플래그 감지: target={target}, by={requested_by}, reason={reason}")
+
+        import subprocess
+        if target == "all":
+            restart_script = RUNTIME_DIR / "scripts" / "restart_bots.sh"
+            subprocess.run(["bash", str(restart_script)], check=False)
+            notify_rocky(
+                f"<b>봇 재기동 (deferred)</b>\n"
+                f"대상: 전체\n"
+                f"요청자: <code>{requested_by}</code>\n"
+                f"사유: {reason or '(없음)'}"
+            )
+        else:
+            # 특정 봇만 재시작
+            from scripts.bot_manager import stop_bot, start_bot
+            orgs = {o["id"]: o for o in get_expected_orgs()}
+            if target in orgs:
+                stop_bot(target)
+                time.sleep(2)
+                org = orgs[target]
+                start_bot(token=org["token"], org_id=target, chat_id=org["chat_id"])
+                notify_rocky(
+                    f"<b>봇 재기동 (deferred)</b>\n"
+                    f"대상: <code>{target}</code>\n"
+                    f"요청자: <code>{requested_by}</code>\n"
+                    f"사유: {reason or '(없음)'}"
+                )
+            else:
+                log.warning(f"재기동 대상 {target} 을 찾을 수 없음")
+        return True
+
     def check_and_restart(self) -> list[str]:
         """모든 봇 점검. 재시작한 봇 ID 리스트 반환."""
         orgs = get_expected_orgs()
@@ -183,6 +228,11 @@ class BotWatchdog:
 
         try:
             while self.running:
+                # deferred restart 플래그 우선 처리
+                if self._check_restart_flag():
+                    time.sleep(CHECK_INTERVAL)
+                    continue
+
                 restarted = self.check_and_restart()
                 if restarted:
                     notify_rocky(
