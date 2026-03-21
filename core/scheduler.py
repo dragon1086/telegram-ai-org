@@ -116,6 +116,12 @@ class OrgScheduler:
             id="arch_advisor_monthly", misfire_grace_time=7200,
             replace_existing=True,
         )
+        self.scheduler.add_job(
+            self._routing_optimizer_daily,
+            CronTrigger(hour=3, minute=0, timezone=KST),
+            id="routing_optimizer_daily", misfire_grace_time=1800,
+            replace_existing=True,
+        )
 
     # ── 잡 구현 ──────────────────────────────────────────────────────────────
 
@@ -430,17 +436,30 @@ class OrgScheduler:
             logger.error(f"[OrgScheduler] improvement_bus_daily 실패: {e}")
 
     async def _skill_improve_weekly(self) -> None:
-        """매주 일요일 22:00 KST — 스킬 eval 점수 측정 및 보고."""
+        """매주 일요일 22:00 KST — 스킬 eval 점수 측정 → 자동 개선 → 보고."""
         logger.info("[OrgScheduler] skill_improve_weekly 시작")
         try:
+            import asyncio as _asyncio
             from core.eval_runner import EvalRunner
+            from core.skill_auto_improver import SkillAutoImprover
             runner = EvalRunner()
             results = runner.score_all_skills()
-            if results:
-                msg = runner.format_results(results)
-                await self._safe_send(msg)
-            else:
+            if not results:
                 logger.info("[OrgScheduler] eval.json 있는 스킬 없음, 스킵")
+                return
+            msg = runner.format_results(results)
+            improver = SkillAutoImprover()
+            improved_lines: list[str] = []
+            loop = _asyncio.get_event_loop()
+            for r in results:
+                imp_result = await loop.run_in_executor(None, improver.improve, r.skill_name)
+                if imp_result and imp_result.improved:
+                    improved_lines.append(
+                        f"  • {r.skill_name}: {imp_result.original_score:.1f} → {imp_result.best_score:.1f}"
+                    )
+            if improved_lines:
+                msg += "\n\n*자동 개선 적용*\n" + "\n".join(improved_lines)
+            await self._safe_send(msg)
         except Exception as e:
             logger.error(f"[OrgScheduler] skill_improve_weekly 실패: {e}")
 
@@ -465,6 +484,28 @@ class OrgScheduler:
                 await self._safe_send(result.stdout)
         except Exception as e:
             logger.error(f"[OrgScheduler] arch_advisor_monthly 실패: {e}")
+
+    async def _routing_optimizer_daily(self) -> None:
+        """매일 03:00 KST — RoutingOptimizer 제안 생성 및 Telegram 보고."""
+        logger.info("[OrgScheduler] routing_optimizer_daily 시작")
+        try:
+            from core.routing_optimizer import RoutingOptimizer
+            from core.routing_approval_store import RoutingApprovalStore
+            opt = RoutingOptimizer()
+            proposal = opt.generate_proposal()
+            if proposal:
+                store = RoutingApprovalStore()
+                store.save({
+                    "keyword_additions": proposal.keyword_additions,
+                    "rationale": proposal.rationale,
+                    "current_accuracy": proposal.current_accuracy,
+                    "estimated_gain": proposal.estimated_gain,
+                })
+                msg = opt.format_for_telegram(proposal)
+                msg += "\n\n*승인:* `/routing_approve`  *거절:* `/routing_reject`"
+                await self._safe_send(msg)
+        except Exception as e:
+            logger.error(f"[OrgScheduler] routing_optimizer_daily 실패: {e}")
 
     async def _safe_send(self, text: str) -> None:
         try:
