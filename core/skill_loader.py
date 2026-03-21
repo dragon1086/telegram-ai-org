@@ -15,25 +15,50 @@ ORGS_FILE = PROJECT_ROOT / "organizations.yaml"
 _orgs_cache: list[dict] | None = None
 
 
+_yaml_data_cache: dict | None = None
+
+
+def _load_yaml_data() -> dict:
+    global _yaml_data_cache
+    if _yaml_data_cache is not None:
+        return _yaml_data_cache
+    try:
+        _yaml_data_cache = yaml.safe_load(ORGS_FILE.read_text()) or {}
+    except Exception as e:
+        logger.warning(f"organizations.yaml 로드 실패: {e}")
+        _yaml_data_cache = {}
+    return _yaml_data_cache
+
+
 def _load_orgs() -> list[dict]:
     global _orgs_cache
     if _orgs_cache is not None:
         return _orgs_cache
-    try:
-        data = yaml.safe_load(ORGS_FILE.read_text())
-        _orgs_cache = data.get("organizations", [])
-    except Exception as e:
-        logger.warning(f"organizations.yaml 로드 실패: {e}")
-        _orgs_cache = []
+    _orgs_cache = _load_yaml_data().get("organizations", [])
     return _orgs_cache
 
 
+def get_common_skills() -> list[str]:
+    """organizations.yaml 최상위 common_skills 반환."""
+    return _load_yaml_data().get("common_skills", [])
+
+
 def get_preferred_skills(org_id: str) -> list[str]:
-    """봇 org_id의 preferred_skills 목록 반환."""
+    """봇 org_id의 preferred_skills + common_skills 병합 반환 (중복 제거)."""
+    per_bot: list[str] = []
     for org in _load_orgs():
         if org.get("id") == org_id:
-            return org.get("team", {}).get("preferred_skills", [])
-    return []
+            per_bot = org.get("team", {}).get("preferred_skills", [])
+            break
+    common = get_common_skills()
+    # common 먼저, per_bot 뒤에 — 중복 제거
+    seen: set[str] = set()
+    merged: list[str] = []
+    for name in common + per_bot:
+        if name not in seen:
+            seen.add(name)
+            merged.append(name)
+    return merged
 
 
 def load_skill_content(skill_name: str) -> str | None:
@@ -90,5 +115,6 @@ def build_skill_context(org_id: str, task_description: str = "") -> str:
 
 def invalidate_cache() -> None:
     """organizations.yaml 캐시 무효화 (핫 리로드 용)."""
-    global _orgs_cache
+    global _orgs_cache, _yaml_data_cache
     _orgs_cache = None
+    _yaml_data_cache = None

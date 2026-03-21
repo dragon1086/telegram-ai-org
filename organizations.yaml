@@ -2,6 +2,10 @@ schema_version: 2
 source_of_truth:
   docs_root: docs/orchestration-v2
   orchestration_config: orchestration.yaml
+common_skills:
+- quality-gate
+- error-gotcha
+- bot-triage
 organizations:
 - id: aiorg_design_bot
   enabled: true
