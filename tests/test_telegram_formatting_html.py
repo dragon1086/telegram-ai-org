@@ -273,3 +273,47 @@ def test_list_mixed_with_bold_and_code() -> None:
     assert "<code>escape_html()</code>" in result
     assert "• <b>파일 B</b>:" in result
     assert "• 단위 테스트 통과" in result
+
+
+# ── 실제 PM 봇 응답 패턴 ────────────────────────────────────────────────────
+
+def test_pm_response_pattern_team_announcement() -> None:
+    """팀 구성 발표 후 마크다운이 올바르게 변환되어야 한다."""
+    text = (
+        "🏗️ 팀 구성\n"
+        "• **analyst**: 코드베이스 전수 조사\n"
+        "• **executor**: 구현 및 테스트\n\n"
+        "이유: 분석 → 구현 순서로 진행"
+    )
+    result = markdown_to_html(text)
+    assert "• <b>analyst</b>:" in result
+    assert "• <b>executor</b>:" in result
+    assert "이유:" in result
+
+
+def test_pm_response_html_not_double_escaped() -> None:
+    """HTML 태그를 직접 쓴 경우 이스케이프되어 안전하게 처리되어야 한다."""
+    text = "<b>이미 HTML 태그가 있어요</b>"
+    result = markdown_to_html(text)
+    # 텔레그램 HTML parse_mode에서 그대로 전달되면 <b>가 렌더링되어 보안상 위험
+    # 따라서 이스케이프되어 리터럴 텍스트로 표시되어야 함
+    assert "&lt;b&gt;" in result
+    assert "<b>" not in result
+
+
+def test_pm_response_code_comparison_operators() -> None:
+    """코드 내 비교 연산자(<, >)가 올바르게 이스케이프되어야 한다."""
+    text = "```python\nif score < 6:\n    return False\n```"
+    result = markdown_to_html(text)
+    assert "<pre>" in result
+    assert "&lt;" in result
+    assert "score < 6" not in result
+
+
+def test_pm_response_horizontal_rule_in_section() -> None:
+    """섹션 구분선이 유니코드로 변환되어야 한다."""
+    text = "## 결론\n\n핵심 내용입니다.\n\n---\n\n다음 단계"
+    result = markdown_to_html(text)
+    assert "──────────" in result
+    assert "---" not in result
+    assert "<b>결론</b>" in result

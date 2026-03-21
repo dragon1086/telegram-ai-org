@@ -47,3 +47,30 @@ async def test_ensure_user_friendly_output_removes_artifact_markers() -> None:
     cleaned = await ensure_user_friendly_output(text, original_request="정리해줘")
     assert "[ARTIFACT:" not in cleaned
     assert "report.md" in cleaned
+
+
+@pytest.mark.asyncio
+async def test_ensure_user_friendly_output_strips_team_tag() -> None:
+    """[TEAM:...] 메타 태그가 최종 사용자 출력에서 제거되어야 한다."""
+    text = "[TEAM:executor,analyst]\n\n💬 PM 직접 답변\n\n결론: HTML parse_mode를 사용합니다."
+    cleaned = await ensure_user_friendly_output(text, original_request="포맷 수정해줘")
+    assert "[TEAM:" not in cleaned
+    assert "PM 직접 답변" in cleaned
+
+
+@pytest.mark.asyncio
+async def test_ensure_user_friendly_output_strips_collab_tag() -> None:
+    """[COLLAB:...] 메타 태그가 최종 사용자 출력에서 제거되어야 한다."""
+    text = "작업 완료.\n[COLLAB:디자인 작업 필요|맥락: 현재 개발 중]\n이상입니다."
+    cleaned = await ensure_user_friendly_output(text, original_request="완료 보고")
+    assert "[COLLAB:" not in cleaned
+    assert "작업 완료" in cleaned
+
+
+@pytest.mark.asyncio
+async def test_ensure_user_friendly_output_strips_solo_tag() -> None:
+    """[SOLO] 태그가 최종 출력에서 제거되어야 한다."""
+    text = "[TEAM:solo]\n\n안녕하세요! 무엇을 도와드릴까요?"
+    cleaned = await ensure_user_friendly_output(text, original_request="인사")
+    assert "[TEAM:" not in cleaned
+    assert "안녕하세요" in cleaned
