@@ -670,7 +670,12 @@ class PMOrchestrator:
             f"- If the user explicitly asked for a department in the hints above, include it unless clearly unrelated\n"
             f"- Write task descriptions in Korean, specific to each department's role\n"
             f"- DEPENDS uses 0-based index of prior subtasks (e.g., '0' or '0,1')\n"
-            f"- Planning usually comes first, design before engineering, engineering before ops\n"
+            f"- CRITICAL: Use DEPENDS to enforce sequential ordering. Only use 'none' when tasks are truly parallelizable.\n"
+            f"- MANDATORY ordering rules (must be reflected in DEPENDS):\n"
+            f"  * research/analysis tasks MUST complete before engineering/coding tasks (engineering DEPENDS on research index)\n"
+            f"  * engineering/coding tasks MUST complete before ops/deploy tasks (ops DEPENDS on engineering index)\n"
+            f"  * planning/product tasks MUST complete before design or engineering tasks\n"
+            f"  * design tasks MUST complete before engineering tasks when design output is needed\n"
             f"- If only one department is needed, output just one line\n\n"
             f"User request: {message[:500]}"
         )

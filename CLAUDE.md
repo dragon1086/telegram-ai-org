@@ -61,17 +61,17 @@ bash scripts/start_all.sh
 
 > 세션 시작 시 반드시 확인. 실수가 발생할 때마다 여기에 추가한다.
 
-### [2026-03-21] ⚠️ 오버스콥 금지: 개발실·리서치실의 배포 행위 금지
-- **증상**: 개발실(aiorg_engineering_bot) 및 리서치실(aiorg_research_bot)이 코드 수정 후 `git push`, `git merge`, 봇 재기동까지 자체 수행 → 역할 초과(오버스콥)
-- **원칙**: 개발실·리서치실은 **로컬 커밋까지만** 수행. 아래 세 가지는 **운영실(@aiorg_ops_bot) 전담**:
+### [2026-03-21] ⚠️ 배포 행위는 운영실(aiorg_ops_bot) 전담 — 전체 조직 적용
+- **원칙**: 운영실을 제외한 **모든 specialist 조직**은 로컬 커밋까지만 수행. 아래 세 가지는 운영실(@aiorg_ops_bot)만 실행:
   ```
-  ❌ 개발실·리서치실 자체 수행 금지:
+  ❌ 운영실 외 자체 수행 금지 (조직 추가 시에도 동일 적용):
     git push / git merge / 봇 재기동(restart_bots.sh, request_restart.sh)
 
   ✅ 완료 후 운영실에 COLLAB 위임:
     "[COLLAB:머지/푸시/재기동 요청|맥락: 코드 수정 완료]"
   ```
-- **적용 범위**: 모든 봇, 모든 태스크에 적용. 스킬 파일(engineering-review, quality-gate gotchas)에도 동일 규칙 명시됨.
+- **글로벌 적용 위치**: bot-triage/SKILL.md Step 3d, pm_identity.py 봇 재기동 규칙 섹션, pm-task-dispatch/SKILL.md 안티패턴 항목
+- **새 조직 추가 시**: organizations.yaml에 추가만 하면 위 글로벌 규칙이 자동 적용됨 (per-org 중복 명시 불필요)
 
 ### [2026-03-16] 봇 재시작 전 패키지 sync 필수
 - **증상**: 재시작 후 `ModuleNotFoundError` 반복 크래시 → 봇 무응답
