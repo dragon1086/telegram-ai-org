@@ -14,6 +14,32 @@ def escape_html(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _convert_blockquotes(text: str) -> str:
+    """HTML 이스케이프 후 &gt; 로 시작하는 줄을 <blockquote> 태그로 변환한다.
+
+    연속된 blockquote 줄은 하나의 <blockquote> 블록으로 병합한다.
+    빈 &gt; 줄(내용 없는 blockquote)도 빈 줄로 처리한다.
+    """
+    lines = text.split("\n")
+    result: list[str] = []
+    bq_lines: list[str] = []
+
+    def _flush() -> None:
+        if bq_lines:
+            content = "\n".join(bq_lines)
+            result.append(f"<blockquote>{content}</blockquote>")
+            bq_lines.clear()
+
+    for line in lines:
+        if line.startswith("&gt; ") or line == "&gt;":
+            bq_lines.append(line[5:] if line.startswith("&gt; ") else "")
+        else:
+            _flush()
+            result.append(line)
+    _flush()
+    return "\n".join(result)
+
+
 def markdown_to_html(text: str) -> str:
     """LLM이 생성한 표준 마크다운을 텔레그램 HTML parse_mode용으로 변환한다.
 
@@ -23,6 +49,7 @@ def markdown_to_html(text: str) -> str:
     3. 나머지 텍스트 HTML 이스케이프 (& < >)
     4. **bold** / *italic* / ### Header / [link](url) 변환
     5. 플레이스홀더 복원
+    6. blockquote (> text) → <blockquote>text</blockquote>
 
     지원 변환:
     - **text** / __text__ → <b>text</b>
@@ -31,6 +58,8 @@ def markdown_to_html(text: str) -> str:
     - ```...``` → <pre>...</pre>
     - [text](url) → <a href="url">text</a>
     - # ~ ###### Header → <b>Header</b>
+    - > text → <blockquote>text</blockquote>
+    - ~~text~~ → <s>text</s>
     """
     if not text:
         return text
@@ -87,6 +116,9 @@ def markdown_to_html(text: str) -> str:
         text = text.replace(f"\x00FENCED{i}\x00", block)
     for i, block in enumerate(inline_codes):
         text = text.replace(f"\x00INLINE{i}\x00", block)
+
+    # 6. blockquote 변환 (HTML 이스케이프 이후라 > 는 &gt; 로 표현됨)
+    text = _convert_blockquotes(text)
 
     return text
 
