@@ -31,3 +31,20 @@ BLOCKER: 근본 원인 (5 Whys 적용)
 ### Step 4: 회고 보고서 저장
 - 파일: `docs/retros/YYYY-MM-DD-retro.md`
 - Rocky에게 요약 보고
+
+### Step 5: 로그 저장
+회고 완료 즉시 결과를 JSONL 로그에 기록한다:
+
+```bash
+python skills/_shared/save-log.py '{"date": "YYYY-MM-DD", "sprint": "...", "summary": "...", "action_items": [], "patterns": []}' skills/retro/data/retro-log.jsonl
+```
+
+- `date`: 회고 실행 날짜
+- `sprint`: 스프린트/프로젝트 식별자
+- `summary`: 전체 요약 (200자 이내)
+- `action_items`: 도출된 액션 아이템 목록
+- `patterns`: 반복 패턴 목록
+- 저장 경로: `skills/retro/data/retro-log.jsonl`
+- fcntl.flock으로 원자적 append — 동시 실행 안전
+
+> 이 단계는 선택이 아닌 필수다. Step 4(보고서 저장) 직후 반드시 실행한다.

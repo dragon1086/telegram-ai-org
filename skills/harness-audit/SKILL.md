@@ -7,6 +7,20 @@ description: "Use to audit the overall health of the AI organization harness —
 
 everything-claude-code의 `/harness-audit` 패턴 적용. 시스템 전체의 신뢰성을 정기 감사한다.
 
+## Scope 선택
+
+`$ARGUMENTS`로 감사 범위를 지정할 수 있다:
+- `infra` — 인프라 영역만 (봇 상태, 의존성, 데이터 파이프라인 = 영역 1, 3, 4)
+- `code` — 코드 영역만 (스킬 인벤토리, 문서 정합성 = 영역 2, 5)
+- `all` 또는 인자 없음 — 전체 영역 (기본값)
+
+```
+사용 예:
+  harness-audit           → 전체 감사
+  harness-audit infra     → 인프라만
+  harness-audit code      → 코드만
+```
+
 ## 감사 영역
 
 ### 1. 봇 상태 확인
