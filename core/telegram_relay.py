@@ -3421,7 +3421,7 @@ class TelegramRelay:
                 original_request=(task_info.get("metadata") or {}).get("original_request", description),
             )
             summary_prefix = f"{requester_mention} " if requester_mention else ""
-            summary = f"{summary_prefix}✅ [{dept_name}] 태스크 {task_id} 완료\n{public_result[:500]}"
+            summary = f"{summary_prefix}✅ [{dept_name}] 태스크 {task_id} 완료\n{public_result}"
             if self.app and self.app.bot:
                 await self.display.send_to_chat(
                     self.app.bot,

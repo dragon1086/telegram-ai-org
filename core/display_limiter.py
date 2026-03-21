@@ -14,7 +14,7 @@ from enum import Enum
 
 from loguru import logger
 
-from core.telegram_formatting import format_for_telegram, markdown_to_html
+from core.telegram_formatting import format_for_telegram, markdown_to_html, split_message
 
 
 class MessagePriority(Enum):
@@ -93,17 +93,22 @@ class DisplayLimiter:
         text: str,
         reply_to_message_id: int | None = None,
     ) -> object:
-        html_text = format_for_telegram(text)
-        kwargs: dict = {"chat_id": chat_id, "text": html_text, "parse_mode": "HTML"}
-        if reply_to_message_id is not None:
-            kwargs["reply_to_message_id"] = reply_to_message_id
-        try:
-            return await bot.send_message(**kwargs)
-        except Exception as e:
-            if reply_to_message_id is not None and self._should_retry_without_reply(e):
-                logger.warning(f"reply 대상 메시지를 찾지 못해 일반 전송으로 재시도: {e}")
-                return await bot.send_message(chat_id=chat_id, text=html_text, parse_mode="HTML")
-            raise
+        chunks = split_message(text, max_len=3800)
+        last_msg = None
+        for i, chunk in enumerate(chunks):
+            html_text = format_for_telegram(chunk)
+            kwargs: dict = {"chat_id": chat_id, "text": html_text, "parse_mode": "HTML"}
+            if i == 0 and reply_to_message_id is not None:
+                kwargs["reply_to_message_id"] = reply_to_message_id
+            try:
+                last_msg = await bot.send_message(**kwargs)
+            except Exception as e:
+                if i == 0 and reply_to_message_id is not None and self._should_retry_without_reply(e):
+                    logger.warning(f"reply 대상 메시지를 찾지 못해 일반 전송으로 재시도: {e}")
+                    last_msg = await bot.send_message(chat_id=chat_id, text=html_text, parse_mode="HTML")
+                else:
+                    raise
+        return last_msg
 
     @staticmethod
     def _should_retry_without_reply(error: Exception) -> bool:
