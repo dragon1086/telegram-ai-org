@@ -57,10 +57,14 @@ def markdown_to_html(text: str) -> str:
     - `code` → <code>code</code>
     - ```...``` → <pre>...</pre>
     - [text](url) → <a href="url">text</a>
-    - # ~ ###### Header → <b>Header</b>
+    - # Header     → <b>Header</b> + 구분선 (H1)
+    - ## Header    → <b>▸ Header</b> (H2)
+    - ### Header   → <b>Header</b> (H3~H6)
     - > text → <blockquote>text</blockquote>
     - ~~text~~ → <s>text</s>
     - - item / + item (줄 시작) → • item
+    - 1. item / 2. item (순서 있는 목록) → 숫자 그대로 유지 (Telegram HTML 미지원)
+    - | col | col | (테이블 행) → 앞뒤 파이프 제거, 셀 구분자 │ 로 통일
     """
     if not text:
         return text
@@ -89,12 +93,23 @@ def markdown_to_html(text: str) -> str:
     text = escape_html(text)
 
     # 4. 마크다운 → HTML 변환
-    # 헤더 (# ~ ######) → <b>
-    text = re.sub(r"^#{1,6}\s+(.+)$", r"<b>\1</b>", text, flags=re.MULTILINE)
+    # 헤더 계층 구분
+    # H1 → bold + 구분선, H2 → 화살표 prefix + bold, H3~H6 → bold
+    text = re.sub(r"^#\s+(.+)$", r"<b>\1</b>\n──────────", text, flags=re.MULTILINE)
+    text = re.sub(r"^##\s+(.+)$", r"<b>▸ \1</b>", text, flags=re.MULTILINE)
+    text = re.sub(r"^#{3,6}\s+(.+)$", r"<b>\1</b>", text, flags=re.MULTILINE)
     # 수평선 (---, ***, ___ 단독 줄) → 유니코드 구분선
     text = re.sub(r"^[ \t]*(?:---+|\*\*\*+|___+)[ \t]*$", "──────────", text, flags=re.MULTILINE)
     # 테이블 구분자 행 (|---|---| 패턴) 제거
     text = re.sub(r"^\|[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)+\|?[ \t]*$", "", text, flags=re.MULTILINE)
+    # 테이블 콘텐츠 행: 앞뒤 | 제거, 셀 구분자를 │ 로 통일
+
+    def _clean_table_row(m: re.Match) -> str:
+        inner = m.group(0).strip().strip("|")
+        cells = [c.strip() for c in inner.split("|")]
+        return "  │  ".join(cells)
+
+    text = re.sub(r"^\|.+\|[ \t]*$", _clean_table_row, text, flags=re.MULTILINE)
     # Bold+Italic: ***text*** 또는 ___text___ (반드시 ** / __ 보다 먼저 처리)
     text = re.sub(r"\*\*\*(.+?)\*\*\*", r"<b><i>\1</i></b>", text, flags=re.DOTALL)
     text = re.sub(r"___(.+?)___", r"<b><i>\1</i></b>", text, flags=re.DOTALL)
