@@ -3386,14 +3386,11 @@ class TelegramRelay:
                 (response or "(완료)")[:6000],
                 phase_name="implementation",
             )
-            if self.app and self.app.bot:
-                response = await self._handle_collab_tags(
-                    response,
-                    bot=self.app.bot if self.app else None,
-                    chat_id=self.allowed_chat_id,
-                    requester_mention=requester_mention,
-                    reply_to_message_id=reply_to_message_id,
-                )
+            # PM 태스크 실행 중에는 COLLAB 태그 처리를 스킵한다.
+            # PM이 이미 TaskGraph로 다음 단계를 계획해뒀으므로,
+            # 부서 봇의 자체 협업 요청은 중복이 된다.
+            import re as _re
+            response = _re.sub(r"\[COLLAB:[^\]]+\]", "", response or "").strip()
             self._advance_runbook(run_id, "조직 위임 실행 완료, verification phase 이동")
 
             full_result = (response or "(완료)")
