@@ -195,14 +195,53 @@ skills/{name}/
 - 반드시 `set -euo pipefail` (bash) 또는 적절한 에러 핸들링
 - 프로젝트 venv 사용: `.venv/bin/python` 경로 명시
 
-## Step 5: 검증
+## Step 5: 스킬 등록 (organizations.yaml)
+
+봇이 스킬의 존재를 인지하려면 `organizations.yaml`에 등록해야 한다. 등록하지 않으면 봇 시스템 프롬프트에 스킬이 주입되지 않는다.
+
+**등록 유형 판단:**
+- **모든 봇이 필요** (품질, 에러 처리, 운영 등) → `common_skills`에 추가
+- **특정 역할만 필요** (디자인, 엔지니어링 등) → 해당 봇의 `preferred_skills`에 추가
+- **둘 다 아님** (수동 호출 전용) → 등록 불필요
+
+**common_skills 추가** (파일 최상위):
+```yaml
+common_skills:
+- quality-gate
+- error-gotcha
+- bot-triage
+- {new-skill-name}  # ← 여기에 추가
+```
+
+**preferred_skills 추가** (봇별):
+```yaml
+organizations:
+- id: aiorg_engineering_bot
+  team:
+    preferred_skills:
+    - engineering-review
+    - {new-skill-name}  # ← 해당 봇에 추가
+```
+
+**역할→스킬 매핑 참고:**
+- PM/오케스트레이터: pm-task-dispatch, pm-discussion, weekly-review, retro, performance-eval
+- 엔지니어링: engineering-review, quality-gate
+- 디자인: design-critique, brainstorming-auto
+- 그로스/리서치: growth-analysis
+- 운영: harness-audit, bot-triage
+- 프로덕트: brainstorming-auto
+
+또한 `core/setup_registration.py`의 `team_profiles`에도 해당 역할의 `preferred_skills` 기본값을 업데이트하라 (신규 조직 생성 시 자동 적용).
+
+## Step 6: 검증
 
 생성 후 반드시 확인:
 1. SKILL.md frontmatter YAML이 유효한가
 2. 심볼릭 링크가 올바른가 (`ls -la .claude/skills/{name}`)
 3. description에 Triggers가 포함되어 있는가
+4. organizations.yaml에 등록했는가 (common_skills 또는 해당 봇 preferred_skills)
 
-## Step 6: 배포 (Distributing)
+## Step 7: 배포 (Distributing)
 
 스킬의 가장 큰 장점은 팀과 공유할 수 있다는 것이다:
 
@@ -229,6 +268,7 @@ skills/growth-analysis/    — 성장 분석 (Domain Knowledge)
 skills/weekly-review/      — 주간 리뷰 (Workflow Automation)
 skills/error-gotcha/       — 에러 → gotcha 자동 추가 (Process Enforcement)
 skills/skill-evolve/       — 교훈 기반 스킬 개선 (Process Enforcement)
+skills/bot-triage/         — 봇 장애 진단/복구 런북 (Runbook)
 skills/create-skill/       — 스킬 제작 가이드 (이 스킬)
 ```
 
