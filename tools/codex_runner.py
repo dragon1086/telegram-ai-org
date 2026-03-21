@@ -10,6 +10,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from tools.base_runner import BaseRunner, RunContext, RunnerError
+
 
 CODEX_CLI = os.environ.get("CODEX_CLI_PATH", "codex")
 DEFAULT_TIMEOUT = int(os.environ.get("CODEX_DEFAULT_TIMEOUT_SEC", "1800"))
@@ -248,7 +250,7 @@ def _extract_progress_line(line: str) -> str:
     return stripped
 
 
-class CodexRunner:
+class CodexRunner(BaseRunner):
     """OpenAI Codex CLI를 subprocess로 실행하는 래퍼."""
 
     def __init__(
@@ -439,9 +441,9 @@ class CodexRunner:
             return max(self.timeout, COMPLEX_TASK_TIMEOUT)
         return self.timeout
 
-    async def run(
+    async def run(  # type: ignore[override]
         self,
-        prompt: str,
+        prompt_or_ctx: "str | RunContext",
         model: str | None = None,
         workdir: str | None = None,
         workdir_hint: str | None = None,
@@ -451,9 +453,26 @@ class CodexRunner:
         shell_team_id: str | None = None,
         shell_purpose: str = "codex-batch",
     ) -> str:
-        """Codex 실행 후 결과 반환. 에이전트 프롬프트 자동 주입."""
+        """Codex 실행 후 결과 반환.
+
+        Accepts either a RunContext (BaseRunner ABC interface) or a plain
+        prompt string (legacy interface) as the first argument.
+        """
+        if isinstance(prompt_or_ctx, RunContext):
+            ctx = prompt_or_ctx
+            try:
+                return await self._run(
+                    ctx.prompt,
+                    model=ctx.engine_config.get("model") if ctx.engine_config else None,
+                    workdir=ctx.workdir,
+                    agents=ctx.engine_config.get("agents") if ctx.engine_config else None,
+                    progress_callback=ctx.progress_callback,
+                )
+            except Exception as exc:
+                raise RunnerError(str(exc)) from exc
+        # Legacy path: first arg is a plain str prompt
         return await self._run(
-            prompt,
+            prompt_or_ctx,
             model=model,
             workdir=workdir,
             workdir_hint=workdir_hint,
@@ -463,6 +482,31 @@ class CodexRunner:
             shell_team_id=shell_team_id,
             shell_purpose=shell_purpose,
         )
+
+    async def run_single(self, ctx: RunContext) -> str:
+        """Execute a single prompt — delegates to run(ctx)."""
+        return await self.run(ctx)
+
+    async def run_task(self, ctx: RunContext) -> str:
+        """Execute with system_prompt prepended, then run(ctx)."""
+        if ctx.system_prompt:
+            combined = RunContext(
+                prompt=f"{ctx.system_prompt}\n\n{ctx.prompt}",
+                workdir=ctx.workdir,
+                progress_callback=ctx.progress_callback,
+                session_id=ctx.session_id,
+                persona=ctx.persona,
+                session_store=ctx.session_store,
+                org_id=ctx.org_id,
+                global_context=ctx.global_context,
+                engine_config=ctx.engine_config,
+            )
+            return await self.run(combined)
+        return await self.run(ctx)
+
+    def capabilities(self) -> set[str]:
+        """Return supported capability flags."""
+        return {"streaming"}
 
     async def _communicate_with_progress(
         self,
