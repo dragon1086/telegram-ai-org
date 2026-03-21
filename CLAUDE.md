@@ -61,6 +61,18 @@ bash scripts/start_all.sh
 
 > 세션 시작 시 반드시 확인. 실수가 발생할 때마다 여기에 추가한다.
 
+### [2026-03-21] ⚠️ 오버스콥 금지: 개발실·리서치실의 배포 행위 금지
+- **증상**: 개발실(aiorg_engineering_bot) 및 리서치실(aiorg_research_bot)이 코드 수정 후 `git push`, `git merge`, 봇 재기동까지 자체 수행 → 역할 초과(오버스콥)
+- **원칙**: 개발실·리서치실은 **로컬 커밋까지만** 수행. 아래 세 가지는 **운영실(@aiorg_ops_bot) 전담**:
+  ```
+  ❌ 개발실·리서치실 자체 수행 금지:
+    git push / git merge / 봇 재기동(restart_bots.sh, request_restart.sh)
+
+  ✅ 완료 후 운영실에 COLLAB 위임:
+    "[COLLAB:머지/푸시/재기동 요청|맥락: 코드 수정 완료]"
+  ```
+- **적용 범위**: 모든 봇, 모든 태스크에 적용. 스킬 파일(engineering-review, quality-gate gotchas)에도 동일 규칙 명시됨.
+
 ### [2026-03-16] 봇 재시작 전 패키지 sync 필수
 - **증상**: 재시작 후 `ModuleNotFoundError` 반복 크래시 → 봇 무응답
 - **원인**: `pyproject.toml`에 선언된 패키지도 venv에 자동 설치되지 않음

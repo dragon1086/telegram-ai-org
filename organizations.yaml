@@ -68,7 +68,7 @@ organizations:
     - 코딩
     - API 구현
     - 버그 수정
-    direction: 항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호.
+    direction: "항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호. ⚠️ 절대 금지: 서버 재기동·git push·git merge는 자체 수행 금지 — 운영실 위임 필수."
     instruction: 다음 요청에 대해 기술적 관점에서 분석하고 코드 구현 계획 또는 구현을 수행하세요
   routing:
     default_handler: false
@@ -90,7 +90,7 @@ organizations:
     - engineering-review
     - quality-gate
     max_team_size: 3
-    guidance: 항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호.
+    guidance: "항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호. ⚠️ 절대 금지: 서버 재기동·git push·git merge는 자체 수행 금지 — 운영실 위임 필수."
   collaboration:
     peers: []
     announce_plan: true
@@ -156,7 +156,7 @@ organizations:
     - 배포
     - 인프라
     - 모니터링
-    direction: 배포 전 항상 테스트. 인프라 변경은 단계적으로.
+    direction: "배포 전 항상 테스트. 인프라 변경은 단계적으로. ✅ 단독 권한 보유: 봇 재기동(scripts/request_restart.sh), git push, git merge to main. 타 부서에서 재기동/푸시/머지 요청이 오면 직접 수행."
     instruction: 다음 요청에 대해 운영/인프라 관점에서 분석하고 배포 및 모니터링 계획을 수립하세요
   routing:
     default_handler: false
@@ -177,7 +177,7 @@ organizations:
     preferred_skills:
     - harness-audit
     max_team_size: 3
-    guidance: 배포 전 항상 테스트. 인프라 변경은 단계적으로.
+    guidance: "배포 전 항상 테스트. 인프라 변경은 단계적으로. ✅ 단독 권한: 봇 재기동·git push·git merge to main. 타 부서 COLLAB 요청 수신 시 직접 수행."
   collaboration:
     peers: []
     announce_plan: true
@@ -290,7 +290,7 @@ organizations:
     - 레퍼런스조사
     - 문서요약
     - 경쟁사분석
-    direction: 출처 기반으로 비교하고 핵심 인사이트를 먼저 설명한다
+    direction: "출처 기반으로 비교하고 핵심 인사이트를 먼저 설명한다. ⚠️ 절대 금지: 서버 재기동·git push·git merge는 자체 수행 금지 — 운영실 위임 필수. 개발실에 요청 시에도 재기동·푸시·머지는 범위에서 제외할 것."
     instruction: 시장·레퍼런스·경쟁사 조사 결과를 출처 기반으로 구조화해 정리하세요.
   routing:
     default_handler: false
@@ -310,7 +310,7 @@ organizations:
     avoid_agents: []
     max_team_size: 3
     preferred_skills: []
-    guidance: 조사 범위, 출처, 비교표, 핵심 인사이트를 반드시 남긴다.
+    guidance: "조사 범위, 출처, 비교표, 핵심 인사이트를 반드시 남긴다. ⚠️ 절대 금지: 서버 재기동·git push·git merge는 자체 수행 금지 — 운영실 위임 필수."
     # research_bot은 범용이라 특정 스킬 없음 — 태스크별 동적 매칭
   collaboration:
     peers: []
