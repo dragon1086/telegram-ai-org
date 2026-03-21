@@ -16,6 +16,16 @@ if [ -f "$MONITOR_PID_FILE" ]; then
   rm -f "$MONITOR_PID_FILE"
 fi
 
+# bot_watchdog도 함께 종료 (start_all.sh에서 새로 시작됨)
+WATCHDOG_PID_FILE="/tmp/bot-watchdog.pid"
+if [ -f "$WATCHDOG_PID_FILE" ]; then
+  _wpid="$(cat "$WATCHDOG_PID_FILE" 2>/dev/null)"
+  if [ -n "$_wpid" ] && ps -p "$_wpid" > /dev/null 2>&1; then
+    kill "$_wpid" 2>/dev/null && echo "✅ bot_watchdog 종료 (PID: $_wpid)" || true
+  fi
+  rm -f "$WATCHDOG_PID_FILE"
+fi
+
 sleep 1
 
 # 모든 aiorg 봇 tmux 세션 종료 (메인 + claude 서브세션, context 완전 리셋)
