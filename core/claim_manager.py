@@ -18,6 +18,7 @@ class ClaimManager:
     CLAIM_FILE_DIR = Path.home() / ".ai-org" / "claims"
     CLAIM_TIMEOUT = 3.0   # 3초 내 claim 없으면 기본 PM 담당
     CLAIM_TTL = int(os.environ.get("CLAIM_TTL_SEC", "600"))  # 기본 10분 후 만료 (환경변수로 조정 가능)
+    TEXT_HASH_TTL = int(os.environ.get("TEXT_HASH_TTL_SEC", "86400"))  # text_hash 중복 방지: 24시간
 
     def __init__(self) -> None:
         self.CLAIM_FILE_DIR.mkdir(parents=True, exist_ok=True)
@@ -39,9 +40,9 @@ class ClaimManager:
                 data = json.loads(hash_lock.read_text(encoding="utf-8"))
                 owner = data.get("claimed_by", "unknown")
                 age = time.time() - data.get("ts", 0)
-                if age > self.CLAIM_TTL:
+                if age > self.TEXT_HASH_TTL:
                     hash_lock.unlink(missing_ok=True)
-                    logger.info(f"[claim] text_hash {text_hash[:8]} 만료 ({age:.0f}초 경과) — 재선점 허용")
+                    logger.info(f"[claim] text_hash {text_hash[:8]} 만료 ({age:.0f}초 경과, TTL={self.TEXT_HASH_TTL}s) — 재선점 허용")
                     # 재귀 호출로 재시도
                     return self.try_claim_text_hash(text_hash, org_id)
             except Exception:
@@ -125,11 +126,11 @@ class ClaimManager:
             except (json.JSONDecodeError, OSError):
                 claim_file.unlink(missing_ok=True)
                 removed += 1
-        # hash lock 파일도 TTL 초과 시 삭제 (*.lock은 *.json 글로브에 포함되지 않음)
+        # hash lock 파일은 TEXT_HASH_TTL 적용 (재시작 시 동일 메시지 재처리 방지)
         for lock_file in self.CLAIM_FILE_DIR.glob("*.lock"):
             try:
                 data = json.loads(lock_file.read_text(encoding="utf-8"))
-                if now - data.get("ts", 0) > self.CLAIM_TTL:
+                if now - data.get("ts", 0) > self.TEXT_HASH_TTL:
                     lock_file.unlink()
                     removed += 1
             except (json.JSONDecodeError, OSError):

@@ -1713,13 +1713,34 @@ class TelegramRelay:
                             except Exception:
                                 pass
 
-                    response = await self._execute_with_team_config(
-                        task=request_text,
-                        system_prompt=self.identity.build_system_prompt(),
-                        team_config=team_config,
-                        progress_callback=on_progress,
-                        route_kind="local_execution",
-                    )
+                    _exec_timeout = int(os.environ.get("BOT_EXEC_TIMEOUT_SEC", "300"))  # 5분 타임아웃
+                    try:
+                        response = await asyncio.wait_for(
+                            self._execute_with_team_config(
+                                task=request_text,
+                                system_prompt=self.identity.build_system_prompt(),
+                                team_config=team_config,
+                                progress_callback=on_progress,
+                                route_kind="local_execution",
+                            ),
+                            timeout=_exec_timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.error(f"[{self.org_id}] 실행 타임아웃 ({_exec_timeout}s) — 자동 복구")
+                        try:
+                            await progress_msg.edit_text(f"⏰ 실행 시간 초과 ({_exec_timeout}초). 다시 시도해주세요.")
+                        except Exception:
+                            pass
+                        self._complete_runbook(run_id, f"타임아웃 ({_exec_timeout}s)")
+                        return
+                    except Exception as exec_err:
+                        logger.exception(f"[{self.org_id}] 실행 중 에러 — 자동 복구: {exec_err}")
+                        try:
+                            await progress_msg.edit_text(f"❌ 실행 에러: {str(exec_err)[:200]}")
+                        except Exception:
+                            pass
+                        self._complete_runbook(run_id, f"실행 에러: {exec_err}")
+                        return
                     upload_candidates = extract_local_artifact_paths(response or "")
                     self._append_runbook(
                         run_id,
