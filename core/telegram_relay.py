@@ -1398,7 +1398,7 @@ class TelegramRelay:
             )
             import telegram
             bot = telegram.Bot(token=requester_token)
-            await bot.send_message(chat_id=requester_chat_id, text=message)
+            await bot.send_message(chat_id=requester_chat_id, text=markdown_to_html(message), parse_mode="HTML")
             if "[ARTIFACT:" in (task_info.get("result") or ""):
                 await self._upload_artifacts_to(
                     task_info.get("result", ""), requester_token, requester_chat_id
@@ -2195,7 +2195,10 @@ class TelegramRelay:
             if time.time() - last_edit > progress_interval:
                 display = "\n".join(history[-history_limit:])
                 try:
-                    await progress_msg.edit_text(f"중간 상황 공유할게요!\n\n{display}")
+                    await progress_msg.edit_text(
+                        markdown_to_html(f"중간 상황 공유할게요!\n\n{display}"),
+                        parse_mode="HTML",
+                    )
                     last_edit = time.time()
                 except Exception:
                     pass
@@ -2235,7 +2238,7 @@ class TelegramRelay:
                 decision_client=self._pm_decision_client if self._is_pm_org else None,
             )
             for chunk in split_message(response, 4000):
-                await msg.reply_text(chunk)
+                await msg.reply_text(markdown_to_html(chunk), parse_mode="HTML")
             await self._auto_upload("\n".join(upload_candidates), self.token, self.allowed_chat_id)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
         self._append_runbook(
