@@ -1638,6 +1638,14 @@ class TelegramRelay:
 
         # 4단계: hash lock + message_id claim (race condition 최종 방지)
         if not self.claim_manager.try_claim(message_id, self.org_id, text_hash):
+            # text_hash 중복인 경우 사용자에게 안내
+            hash_info = self.claim_manager.get_text_hash_info(text_hash)
+            if hash_info and self._is_pm_org:
+                age_min = int(hash_info.get("age", 0)) // 60
+                await update.message.reply_text(
+                    f"이미 처리 중인 동일 요청이 있습니다 ({age_min}분 전 접수). "
+                    f"새로운 요청이라면 문구를 약간 바꿔서 다시 보내주세요.",
+                )
             return
 
         asyncio.get_event_loop().run_in_executor(None, self.claim_manager.cleanup_old_claims)
