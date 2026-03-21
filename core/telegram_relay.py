@@ -874,8 +874,18 @@ class TelegramRelay:
             replied_context=replied_context,
             db_context=db_context,
         )
+        # global_instructions: 모든 엔진에 적용되는 글로벌 규칙 주입
+        _global_instr = ""
+        try:
+            from core.orchestration_config import load_orchestration_config
+            _orch_cfg = load_orchestration_config()
+            if _orch_cfg.global_instructions:
+                _global_instr = f"\n\n{_orch_cfg.global_instructions.strip()}\n"
+        except Exception:
+            pass
         system_prompt = (
             self.identity.build_system_prompt()
+            + _global_instr
             + "\n\n## 사용자 응답 계약\n"
             "- 당신은 총괄 PM이며, 텔레그램 사용자에게 직접 설명한다.\n"
             "- 첫 문단에서 질문이나 불만에 바로 답한다.\n"
