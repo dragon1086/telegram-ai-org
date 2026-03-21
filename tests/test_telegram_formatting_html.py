@@ -67,8 +67,23 @@ def test_fenced_code_block() -> None:
 
 def test_fenced_code_block_with_lang() -> None:
     result = markdown_to_html("```python\nx = 1\n```")
-    assert "<pre>" in result
+    assert '<pre><code class="language-python">' in result
     assert "x = 1" in result
+
+
+def test_fenced_code_block_with_lang_syntax_highlight() -> None:
+    """언어 지정 코드블록은 Telegram 채널 syntax highlight 용 class 속성 포함."""
+    result = markdown_to_html("```typescript\nconst x: number = 1;\n```")
+    assert '<pre><code class="language-typescript">' in result
+    assert "const x" in result
+    assert "</code></pre>" in result
+
+
+def test_fenced_code_block_no_lang_uses_pre_only() -> None:
+    """언어 미지정 코드블록은 <pre>만 사용."""
+    result = markdown_to_html("```\nprint('hello')\n```")
+    assert result.startswith("<pre>") or "<pre>" in result
+    assert 'class="language-' not in result
 
 
 def test_header_h1() -> None:

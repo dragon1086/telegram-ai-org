@@ -58,6 +58,7 @@ def markdown_to_html(text: str) -> str:
     - **text** / __text__ → <b>text</b>
     - *text* / _text_ → <i>text</i>
     - `code` → <code>code</code>
+    - ```lang...``` → <pre><code class="language-lang">...</code></pre> (언어 syntax highlight)
     - ```...``` → <pre>...</pre>
     - [text](url) → <a href="url">text</a>
     - # Header     → <b>Header</b> + 구분선 (H1)
@@ -76,11 +77,16 @@ def markdown_to_html(text: str) -> str:
     fenced_blocks: list[str] = []
 
     def _save_fenced(m: re.Match) -> str:
-        content = escape_html(m.group(1) if m.group(1) is not None else "")
-        fenced_blocks.append(f"<pre>{content}</pre>")
+        lang = (m.group(1) or "").strip()
+        content = escape_html(m.group(2) if m.group(2) is not None else "")
+        if lang:
+            # 언어 지정 시 <pre><code class="language-xxx"> 태그로 감싸 Telegram 채널 syntax highlight 지원
+            fenced_blocks.append(f'<pre><code class="language-{lang}">{content}</code></pre>')
+        else:
+            fenced_blocks.append(f"<pre>{content}</pre>")
         return f"\x00FENCED{len(fenced_blocks) - 1}\x00"
 
-    text = re.sub(r"```(?:\w+)?\n?([\s\S]*?)```", _save_fenced, text)
+    text = re.sub(r"```(\w+)?\n?([\s\S]*?)```", _save_fenced, text)
 
     # 2. 인라인 코드 추출 및 플레이스홀더 치환
     inline_codes: list[str] = []

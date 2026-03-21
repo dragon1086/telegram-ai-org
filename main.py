@@ -120,14 +120,20 @@ if __name__ == "__main__":
         bus=bus,
         context_db=context_db,
     )
-    max_retries = 10
     CONFLICT_WAIT = 70  # Telegram 서버 long-polling timeout(60s) + 여유
+    RESTART_WAIT = 5    # 정상 종료 후 자동 재시작 대기
 
-    for attempt in range(max_retries):
+    while True:
         app = relay.build()  # 매 시도마다 새 Application 생성
         _start = time.time()
         try:
             app.run_polling(drop_pending_updates=True)
+        except KeyboardInterrupt:
+            print('[OK] 봇 종료 (Ctrl+C)', flush=True)
+            break
+        except SystemExit:
+            print('[OK] 봇 종료 (SIGTERM)', flush=True)
+            break
         except Exception as _e:
             err_str = str(_e)
             print(f'[ERROR] 봇 실행 오류: {_e}', flush=True)
@@ -144,9 +150,11 @@ if __name__ == "__main__":
             else:
                 raise
         _elapsed = time.time() - _start
-        if _elapsed > 10:
-            print(f'[OK] 봇 정상 종료 (실행 {_elapsed:.0f}초)', flush=True)
-            break
-        wait = CONFLICT_WAIT
-        print(f'[RETRY] 빠른 종료 ({_elapsed:.1f}초), {wait}초 후 재시도 ({attempt+1}/{max_retries})', flush=True)
-        time.sleep(wait)
+        if _elapsed < 10:
+            print(f'[RETRY] 빠른 종료 ({_elapsed:.1f}초), {CONFLICT_WAIT}초 후 재시도...', flush=True)
+            time.sleep(CONFLICT_WAIT)
+        else:
+            # Conflict 등으로 run_polling이 정상 리턴한 경우 — 자동 재시작
+            # 의도적 종료(SIGTERM/SIGINT)는 위에서 break로 빠진다.
+            print(f'[RESTART] 봇 종료 (실행 {_elapsed:.0f}초), {RESTART_WAIT}초 후 자동 재시작...', flush=True)
+            time.sleep(RESTART_WAIT)
