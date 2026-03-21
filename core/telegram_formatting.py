@@ -60,6 +60,7 @@ def markdown_to_html(text: str) -> str:
     - # ~ ###### Header → <b>Header</b>
     - > text → <blockquote>text</blockquote>
     - ~~text~~ → <s>text</s>
+    - - item / + item (줄 시작) → • item
     """
     if not text:
         return text
@@ -110,6 +111,9 @@ def markdown_to_html(text: str) -> str:
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
     # 취소선: ~~text~~
     text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
+    # 순서 없는 목록: 줄 시작의 - / + 를 • 로 변환 (들여쓰기 지원, 코드블록은 이미 보호됨)
+    # 단, --- 수평선은 이미 처리됐으므로 단독 줄 - 는 해당 없음
+    text = re.sub(r"^([ \t]*)[-+] ", r"\1• ", text, flags=re.MULTILINE)
 
     # 5. 플레이스홀더 복원
     for i, block in enumerate(fenced_blocks):

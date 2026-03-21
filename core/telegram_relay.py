@@ -286,7 +286,7 @@ class TelegramRelay:
             visible_text = env.to_display()
             sent = None
             first = True
-            for chunk in split_message(visible_text, 4000):
+            for chunk in split_message(visible_text, 3800):  # HTML 태그 팽창 여유 (~4096 한도)
                 sent = await self.display.send_to_chat(
                     self.app.bot,
                     chat_id,
@@ -2321,7 +2321,7 @@ class TelegramRelay:
             )
         else:
             text = "✅ 이미 준비된 세션에 연결되어 있습니다. 바로 사용하시면 됩니다."
-        await update.message.reply_text(text)
+        await update.message.reply_text(markdown_to_html(text), parse_mode="HTML")
 
     async def on_command_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """세션 상태, 메모리 크기, PM 정체성 출력."""
@@ -2344,10 +2344,10 @@ class TelegramRelay:
                 f"• LOG: {mem_stats['log']}개\n\n"
                 f"메시지 카운터: {self._message_count}"
             )
-            await update.message.reply_text(text)
+            await update.message.reply_text(markdown_to_html(text), parse_mode="HTML")
         except Exception as e:
             logger.error(f"/status 처리 실패: {e}")
-            await update.message.reply_text(f"⚠️ 상태 조회 실패: {e}")
+            await update.message.reply_text(markdown_to_html(f"⚠️ 상태 조회 실패: {e}"), parse_mode="HTML")
 
     async def on_command_reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """세션 writeback + 리셋."""
