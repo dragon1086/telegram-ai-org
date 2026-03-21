@@ -64,7 +64,7 @@ from core.dispatch_engine import ENABLE_AUTO_DISPATCH
 from core.verification import ENABLE_CROSS_VERIFICATION
 from core.goal_tracker import ENABLE_GOAL_TRACKER
 from core.task_poller import TaskPoller
-from core.telegram_formatting import split_message, markdown_to_html, format_for_telegram
+from core.telegram_formatting import split_message, markdown_to_html, format_for_telegram, escape_html
 from core.setup_registration import (
     default_identity_for_org,
     parse_setup_identity,
@@ -3649,13 +3649,16 @@ class TelegramRelay:
             if not arg or arg.lower() == "status":
                 d = self.identity._data
                 me = await context.bot.get_me()
-                bot_name = me.username or "봇이름"
+                bot_name = escape_html(me.username or "봇이름")
+                _role = escape_html(d.get('role', '미설정'))
+                _specialties = escape_html(', '.join(d.get('specialties', [])) or '미설정')
+                _direction = escape_html(d.get('direction', '미설정'))
                 msg = (
                     f"🏢 <b>{self.org_id} 조직 정체성</b>\n\n"
                     f"현재 설정:\n"
-                    f"• 역할: {d.get('role','미설정')}\n"
-                    f"• 전문분야: {', '.join(d.get('specialties', [])) or '미설정'}\n"
-                    f"• 방향성: {d.get('direction','미설정')}\n\n"
+                    f"• 역할: {_role}\n"
+                    f"• 전문분야: {_specialties}\n"
+                    f"• 방향성: {_direction}\n\n"
                     f"⚙️ 설정 방법:\n"
                     f"<code>/org@{bot_name} 프로덕트PM|기획,UX|사용자중심</code>\n\n"
                     f"형식: <code>역할|전문분야1,분야2|방향성</code>\n"
@@ -3684,11 +3687,14 @@ class TelegramRelay:
                 except Exception as _sync_err:
                     logger.warning(f"/org canonical sync 실패: {_sync_err}")
                 d = self.identity._data
+                _role = escape_html(d.get('role', ''))
+                _specialties = escape_html(', '.join(d.get('specialties', [])))
+                _direction = escape_html(d.get('direction', ''))
                 msg = (
                     f"✅ <b>{self.org_id} 정체성 업데이트!</b>\n\n"
-                    f"역할: {d.get('role','')}\n"
-                    f"전문분야: {', '.join(d.get('specialties', []))}\n"
-                    f"방향성: {d.get('direction','')}\n\n"
+                    f"역할: {_role}\n"
+                    f"전문분야: {_specialties}\n"
+                    f"방향성: {_direction}\n\n"
                     f"이제 이 방향성으로 팀을 구성할게요 🤖"
                 )
                 await update.message.reply_text(msg, parse_mode="HTML")
@@ -3840,7 +3846,7 @@ class TelegramRelay:
             registry = self._session_registry()
             target = arg.strip()
             text_out = registry.format_detail(target) if target else registry.format_summary()
-            await update.message.reply_text(text_out)
+            await update.message.reply_text(format_for_telegram(text_out), parse_mode="HTML")
             return
 
         # /verbose [0|1|2]
@@ -3897,18 +3903,18 @@ class TelegramRelay:
                 return
             policy_name = org_cfg.execution.get("session_policy", "")
             policy = load_orchestration_config().get_session_policy(policy_name)
-            lines = [f"🧠 {target_org} session policy"]
-            lines.append(f"- policy: {policy_name or '-'}")
+            lines = [f"🧠 <b>{escape_html(target_org)} session policy</b>"]
+            lines.append(f"- policy: <code>{escape_html(policy_name or '-')}</code>")
             for key, value in policy.items():
-                lines.append(f"- {key}: {value}")
-            await update.message.reply_text("\n".join(lines))
+                lines.append(f"- {escape_html(str(key))}: {escape_html(str(value))}")
+            await update.message.reply_text("\n".join(lines), parse_mode="HTML")
             return
 
         # /compact [org_id]
         if cmd == "/compact":
             target_org = arg.strip() or self.org_id
             result = await self._compact_org_session(target_org)
-            await update.message.reply_text(result)
+            await update.message.reply_text(format_for_telegram(result), parse_mode="HTML")
             return
 
         # /reset-session [org_id]
