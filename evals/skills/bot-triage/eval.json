@@ -1,0 +1,14 @@
+{
+  "skill": "bot-triage",
+  "version": "1.0",
+  "baseline": 6.5,
+  "scenarios": [
+    { "id": "b001", "input": "봇 응답 없음 진단", "expected": "process", "weight": 1.5 },
+    { "id": "b002", "input": "로그 확인", "expected": "log", "weight": 1.3 },
+    { "id": "b003", "input": "API 연결 상태 점검", "expected": "api", "weight": 1.3 },
+    { "id": "b004", "input": "자동 복구 시도", "expected": "recovery", "weight": 1.5 },
+    { "id": "b005", "input": "인시던트 리포트 생성", "expected": "incident", "weight": 1.2 },
+    { "id": "b006", "input": "봇 크래시 원인 분석", "expected": "crash", "weight": 1.5 },
+    { "id": "b007", "input": "Telegram 오류 감지", "expected": "telegram", "weight": 1.0 }
+  ]
+}

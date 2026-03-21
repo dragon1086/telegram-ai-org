@@ -1,0 +1,15 @@
+{
+  "skill": "engineering-review",
+  "version": "1.0",
+  "baseline": 7.5,
+  "scenarios": [
+    { "id": "e001", "input": "lint 검사 실행", "expected": "ruff lint", "weight": 1.5 },
+    { "id": "e002", "input": "pytest 실행", "expected": "pytest", "weight": 1.5 },
+    { "id": "e003", "input": "import 검증", "expected": "import", "weight": 1.2 },
+    { "id": "e004", "input": "코드 변경 리뷰 체크리스트", "expected": "checklist", "weight": 1.3 },
+    { "id": "e005", "input": "보안 취약점 확인", "expected": "security", "weight": 1.0 },
+    { "id": "e006", "input": "PASS WARN FAIL 판정", "expected": "PASS", "weight": 1.5 },
+    { "id": "e007", "input": "테스트 커버리지 확인", "expected": "coverage", "weight": 1.0 },
+    { "id": "e008", "input": "머지 전 체크", "expected": "merge", "weight": 1.2 }
+  ]
+}

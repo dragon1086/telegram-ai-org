@@ -1,16 +1,33 @@
 ---
 name: skill-evolve
-description: "Analyze accumulated lessons from lesson_memory DB, detect recurring patterns, and propose new skills or skill improvements. Triggers: '스킬 진화', 'skill evolution', 'evolve skills', '패턴 분석', 'lesson analysis'"
+description: "스킬 자동 진화 — lesson_memory + eval.json 기반 품질 측정 및 개선 제안. Triggers: '스킬 진화', 'skill evolution', 'evolve skills', '패턴 분석', 'lesson analysis', 'skill improve'"
 disable-model-invocation: true
 ---
 
 # Skill Evolution (스킬 진화)
 
-교훈 DB에서 반복 패턴을 분석하고, 새 스킬 제안 또는 기존 스킬 개선안을 도출한다.
+교훈 DB에서 반복 패턴을 분석하고, eval 점수 기반으로 스킬 개선안을 도출한다.
+eval.json이 있는 스킬은 Karpathy 루프(측정 → 제안 → 재측정 → keep/revert)를 실행한다.
 
-## Step 1: 교훈 데이터 수집
+## Step 1: Eval 기반 점수 측정
 
-아래 Python 코드를 실행하여 데이터를 수집하라:
+```python
+import sys
+sys.path.insert(0, ".")
+from core.eval_runner import EvalRunner
+
+runner = EvalRunner()
+results = runner.score_all_skills()
+print(runner.format_results(results))
+
+# 개선이 필요한 스킬 식별
+needs_improvement = [r for r in results if not r.passed]
+print(f"\n개선 필요: {[r.skill_name for r in needs_improvement]}")
+```
+
+eval.json이 없는 스킬은 Step 2 (교훈 데이터 수집)로 진행.
+
+## Step 2: 교훈 데이터 수집
 
 ```python
 import sqlite3, json
@@ -21,14 +38,12 @@ from datetime import datetime, timezone, timedelta
 db = Path(".ai-org/lesson_memory.db")
 conn = sqlite3.connect(db)
 
-# 최근 14일 교훈 전체
 cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
 rows = conn.execute(
     "SELECT category, what_went_wrong, how_to_prevent, outcome, worker, applied_count "
     "FROM lessons WHERE created_at > ? ORDER BY created_at DESC", (cutoff,)
 ).fetchall()
 
-# 카테고리별 통계
 cat_counts = Counter(r[0] for r in rows)
 outcome_counts = Counter(r[3] for r in rows)
 worker_counts = Counter(r[4] for r in rows if r[4])
@@ -38,47 +53,47 @@ print(f"카테고리별: {dict(cat_counts)}")
 print(f"결과별: {dict(outcome_counts)}")
 print(f"봇별: {dict(worker_counts)}")
 
-# 반복 패턴 감지 (같은 카테고리 3회 이상)
 recurring = {k: v for k, v in cat_counts.items() if v >= 3}
 print(f"\n반복 패턴 (3회+): {recurring}")
-
-# 적용된 교훈 효과
-applied = [r for r in rows if r[5] > 0]
-print(f"적용된 교훈: {len(applied)}개")
 conn.close()
 ```
 
-## Step 2: 패턴 분석
+## Step 3: 패턴 분석 및 스킬 개선 제안
 
 수집 데이터를 기반으로 분석:
 
-1. **반복 실패 패턴** — 같은 category 실패가 3회+ → 스킬로 방지 가능
-2. **반복 성공 패턴** — 같은 category 성공이 3회+ → 스킬로 표준화 가능
-3. **봇별 약점** — 특정 봇에 실패가 집중 → 봇 전용 가이드 스킬
-4. **교훈 미적용** — applied_count=0 교훈이 많으면 → briefing 개선 필요
+1. **eval 점수 미달 스킬** — score < 7.0 → SKILL.md 내용 보강
+2. **반복 실패 패턴** — 같은 category 3회+ → gotchas.md 항목 추가 또는 스킬 신규 생성
+3. **반복 성공 패턴** — 같은 category 3회+ → 스킬로 표준화
+4. **봇별 약점** — 특정 봇에 실패 집중 → 봇 전용 가이드 추가
 
-## Step 3: 스킬 제안 생성
+### Karpathy 루프 (eval.json 있는 스킬)
 
-각 반복 패턴에 대해:
+```
+score_before = eval_runner.score_skill(skill_name).score
+# SKILL.md 개선 적용
+score_after = eval_runner.score_skill(skill_name).score
 
-1. 패턴 요약 (어떤 문제가 반복되는가)
-2. 제안 스킬명 (kebab-case)
-3. 스킬 유형 (reference / task / fork)
-4. 스킬 내용 초안 (핵심 규칙 3-5개)
-5. 기존 스킬과 중복 확인
+if score_after > score_before:
+    print(f"✅ KEEP: {score_before:.1f} → {score_after:.1f}")
+    # git commit "skill-improve: {skill_name}"
+else:
+    print(f"⏪ REVERT: {score_after:.1f} ≤ {score_before:.1f}")
+    # git revert
+```
 
 ### 제안 형식
 
 ```markdown
-### 제안 1: {skill-name}
+### 제안: {skill-name} 개선
+- **현재 점수**: {score_before}/10
 - **문제**: {반복 패턴 설명}
 - **빈도**: {category}에서 {N}회 발생
-- **유형**: reference
-- **핵심 규칙**:
-  1. ...
-  2. ...
-  3. ...
-- **중복 검사**: 기존 {skill} 스킬과 겹치지 않음
+- **개선 방향**:
+  1. {구체적 수정 내용}
+  2. {트리거 키워드 추가}
+  3. {gotcha 항목 추가}
+- **예상 점수**: {score_estimated}/10
 ```
 
 ## Step 4: 보고서 저장
@@ -87,19 +102,28 @@ conn.close()
 
 포함 내용:
 - 분석 기간
-- 교훈 통계 요약
+- eval 점수 요약 (스킬별 점수 + 개선 여부)
 - 반복 패턴 목록
-- 스킬 제안 목록
-- 기존 스킬 개선 제안 (해당 시)
+- 스킬 제안/개선 목록
+- keep/revert 결정 근거
 
-## Step 5: 스킬 생성 (승인 시)
+## Step 5: 스킬 생성/수정 (승인 시)
 
-Rocky가 제안을 승인하면 `/create-skill {skill-name}` 으로 실제 스킬 생성.
-승인 없이 자동 생성하지 않는다 — 제안까지만 자율.
+- eval 기반 개선: 점수 향상 시 자동 커밋 가능
+- 신규 스킬 생성: Rocky 승인 후 `/create-skill {skill-name}`
+- 승인 없이 신규 스킬 자동 생성하지 않는다
 
-## 자동 스케줄 (cron)
+## 자동 스케줄
 
-매주 일요일 21:00 KST에 자동 실행:
-```
-cokacdir --cron "lesson_memory DB에서 최근 7일 교훈을 분석하고, 반복 패턴을 찾아 새 스킬 제안 보고서를 작성해서 Rocky에게 보고하라. /skill-evolve 스킬을 참조하라." --at "0 12 * * 0" --chat {CHAT_ID} --key {KEY}
-```
+scheduler.py에 등록된 야간 자동 실행 (매일 02:00 KST):
+- ImprovementBus.collect_signals() → SKILL_STALE 신호 수집
+- eval.json 있는 스킬 자동 점수 측정
+- 주간 집계 후 Rocky에게 Telegram 보고
+
+매주 일요일 22:00 KST: 전체 skill-evolve 보고서 생성
+
+## Gotchas
+
+- eval.json이 없는 스킬은 정량 측정 불가 → Step 2 패턴 분석으로 대체
+- score 측정은 키워드 커버리지 기반이므로 SKILL.md 내용이 풍부할수록 정확
+- keep/revert 기준: score_after > score_before (동점이면 revert)
