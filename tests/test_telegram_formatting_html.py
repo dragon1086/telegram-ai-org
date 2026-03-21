@@ -210,3 +210,66 @@ def test_blockquote_empty_gt() -> None:
     text = "> "
     result = markdown_to_html(text)
     assert "<blockquote>" in result
+
+
+# ── 순서 없는 목록 변환 ──────────────────────────────────────────────────────
+
+def test_unordered_list_dash() -> None:
+    """- item → • item"""
+    result = markdown_to_html("- 항목 하나")
+    assert result == "• 항목 하나"
+
+
+def test_unordered_list_plus() -> None:
+    """+ item → • item"""
+    result = markdown_to_html("+ 항목 둘")
+    assert result == "• 항목 둘"
+
+
+def test_unordered_list_multiline() -> None:
+    """여러 줄 목록 변환"""
+    text = "- 첫 번째\n- 두 번째\n- 세 번째"
+    result = markdown_to_html(text)
+    assert result == "• 첫 번째\n• 두 번째\n• 세 번째"
+
+
+def test_unordered_list_with_bold() -> None:
+    """- **bold** item → • <b>bold</b> item"""
+    result = markdown_to_html("- **핵심 변경점**: 설명")
+    assert result == "• <b>핵심 변경점</b>: 설명"
+
+
+def test_unordered_list_indented() -> None:
+    """들여쓰기된 목록도 변환"""
+    result = markdown_to_html("  - 들여쓰기 항목")
+    assert result == "  • 들여쓰기 항목"
+
+
+def test_horizontal_rule_not_converted_to_bullet() -> None:
+    """--- 수평선은 bullet 변환 대상 아님 (이미 ── 로 처리됨)"""
+    result = markdown_to_html("---")
+    assert "•" not in result
+    assert "──────────" in result
+
+
+def test_list_inside_code_block_not_converted() -> None:
+    """코드 블록 내부의 - item 은 변환하지 않음"""
+    result = markdown_to_html("```\n- not a bullet\n```")
+    assert "• not a bullet" not in result
+    assert "- not a bullet" in result
+
+
+def test_list_mixed_with_bold_and_code() -> None:
+    """실제 LLM 출력 패턴: 목록 + 볼드 + 코드"""
+    text = (
+        "## 핵심 변경점\n\n"
+        "- **파일 A**: `escape_html()` 추가\n"
+        "- **파일 B**: parse_mode 적용\n"
+        "- 단위 테스트 통과"
+    )
+    result = markdown_to_html(text)
+    assert "<b>핵심 변경점</b>" in result
+    assert "• <b>파일 A</b>:" in result
+    assert "<code>escape_html()</code>" in result
+    assert "• <b>파일 B</b>:" in result
+    assert "• 단위 테스트 통과" in result
