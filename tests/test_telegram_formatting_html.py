@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.telegram_formatting import escape_html, markdown_to_html
+from core.telegram_formatting import escape_html, markdown_to_html, format_for_telegram
 
 
 # ── escape_html ────────────────────────────────────────────────────────────
@@ -356,3 +356,136 @@ def test_header_hierarchy_visual_distinction() -> None:
     assert "<b>▸ 중제목</b>" in result
     # H3: 단순 bold
     assert "<b>소제목</b>" in result
+
+
+# ── format_for_telegram (통합 함수) ─────────────────────────────────────────
+
+def test_format_for_telegram_strips_team_tag() -> None:
+    """[TEAM:...] 메타데이터 태그를 제거하고 마크다운을 HTML로 변환한다."""
+    text = "[TEAM:solo]\n\n**결론:** 작업 완료했습니다."
+    result = format_for_telegram(text)
+    assert "[TEAM:" not in result
+    assert "<b>결론:</b>" in result
+
+
+def test_format_for_telegram_strips_collab_tag() -> None:
+    """[COLLAB:...] 태그를 제거한다."""
+    text = "[COLLAB:디자인 요청|맥락: 현재 작업]\n\n진행 중입니다."
+    result = format_for_telegram(text)
+    assert "[COLLAB:" not in result
+    assert "진행 중입니다." in result
+
+
+def test_format_for_telegram_strips_multiple_tags() -> None:
+    """여러 메타데이터 태그를 모두 제거한다."""
+    text = "[TEAM:agent1,agent2]\n[COLLAB:작업]\n\n**본문** 내용"
+    result = format_for_telegram(text)
+    assert "[TEAM:" not in result
+    assert "[COLLAB:" not in result
+    assert "<b>본문</b>" in result
+
+
+def test_format_for_telegram_preserves_markdown_rendering() -> None:
+    """메타데이터 태그 제거 후에도 마크다운이 올바르게 변환된다."""
+    text = (
+        "[TEAM:T-global-091]\n\n"
+        "## 분석 결과\n\n"
+        "- **parse_mode**: HTML 통일 ✅\n"
+        "> 변경 완료\n"
+    )
+    result = format_for_telegram(text)
+    assert "[TEAM:" not in result
+    assert "<b>▸ 분석 결과</b>" in result
+    assert "• <b>parse_mode</b>:" in result
+    assert "<blockquote>변경 완료</blockquote>" in result
+
+
+def test_format_for_telegram_empty_string() -> None:
+    """빈 문자열은 그대로 반환한다."""
+    assert format_for_telegram("") == ""
+
+
+def test_format_for_telegram_no_metadata_tag_unchanged() -> None:
+    """메타데이터 태그 없는 텍스트는 markdown_to_html과 동일한 결과를 낸다."""
+    text = "**볼드** 텍스트와 `인라인 코드`"
+    assert format_for_telegram(text) == markdown_to_html(text)
+
+
+def test_format_for_telegram_hardcoded_html_not_double_escaped() -> None:
+    """마크다운 포맷 사용 시 올바른 HTML이 생성된다 (이중 이스케이프 없음)."""
+    # 올바른 방식: 마크다운으로 작성 → format_for_telegram 변환
+    text = "또는 `/org set-tone <봇이름> <말투지시>` 명령어를 사용하세요."
+    result = format_for_telegram(text)
+    # backtick → <code>, angle brackets → escaped safely
+    assert "<code>/org set-tone" in result
+    assert "&lt;봇이름&gt;" in result
+    # 이중 이스케이프 없음
+    assert "&amp;lt;" not in result
+
+
+# ── Risk-2: * item bullet 변환 ────────────────────────────────────────────
+
+def test_star_bullet_single() -> None:
+    """* item → • item (LLM이 자주 사용하는 별표 bullet)"""
+    result = markdown_to_html("* 항목 하나")
+    assert result == "• 항목 하나"
+
+
+def test_star_bullet_multiline() -> None:
+    """여러 줄 * 목록 변환"""
+    text = "* 첫 번째\n* 두 번째\n* 세 번째"
+    result = markdown_to_html(text)
+    assert result == "• 첫 번째\n• 두 번째\n• 세 번째"
+
+
+def test_star_bullet_not_italic() -> None:
+    """* item 이 이탤릭으로 오변환되지 않아야 한다"""
+    text = "* 항목 one\n* 항목 two"
+    result = markdown_to_html(text)
+    assert "<i>" not in result
+    assert "• 항목 one" in result
+    assert "• 항목 two" in result
+
+
+def test_star_bullet_does_not_affect_bold() -> None:
+    """** bold ** 는 bullet 변환 대상 아님 (lookahead 검증)"""
+    result = markdown_to_html("** 굵게 **")
+    # ** 는 bullet이 아닌 bold
+    assert "•" not in result
+
+
+def test_star_bullet_with_bold_text() -> None:
+    """* **bold** item → • <b>bold</b> item"""
+    result = markdown_to_html("* **핵심**: 설명")
+    assert result == "• <b>핵심</b>: 설명"
+
+
+def test_star_bullet_indented() -> None:
+    """들여쓰기된 * 목록도 변환"""
+    result = markdown_to_html("  * 들여쓰기 항목")
+    assert result == "  • 들여쓰기 항목"
+
+
+# ── Risk-3: re.DOTALL 제거 — 단일 줄 bold ───────────────────────────────
+
+def test_bold_single_line_still_works() -> None:
+    """**bold** 단일 줄 변환은 여전히 작동해야 한다"""
+    result = markdown_to_html("**굵게**")
+    assert result == "<b>굵게</b>"
+
+
+def test_bold_unclosed_does_not_greedy_match_next_bold() -> None:
+    """미닫힌 ** 가 다음 줄의 ** 까지 greedy 매칭하지 않아야 한다 (DOTALL 제거 검증)"""
+    # 두 번째 줄에 정상 bold가 있을 때, 첫 줄의 미닫힌 ** 가 탐욕적으로 삼켜선 안 됨
+    text = "첫 줄 ** 미닫힘\n**정상 bold**"
+    result = markdown_to_html(text)
+    # 두 번째 줄의 **정상 bold** 가 정상 변환되어야 함
+    assert "<b>정상 bold</b>" in result
+
+
+def test_bold_multiline_no_crossline_match() -> None:
+    """** 는 줄 경계를 넘어 매칭하지 않는다"""
+    text = "줄1 **볼드시작\n줄2 볼드끝** 여기"
+    result = markdown_to_html(text)
+    # 줄을 넘는 bold는 변환되지 않음 → ** 그대로 남음 (HTML 렌더링에서는 무시됨)
+    assert "<b>볼드시작\n줄2 볼드끝</b>" not in result

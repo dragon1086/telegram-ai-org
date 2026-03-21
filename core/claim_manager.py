@@ -52,6 +52,18 @@ class ClaimManager:
             logger.debug(f"[claim] 중복 내용 감지 — 이미 {owner}이 처리 중 (text_hash={text_hash[:8]}, {age:.0f}초 경과)")
             return False
 
+    def get_text_hash_info(self, text_hash: str) -> dict | None:
+        """text_hash lock 정보 반환. 없으면 None."""
+        hash_lock = self.CLAIM_FILE_DIR / f"hash_{text_hash}.lock"
+        if not hash_lock.exists():
+            return None
+        try:
+            data = json.loads(hash_lock.read_text(encoding="utf-8"))
+            data["age"] = time.time() - data.get("ts", 0)
+            return data
+        except (json.JSONDecodeError, OSError):
+            return None
+
     def release_text_hash(self, text_hash: str) -> None:
         """text_hash lock 해제 — 실행 실패/타임아웃 시 재시도 허용."""
         hash_lock = self.CLAIM_FILE_DIR / f"hash_{text_hash}.lock"

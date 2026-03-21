@@ -64,7 +64,7 @@ from core.dispatch_engine import ENABLE_AUTO_DISPATCH
 from core.verification import ENABLE_CROSS_VERIFICATION
 from core.goal_tracker import ENABLE_GOAL_TRACKER
 from core.task_poller import TaskPoller
-from core.telegram_formatting import split_message, markdown_to_html
+from core.telegram_formatting import split_message, markdown_to_html, format_for_telegram, escape_html
 from core.setup_registration import (
     default_identity_for_org,
     parse_setup_identity,
@@ -798,7 +798,7 @@ class TelegramRelay:
                 markdown_to_html(
                     "봇 이름을 찾지 못했어요.\n"
                     "예) '성장실 봇 말투를 데이터 지향적으로 바꿔줘'\n"
-                    "또는 <code>/org set-tone &lt;봇이름&gt; &lt;말투지시&gt;</code> 명령어를 사용하세요."
+                    "또는 `/org set-tone <봇이름> <말투지시>` 명령어를 사용하세요."
                 ),
                 parse_mode="HTML",
             )
@@ -983,7 +983,7 @@ class TelegramRelay:
         chunks = split_message(reply.strip() or "알겠습니다.", 3800)  # HTML 태그 팽창 여유 (~4096 한도)
         first = chunks[0]
         try:
-            await progress_msg.edit_text(markdown_to_html(first), parse_mode="HTML")
+            await progress_msg.edit_text(format_for_telegram(first), parse_mode="HTML")
         except Exception:
             await self.display.send_reply(update.effective_message, first)
         for chunk in chunks[1:]:
@@ -1638,6 +1638,14 @@ class TelegramRelay:
 
         # 4단계: hash lock + message_id claim (race condition 최종 방지)
         if not self.claim_manager.try_claim(message_id, self.org_id, text_hash):
+            # text_hash 중복인 경우 사용자에게 안내
+            hash_info = self.claim_manager.get_text_hash_info(text_hash)
+            if hash_info and self._is_pm_org:
+                age_min = int(hash_info.get("age", 0)) // 60
+                await update.message.reply_text(
+                    f"이미 처리 중인 동일 요청이 있습니다 ({age_min}분 전 접수). "
+                    f"새로운 요청이라면 문구를 약간 바꿔서 다시 보내주세요.",
+                )
             return
 
         asyncio.get_event_loop().run_in_executor(None, self.claim_manager.cleanup_old_claims)
@@ -2303,7 +2311,7 @@ class TelegramRelay:
                 decision_client=self._pm_decision_client if self._is_pm_org else None,
             )
             for chunk in split_message(response, 3800):  # HTML 태그 팽창 여유 (~4096 한도)
-                await msg.reply_text(markdown_to_html(chunk), parse_mode="HTML")
+                await msg.reply_text(format_for_telegram(chunk), parse_mode="HTML")
             await self._auto_upload("\n".join(upload_candidates), self.token, self.allowed_chat_id)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
         self._append_runbook(
@@ -3378,14 +3386,11 @@ class TelegramRelay:
                 (response or "(완료)")[:6000],
                 phase_name="implementation",
             )
-            if self.app and self.app.bot:
-                response = await self._handle_collab_tags(
-                    response,
-                    bot=self.app.bot if self.app else None,
-                    chat_id=self.allowed_chat_id,
-                    requester_mention=requester_mention,
-                    reply_to_message_id=reply_to_message_id,
-                )
+            # PM 태스크 실행 중에는 COLLAB 태그 처리를 스킵한다.
+            # PM이 이미 TaskGraph로 다음 단계를 계획해뒀으므로,
+            # 부서 봇의 자체 협업 요청은 중복이 된다.
+            import re as _re
+            response = _re.sub(r"\[COLLAB:[^\]]+\]", "", response or "").strip()
             self._advance_runbook(run_id, "조직 위임 실행 완료, verification phase 이동")
 
             full_result = (response or "(완료)")
@@ -3413,7 +3418,7 @@ class TelegramRelay:
                 original_request=(task_info.get("metadata") or {}).get("original_request", description),
             )
             summary_prefix = f"{requester_mention} " if requester_mention else ""
-            summary = f"{summary_prefix}✅ [{dept_name}] 태스크 {task_id} 완료\n{public_result[:500]}"
+            summary = f"{summary_prefix}✅ [{dept_name}] 태스크 {task_id} 완료\n{public_result}"
             if self.app and self.app.bot:
                 await self.display.send_to_chat(
                     self.app.bot,
@@ -3580,10 +3585,10 @@ class TelegramRelay:
         )
         summary = response[:300]
         done_text = f"{requester_mention} {make_collab_done(self.org_id, summary)}".strip()
-        await update.message.reply_text(markdown_to_html(done_text), parse_mode="HTML")
+        await update.message.reply_text(format_for_telegram(done_text), parse_mode="HTML")
         if response and len(response) > 300:
             for chunk in split_message(response[300:], 3800):  # HTML 태그 팽창 여유 (~4096 한도)
-                await update.message.reply_text(markdown_to_html(chunk), parse_mode="HTML")
+                await update.message.reply_text(format_for_telegram(chunk), parse_mode="HTML")
         self._append_runbook(
             run_id,
             "Verification summary",
@@ -3641,13 +3646,16 @@ class TelegramRelay:
             if not arg or arg.lower() == "status":
                 d = self.identity._data
                 me = await context.bot.get_me()
-                bot_name = me.username or "봇이름"
+                bot_name = escape_html(me.username or "봇이름")
+                _role = escape_html(d.get('role', '미설정'))
+                _specialties = escape_html(', '.join(d.get('specialties', [])) or '미설정')
+                _direction = escape_html(d.get('direction', '미설정'))
                 msg = (
                     f"🏢 <b>{self.org_id} 조직 정체성</b>\n\n"
                     f"현재 설정:\n"
-                    f"• 역할: {d.get('role','미설정')}\n"
-                    f"• 전문분야: {', '.join(d.get('specialties', [])) or '미설정'}\n"
-                    f"• 방향성: {d.get('direction','미설정')}\n\n"
+                    f"• 역할: {_role}\n"
+                    f"• 전문분야: {_specialties}\n"
+                    f"• 방향성: {_direction}\n\n"
                     f"⚙️ 설정 방법:\n"
                     f"<code>/org@{bot_name} 프로덕트PM|기획,UX|사용자중심</code>\n\n"
                     f"형식: <code>역할|전문분야1,분야2|방향성</code>\n"
@@ -3676,11 +3684,14 @@ class TelegramRelay:
                 except Exception as _sync_err:
                     logger.warning(f"/org canonical sync 실패: {_sync_err}")
                 d = self.identity._data
+                _role = escape_html(d.get('role', ''))
+                _specialties = escape_html(', '.join(d.get('specialties', [])))
+                _direction = escape_html(d.get('direction', ''))
                 msg = (
                     f"✅ <b>{self.org_id} 정체성 업데이트!</b>\n\n"
-                    f"역할: {d.get('role','')}\n"
-                    f"전문분야: {', '.join(d.get('specialties', []))}\n"
-                    f"방향성: {d.get('direction','')}\n\n"
+                    f"역할: {_role}\n"
+                    f"전문분야: {_specialties}\n"
+                    f"방향성: {_direction}\n\n"
                     f"이제 이 방향성으로 팀을 구성할게요 🤖"
                 )
                 await update.message.reply_text(msg, parse_mode="HTML")
@@ -3832,7 +3843,7 @@ class TelegramRelay:
             registry = self._session_registry()
             target = arg.strip()
             text_out = registry.format_detail(target) if target else registry.format_summary()
-            await update.message.reply_text(text_out)
+            await update.message.reply_text(format_for_telegram(text_out), parse_mode="HTML")
             return
 
         # /verbose [0|1|2]
@@ -3889,18 +3900,18 @@ class TelegramRelay:
                 return
             policy_name = org_cfg.execution.get("session_policy", "")
             policy = load_orchestration_config().get_session_policy(policy_name)
-            lines = [f"🧠 {target_org} session policy"]
-            lines.append(f"- policy: {policy_name or '-'}")
+            lines = [f"🧠 <b>{escape_html(target_org)} session policy</b>"]
+            lines.append(f"- policy: <code>{escape_html(policy_name or '-')}</code>")
             for key, value in policy.items():
-                lines.append(f"- {key}: {value}")
-            await update.message.reply_text("\n".join(lines))
+                lines.append(f"- {escape_html(str(key))}: {escape_html(str(value))}")
+            await update.message.reply_text("\n".join(lines), parse_mode="HTML")
             return
 
         # /compact [org_id]
         if cmd == "/compact":
             target_org = arg.strip() or self.org_id
             result = await self._compact_org_session(target_org)
-            await update.message.reply_text(result)
+            await update.message.reply_text(format_for_telegram(result), parse_mode="HTML")
             return
 
         # /reset-session [org_id]
