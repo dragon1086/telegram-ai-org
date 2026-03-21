@@ -84,3 +84,24 @@ else
   echo $! > "$MONITOR_PID_FILE"
   echo "▶ agent_monitor 시작 (PID: $!)"
 fi
+
+# bot_watchdog 데몬 시작 (봇 프로세스 crash 감지 + 자동 재시작 + Telegram 알림)
+WATCHDOG_PID_FILE="/tmp/bot-watchdog.pid"
+_watchdog_running=false
+if [ -f "$WATCHDOG_PID_FILE" ]; then
+  _wpid="$(cat "$WATCHDOG_PID_FILE" 2>/dev/null)"
+  if [ -n "$_wpid" ] && ps -p "$_wpid" > /dev/null 2>&1 \
+     && ps -p "$_wpid" -o args= 2>/dev/null | grep -q "bot_watchdog"; then
+    _watchdog_running=true
+  fi
+fi
+
+if [ "$_watchdog_running" = true ]; then
+  echo "✅ bot_watchdog 이미 실행 중 (PID: $_wpid)"
+else
+  [ -f "$WATCHDOG_PID_FILE" ] && rm -f "$WATCHDOG_PID_FILE"
+  nohup "$PYTHON_BIN" "$SCRIPT_DIR/bot_watchdog.py" \
+    >> "$HOME/.ai-org/bot-watchdog.log" 2>&1 &
+  echo $! > "$WATCHDOG_PID_FILE"
+  echo "▶ bot_watchdog 시작 (PID: $!)"
+fi
