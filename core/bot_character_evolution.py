@@ -60,6 +60,40 @@ class BotCharacterEvolution:
         all_stats = self.persona_memory.get_all_stats()
         return [self.evolve(s.agent_id) for s in all_stats]
 
+    def evolve_to_prompt_fragment(self, agent_id: str) -> str:
+        """evolve() 결과를 system_prompt 주입용 텍스트로 변환.
+
+        pm_orchestrator가 subtask system_prompt 빌드 시 append하여
+        Claude Code subprocess에 봇 성격을 전달한다.
+
+        반환 예시:
+            [engineering 성장 데이터]
+            확인된 강점: coding, debugging
+            주의 필요 약점: api_failure (3회 이상 발생)
+            최고 시너지 파트너: design-bot
+        """
+        evolved = self.evolve(agent_id)
+        parts: list[str] = []
+
+        if not (evolved["strengths"] or evolved["weaknesses"] or evolved["best_partner"]):
+            return ""
+
+        parts.append(f"[{agent_id} 성장 데이터]")
+
+        if evolved["strengths"]:
+            parts.append(f"확인된 강점: {', '.join(evolved['strengths'])}")
+
+        if evolved["weaknesses"]:
+            parts.append(
+                f"주의 필요 약점: {', '.join(evolved['weaknesses'])} "
+                f"({FAILURE_MIN_COUNT}회 이상 발생)"
+            )
+
+        if evolved["best_partner"]:
+            parts.append(f"최고 시너지 파트너: {evolved['best_partner']}")
+
+        return "\n".join(parts)
+
     def get_evolution_summary(self, agent_id: str) -> str:
         """봇의 성장 요약 텍스트 (Telegram용).
 

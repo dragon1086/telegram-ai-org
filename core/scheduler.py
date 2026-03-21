@@ -91,6 +91,31 @@ class OrgScheduler:
             misfire_grace_time=300,
             replace_existing=True,
         )
+        # ── 자가개선 잡 ──────────────────────────────────────────────────────
+        self.scheduler.add_job(
+            self._code_health_daily,
+            CronTrigger(hour=1, minute=0, timezone=KST),
+            id="code_health_daily", misfire_grace_time=1800,
+            replace_existing=True,
+        )
+        self.scheduler.add_job(
+            self._improvement_bus_daily,
+            CronTrigger(hour=2, minute=0, timezone=KST),
+            id="improvement_bus_daily", misfire_grace_time=1800,
+            replace_existing=True,
+        )
+        self.scheduler.add_job(
+            self._skill_improve_weekly,
+            CronTrigger(day_of_week="sun", hour=22, minute=0, timezone=KST),
+            id="skill_improve_weekly", misfire_grace_time=3600,
+            replace_existing=True,
+        )
+        self.scheduler.add_job(
+            self._arch_advisor_monthly,
+            CronTrigger(day=1, hour=9, minute=0, timezone=KST),
+            id="arch_advisor_monthly", misfire_grace_time=7200,
+            replace_existing=True,
+        )
 
     # ── 잡 구현 ──────────────────────────────────────────────────────────────
 
@@ -376,6 +401,70 @@ class OrgScheduler:
                 logger.info("[OrgScheduler] 봇 성과 데이터 없음, 회고 스킵")
         except Exception as e:
             logger.error(f"[OrgScheduler] weekly_bot_business_retro 실패: {e}")
+
+    async def _code_health_daily(self) -> None:
+        """매일 01:00 KST — 코드 건강도 스캔 → improvement_bus 신호 발송."""
+        logger.info("[OrgScheduler] code_health_daily 시작")
+        try:
+            from core.code_health import CodeHealthMonitor
+            monitor = CodeHealthMonitor()
+            report = monitor.scan()
+            if report.critical_count > 0:
+                await self._safe_send(report.summary())
+        except Exception as e:
+            logger.error(f"[OrgScheduler] code_health_daily 실패: {e}")
+
+    async def _improvement_bus_daily(self) -> None:
+        """매일 02:00 KST — ImprovementBus 신호 수집 및 보고."""
+        logger.info("[OrgScheduler] improvement_bus_daily 시작")
+        try:
+            from core.improvement_bus import ImprovementBus
+            bus = ImprovementBus()
+            signals = bus.collect_signals()
+            report = bus.run(signals)
+            # 신호가 있을 때만 Telegram 보고 (우선순위 7 이상)
+            high_priority = [s for s in report.signals if s.priority >= 7]
+            if high_priority:
+                await self._safe_send(bus.format_report(report))
+        except Exception as e:
+            logger.error(f"[OrgScheduler] improvement_bus_daily 실패: {e}")
+
+    async def _skill_improve_weekly(self) -> None:
+        """매주 일요일 22:00 KST — 스킬 eval 점수 측정 및 보고."""
+        logger.info("[OrgScheduler] skill_improve_weekly 시작")
+        try:
+            from core.eval_runner import EvalRunner
+            runner = EvalRunner()
+            results = runner.score_all_skills()
+            if results:
+                msg = runner.format_results(results)
+                await self._safe_send(msg)
+            else:
+                logger.info("[OrgScheduler] eval.json 있는 스킬 없음, 스킵")
+        except Exception as e:
+            logger.error(f"[OrgScheduler] skill_improve_weekly 실패: {e}")
+
+    async def _arch_advisor_monthly(self) -> None:
+        """매월 1일 09:00 KST — 아키텍처 건강 리포트 생성."""
+        logger.info("[OrgScheduler] arch_advisor_monthly 시작")
+        try:
+            import asyncio
+            import subprocess
+            import sys
+            from pathlib import Path
+            script = Path(__file__).parent.parent / "scripts" / "arch_advisor.py"
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    [sys.executable, str(script)],
+                    capture_output=True, text=True, timeout=60,
+                ),
+            )
+            if result.stdout:
+                await self._safe_send(result.stdout)
+        except Exception as e:
+            logger.error(f"[OrgScheduler] arch_advisor_monthly 실패: {e}")
 
     async def _safe_send(self, text: str) -> None:
         try:

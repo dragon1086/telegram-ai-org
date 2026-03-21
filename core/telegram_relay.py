@@ -1754,6 +1754,7 @@ class TelegramRelay:
                     except asyncio.TimeoutError as te:
                         elapsed = time.time() - _exec_start
                         logger.error(f"[{self.org_id}] 실행 타임아웃 ({te}, 경과 {elapsed:.0f}s) — 자동 복구")
+                        self.claim_manager.release_text_hash(text_hash)
                         try:
                             await progress_msg.edit_text(f"⏰ {te}\n다시 시도해주세요.")
                         except Exception:
@@ -1762,6 +1763,7 @@ class TelegramRelay:
                         return
                     except Exception as exec_err:
                         logger.exception(f"[{self.org_id}] 실행 중 에러 — 자동 복구: {exec_err}")
+                        self.claim_manager.release_text_hash(text_hash)
                         try:
                             await progress_msg.edit_text(f"❌ 실행 에러: {str(exec_err)[:200]}")
                         except Exception:
@@ -1948,6 +1950,7 @@ class TelegramRelay:
                 )
             except Exception as e:
                 logger.exception(f"[PM] 오케스트레이터 분해 실패: {e}")
+                self.claim_manager.release_text_hash(text_hash)
                 await self.display.send_reply(update.message, f"❌ 태스크 분해 실패: {e}")
             return
 
