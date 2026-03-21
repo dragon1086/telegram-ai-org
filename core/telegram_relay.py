@@ -909,26 +909,27 @@ class TelegramRelay:
         reply = ""
         used_codex = self.engine == "codex"
         try:
+            from tools.base_runner import RunContext
             if self.engine == "codex":
                 runner = self._make_codex_runner()
                 reply = await asyncio.wait_for(
-                    runner.run(
-                        f"{system_prompt}\n\n{prompt}",
+                    runner.run(RunContext(
+                        prompt=f"{system_prompt}\n\n{prompt}",
                         progress_callback=on_progress,
-                    ),
+                    )),
                     timeout=PM_CHAT_REPLY_TIMEOUT_SEC,
                 )
             else:
                 runner = self._make_claude_runner()
                 reply = await asyncio.wait_for(
-                    runner.run_single(
-                        prompt,
+                    runner.run_single(RunContext(
+                        prompt=prompt,
                         progress_callback=on_progress,
                         system_prompt=system_prompt,
                         org_id=self.org_id,
                         session_store=self.session_store,
                         global_context=self.global_context,
-                    ),
+                    )),
                     timeout=PM_CHAT_REPLY_TIMEOUT_SEC,
                 )
         except asyncio.TimeoutError:
@@ -941,14 +942,14 @@ class TelegramRelay:
         if used_codex and self._looks_like_failed_reply(reply):
             try:
                 fallback_runner = self._make_claude_runner()
-                reply = await fallback_runner.run_single(
-                    prompt,
+                reply = await fallback_runner.run_single(RunContext(
+                    prompt=prompt,
                     progress_callback=on_progress,
                     system_prompt=system_prompt,
                     org_id=self.org_id,
                     session_store=self.session_store,
                     global_context=self.global_context,
-                )
+                ))
                 used_codex = False
             except Exception as exc:
                 logger.warning(f"[{self.org_id}] PM chat fallback 실패: {exc}")
@@ -1097,15 +1098,13 @@ class TelegramRelay:
                     system_prompt = f"{system_prompt}\n\n{ctx_prompt}".strip()
             if system_prompt:
                 prompt = f"{system_prompt}\n\n{prompt}"
-            result = await runner.run(
-                prompt,
+            from tools.base_runner import RunContext
+            result = await runner.run(RunContext(
+                prompt=prompt,
                 workdir=workdir,
-                workdir_hint=task,
-                agents=agent_names,
                 progress_callback=progress_callback,
-                shell_session_manager=self.session_manager if backend == "tmux_batch" else None,
-                shell_team_id=self.org_id if backend == "tmux_batch" else None,
-            )
+                engine_config={"agents": agent_names},
+            ))
             self._apply_runner_metrics(runner)
             if self.global_context and result and not self._looks_like_failed_reply(result):
                 await self.global_context.extract_and_save(self.org_id, task, result)
@@ -1184,8 +1183,8 @@ class TelegramRelay:
             await self._maybe_emit_session_alert(self.org_id)
             return result
         persona = unique_agents[0] if unique_agents else None
-        result = await runner.run_single(
-            task,
+        result = await runner.run_single(RunContext(
+            prompt=task,
             persona=persona,
             progress_callback=progress_callback,
             session_store=session_store,
@@ -1193,9 +1192,7 @@ class TelegramRelay:
             global_context=self.global_context,
             system_prompt=system_prompt,
             workdir=workdir,
-            shell_session_manager=self.session_manager if backend == "tmux_batch" else None,
-            shell_team_id=self.org_id if backend == "tmux_batch" else None,
-        )
+        ))
         self._apply_runner_metrics(runner)
         await self._maybe_emit_session_alert(self.org_id)
         return result
