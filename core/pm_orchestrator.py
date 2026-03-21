@@ -2163,3 +2163,24 @@ class PMOrchestrator:
             logger.warning(f"[PM] improve_status 전송 실패: {e}")
 
         return summary
+
+    async def _handle_routing_approve(self, update, context) -> None:
+        """대기 중인 라우팅 제안을 nl_classifier에 적용."""
+        from core.routing_approval_store import RoutingApprovalStore
+        from core.nl_keyword_applier import NLKeywordApplier
+        store = RoutingApprovalStore()
+        proposal = store.load_pending()
+        if not proposal:
+            await update.message.reply_text("대기 중인 라우팅 제안 없음.")
+            return
+        applier = NLKeywordApplier()
+        result = applier.apply(proposal.get("keyword_additions", {}))
+        store.clear()
+        await update.message.reply_text(f"✅ 라우팅 키워드 적용 완료:\n{result}")
+
+    async def _handle_routing_reject(self, update, context) -> None:
+        """대기 중인 라우팅 제안을 거절하고 삭제."""
+        from core.routing_approval_store import RoutingApprovalStore
+        store = RoutingApprovalStore()
+        store.clear()
+        await update.message.reply_text("❌ 라우팅 제안 거절됨. 다음 분석 시까지 대기.")
