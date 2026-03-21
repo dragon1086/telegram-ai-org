@@ -5,6 +5,9 @@ import re
 
 _CONTINUATION = "…(이어짐)"  # 청크가 잘릴 때 말미에 붙는 연출 문자열
 
+# [TEAM:...], [COLLAB:...], [AGENT:...] 등 내부 메타데이터 태그 패턴
+_METADATA_TAG_RE = re.compile(r"\[[A-Z_]+:[^\]]*\]")
+
 
 def escape_html(text: str) -> str:
     """HTML 특수문자를 텔레그램 HTML parse_mode용으로 이스케이프한다.
@@ -111,12 +114,19 @@ def markdown_to_html(text: str) -> str:
 
     text = re.sub(r"^\|.+\|[ \t]*$", _clean_table_row, text, flags=re.MULTILINE)
     # Bold+Italic: ***text*** 또는 ___text___ (반드시 ** / __ 보다 먼저 처리)
-    text = re.sub(r"\*\*\*(.+?)\*\*\*", r"<b><i>\1</i></b>", text, flags=re.DOTALL)
-    text = re.sub(r"___(.+?)___", r"<b><i>\1</i></b>", text, flags=re.DOTALL)
+    # re.DOTALL 제거: 미닫힌 *** 가 다음 *** 까지 greedy 매칭하는 버그 방지
+    text = re.sub(r"\*\*\*([^\n]+?)\*\*\*", r"<b><i>\1</i></b>", text)
+    text = re.sub(r"___([^\n]+?)___", r"<b><i>\1</i></b>", text)
     # Bold: **text** 또는 __text__
-    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text, flags=re.DOTALL)
-    text = re.sub(r"__(.+?)__", r"<b>\1</b>", text, flags=re.DOTALL)
-    # Italic: *text* (단, ** 처리 후라 * 하나만 남음)
+    # re.DOTALL 제거: 미닫힌 ** 가 다음 ** 까지 greedy 매칭하는 버그 방지 (단일 줄 내에서만)
+    text = re.sub(r"\*\*([^\n]+?)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"__([^\n]+?)__", r"<b>\1</b>", text)
+    # 순서 없는 목록: 줄 시작의 - / + / * 를 • 로 변환 (들여쓰기 지원, 코드블록은 이미 보호됨)
+    # * bullet은 Italic 처리 전에 먼저 변환해야 함 (lookahead로 ** bold와 구별)
+    # 단, --- 수평선은 이미 처리됐으므로 단독 줄 - 는 해당 없음
+    text = re.sub(r"^([ \t]*)\* (?!\*)", r"\1• ", text, flags=re.MULTILINE)
+    text = re.sub(r"^([ \t]*)[-+] ", r"\1• ", text, flags=re.MULTILINE)
+    # Italic: *text* (단, ** 처리 후라 * 하나만 남음, bullet * 도 이미 처리됨)
     text = re.sub(r"\*([^*\n]+?)\*", r"<i>\1</i>", text)
     # Italic: _text_ — 단어 경계로 제한하여 snake_case 오인식 방지
     # (?<!\w) : 앞이 단어 문자가 아님 (공백/구두점/줄 시작)
@@ -126,9 +136,6 @@ def markdown_to_html(text: str) -> str:
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
     # 취소선: ~~text~~
     text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
-    # 순서 없는 목록: 줄 시작의 - / + 를 • 로 변환 (들여쓰기 지원, 코드블록은 이미 보호됨)
-    # 단, --- 수평선은 이미 처리됐으므로 단독 줄 - 는 해당 없음
-    text = re.sub(r"^([ \t]*)[-+] ", r"\1• ", text, flags=re.MULTILINE)
 
     # 5. 플레이스홀더 복원
     for i, block in enumerate(fenced_blocks):
@@ -140,6 +147,19 @@ def markdown_to_html(text: str) -> str:
     text = _convert_blockquotes(text)
 
     return text
+
+
+def format_for_telegram(text: str) -> str:
+    """LLM 출력을 텔레그램 HTML parse_mode용으로 최종 변환한다.
+
+    markdown_to_html()과의 차이점:
+    - 내부 메타데이터 태그([TEAM:...], [COLLAB:...] 등)를 먼저 제거한다.
+    - LLM 응답을 사용자에게 직접 전달하는 모든 경로에서 이 함수를 사용해야 한다.
+    """
+    if not text:
+        return text
+    text = _METADATA_TAG_RE.sub("", text).strip()
+    return markdown_to_html(text)
 
 
 def split_message(text: str, max_len: int) -> list[str]:

@@ -114,7 +114,7 @@ async def _llm_insights(tasks: list[dict]) -> str | None:
         task_summary += f"- [completed] {desc[:100]}\n"
     for t in failed[:10]:
         desc = t.get("description") or t.get("task_id", "")
-        result = t.get("result", "")[:100]
+        result = (t.get("result") or "")[:100]
         task_summary += f"- [failed] {desc[:100]} | reason: {result}\n"
 
     if not task_summary:
