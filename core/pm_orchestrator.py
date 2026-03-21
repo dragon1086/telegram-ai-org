@@ -1011,11 +1011,20 @@ class PMOrchestrator:
             parent_metadata=parent_metadata,
         )
 
+        # 0. 태스크 ID 사전 생성 + 의존성 먼저 등록 (레이스 컨디션 방지)
+        # LLM 프롬프트 생성(~15–20s/태스크) 중 TaskPoller가 의존성 미등록 태스크를
+        # 조기 수신하는 경쟁 조건을 차단한다. deps 등록 → 태스크 생성 순서를 보장.
         task_ids: list[str] = []
+        for _ in subtasks:
+            task_ids.append(await self._next_task_id())
+        for i, st in enumerate(subtasks):
+            deps = [task_ids[int(d)] for d in st.depends_on if d.isdigit() and int(d) < len(task_ids)]
+            await self._graph.add_task(task_ids[i], depends_on=deps)
+        logger.debug(f"[PM] 의존성 사전 등록 완료: {len(task_ids)}개 태스크")
 
-        # 1. 서브태스크 생성 (구조화 프롬프트 적용)
-        for st in subtasks:
-            tid = await self._next_task_id()
+        # 1. 서브태스크 생성 (구조화 프롬프트 적용) — task_ids는 이미 확정
+        for i, st in enumerate(subtasks):
+            tid = task_ids[i]
             task_packet = self._build_subtask_packet(
                 parent_description,
                 st,
@@ -1063,12 +1072,8 @@ class PMOrchestrator:
                     **({"workdir": st.workdir} if st.workdir else {}),
                 },
             )
-            task_ids.append(tid)
 
-        # 2. 의존성 등록
-        for i, st in enumerate(subtasks):
-            deps = [task_ids[int(d)] for d in st.depends_on if d.isdigit() and int(d) < len(task_ids)]
-            await self._graph.add_task(task_ids[i], depends_on=deps)
+        # 2. 의존성 등록 — Step 0에서 이미 완료 (skip)
 
         # 3. 첫 번째 웨이브 (의존성 없는 태스크) 발송
         ready = await self._graph.get_ready_tasks(parent_task_id)
