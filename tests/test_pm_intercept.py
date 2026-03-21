@@ -244,6 +244,12 @@ class TestDeptBotIgnoreUserTraffic:
             update.message.text = "일반 사용자 메시지"
             update.message.from_user.is_bot = False
             update.message.date = None
+            # effective_message는 PTB 런타임에서 message와 동일하지만,
+            # MagicMock에서는 별도 속성이므로 명시적으로 일치시킴
+            update.effective_message.text = "일반 사용자 메시지"
+            update.effective_message.from_user.is_bot = False
+            update.effective_message.date = None
+            update.effective_message.message_id = 1
 
             await relay.on_message(update, MagicMock())
 
