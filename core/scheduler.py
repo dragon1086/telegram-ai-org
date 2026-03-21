@@ -477,10 +477,20 @@ class OrgScheduler:
         logger.info("[OrgScheduler] routing_optimizer_daily 시작")
         try:
             from core.routing_optimizer import RoutingOptimizer
+            from core.routing_approval_store import RoutingApprovalStore
             opt = RoutingOptimizer()
             proposal = opt.generate_proposal()
             if proposal:
-                await self._safe_send(opt.format_for_telegram(proposal))
+                store = RoutingApprovalStore()
+                store.save({
+                    "keyword_additions": proposal.keyword_additions,
+                    "rationale": proposal.rationale,
+                    "current_accuracy": proposal.current_accuracy,
+                    "estimated_gain": proposal.estimated_gain,
+                })
+                msg = opt.format_for_telegram(proposal)
+                msg += "\n\n*승인:* `/routing_approve`  *거절:* `/routing_reject`"
+                await self._safe_send(msg)
         except Exception as e:
             logger.error(f"[OrgScheduler] routing_optimizer_daily 실패: {e}")
 
