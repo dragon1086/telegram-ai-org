@@ -22,15 +22,15 @@ from pathlib import Path
 
 
 def main() -> None:
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 2:
         print(
-            "Usage: save-log.py '<json string>' <output_path>",
+            "Usage: save-log.py '<json string>' [output_path]",
             file=sys.stderr,
         )
         sys.exit(1)
 
     raw = sys.argv[1]
-    output_path = Path(sys.argv[2])
+    output_path = Path(sys.argv[2]) if len(sys.argv) >= 3 else Path("skills/weekly-review/data/weekly-log.jsonl")
 
     # Parse input JSON — fail fast if malformed
     try:

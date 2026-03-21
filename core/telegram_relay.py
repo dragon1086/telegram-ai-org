@@ -2975,7 +2975,6 @@ class TelegramRelay:
         """pending_confirmation 실행."""
         action = conf.get("action")
         task_ids = conf.get("task_ids", [])
-        description = conf.get("description", "")
 
         if action == "retry_tasks" and task_ids:
             reset_count = 0
@@ -3397,19 +3396,6 @@ class TelegramRelay:
             await self.context_db.update_pm_task_status(task_id, "done", result=full_result)
             logger.info(f"[{self.org_id}] PM_TASK {task_id} 완료")
 
-            # Post-task debrief: 성공 교훈 자동 기록
-            try:
-                from core.lesson_memory import LessonMemory
-                _lm_post = LessonMemory()
-                await _lm_post.arecord_success(
-                    task_description=description[:200],
-                    category="approach",
-                    what_went_well=f"태스크 {task_id} 정상 완료",
-                    reuse_tip=full_result[:300],
-                    worker=self.org_id,
-                )
-            except Exception as _de:
-                logger.debug(f"[{self.org_id}] 성공 교훈 기록 실패 (무시): {_de}")
 
             # 결과를 채팅방에 공유
             # pm_bot은 "✅ [X] 태스크 T-xxx 완료" 패턴을 파싱해서 on_task_complete 트리거
