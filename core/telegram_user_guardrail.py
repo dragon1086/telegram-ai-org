@@ -91,12 +91,15 @@ async def ensure_user_friendly_output(
 
 
 EXIT_CODE_RE = re.compile(r"__EXIT_CODE__:\d+\s*", re.MULTILINE)
+# PM 메타 태그: [TEAM:...], [COLLAB:...] 등 봇 내부 제어 태그 — 사용자에게 노출 금지
+_META_TAG_RE = re.compile(r"\[(?:TEAM|COLLAB|SOLO|ARTIFACT)[^\]]*\]")
 
 
 def _heuristic_cleanup(text: str, artifact_names: list[str]) -> str:
     cleaned = ARTIFACT_MARKER_RE.sub("", text or "").strip()
     cleaned = EXIT_CODE_RE.sub("", cleaned).strip()
     cleaned = LOCAL_PATH_RE.sub("", cleaned).strip()
+    cleaned = _META_TAG_RE.sub("", cleaned).strip()
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     if artifact_names:
