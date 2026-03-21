@@ -162,23 +162,9 @@ class PMOrchestrator:
         result = await self._llm_unified_classify(user_message, dept_hints, workdir=workdir)
         return self._normalize_request_plan(result)
 
-    _BASE_DEPT_KEYWORDS: dict[str, list[str]] = {
-        "aiorg_product_bot": ["기획", "스펙", "요구사항", "prd", "plan"],
-        "aiorg_research_bot": ["리서치", "research", "시장조사", "레퍼런스", "reference", "경쟁사", "벤치마크", "문서요약", "자료조사"],
-        "aiorg_engineering_bot": ["개발", "구현", "코딩", "코드", "api", "build", "fix", "버그", "파이썬", "python", "예제", "스크립트", "함수", "메서드", "알고리즘", "컴프리헨션", "프로그래밍", "클래스", "모듈", "리스트", "딕셔너리"],
-        "aiorg_design_bot": ["디자인", "ui", "ux", "화면", "레이아웃", "design"],
-        "aiorg_growth_bot": ["성장", "마케팅", "분석", "지표", "growth", "marketing"],
-        "aiorg_ops_bot": ["운영", "배포", "인프라", "모니터링", "deploy", "ops"],
-    }
-
-    _BASE_DEPT_ORDER = [
-        "aiorg_product_bot",
-        "aiorg_research_bot",
-        "aiorg_design_bot",
-        "aiorg_engineering_bot",
-        "aiorg_growth_bot",
-        "aiorg_ops_bot",
-    ]
+    # autoresearch 타겟: core/routing_keywords.py 에서 관리
+    from core.routing_keywords import BASE_DEPT_KEYWORDS as _BASE_DEPT_KEYWORDS  # noqa: E402
+    from core.routing_keywords import BASE_DEPT_ORDER as _BASE_DEPT_ORDER  # noqa: E402
 
     def _dept_profiles(self) -> dict[str, dict[str, Any]]:
         try:
