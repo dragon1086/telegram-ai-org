@@ -970,7 +970,7 @@ class TelegramRelay:
 
         await self.memory_manager.add_log(f"PM 응답: {reply[:200]}")
 
-        chunks = split_message(reply.strip() or "알겠습니다.", 4000)
+        chunks = split_message(reply.strip() or "알겠습니다.", 3800)  # HTML 태그 팽창 여유 (~4096 한도)
         first = chunks[0]
         try:
             await progress_msg.edit_text(markdown_to_html(first), parse_mode="HTML")
@@ -1745,7 +1745,7 @@ class TelegramRelay:
                             original_request=request_text,
                             decision_client=self._pm_decision_client,
                         )
-                        for chunk in split_message(response, 4000):
+                        for chunk in split_message(response, 3800):  # HTML 태그 팽창 여유 (~4096 한도)
                             await self.display.send_reply(update.message, chunk)
                         await self._auto_upload("\n".join(upload_candidates), self.token, update.effective_chat.id)
                     self._append_runbook(
@@ -1986,7 +1986,7 @@ class TelegramRelay:
                 original_request=text,
                 decision_client=self._pm_decision_client if self._is_pm_org else None,
             )
-            for chunk in split_message(response, 4000):
+            for chunk in split_message(response, 3800):  # HTML 태그 팽창 여유 (~4096 한도)
                 await self.display.send_reply(update.message, chunk)
             await self._auto_upload("\n".join(upload_candidates), self.token, update.effective_chat.id)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
@@ -2237,7 +2237,7 @@ class TelegramRelay:
                 original_request=task,
                 decision_client=self._pm_decision_client if self._is_pm_org else None,
             )
-            for chunk in split_message(response, 4000):
+            for chunk in split_message(response, 3800):  # HTML 태그 팽창 여유 (~4096 한도)
                 await msg.reply_text(markdown_to_html(chunk), parse_mode="HTML")
             await self._auto_upload("\n".join(upload_candidates), self.token, self.allowed_chat_id)
             await self.memory_manager.add_log(f"claude 응답: {response[:200]}")
@@ -2673,11 +2673,11 @@ class TelegramRelay:
             bot_name = me.username or "봇이름"
             d = self.identity._data
             msg = (
-                f"🔧 *{self.org_id} 봇 현재 설정*\n\n"
+                f"🔧 **{self.org_id} 봇 현재 설정**\n\n"
                 f"역할: {d.get('role', '미설정')}\n"
                 f"전문분야: {', '.join(d.get('specialties', [])) or '미설정'}\n"
                 f"방향성: {d.get('direction', '미설정')}\n\n"
-                f"*설정 변경 명령어*\n"
+                f"**설정 변경 명령어**\n"
                 f"`/org@{bot_name} 역할|전문분야1,분야2|방향성`\n"
                 f"`/org add@{bot_name} <이름> [engine]`\n\n"
                 f"💡 그룹방에서는 `/명령어@{bot_name}` 형식으로 사용하세요."
@@ -3517,7 +3517,7 @@ class TelegramRelay:
         done_text = f"{requester_mention} {make_collab_done(self.org_id, summary)}".strip()
         await update.message.reply_text(markdown_to_html(done_text), parse_mode="HTML")
         if response and len(response) > 300:
-            for chunk in split_message(response[300:], 4000):
+            for chunk in split_message(response[300:], 3800):  # HTML 태그 팽창 여유 (~4096 한도)
                 await update.message.reply_text(markdown_to_html(chunk), parse_mode="HTML")
         self._append_runbook(
             run_id,
