@@ -73,7 +73,12 @@ def test_fenced_code_block_with_lang() -> None:
 
 def test_header_h1() -> None:
     result = markdown_to_html("# 제목")
-    assert result == "<b>제목</b>"
+    assert result == "<b>제목</b>\n──────────"
+
+
+def test_header_h2() -> None:
+    result = markdown_to_html("## 제목")
+    assert result == "<b>▸ 제목</b>"
 
 
 def test_header_h3() -> None:
@@ -94,7 +99,7 @@ def test_html_special_chars_in_plain_text() -> None:
 def test_mixed_formatting() -> None:
     text = "## 제목\n\n**볼드** 텍스트와 *이탤릭*\n\n`코드` 예시"
     result = markdown_to_html(text)
-    assert "<b>제목</b>" in result
+    assert "<b>▸ 제목</b>" in result
     assert "<b>볼드</b>" in result
     assert "<i>이탤릭</i>" in result
     assert "<code>코드</code>" in result
@@ -144,12 +149,25 @@ def test_horizontal_rule_asterisks() -> None:
 
 
 def test_table_separator_stripped() -> None:
-    """|---|---| 테이블 구분자 행 제거"""
+    """|---|---| 테이블 구분자 행 제거, 콘텐츠 행 앞뒤 파이프 제거"""
     text = "| 이름 | 값 |\n|------|------|\n| A | 1 |"
     result = markdown_to_html(text)
     assert "|------|" not in result
-    assert "| 이름 | 값 |" in result
-    assert "| A | 1 |" in result
+    # 앞뒤 파이프 제거 후 │ 구분자 사용
+    assert "이름  │  값" in result
+    assert "A  │  1" in result
+    # 원본 파이프 문법은 사라짐
+    assert "| 이름 | 값 |" not in result
+    assert "| A | 1 |" not in result
+
+
+def test_table_pipes_stripped() -> None:
+    """테이블 행의 앞뒤 파이프를 제거하고 셀 구분을 │ 로 변환한다"""
+    text = "| 단계 | 담당 | 상태 |\n|------|------|------|\n| 분석 | analyst | ✅ |"
+    result = markdown_to_html(text)
+    assert "단계  │  담당  │  상태" in result
+    assert "분석  │  analyst  │  ✅" in result
+    assert "| 단계" not in result
 
 
 def test_strikethrough() -> None:
@@ -162,7 +180,7 @@ def test_mixed_bold_italic_in_paragraph() -> None:
     """실제 LLM 출력 패턴: 헤더 + 볼드이탤릭 + 수평선 혼합"""
     text = "## 결론\n\n***핵심 변경점***: 이스케이프 처리\n\n---\n\n일반 텍스트"
     result = markdown_to_html(text)
-    assert "<b>결론</b>" in result
+    assert "<b>▸ 결론</b>" in result
     assert "<b><i>핵심 변경점</i></b>" in result
     assert "──────────" in result
     assert "일반 텍스트" in result
@@ -268,7 +286,7 @@ def test_list_mixed_with_bold_and_code() -> None:
         "- 단위 테스트 통과"
     )
     result = markdown_to_html(text)
-    assert "<b>핵심 변경점</b>" in result
+    assert "<b>▸ 핵심 변경점</b>" in result
     assert "• <b>파일 A</b>:" in result
     assert "<code>escape_html()</code>" in result
     assert "• <b>파일 B</b>:" in result
@@ -316,4 +334,25 @@ def test_pm_response_horizontal_rule_in_section() -> None:
     result = markdown_to_html(text)
     assert "──────────" in result
     assert "---" not in result
-    assert "<b>결론</b>" in result
+    assert "<b>▸ 결론</b>" in result
+
+
+def test_ordered_list_unchanged() -> None:
+    """순서 있는 목록(1. 2. 3.)은 Telegram에서 그대로 읽히므로 변환하지 않는다."""
+    text = "1. 첫 번째 단계\n2. 두 번째 단계\n3. 세 번째 단계"
+    result = markdown_to_html(text)
+    assert "1. 첫 번째 단계" in result
+    assert "2. 두 번째 단계" in result
+    assert "3. 세 번째 단계" in result
+
+
+def test_header_hierarchy_visual_distinction() -> None:
+    """H1/H2/H3이 서로 시각적으로 다르게 렌더링되어야 한다."""
+    text = "# 대제목\n\n## 중제목\n\n### 소제목"
+    result = markdown_to_html(text)
+    # H1: bold + 구분선
+    assert "<b>대제목</b>\n──────────" in result
+    # H2: 화살표 prefix
+    assert "<b>▸ 중제목</b>" in result
+    # H3: 단순 bold
+    assert "<b>소제목</b>" in result
