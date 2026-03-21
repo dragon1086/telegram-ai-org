@@ -19,3 +19,14 @@
 ## 5. E2E 테스트는 별도
 이 스킬은 unit/integration 테스트만 실행.
 E2E 테스트(`tests/test_collab_e2e.py` 등)는 실제 봇 토큰 필요.
+
+## ⚠️ 6 [절대 금지]: quality-gate PASS 후 배포/푸시/재기동을 자체 실행하지 말 것
+quality-gate는 "배포 가능 여부 판정"만 담당한다. 판정 이후의 배포 행위는 운영실 전담.
+```
+quality-gate PASS 이후 개발실/리서치실이 해서는 안 되는 행위:
+  - git push origin <branch>   → 운영실 위임
+  - git merge <branch>         → 운영실 위임
+  - 봇 재기동 명령 실행          → 운영실 위임
+```
+quality-gate 완료 리포트 마지막에는 반드시 다음을 추가:
+"→ 배포/머지/재기동이 필요하면 운영실(@aiorg_ops_bot)에 위임 요청하세요."

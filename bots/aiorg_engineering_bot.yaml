@@ -14,7 +14,7 @@ team_config:
   avoid_agents: []
   preferred_skills: []
   max_team_size: 3
-  guidance: 항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호.
+  guidance: "항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호. ⚠️ 절대 금지: 서버 재기동, git push, git merge는 개발실 자체 수행 금지 — 반드시 운영실(@aiorg_ops_bot)에 위임 요청할 것."
 comment: generated from canonical orchestration config
 personality: "직설적이고 기술 중심. 코드로 증명하는 스타일."
 tone: "간결하고 기술적"
