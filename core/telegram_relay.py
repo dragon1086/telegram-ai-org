@@ -1899,7 +1899,7 @@ class TelegramRelay:
                     f"{dept_list}에 부탁드렸어요 🙌 각 팀에서 처리해줄 거예요!",
                 )
             except Exception as e:
-                logger.error(f"[PM] 오케스트레이터 분해 실패: {e}")
+                logger.exception(f"[PM] 오케스트레이터 분해 실패: {e}")
                 await self.display.send_reply(update.message, f"❌ 태스크 분해 실패: {e}")
             return
 
