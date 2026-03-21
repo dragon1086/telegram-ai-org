@@ -8,16 +8,13 @@ feature flag: USE_DISPLAY_LIMITER 환경변수 (기본: true)
 from __future__ import annotations
 
 import asyncio
-import re
 import time
 from dataclasses import dataclass
 from enum import Enum
 
 from loguru import logger
 
-from core.telegram_formatting import markdown_to_html
-
-_METADATA_TAG_RE = re.compile(r'\[[A-Z_]+:[^\]]*\]')
+from core.telegram_formatting import format_for_telegram, markdown_to_html
 
 
 class MessagePriority(Enum):
@@ -57,7 +54,7 @@ class DisplayLimiter:
         for key, pending in list(self._pending.items()):
             try:
                 await pending.progress_msg.edit_text(
-                    markdown_to_html(pending.text), parse_mode="HTML"
+                    format_for_telegram(pending.text), parse_mode="HTML"
                 )
             except Exception as e:
                 logger.warning(f"stop flush 실패 [{key}]: {e}")
@@ -70,8 +67,7 @@ class DisplayLimiter:
         priority: MessagePriority = MessagePriority.IMMEDIATE,
         reply_to_message_id: int | None = None,
     ) -> object:
-        text = _METADATA_TAG_RE.sub('', text).strip()
-        html_text = markdown_to_html(text)
+        html_text = format_for_telegram(text)
         kwargs: dict = {"parse_mode": "HTML"}
         if reply_to_message_id is not None:
             kwargs["reply_to_message_id"] = reply_to_message_id
@@ -86,7 +82,7 @@ class DisplayLimiter:
     async def edit_progress(self, progress_msg: object, text: str,
                             agent_id: str | None = None) -> None:
         if not self._enabled or agent_id is None:
-            await progress_msg.edit_text(markdown_to_html(text), parse_mode="HTML")
+            await progress_msg.edit_text(format_for_telegram(text), parse_mode="HTML")
             return
         self._pending[agent_id] = PendingEdit(progress_msg, text, time.time())
 
@@ -97,8 +93,7 @@ class DisplayLimiter:
         text: str,
         reply_to_message_id: int | None = None,
     ) -> object:
-        text = _METADATA_TAG_RE.sub('', text).strip()
-        html_text = markdown_to_html(text)
+        html_text = format_for_telegram(text)
         kwargs: dict = {"chat_id": chat_id, "text": html_text, "parse_mode": "HTML"}
         if reply_to_message_id is not None:
             kwargs["reply_to_message_id"] = reply_to_message_id
@@ -128,7 +123,7 @@ class DisplayLimiter:
             for key, pending in to_flush:
                 try:
                     await pending.progress_msg.edit_text(
-                        markdown_to_html(pending.text), parse_mode="HTML"
+                        format_for_telegram(pending.text), parse_mode="HTML"
                     )
                 except Exception as e:
                     logger.warning(f"flush 실패 [{key}]: {e}")

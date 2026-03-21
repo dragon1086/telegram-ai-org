@@ -5,6 +5,9 @@ import re
 
 _CONTINUATION = "…(이어짐)"  # 청크가 잘릴 때 말미에 붙는 연출 문자열
 
+# [TEAM:...], [COLLAB:...], [AGENT:...] 등 내부 메타데이터 태그 패턴
+_METADATA_TAG_RE = re.compile(r"\[[A-Z_]+:[^\]]*\]")
+
 
 def escape_html(text: str) -> str:
     """HTML 특수문자를 텔레그램 HTML parse_mode용으로 이스케이프한다.
@@ -140,6 +143,19 @@ def markdown_to_html(text: str) -> str:
     text = _convert_blockquotes(text)
 
     return text
+
+
+def format_for_telegram(text: str) -> str:
+    """LLM 출력을 텔레그램 HTML parse_mode용으로 최종 변환한다.
+
+    markdown_to_html()과의 차이점:
+    - 내부 메타데이터 태그([TEAM:...], [COLLAB:...] 등)를 먼저 제거한다.
+    - LLM 응답을 사용자에게 직접 전달하는 모든 경로에서 이 함수를 사용해야 한다.
+    """
+    if not text:
+        return text
+    text = _METADATA_TAG_RE.sub("", text).strip()
+    return markdown_to_html(text)
 
 
 def split_message(text: str, max_len: int) -> list[str]:
