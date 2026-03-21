@@ -436,17 +436,30 @@ class OrgScheduler:
             logger.error(f"[OrgScheduler] improvement_bus_daily 실패: {e}")
 
     async def _skill_improve_weekly(self) -> None:
-        """매주 일요일 22:00 KST — 스킬 eval 점수 측정 및 보고."""
+        """매주 일요일 22:00 KST — 스킬 eval 점수 측정 → 자동 개선 → 보고."""
         logger.info("[OrgScheduler] skill_improve_weekly 시작")
         try:
+            import asyncio as _asyncio
             from core.eval_runner import EvalRunner
+            from core.skill_auto_improver import SkillAutoImprover
             runner = EvalRunner()
             results = runner.score_all_skills()
-            if results:
-                msg = runner.format_results(results)
-                await self._safe_send(msg)
-            else:
+            if not results:
                 logger.info("[OrgScheduler] eval.json 있는 스킬 없음, 스킵")
+                return
+            msg = runner.format_results(results)
+            improver = SkillAutoImprover()
+            improved_lines: list[str] = []
+            loop = _asyncio.get_event_loop()
+            for r in results:
+                imp_result = await loop.run_in_executor(None, improver.improve, r.skill_name)
+                if imp_result and imp_result.improved:
+                    improved_lines.append(
+                        f"  • {r.skill_name}: {imp_result.original_score:.1f} → {imp_result.best_score:.1f}"
+                    )
+            if improved_lines:
+                msg += "\n\n*자동 개선 적용*\n" + "\n".join(improved_lines)
+            await self._safe_send(msg)
         except Exception as e:
             logger.error(f"[OrgScheduler] skill_improve_weekly 실패: {e}")
 
