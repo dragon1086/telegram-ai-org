@@ -1,6 +1,6 @@
 # Integration Test Report — 2026-03-17
 
-Generated: 2026-03-20 08:23:23
+Generated: 2026-03-20 18:34:31
 
 ## Executive Summary
 
@@ -10,27 +10,27 @@ Generated: 2026-03-20 08:23:23
 | Passed | 6 |
 | Failed | 0 |
 | Pass rate | 100% |
-| Avg response time | 34.3 ms |
+| Avg response time | 38.7 ms |
 
 ## Per-Scenario Results
 
 | # | Scenario | Status | Lane | Route | Dept Hints | Time (ms) | Notes |
 |---|----------|--------|------|-------|------------|-----------|-------|
-| 1 | coding_bug_request | PASS | single_org_execution | local_execution | aiorg_engineering_bot | 30 | OK |
+| 1 | coding_bug_request | PASS | single_org_execution | local_execution | aiorg_engineering_bot | 39 | OK |
 | 2 | greeting | PASS | single_org_execution | local_execution | — | 29 | OK |
 | 3 | research_request | PASS | single_org_execution | local_execution | aiorg_engineering_bot | 29 | OK |
 | 4 | planning_request | PASS | single_org_execution | delegate | aiorg_engineering_bot | 44 | OK |
-| 5 | multi_dept_request | PASS | multi_org_execution | delegate | aiorg_engineering_bot, aiorg_growth_bot | 44 | OK |
-| 6 | ambiguous_request | PASS | single_org_execution | local_execution | — | 29 | OK |
+| 5 | multi_dept_request | PASS | multi_org_execution | delegate | aiorg_engineering_bot, aiorg_growth_bot | 50 | OK |
+| 6 | ambiguous_request | PASS | single_org_execution | local_execution | — | 41 | OK |
 
 ## Performance Metrics
 
-- **coding_bug_request**: 29.6 ms
-- **greeting**: 29.1 ms
-- **research_request**: 29.3 ms
+- **coding_bug_request**: 38.7 ms
+- **greeting**: 29.2 ms
+- **research_request**: 29.4 ms
 - **planning_request**: 44.3 ms
-- **multi_dept_request**: 44.4 ms
-- **ambiguous_request**: 29.1 ms
+- **multi_dept_request**: 50.0 ms
+- **ambiguous_request**: 40.6 ms
 
 ## Routing Details
 

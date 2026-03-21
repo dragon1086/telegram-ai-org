@@ -56,7 +56,9 @@ class DisplayLimiter:
                 pass
         for key, pending in list(self._pending.items()):
             try:
-                await pending.progress_msg.edit_text(pending.text)
+                await pending.progress_msg.edit_text(
+                    markdown_to_html(pending.text), parse_mode="HTML"
+                )
             except Exception as e:
                 logger.warning(f"stop flush 실패 [{key}]: {e}")
         self._pending.clear()
@@ -84,7 +86,7 @@ class DisplayLimiter:
     async def edit_progress(self, progress_msg: object, text: str,
                             agent_id: str | None = None) -> None:
         if not self._enabled or agent_id is None:
-            await progress_msg.edit_text(text)
+            await progress_msg.edit_text(markdown_to_html(text), parse_mode="HTML")
             return
         self._pending[agent_id] = PendingEdit(progress_msg, text, time.time())
 
@@ -125,7 +127,9 @@ class DisplayLimiter:
             ]
             for key, pending in to_flush:
                 try:
-                    await pending.progress_msg.edit_text(pending.text)
+                    await pending.progress_msg.edit_text(
+                        markdown_to_html(pending.text), parse_mode="HTML"
+                    )
                 except Exception as e:
                     logger.warning(f"flush 실패 [{key}]: {e}")
                 del self._pending[key]
