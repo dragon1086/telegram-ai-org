@@ -2167,7 +2167,7 @@ class TelegramRelay:
         )
         self._append_runbook(run_id, "Planning brief", brief, phase_name="planning")
         await msg.reply_text(
-            brief
+            markdown_to_html(brief), parse_mode="HTML"
         )
         self._advance_runbook(run_id, "첨부파일 실행 plan 공유 완료")
         self._append_runbook(
@@ -3453,7 +3453,7 @@ class TelegramRelay:
         )
         self._append_runbook(run_id, "Planning brief", brief, phase_name="planning")
         await update.message.reply_text(
-            brief
+            markdown_to_html(brief), parse_mode="HTML"
         )
         self._advance_runbook(run_id, "협업 실행 plan 공유 완료")
         self._append_runbook(
@@ -3481,7 +3481,8 @@ class TelegramRelay:
             if time.time() - last_edit > progress_interval:
                 try:
                     await progress_msg.edit_text(
-                        "협업 진행 상황 공유할게요!\n\n" + "\n".join(history[-history_limit:])
+                        markdown_to_html("협업 진행 상황 공유할게요!\n\n" + "\n".join(history[-history_limit:])),
+                        parse_mode="HTML",
                     )
                     last_edit = time.time()
                 except Exception:
@@ -3514,10 +3515,10 @@ class TelegramRelay:
         )
         summary = response[:300]
         done_text = f"{requester_mention} {make_collab_done(self.org_id, summary)}".strip()
-        await update.message.reply_text(done_text)
+        await update.message.reply_text(markdown_to_html(done_text), parse_mode="HTML")
         if response and len(response) > 300:
             for chunk in split_message(response[300:], 4000):
-                await update.message.reply_text(chunk)
+                await update.message.reply_text(markdown_to_html(chunk), parse_mode="HTML")
         self._append_runbook(
             run_id,
             "Verification summary",

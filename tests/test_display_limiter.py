@@ -115,7 +115,7 @@ async def test_disabled_sends_immediately():
     limiter = DisplayLimiter(debounce_sec=5.0, enabled=False)
     progress_msg = FakeMessage()
     await limiter.edit_progress(progress_msg, "direct", agent_id="org1")
-    progress_msg.edit_text.assert_awaited_once_with("direct")
+    progress_msg.edit_text.assert_awaited_once_with("direct", parse_mode="HTML")
 
 
 @pytest.mark.asyncio
@@ -141,4 +141,4 @@ async def test_stop_flushes_pending():
     msg = FakeMessage()
     await limiter.edit_progress(msg, "pending msg", agent_id="org1")
     await limiter.stop()
-    msg.edit_text.assert_awaited_once_with("pending msg")
+    msg.edit_text.assert_awaited_once_with("pending msg", parse_mode="HTML")
