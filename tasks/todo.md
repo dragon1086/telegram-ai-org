@@ -1,6 +1,6 @@
 # Skill System Refactoring — Revised Plan (v2)
 > Date: 2026-03-21
-> Status: CONSENSUS REACHED (Architect + Critic ITERATE → Revised)
+> Status: COMPLETED ✅ (Commit: b33628a)
 
 ## RALPLAN-DR Summary
 
@@ -23,34 +23,49 @@
 
 ---
 
-## Task 1: bot-triage Runbook 스킬 신규 생성
+## Task 1: bot-triage Runbook 스킬 신규 생성 ✅
 > 카테고리: Runbook | 복잡도: MEDIUM
 
-- [ ] `skills/bot-triage/SKILL.md` — 봇 장애 진단/복구 절차
-- [ ] `skills/bot-triage/gotchas.md` — 초기 gotcha
-- [ ] `skills/bot-triage/scripts/diagnose.sh` — 자동 진단 스크립트
-- [ ] `skills/bot-triage/templates/incident-report.md` — 인시던트 보고서 템플릿
-- [ ] `.claude/skills/bot-triage` → symlink
+- [x] `skills/bot-triage/SKILL.md` — 봇 장애 진단/복구 절차
+- [x] `skills/bot-triage/gotchas.md` — 초기 gotcha (3개)
+- [x] `skills/bot-triage/scripts/diagnose.sh` — 자동 진단 스크립트 (6단계)
+- [x] `skills/bot-triage/templates/incident-report.md` — 인시던트 보고서 템플릿
+- [x] `.claude/skills/bot-triage` → symlink
 
-## Task 2: quality-gate에 PostToolUse:Write Hook 추가
+## Task 2: quality-gate에 PostToolUse:Write Hook 추가 ✅
 > 카테고리: Code Quality | 복잡도: LOW
 
-- [ ] `skills/quality-gate/SKILL.md` — frontmatter에 hooks 추가
-- [ ] `skills/quality-gate/scripts/lint-only.sh` — ruff-only 경량 스크립트
+- [x] `skills/quality-gate/SKILL.md` — frontmatter에 hooks 추가
+- [x] `skills/quality-gate/scripts/lint-only.sh` — ruff-only 경량 스크립트
 
-## Task 3: retro 스킬에 실행 로그 저장 추가
+## Task 3: retro 스킬에 실행 로그 저장 추가 ✅
 > 카테고리: Workflow Automation | 복잡도: LOW
 
-- [ ] `skills/_shared/save-log.py` — 공유 JSONL append 유틸
-- [ ] `skills/retro/SKILL.md` — Step 5 로그 저장 단계 추가
-- [ ] `skills/weekly-review/SKILL.md` — save-log.py 경로 업데이트
+- [x] `skills/_shared/save-log.py` — 공유 JSONL append 유틸
+- [x] `skills/retro/SKILL.md` — Step 5 로그 저장 단계 추가
+- [x] `skills/weekly-review/SKILL.md` — save-log.py 경로 업데이트
 
-## Task 4: harness-audit에 --scope 파라미터 추가
+## Task 4: harness-audit에 --scope 파라미터 추가 ✅
 > 카테고리: Infrastructure Ops + Code Quality | 복잡도: LOW
 
-- [ ] `skills/harness-audit/SKILL.md` — $ARGUMENTS 기반 scope 분기
+- [x] `skills/harness-audit/SKILL.md` — $ARGUMENTS 기반 scope 분기
 
-## 부수 작업
-- [ ] `skills/README.md` — bot-triage 추가
-- [ ] `error-gotcha/gotchas.md` — 초기 gotcha 파일 생성
-- [ ] `create-skill/gotchas.md` — 초기 gotcha 파일 생성
+## 부수 작업 ✅
+- [x] `skills/README.md` — bot-triage 추가 + 런북 우선순위 티어
+- [x] `error-gotcha/gotchas.md` — 초기 gotcha 파일 생성
+- [x] `create-skill/gotchas.md` — 초기 gotcha 파일 생성
+
+## Task 5: 스킬 동적 주입 — 봇 시스템 프롬프트에 스킬 인덱스 자동 포함 ✅
+> 카테고리: Skill Injection | 복잡도: MEDIUM
+
+- [x] `organizations.yaml` — 최상위 `common_skills` 추가 (quality-gate, error-gotcha, bot-triage)
+- [x] `core/skill_loader.py` — `get_preferred_skills()` common + per-bot 병합, 중복 제거
+- [x] `core/skill_loader.py` — `get_common_skills()` 신규, `invalidate_cache()` 확장
+- [x] `core/setup_registration.py` — 7개 team_profiles에 역할별 기본 preferred_skills 설정
+
+## 검증 결과
+- Verifier: PASS (모든 acceptance criteria 충족)
+- 스크립트 문법 검증: diagnose.sh ✅, lint-only.sh ✅
+- save-log.py 실행 테스트: ✅
+- 스킬 수: 16 → 17개, symlink 17개 정상
+- Task 5 검증: common_skills 병합 ✅, 중복 제거 ✅, 미등록 봇 fallback ✅
