@@ -1,6 +1,6 @@
 # Integration Test Report — 2026-03-17
 
-Generated: 2026-03-21 23:21:27
+Generated: 2026-03-21 10:14:24
 
 ## Executive Summary
 
@@ -10,13 +10,13 @@ Generated: 2026-03-21 23:21:27
 | Passed | 6 |
 | Failed | 0 |
 | Pass rate | 100% |
-| Avg response time | 36.5 ms |
+| Avg response time | 37.1 ms |
 
 ## Per-Scenario Results
 
 | # | Scenario | Status | Lane | Route | Dept Hints | Time (ms) | Notes |
 |---|----------|--------|------|-------|------------|-----------|-------|
-| 1 | coding_bug_request | PASS | single_org_execution | local_execution | aiorg_engineering_bot | 32 | OK |
+| 1 | coding_bug_request | PASS | single_org_execution | local_execution | aiorg_engineering_bot | 35 | OK |
 | 2 | greeting | PASS | single_org_execution | local_execution | — | 31 | OK |
 | 3 | research_request | PASS | single_org_execution | local_execution | aiorg_engineering_bot | 31 | OK |
 | 4 | planning_request | PASS | single_org_execution | delegate | aiorg_engineering_bot | 47 | OK |
@@ -25,12 +25,12 @@ Generated: 2026-03-21 23:21:27
 
 ## Performance Metrics
 
-- **coding_bug_request**: 31.9 ms
-- **greeting**: 30.9 ms
-- **research_request**: 31.5 ms
-- **planning_request**: 47.0 ms
+- **coding_bug_request**: 35.1 ms
+- **greeting**: 31.2 ms
+- **research_request**: 31.4 ms
+- **planning_request**: 46.9 ms
 - **multi_dept_request**: 46.9 ms
-- **ambiguous_request**: 30.9 ms
+- **ambiguous_request**: 31.1 ms
 
 ## Routing Details
 
