@@ -303,22 +303,18 @@ class TelegramRelay:
 
     def _make_runner(self):
         """engine 설정에 따라 적합한 runner를 반환한다."""
-        if self.engine == "codex":
-            from tools.codex_runner import CodexRunner
-            return _CodexRunnerAdapter(CodexRunner())
-        # claude-code (기본) 또는 auto
-        from tools.claude_code_runner import ClaudeCodeRunner
-        return ClaudeCodeRunner()
+        from tools.base_runner import RunnerFactory, RunContext  # noqa: F401
+        return RunnerFactory.create(self.engine)
 
     @staticmethod
     def _make_claude_runner():
-        from tools.claude_code_runner import ClaudeCodeRunner
-        return ClaudeCodeRunner()
+        from tools.base_runner import RunnerFactory
+        return RunnerFactory.create("claude-code")
 
     @staticmethod
     def _make_codex_runner():
-        from tools.codex_runner import CodexRunner
-        return CodexRunner()
+        from tools.base_runner import RunnerFactory
+        return RunnerFactory.create("codex")
 
     async def _build_pm_db_context(self) -> str:
         """진행 중인 PM 태스크를 짧은 컨텍스트 문자열로 만든다."""
@@ -1150,32 +1146,40 @@ class TelegramRelay:
         unique_counts = [counts[name] for name in unique_agents]
 
         if team_config.execution_mode.value == "structured_team" and len(unique_agents) >= 2:
-            result = await runner.run_structured_team(
-                task,
-                unique_agents,
-                counts=unique_counts,
-                progress_callback=progress_callback,
-                session_store=session_store,
-                org_id=self.org_id,
-                global_context=self.global_context,
-                system_prompt=system_prompt,
-                workdir=workdir,
-                shell_session_manager=self.session_manager if backend == "tmux_batch" else None,
-                shell_team_id=self.org_id if backend == "tmux_batch" else None,
-            )
+            if "team" in runner.capabilities():
+                result = await runner.run_structured_team(
+                    task,
+                    unique_agents,
+                    counts=unique_counts,
+                    progress_callback=progress_callback,
+                    session_store=session_store,
+                    org_id=self.org_id,
+                    global_context=self.global_context,
+                    system_prompt=system_prompt,
+                    workdir=workdir,
+                    shell_session_manager=self.session_manager if backend == "tmux_batch" else None,
+                    shell_team_id=self.org_id if backend == "tmux_batch" else None,
+                )
+            else:
+                from tools.base_runner import RunContext
+                result = await runner.run(RunContext(prompt=f"{system_prompt}\n\n{task}".strip() if system_prompt else task, workdir=workdir))
             self._apply_runner_metrics(runner)
             await self._maybe_emit_session_alert(self.org_id)
             return result
         if team_config.execution_mode.value == "agent_teams" and len(unique_agents) >= 2:
-            result = await runner.run_agent_teams(
-                task,
-                unique_agents,
-                progress_callback=progress_callback,
-                system_prompt=system_prompt,
-                workdir=workdir,
-                shell_session_manager=self.session_manager if backend == "tmux_batch" else None,
-                shell_team_id=self.org_id if backend == "tmux_batch" else None,
-            )
+            if "team" in runner.capabilities():
+                result = await runner.run_agent_teams(
+                    task,
+                    unique_agents,
+                    progress_callback=progress_callback,
+                    system_prompt=system_prompt,
+                    workdir=workdir,
+                    shell_session_manager=self.session_manager if backend == "tmux_batch" else None,
+                    shell_team_id=self.org_id if backend == "tmux_batch" else None,
+                )
+            else:
+                from tools.base_runner import RunContext
+                result = await runner.run(RunContext(prompt=f"{system_prompt}\n\n{task}".strip() if system_prompt else task, workdir=workdir))
             self._apply_runner_metrics(runner)
             await self._maybe_emit_session_alert(self.org_id)
             return result
@@ -4364,24 +4368,3 @@ def _launch_bot_subprocess(token: str, org_id: str, chat_id: int) -> int:
     return proc.pid
 
 
-class _CodexRunnerAdapter:
-    """CodexRunner를 ClaudeCodeRunner와 동일한 run_task 인터페이스로 감싸는 어댑터."""
-
-    def __init__(self, codex_runner) -> None:
-        self._runner = codex_runner
-
-    async def run_task(
-        self,
-        task: str,
-        system_prompt: str = "",
-        progress_callback=None,
-        session_store=None,
-        global_context=None,
-        org_id: str = "global",
-        workdir: str | None = None,
-    ) -> str:
-        full_prompt = f"{system_prompt}\n\n{task}".strip() if system_prompt else task
-        result = await self._runner.run(full_prompt, workdir=workdir)
-        if progress_callback:
-            await progress_callback(result[:200])
-        return result

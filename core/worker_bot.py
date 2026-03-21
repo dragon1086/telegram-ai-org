@@ -43,27 +43,17 @@ class WorkerBot:
         if context:
             prompt = f"[배경 컨텍스트]\n{context.get('content', '')}\n\n[태스크]\n{content}"
 
-        if self.engine == "codex":
-            return await self._run_codex(prompt)
-        elif self.engine == "both":
-            # PM이 "both"로 지정 시 claude-code 우선 (fallback: codex)
-            result = await self._run_claude(prompt)
-            if result.startswith("❌"):
-                logger.info(f"{self.handle} Claude 실패, Codex로 폴백")
-                result = await self._run_codex(prompt)
-            return result
-        else:  # "claude-code" (기본값)
-            return await self._run_claude(prompt)
+        from tools.base_runner import RunnerFactory, RunContext, RunnerError
 
-    async def _run_claude(self, prompt: str) -> str:
-        from tools.claude_code_runner import ClaudeCodeRunner
-        runner = ClaudeCodeRunner()
-        return await runner.run(prompt)
-
-    async def _run_codex(self, prompt: str) -> str:
-        from tools.codex_runner import CodexRunner
-        runner = CodexRunner()
-        return await runner.run(prompt)
+        if self.engine == "both":
+            try:
+                return await RunnerFactory.create("claude-code").run(RunContext(prompt=prompt))
+            except RunnerError:
+                logger.info(f"{self.handle} Claude failed, falling back to codex")
+                return await RunnerFactory.create("codex").run(RunContext(prompt=prompt))
+        else:
+            runner = RunnerFactory.create(self.engine)
+            return await runner.run(RunContext(prompt=prompt))
 
     async def send_report(self, task_id: str, result: str) -> None:
         """PM Bot에게 결과 보고."""
