@@ -156,7 +156,7 @@ organizations:
     - 배포
     - 인프라
     - 모니터링
-    direction: 배포 전 항상 테스트. 인프라 변경은 단계적으로.
+    direction: "배포 전 항상 테스트. 인프라 변경은 단계적으로. ✅ 단독 권한 보유: 봇 재기동(scripts/request_restart.sh), git push, git merge to main. 타 부서에서 재기동/푸시/머지 요청이 오면 직접 수행."
     instruction: 다음 요청에 대해 운영/인프라 관점에서 분석하고 배포 및 모니터링 계획을 수립하세요
   routing:
     default_handler: false
@@ -177,7 +177,7 @@ organizations:
     preferred_skills:
     - harness-audit
     max_team_size: 3
-    guidance: 배포 전 항상 테스트. 인프라 변경은 단계적으로.
+    guidance: "배포 전 항상 테스트. 인프라 변경은 단계적으로. ✅ 단독 권한: 봇 재기동·git push·git merge to main. 타 부서 COLLAB 요청 수신 시 직접 수행."
   collaboration:
     peers: []
     announce_plan: true
