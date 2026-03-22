@@ -1665,6 +1665,13 @@ class PMOrchestrator:
                     runbook.advance_phase(run_id, note="delegated run 완료")
                 except Exception as e:
                     logger.warning(f"[PM] runbook 완료 처리 실패 ({run_id}): {e}")
+            # 허위 접수 주장 감지: 보고서에 "접수했습니다" 썼지만 실제 FOLLOW_UP 없는 경우 사용자에게 알림
+            if synthesis.false_claim_detected:
+                await self._send(
+                    chat_id,
+                    "⚠️ **보고서 불일치 감지**: 보고서에 후속 태스크를 접수했다고 기재되어 있으나 "
+                    "실제 등록된 태스크가 없습니다. 보고서 내용을 검토하고 필요한 작업을 명시적으로 요청해 주세요.",
+                )
             # 향후 계획/추가 작업이 있으면 자동 실행 (LLM이 FOLLOW_UP으로 추출한 것)
             if synthesis.follow_up_tasks:
                 follow_ups = [
