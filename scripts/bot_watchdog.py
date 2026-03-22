@@ -33,6 +33,15 @@ _BOT_RUNTIME = PROJECT_DIR / ".worktrees" / "bot-runtime"
 RUNTIME_DIR = _BOT_RUNTIME if (_BOT_RUNTIME / "main.py").exists() else PROJECT_DIR
 sys.path.insert(0, str(RUNTIME_DIR))
 
+# ── 환경변수 자동 로드 (nohup 독립 실행 시 env 미상속 대비) ─────────────────
+for _env_src in (Path.home() / ".ai-org" / "config.yaml", RUNTIME_DIR / ".env"):
+    if _env_src.exists():
+        for _line in _env_src.read_text().splitlines():
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-5s | bot_watchdog | %(message)s",
