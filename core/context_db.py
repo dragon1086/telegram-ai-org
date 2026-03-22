@@ -571,15 +571,24 @@ class ContextDB:
                     deps_ready = True
                     async with aiosqlite.connect(self.db_path) as dep_db:
                         dep_cursor = await dep_db.execute(
-                            """SELECT 1 FROM pm_task_dependencies d
+                            """SELECT d.depends_on, dep.status FROM pm_task_dependencies d
                                JOIN pm_tasks dep ON dep.id = d.depends_on
                                WHERE d.task_id = ? AND dep.status != 'done'
                                LIMIT 1""",
                             (task["id"],),
                         )
-                        deps_ready = await dep_cursor.fetchone() is None
+                        blocking_row = await dep_cursor.fetchone()
+                        deps_ready = blocking_row is None
                     if deps_ready:
                         result.append(task)
+                    else:
+                        # [ORDER-VIOLATION-GUARD] 순서 위반 방지 — deps 미완료 태스크 차단
+                        logger.warning(
+                            f"[ORDER-GUARD] 태스크 {task['id']} ({dept_id}) 차단: "
+                            f"의존 태스크 {blocking_row[0] if blocking_row else '?'} "
+                            f"상태={blocking_row[1] if blocking_row else '?'} (미완료). "
+                            "레이스 컨디션 차단 정상 동작."
+                        )
                     continue
                 if task["status"] != "running":
                     continue
