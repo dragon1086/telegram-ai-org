@@ -27,3 +27,40 @@ active_hours:
   start: 9
   end: 22
   timezone: "Asia/Seoul"
+phase_templates:
+  simple:
+    - name: 구현
+      instructions: 요청사항을 분석하고 코드를 구현하세요.
+      deliverables:
+        - 구현 코드
+  moderate:
+    - name: 기술 분석
+      instructions: 기술적 접근 방법을 분석하고 구현 계획을 수립하세요.
+      deliverables:
+        - 기술 분석 문서
+    - name: 구현
+      instructions: 계획에 따라 코드를 구현하세요.
+      deliverables:
+        - 구현 코드
+    - name: 테스트 및 검증
+      instructions: 구현된 코드를 테스트하고 검증하세요.
+      deliverables:
+        - 테스트 결과
+  complex:
+    - name: 아키텍처 설계
+      instructions: 시스템 아키텍처와 컴포넌트 구조를 설계하세요.
+      deliverables:
+        - 아키텍처 문서
+    - name: 핵심 구현
+      instructions: 핵심 로직과 데이터 모델을 구현하세요.
+      deliverables:
+        - 핵심 코드
+    - name: 통합 구현
+      instructions: 외부 연동과 API를 구현하세요.
+      deliverables:
+        - 통합 코드
+    - name: 테스트
+      instructions: 단위/통합 테스트를 작성하고 실행하세요.
+      deliverables:
+        - 테스트 코드
+        - 테스트 결과

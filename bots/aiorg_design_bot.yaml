@@ -27,3 +27,40 @@ active_hours:
   start: 9
   end: 22
   timezone: "Asia/Seoul"
+phase_templates:
+  simple:
+    - name: 디자인
+      instructions: 요청에 맞는 UI/UX 디자인안을 제시하세요.
+      deliverables:
+        - 디자인안
+  moderate:
+    - name: 사용자 분석
+      instructions: 대상 사용자와 사용 시나리오를 분석하세요.
+      deliverables:
+        - 사용자 분석
+    - name: 와이어프레임
+      instructions: 화면 구조와 인터랙션을 설계하세요.
+      deliverables:
+        - 와이어프레임
+    - name: 디자인 시안
+      instructions: 최종 디자인 시안을 제작하세요.
+      deliverables:
+        - 디자인 시안
+  complex:
+    - name: UX 리서치
+      instructions: 사용자 니즈와 경쟁사를 분석하세요.
+      deliverables:
+        - UX 리서치 보고서
+    - name: 정보 구조 설계
+      instructions: 정보 계층과 네비게이션을 설계하세요.
+      deliverables:
+        - IA 문서
+    - name: 와이어프레임
+      instructions: 주요 화면의 와이어프레임을 작성하세요.
+      deliverables:
+        - 와이어프레임
+    - name: 디자인 시스템
+      instructions: 일관된 디자인 시스템과 최종 시안을 제작하세요.
+      deliverables:
+        - 디자인 시스템
+        - 최종 시안
