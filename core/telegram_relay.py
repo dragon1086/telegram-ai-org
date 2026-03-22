@@ -1332,8 +1332,17 @@ class TelegramRelay:
                     f"[auto_upload:{self.org_id}] 전달 대상 불일치 감지, configured target 사용"
                 )
 
+        candidates = extract_local_artifact_paths(response or "")
+        if not candidates:
+            logger.info(
+                f"[auto_upload:{self.org_id}] 업로드 후보 경로 없음 "
+                f"(응답 길이={len(response or '')}) — 첨부파일 없이 종료"
+            )
+            return
+
         seen: set[str] = set()
-        for raw in extract_local_artifact_paths(response or ""):
+        uploaded_count = 0
+        for raw in candidates:
             path_text = os.path.expanduser(raw.strip())
             if path_text in seen:
                 continue
@@ -1342,7 +1351,13 @@ class TelegramRelay:
                 continue
             seen.add(path_text)
             path = Path(path_text)
-            for artifact in prepare_upload_bundle(path):
+            bundle = prepare_upload_bundle(path)
+            if not bundle:
+                logger.warning(
+                    f"[auto_upload:{self.org_id}] 파일 없음(경로 탐지됐으나 디스크에 없음): {path_text}"
+                )
+                continue
+            for artifact in bundle:
                 try:
                     await upload_file(
                         safe_token,
@@ -1351,8 +1366,10 @@ class TelegramRelay:
                         f"📎 {self.org_id} 산출물: {artifact.name}",
                     )
                     self._uploaded_artifacts.add(path_text)
+                    uploaded_count += 1
                 except Exception as exc:
                     logger.warning(f"[auto_upload:{self.org_id}] 업로드 실패 {artifact}: {exc}")
+        logger.info(f"[auto_upload:{self.org_id}] 완료 — 후보 {len(candidates)}건 / 업로드 {uploaded_count}건")
 
     async def _upload_artifacts_to(
         self, result: str, token: str, chat_id: int
