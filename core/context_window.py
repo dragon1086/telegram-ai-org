@@ -68,8 +68,21 @@ def build_context_window(
     if not messages:
         return []
 
+    # ── 중복 제거: 동일 (role, content) 쌍은 최신 1건만 유지 ──
+    # 동일 메시지가 여러 봇에 의해 각자의 msg_id로 중복 저장될 수 있으므로,
+    # msg_id 대신 (role, content 앞 200자) 기준으로 디덥 후 슬라이딩 윈도우 적용.
+    seen_keys: set[tuple] = set()
+    deduped: list[dict] = []
+    for msg in messages:  # DESC 정렬이므로 최신 우선
+        content_snippet = (msg.get("content") or "")[:200]
+        role = msg.get("role", "")
+        key = (role, content_snippet)
+        if key not in seen_keys:
+            seen_keys.add(key)
+            deduped.append(msg)
+
     # DB 반환은 DESC(최신 먼저) — N개 슬라이싱 후 오래된 순으로 재정렬
-    recent = messages[:max_messages]
+    recent = deduped[:max_messages]
     # 토큰 한도 적용: 최신 것부터 추가하다가 한도 초과 시 중단
     token_budget = max_tokens - _estimate_tokens(current_message)
     token_budget = max(token_budget, 200)  # 최소 200 토큰 보장
