@@ -71,6 +71,19 @@ class TaskPoller:
 
     async def _poll_loop(self) -> None:
         """주기적으로 ContextDB에서 배정된 태스크를 확인."""
+        # ── 시작 시 stale 태스크 복구 ──
+        # run_polling() 재시작으로 죽은 태스크를 assigned로 되돌린다.
+        try:
+            recovered = await self._db.recover_stale_dept_tasks(
+                self._org_id, stale_seconds=self._lease_ttl_sec + 60,
+            )
+            if recovered:
+                logger.info(
+                    f"[TaskPoller:{self._org_id}] 시작 시 stale 태스크 {recovered}건 복구 완료"
+                )
+        except Exception:
+            logger.exception(f"[TaskPoller:{self._org_id}] stale 태스크 복구 오류")
+
         while self._running:
             try:
                 await self._check_for_tasks()

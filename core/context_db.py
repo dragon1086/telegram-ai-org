@@ -721,6 +721,65 @@ class ContextDB:
             await db.commit()
         return await self.get_pm_task(task_id)
 
+    # ── Stale Task Recovery ────────────────────────────────────────────────
+
+    async def recover_stale_dept_tasks(
+        self,
+        dept_id: str,
+        stale_seconds: float = 300.0,
+    ) -> int:
+        """봇 재시작 시 stale 'running' 태스크를 'assigned'로 복구.
+
+        lease가 만료되고 attempt_count가 MAX_TASK_ATTEMPTS에 도달하여
+        영구 교착 상태에 빠진 태스크를 복구한다.
+        attempt_count를 0으로 리셋하여 재실행 가능하게 만든다.
+
+        Returns: 복구된 태스크 수.
+        """
+        now = datetime.now(UTC)
+        cutoff = (now - timedelta(seconds=stale_seconds)).isoformat()
+        recovered = 0
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                """SELECT id, metadata FROM pm_tasks
+                   WHERE assigned_dept = ?
+                     AND status = 'running'
+                     AND updated_at < ?""",
+                (dept_id, cutoff),
+            )
+            rows = await cursor.fetchall()
+            for row in rows:
+                task_id = row["id"]
+                metadata = json.loads(row["metadata"] or "{}")
+                lease_exp = metadata.get("lease_expires_at")
+                if lease_exp:
+                    try:
+                        if datetime.fromisoformat(lease_exp) > now:
+                            continue  # lease 아직 유효 — 건드리지 않음
+                    except ValueError:
+                        pass
+                # lease 만료 확인됨 — 복구
+                metadata.pop("lease_owner", None)
+                metadata.pop("lease_expires_at", None)
+                metadata.pop("lease_heartbeat_at", None)
+                metadata.pop("retry_after_at", None)
+                metadata["attempt_count"] = 0
+                metadata["recovered_at"] = now.isoformat()
+                now_iso = now.isoformat()
+                await db.execute(
+                    "UPDATE pm_tasks SET status='assigned', metadata=?, updated_at=? WHERE id=?",
+                    (json.dumps(metadata, ensure_ascii=False), now_iso, task_id),
+                )
+                recovered += 1
+                logger.info(
+                    f"[ContextDB] stale 태스크 복구: {task_id} (dept={dept_id}, "
+                    f"attempt_count 리셋, running→assigned)"
+                )
+            if recovered:
+                await db.commit()
+        return recovered
+
     # ── Auto-Dispatch 헬퍼 ────────────────────────────────────────────────
 
     async def get_stalled_tasks(self, stall_minutes: int = 30) -> list[str]:
