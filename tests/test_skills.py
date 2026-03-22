@@ -21,7 +21,7 @@ def get_all_skill_dirs() -> list[Path]:
     """skills/ 아래 모든 스킬 디렉토리 반환."""
     if not SKILLS_DIR.exists():
         return []
-    return [d for d in SKILLS_DIR.iterdir() if d.is_dir()]
+    return [d for d in SKILLS_DIR.iterdir() if d.is_dir() and not d.name.startswith("_")]
 
 
 def parse_frontmatter(skill_md: Path) -> dict:
@@ -250,19 +250,19 @@ class TestUS204SaveLogScript:
 
     def test_save_log_script_exists(self, skills_dir):
         """save-log.py 파일 존재 확인"""
-        script = skills_dir / "weekly-review" / "scripts" / "save-log.py"
+        script = skills_dir / "_shared" / "save-log.py"
         assert script.exists(), "skills/weekly-review/scripts/save-log.py 없음"
 
     def test_save_log_is_executable(self, skills_dir):
         """save-log.py 실행 권한 확인"""
         import os
-        script = skills_dir / "weekly-review" / "scripts" / "save-log.py"
+        script = skills_dir / "_shared" / "save-log.py"
         if script.exists():
             assert os.access(script, os.X_OK), "save-log.py가 실행 가능하지 않음"
 
     def test_save_log_uses_flock(self, skills_dir):
         """save-log.py에 fcntl.flock 사용 확인"""
-        script = skills_dir / "weekly-review" / "scripts" / "save-log.py"
+        script = skills_dir / "_shared" / "save-log.py"
         if script.exists():
             content = script.read_text()
             assert "flock" in content, "save-log.py에 flock 사용 없음 (race condition 위험)"
@@ -271,13 +271,14 @@ class TestUS204SaveLogScript:
         """save-log.py 실행 시 JSONL 파일 생성 확인"""
         import subprocess
         import json
-        script = skills_dir / "weekly-review" / "scripts" / "save-log.py"
+        script = skills_dir / "_shared" / "save-log.py"
         if not script.exists():
             return
 
         test_data = json.dumps({"week": "2026-W99", "test": True})
+        output_path = tmp_path / "test-log.jsonl"
         result = subprocess.run(
-            [".venv/bin/python", str(script), test_data],
+            [".venv/bin/python", str(script), test_data, str(output_path)],
             cwd=skills_dir.parent,  # 프로젝트 루트
             capture_output=True,
             text=True

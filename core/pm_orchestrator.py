@@ -140,8 +140,19 @@ class PMOrchestrator:
     def decision_client(self) -> DecisionClientProtocol | None:
         return self._decision_client
 
-    async def plan_request(self, user_message: str) -> RequestPlan:
-        """유저 요청을 직접 답변/PM 직접 실행/조직 위임 중 어디로 보낼지 결정한다."""
+    async def plan_request(
+        self,
+        user_message: str,
+        *,
+        prior_context: str = "",
+    ) -> RequestPlan:
+        """유저 요청을 직접 답변/PM 직접 실행/조직 위임 중 어디로 보낼지 결정한다.
+
+        Args:
+            user_message: 현재 사용자 메시지.
+            prior_context: format_history_for_prompt() 가 반환한 [CONTEXT]...[/CONTEXT] 문자열.
+                           비어 있으면 기존 동작(단일 메시지)으로 graceful fallback.
+        """
         dept_hints = self._detect_relevant_depts(user_message)
         # recommend_team feedback loop: 성과 데이터 기반 부서 힌트 보강
         # Only runs when dept_hints is non-empty AND apm is available
@@ -159,7 +170,9 @@ class PMOrchestrator:
             except Exception as _e:
                 logger.debug(f"[PM] recommend_team 조회 실패 (무시): {_e}")
         workdir = self._extract_workdir(user_message)
-        result = await self._llm_unified_classify(user_message, dept_hints, workdir=workdir)
+        result = await self._llm_unified_classify(
+            user_message, dept_hints, workdir=workdir, prior_context=prior_context
+        )
         return self._normalize_request_plan(result)
 
     # autoresearch 타겟: core/routing_keywords.py 에서 관리
@@ -241,12 +254,18 @@ class PMOrchestrator:
             )
         return plan
 
-    def _build_request_plan_prompt(self, message: str, dept_hints: list[str]) -> str:
+    def _build_request_plan_prompt(
+        self,
+        message: str,
+        dept_hints: list[str],
+        prior_context: str = "",
+    ) -> str:
         dept_profiles = self._dept_profiles()
         dept_lines = "\n".join(
             f"- {dept} ({dept_profiles.get(dept, {}).get('dept_name', dept)}): {dept_profiles.get(dept, {}).get('role', '')}"
             for dept in dept_hints
         ) or "- currently no obvious specialist hints"
+        context_block = f"{prior_context}\n\n" if prior_context else ""
         return (
             "You are the chief PM for a Telegram-based AI organization.\n"
             "Decide the lightest correct handling strategy for the user request.\n\n"
@@ -261,6 +280,7 @@ class PMOrchestrator:
             f"{dept_lines}\n\n"
             "Return JSON only in this exact shape:\n"
             '{"route":"direct_reply|local_execution|delegate","complexity":"low|medium|high","rationale":"short reason","confidence":0.0}\n\n'
+            f"{context_block}"
             f"User request: {message[:700]}"
         )
 
@@ -270,12 +290,14 @@ class PMOrchestrator:
         dept_hints: list[str],
         *,
         workdir: str | None = None,
+        prior_context: str = "",
     ) -> "RequestPlan":
         """lane + route + complexity를 단일 LLM 호출로 처리. 실패 시 heuristic fallback."""
         if self._decision_client is None:
             return self._heuristic_unified_classify(user_message, dept_hints)
 
         dept_list = ", ".join(dept_hints) if dept_hints else "없음"
+        context_block = f"{prior_context}\n\n" if prior_context else ""
         prompt = (
             "Classify the following user request and return JSON only.\n"
             "Fields:\n"
@@ -285,6 +307,7 @@ class PMOrchestrator:
             '  complexity: one of [low, medium, high]\n'
             '  rationale: brief Korean explanation (max 30 chars)\n\n'
             f"dept_hints: {dept_list}\n"
+            f"{context_block}"
             f"User request: {user_message[:800]}\n\n"
             "Return only valid JSON, no markdown."
         )
