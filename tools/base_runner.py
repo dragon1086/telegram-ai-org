@@ -56,7 +56,7 @@ class RunContext:
     # Claude: {"allowed_tools": [...], "permission_mode": "bypassPermissions",
     #          "model": "...", "flags": ["--verbose"]}
     # Codex:  {"model": "...", "agents": [...]}
-    # Gemini: {"model": "gemini-2.0-flash", "temperature": 0.7}
+    # Gemini: {"model": "gemini-2.5-flash", "temperature": 0.7}
     # Note: ClaudeCodeRunner.run(prompt, flags=) flags absorbed into engine_config["flags"]
 
 
