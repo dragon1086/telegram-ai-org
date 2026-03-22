@@ -89,6 +89,7 @@ organizations:
     preferred_skills:
     - engineering-review
     - quality-gate
+    - safe-modify
     max_team_size: 3
     guidance: 항상 테스트 작성. 웹은 TypeScript 선호, 백엔드는 Python 선호.
   collaboration:
