@@ -52,6 +52,7 @@ bash scripts/start_all.sh
 | `core/shoutout_system.py` | 팀워크·칭찬 시스템 |
 | `core/lesson_memory.py` | 교훈 메모리 |
 | `core/telegram_relay.py` | Telegram 메시지 중계 |
+| `core/context_window.py` | PM 대화 히스토리 컨텍스트 창 유틸리티 |
 | `workers.yaml` | 워커 봇 등록부 |
 | `orchestration.yaml` | 오케스트레이션 설정 |
 | `bots/` | 봇 YAML 정의 |
@@ -87,6 +88,27 @@ bash scripts/start_all.sh
 ### [2026-03-17] rank-bm25 설치 시 pip install -e . 사용 불가
 - 이 프로젝트는 hatchling 설정 미비로 pip install -e . 작동 안 함
 - rank-bm25 등 신규 패키지는 직접 설치: .venv/bin/pip install rank-bm25
+
+### [2026-03-22] PM 봇 대화 히스토리 컨텍스트 창 튜닝
+PM 봇은 작업 배분 판단 시 최근 대화 이력을 `[CONTEXT]...[/CONTEXT]` 블록으로 프롬프트에 주입한다.
+아래 환경변수로 런타임 조정 가능 (`.env` 또는 실행 환경):
+
+| 환경변수 | 기본값 | 설명 |
+|----------|--------|------|
+| `MAX_HISTORY_MESSAGES` | `10` | 히스토리에 포함할 최대 메시지 수 |
+| `MAX_HISTORY_TOKENS` | `2000` | 히스토리 컨텍스트 전체 토큰 한도 (근사치) |
+
+**튜닝 기준**:
+- 짧은 세션(5턴 이하): 기본값(`10`, `2000`) 유지
+- 복잡한 멀티턴 태스크: `MAX_HISTORY_MESSAGES=20`, `MAX_HISTORY_TOKENS=4000`
+- API 비용 절감 필요 시: `MAX_HISTORY_MESSAGES=5`, `MAX_HISTORY_TOKENS=1000`
+- 50턴 이상 장기 세션에서도 토큰 초과 방지 로직이 자동 동작함
+
+**관련 파일**:
+- `core/context_window.py` — `build_context_window()`, `format_history_for_prompt()` 구현
+- `core/telegram_relay.py` (L1665~1703) — PM 핸들러 컨텍스트 주입 지점
+- `tests/test_context_window.py` — 단위 테스트 (16개)
+- `tests/test_pm_context_injection.py` — 통합 테스트 (7개)
 
 ---
 

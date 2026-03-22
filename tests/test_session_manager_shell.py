@@ -57,7 +57,7 @@ async def test_run_shell_command_kills_session_on_timeout(monkeypatch, tmp_path:
     monkeypatch.setattr(
         manager,
         "_wait_for_output",
-        lambda output_file, progress_callback=None: asyncio.sleep(3600),
+        lambda output_file, progress_callback=None, **kwargs: asyncio.sleep(3600),
     )
 
     with pytest.raises(asyncio.TimeoutError):
