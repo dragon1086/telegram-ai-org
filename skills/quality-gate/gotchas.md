@@ -21,12 +21,13 @@
 E2E 테스트(`tests/test_collab_e2e.py` 등)는 실제 봇 토큰 필요.
 
 ## ⚠️ 6 [절대 금지]: quality-gate PASS 후 배포/푸시/재기동을 자체 실행하지 말 것
-quality-gate는 "배포 가능 여부 판정"만 담당한다. 판정 이후의 배포 행위는 운영실 전담.
+quality-gate는 "배포 가능 여부 판정"만 담당한다. 판정 이후의 배포 행위는 infra 역할 조직 전담.
+infra 역할 조직 = `organizations.yaml`에서 `capabilities`에 `infra`가 포함된 조직.
 ```
-quality-gate PASS 이후 운영실을 제외한 모든 specialist 조직이 해서는 안 되는 행위:
-  - git push origin <branch>   → 운영실 위임
-  - git merge <branch>         → 운영실 위임
-  - 봇 재기동 명령 실행          → 운영실 위임
+quality-gate PASS 이후 infra 역할 조직을 제외한 모든 specialist 조직이 해서는 안 되는 행위:
+  - git push origin <branch>   → infra 역할 조직 위임 (또는 PM 명시 지시 시 예외)
+  - git merge <branch>         → infra 역할 조직 위임 (또는 PM 명시 지시 시 예외)
+  - 봇 재기동 명령 실행          → infra 역할 조직 위임 (또는 PM 명시 지시 시 예외)
 ```
 quality-gate 완료 리포트 마지막에는 반드시 다음을 추가:
-"→ 배포/머지/재기동이 필요하면 운영실(@aiorg_ops_bot)에 위임 요청하세요."
+"→ 배포/머지/재기동이 필요하면 infra 역할 조직에 COLLAB 위임 요청하세요."

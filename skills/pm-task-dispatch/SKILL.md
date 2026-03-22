@@ -18,13 +18,13 @@ PM 봇이 수신된 태스크를 분석하고 가장 적합한 조직 봇에 배
 
 ### Step 2: 봇 선정
 ```
-태스크 유형 → 담당 봇
-코드/API/버그  → 개발실 (aiorg_engineering_bot)
-UI/UX/디자인   → 디자인실 (aiorg_design_bot)
-마케팅/지표    → 성장실 (aiorg_growth_bot)
-운영/인프라    → 운영실 (aiorg_ops_bot)
-시장조사/분석  → 연구실 (aiorg_research_bot)
-기획/PRD       → 제품실 (aiorg_product_bot)
+태스크 유형 → 담당 봇 (예시 — 실제 org ID는 organizations.yaml 참조)
+코드/API/버그  → 개발/엔지니어링 역할 조직
+UI/UX/디자인   → 디자인 역할 조직
+마케팅/지표    → 성장/마케팅 역할 조직
+운영/인프라    → infra 역할 조직 (capabilities: [infra])
+시장조사/분석  → 리서치 역할 조직
+기획/PRD       → 제품/기획 역할 조직
 복합 태스크    → 주담당 봇 + 협업 봇 명시
 ```
 
@@ -82,11 +82,11 @@ UI/UX/디자인   → 디자인실 (aiorg_design_bot)
 
 | 작업 유형 | 담당 봇 | 다른 봇에서 요청 시 |
 |-----------|---------|-------------------|
-| 재기동 / restart | 운영실만 | COLLAB 요청 금지, PM이 별도 태스크 |
-| git push / merge to main | 운영실만 | COLLAB 요청 금지, PM이 별도 태스크 |
-| 코드 수정 / 버그 수정 | 개발실 | - |
-| 시장조사 / 레퍼런스 | 리서치실 | - |
-| 배포 / 인프라 변경 | 운영실 | - |
+| 재기동 / restart | infra 역할 조직만 | COLLAB 요청 금지, PM이 별도 태스크 |
+| git push / merge to main | infra 역할 조직만 | COLLAB 요청 금지, PM이 별도 태스크 |
+| 코드 수정 / 버그 수정 | 개발/엔지니어링 역할 조직 | - |
+| 시장조사 / 레퍼런스 | 리서치 역할 조직 | - |
+| 배포 / 인프라 변경 | infra 역할 조직 | - |
 
 > 봇별 프롬프트에 금지 문구를 박는 것보다, **PM이 위임 시 범위를 명확히 정하는 것**이 글로벌하게 작동한다.
 
