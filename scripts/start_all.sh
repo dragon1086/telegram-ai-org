@@ -4,6 +4,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# 워크트리 내부에서 호출된 경우 실제 프로젝트 루트로 보정
+case "$PROJECT_DIR" in
+  */.worktrees/*) PROJECT_DIR="${PROJECT_DIR%%/.worktrees/*}" ;;
+esac
+
 echo "=== telegram-ai-org 봇 시작 ==="
 
 # ── bot-runtime 워크트리 설정 (main 브랜치 고정) ──────────────────────────
