@@ -234,10 +234,34 @@ class BotWatchdog:
 
         return restarted
 
+    @staticmethod
+    def _kill_stale_instances():
+        """기존 watchdog 프로세스 모두 종료 (좀비 방지)."""
+        import subprocess
+        my_pid = os.getpid()
+        try:
+            out = subprocess.check_output(
+                ["pgrep", "-f", "bot_watchdog\\.py"], text=True,
+            ).strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return
+        for line in out.splitlines():
+            pid = int(line.strip())
+            if pid == my_pid:
+                continue
+            try:
+                os.kill(pid, signal.SIGKILL)
+                log.info(f"좀비 watchdog 종료: PID {pid}")
+            except OSError:
+                pass
+
     def run(self, once: bool = False):
         """메인 루프."""
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
+
+        # 기존 좀비 watchdog 정리 후 시작
+        self._kill_stale_instances()
 
         # PID 파일 기록
         PID_FILE.write_text(str(os.getpid()))
