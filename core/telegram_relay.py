@@ -3114,6 +3114,11 @@ class TelegramRelay:
                     await self._pm_orchestrator._synthesize_and_act(
                         parent_id, siblings, self.allowed_chat_id
                     )
+                    # ACT-4: 부모 태스크 합성 완료 → P2P 알림 발송
+                    if self.bus:
+                        asyncio.ensure_future(
+                            self._p2p.notify_task_done(self.org_id, parent_id, "합성 완료")
+                        )
                 finally:
                     self._synthesizing.discard(parent_id)
             else:
@@ -3168,6 +3173,11 @@ class TelegramRelay:
                             await self._pm_orchestrator._synthesize_and_act(
                                 parent_id, siblings, self.allowed_chat_id
                             )
+                            # ACT-4: 폴러 경로 합성 완료 → P2P 알림 발송
+                            if self.bus:
+                                asyncio.ensure_future(
+                                    self._p2p.notify_task_done(self.org_id, parent_id, "합성 완료")
+                                )
                         except Exception as _e:
                             logger.error(f"[SynthesisPoller] 합성 실패 {parent_id}: {_e}")
                         finally:
