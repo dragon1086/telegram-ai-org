@@ -9,7 +9,7 @@ description: "Use when a bot is unresponsive, crashed, or behaving abnormally. R
 
 > ⚠️ **실행 권한 경계**: Step 1~3b(진단, 로그 분석, 코드 버그 식별)는 모든 부서가 수행 가능.
 > **Step 3c(프로세스 강제 종료), Step 3d(전체 재시작/git push)는 운영실(aiorg_ops_bot)만 직접 실행.**
-> 타 부서(개발실·리서치실 등)는 이 단계에서 직접 실행하지 말고, 아래 방식으로 운영실에 위임한다:
+> 운영실을 제외한 모든 specialist 조직은 이 단계에서 직접 실행하지 말고, 아래 방식으로 운영실에 위임한다:
 > ```
 > [COLLAB: 봇 전체 재시작 필요 — 글로벌 장애 확인됨 | 맥락: bot-triage Step 3d 단계 진입]
 > ```
