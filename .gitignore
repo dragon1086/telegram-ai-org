@@ -42,6 +42,7 @@ WEEKLY_REPORT*.md
 .e2e_session*.session
 .omx/reports/
 
-# 자동생성 오케스트레이션 런 로그
-docs/orchestration-v2/
+# 자동생성 문서/런 로그 (임시 파일)
+docs/
+tasks/todo.md
 .ai-org/
