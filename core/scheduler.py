@@ -29,6 +29,7 @@ class OrgScheduler:
         execute_callback: Optional[Callable[[str], Coroutine[Any, Any, str]]] = None,
         claim_manager=None,
         context_db=None,
+        group_chat_hub=None,
     ) -> None:
         """
         Args:
@@ -36,11 +37,13 @@ class OrgScheduler:
             execute_callback: 사용자 태스크 실행 코루틴 (태스크 설명 → 결과 문자열). 없으면 알림만.
             claim_manager: ClaimManager 인스턴스. 제공 시 매시간 파일 정리 잡 등록.
             context_db: ContextDB 인스턴스. 미제공 시 weekly_bot_business_retro에서 자동 생성.
+            group_chat_hub: GroupChatHub 인스턴스. 제공 시 주간회의·회고를 그룹 허브로 실행.
         """
         self._send_text = send_text
         self._execute_callback = execute_callback
         self._claim_manager = claim_manager
         self._context_db = context_db
+        self._group_chat_hub = group_chat_hub  # GroupChatHub | None
         self.scheduler = AsyncIOScheduler(timezone=KST)
         self._register_jobs()
 
@@ -192,6 +195,13 @@ class OrgScheduler:
         """매주 월요일 09:00 KST — 주간 회의."""
         logger.info("[OrgScheduler] weekly_standup 시작")
         try:
+            # GroupChatHub 연동: 그룹방에서 멀티봇 자율 참가 회의 실행
+            if self._group_chat_hub is not None:
+                logger.info("[OrgScheduler] GroupChatHub를 통한 멀티봇 주간 스탠드업 실행")
+                await self._group_chat_hub.start_meeting(
+                    topic="주간 스탠드업 — 이번 주 계획 및 지난 주 성과 공유",
+                    participants=self._group_chat_hub.participant_ids,
+                )
             from scripts.weekly_standup import main as _weekly_main
             await _weekly_main()
             # Phase 2: LessonMemory 교훈 통계
@@ -230,6 +240,13 @@ class OrgScheduler:
         """매주 금요일 18:00 KST — 주간 회고."""
         logger.info("[OrgScheduler] friday_retro 시작")
         try:
+            # GroupChatHub 연동: 그룹방에서 멀티봇 자율 참가 회고 실행
+            if self._group_chat_hub is not None:
+                logger.info("[OrgScheduler] GroupChatHub를 통한 멀티봇 주간 회고 실행")
+                await self._group_chat_hub.start_meeting(
+                    topic="주간 회고 — 이번 주 잘한 점, 개선점, 다음 주 액션 아이템",
+                    participants=self._group_chat_hub.participant_ids,
+                )
             from scripts.daily_retro import (
                 get_today_tasks,
                 _llm_insights,
