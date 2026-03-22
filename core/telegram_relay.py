@@ -49,6 +49,7 @@ from core.orchestration_runbook import OrchestrationRunbook
 from core.attachment_manager import AttachmentContext, AttachmentBundle
 from core.attachment_analysis import AttachmentAnalyzer
 from core.artifact_pipeline import prepare_upload_bundle
+from core.artifact_indexer import index_task_artifact
 from core.builtin_surfaces import recommend_builtin_surfaces
 from core.telegram_delivery import resolve_delivery_target
 from core.telegram_user_guardrail import (
@@ -406,7 +407,7 @@ class TelegramRelay:
     ) -> str:
         sections = [f"## 최신 사용자 요청\n{text[:700]}"]
         if replied_context:
-            sections.append(f"## 답장 대상 맥락\n{replied_context[:500]}")
+            sections.append(f"## 답장 대상 맥락\n{replied_context[:2000]}")
 
         expectations = self._build_user_expectations(text)
         if expectations:
@@ -1572,7 +1573,12 @@ class TelegramRelay:
                     and update.effective_message.reply_to_message.from_user.is_bot):
                 _pre_replied = update.effective_message.reply_to_message.text or ""
                 if _pre_replied:
-                    _route_ctx["replied_to"] = _pre_replied[:200]
+                    _reply_sender = (
+                        update.effective_message.reply_to_message.from_user.first_name
+                        or update.effective_message.reply_to_message.from_user.username
+                        or "bot"
+                    )
+                    _route_ctx["replied_to"] = f"[{_reply_sender}] {_pre_replied[:500]}"
             _route = await self._router.route(text, _route_ctx)
 
             if _route.action == "confirm_pending":
@@ -1599,10 +1605,21 @@ class TelegramRelay:
                 and update.effective_message.reply_to_message
                 and update.effective_message.reply_to_message.from_user
                 and update.effective_message.reply_to_message.from_user.is_bot):
-            replied_text = update.effective_message.reply_to_message.text or ""
-            # 재시도 아닌 답장 → 답장한 메시지 내용을 context로 주입
+            replied_msg = update.effective_message.reply_to_message
+            replied_text = replied_msg.text or ""
+            # 재시도 아닌 답장 → 답장한 메시지 내용을 context로 주입 (발신자·message_id 포함)
             if replied_text:
-                _replied_context = f"\n\n[답장 대상 메시지]\n{replied_text[:300]}"
+                _reply_from = (
+                    replied_msg.from_user.first_name
+                    or replied_msg.from_user.username
+                    or "bot"
+                )
+                _reply_msg_id = replied_msg.message_id
+                _replied_context = (
+                    f"\n\n[답장 대상 메시지]\n"
+                    f"발신자: {_reply_from} | message_id: {_reply_msg_id}\n"
+                    f"{replied_text[:2000]}"
+                )
 
         # 1. 대화형 vs 작업 분류
         if USE_NL_CLASSIFIER:
@@ -1814,6 +1831,19 @@ class TelegramRelay:
                             if elapsed > _max_timeout:
                                 raise asyncio.TimeoutError(f"총 실행 {elapsed:.0f}초 (한도 {_max_timeout}s)")
 
+                    _hb_interval = 60  # thinking heartbeat 간격(초) — idle timeout 절반으로 부하/오탐 균형
+
+                    async def _thinking_heartbeat_loop() -> None:
+                        """60초마다 on_progress 자동 호출 → idle watchdog 리셋 (LLM thinking 무응답 오탐 방지)."""
+                        await asyncio.sleep(_hb_interval)
+                        while True:
+                            try:
+                                await on_progress("🤔 처리 중...")
+                            except Exception:
+                                pass
+                            await asyncio.sleep(_hb_interval)
+
+                    heartbeat_task = asyncio.ensure_future(_thinking_heartbeat_loop())
                     try:
                         exec_task = asyncio.ensure_future(
                             self._execute_with_team_config(
@@ -1858,6 +1888,9 @@ class TelegramRelay:
                             pass
                         self._complete_runbook(run_id, f"실행 에러: {exec_err}")
                         return
+                    finally:
+                        # 실행 완료(정상/예외/취소 모두) 시 heartbeat 태스크 반드시 정지
+                        heartbeat_task.cancel()
                     upload_candidates = extract_local_artifact_paths(response or "")
                     self._append_runbook(
                         run_id,
@@ -1902,6 +1935,9 @@ class TelegramRelay:
                     self._complete_runbook(run_id, "로컬 실행 완료 및 피드백 반영")
                     if self.bus:
                         asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
+                    # 산출물 메타데이터 인덱싱 (비동기, 실패 시 스킵)
+                    if response:
+                        asyncio.ensure_future(index_task_artifact(run_id or "", self.org_id, response))
                     return
 
                 if plan.interaction_mode == "collab" and ENABLE_DISCUSSION_PROTOCOL:
@@ -2151,6 +2187,9 @@ class TelegramRelay:
         self._complete_runbook(run_id, "조직 직접 실행 완료")
         if self.bus:
             asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
+        # 산출물 메타데이터 인덱싱 (비동기, 실패 시 스킵)
+        if response:
+            asyncio.ensure_future(index_task_artifact(run_id or "", self.org_id, response))
 
     # ── 첨부파일 처리 ──────────────────────────────────────────────────────
 
@@ -3521,6 +3560,9 @@ class TelegramRelay:
             self._complete_runbook(run_id, "조직 위임 실행 완료")
             if self.bus:
                 asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
+            # 산출물 메타데이터 인덱싱 (비동기, 실패 시 스킵)
+            if response:
+                asyncio.ensure_future(index_task_artifact(run_id or "", self.org_id, response))
 
         except Exception as e:
             logger.error(f"[{self.org_id}] PM_TASK {task_id} 실행 실패: {e}")
@@ -3683,6 +3725,9 @@ class TelegramRelay:
         self._complete_runbook(run_id, "협업 요청 처리 완료")
         if self.bus:
             asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
+        # 산출물 메타데이터 인덱싱 (비동기, 실패 시 스킵)
+        if response:
+            asyncio.ensure_future(index_task_artifact(run_id or "", self.org_id, response))
 
     async def _handle_command(
         self, text: str, update, context
