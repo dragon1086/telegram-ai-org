@@ -184,7 +184,16 @@ class DynamicTeamBuilder:
                     task_context,
                     system_prompt=_TEAM_SYSTEM_PROMPT,
                 )
-            data = json.loads(content)
+            if not content or not content.strip():
+                raise ValueError("LLM returned empty response")
+            # LLM이 ```json ... ``` 으로 감싸서 반환하는 경우 처리
+            stripped = content.strip()
+            if stripped.startswith("```"):
+                import re as _re
+                m = _re.search(r"```(?:json)?\s*\n?(.*?)```", stripped, _re.DOTALL)
+                if m:
+                    stripped = m.group(1).strip()
+            data = json.loads(stripped)
             return self._parse_llm_response(
                 data,
                 preferred_agents=preferred_agents,
