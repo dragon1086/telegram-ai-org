@@ -3520,7 +3520,7 @@ class TelegramRelay:
                 _lm_post = LessonMemory()
                 await _lm_post.arecord_success(
                     task_description=description[:200],
-                    category="approach",
+                    category="other",
                     what_went_well=f"태스크 {task_id} 정상 완료",
                     reuse_tip=full_result[:300],
                     worker=self.org_id,
