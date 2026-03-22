@@ -78,7 +78,7 @@ TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
 USE_NL_CLASSIFIER = True  # 2-tier NLClassifier 활성화 플래그 (False 시 기존 키워드 로직 사용)
 ARTIFACT_MARKER_RE = re.compile(r"\[ARTIFACT:([^\]]+)\]")
-PM_CHAT_REPLY_TIMEOUT_SEC = int(os.environ.get("PM_CHAT_REPLY_TIMEOUT_SEC", "120"))
+PM_CHAT_REPLY_TIMEOUT_SEC = int(os.environ.get("PM_CHAT_REPLY_TIMEOUT_SEC", "300"))
 
 # /setup 마법사 ConversationHandler 상태
 SETUP_MENU, SETUP_AWAIT_TOKEN, SETUP_AWAIT_ENGINE, SETUP_AWAIT_IDENTITY = range(4)
