@@ -349,3 +349,89 @@ async def test_improve_status_handler_exists(setup):
     assert isinstance(result, str)
     assert len(result) > 0
     send_fn.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_deps_registered_before_task_created(setup):
+    """레이스 컨디션 수정(cf42da4) 검증: 의존성 등록이 태스크 본문 생성보다 먼저 완료되는지 확인.
+
+    pm_orchestrator._dispatch_subtasks 에서 Step 0(ID 사전 생성 + deps 등록)이
+    Step 1(태스크 본문 DB 삽입) 보다 먼저 실행되어야 한다.
+    TaskPoller가 2초 주기로 polling 할 때 의존성이 이미 등록되어 있어야
+    후행 태스크를 조기 수신하지 않는다.
+    """
+    orch, db, send_fn = setup
+    parent_id = "T-pm-root"
+    await db.create_pm_task(parent_id, "root", None, "aiorg_pm_bot")
+
+    call_order: list[str] = []
+    original_add_dep = db.add_dependency
+    original_create_task = db.create_pm_task
+
+    async def recording_add_dep(task_id: str, depends_on: str):
+        call_order.append(f"add_dep:{task_id}")
+        return await original_add_dep(task_id, depends_on)
+
+    async def recording_create_task(task_id, description, assigned_dept, created_by, **kwargs):
+        call_order.append(f"create_task:{task_id}")
+        return await original_create_task(
+            task_id, description, assigned_dept, created_by, **kwargs
+        )
+
+    db.add_dependency = recording_add_dep
+    db.create_pm_task = recording_create_task
+
+    subtasks = [
+        SubTask(description="리서치", assigned_dept="aiorg_research_bot"),
+        SubTask(description="개발", assigned_dept="aiorg_engineering_bot", depends_on=["0"]),
+        SubTask(description="운영", assigned_dept="aiorg_ops_bot", depends_on=["1"]),
+    ]
+    await orch.dispatch(parent_id, subtasks, chat_id=-123)
+
+    # add_dep 이벤트들이 create_task 이벤트들보다 먼저 나타나야 한다
+    dep_indices = [i for i, ev in enumerate(call_order) if ev.startswith("add_dep:")]
+    create_indices = [i for i, ev in enumerate(call_order) if ev.startswith("create_task:") and ev != f"create_task:{parent_id}"]
+
+    assert dep_indices, "add_dependency 호출이 없음 — deps 미등록 상태"
+    assert create_indices, "create_pm_task(서브태스크) 호출이 없음"
+    # 최초 dep 등록이 최초 서브태스크 create 보다 먼저여야 한다
+    assert min(dep_indices) < min(create_indices), (
+        f"deps 등록({min(dep_indices)})이 태스크 생성({min(create_indices)})보다 늦음 — 레이스 컨디션 재발"
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_sequential_research_eng_ops(setup):
+    """리서치→개발실→운영실 순서 검증: 첫 웨이브에 리서치만, 리서치 완료 후 개발실만, 개발 완료 후 운영실."""
+    orch, db, send_fn = setup
+    parent_id = "T-pm-root"
+    await db.create_pm_task(parent_id, "root", None, "aiorg_pm_bot")
+
+    subtasks = [
+        SubTask(description="시장조사", assigned_dept="aiorg_research_bot"),
+        SubTask(description="코드구현", assigned_dept="aiorg_engineering_bot", depends_on=["0"]),
+        SubTask(description="배포", assigned_dept="aiorg_ops_bot", depends_on=["1"]),
+    ]
+    task_ids = await orch.dispatch(parent_id, subtasks, chat_id=-123)
+    research_id, eng_id, ops_id = task_ids[0], task_ids[1], task_ids[2]
+
+    # 첫 웨이브: 리서치만 발송
+    first_wave_msgs = [call[0][1] for call in send_fn.call_args_list]
+    assert any("aiorg_research_bot" in m for m in first_wave_msgs), "첫 웨이브에 리서치가 없음"
+    assert not any(f"[PM_TASK:{eng_id}]" in m for m in first_wave_msgs), "개발실이 첫 웨이브에 조기 발송됨"
+    assert not any(f"[PM_TASK:{ops_id}]" in m for m in first_wave_msgs), "운영실이 첫 웨이브에 조기 발송됨"
+
+    send_fn.reset_mock()
+
+    # 리서치 완료 → 개발실만 발송
+    await orch.on_task_complete(research_id, "리서치 완료", chat_id=-123)
+    second_wave_msgs = [call[0][1] for call in send_fn.call_args_list]
+    assert any("aiorg_engineering_bot" in m for m in second_wave_msgs), "리서치 완료 후 개발실 미발송"
+    assert not any(f"[PM_TASK:{ops_id}]" in m for m in second_wave_msgs), "운영실이 개발 전에 발송됨"
+
+    send_fn.reset_mock()
+
+    # 개발 완료 → 운영실만 발송
+    await orch.on_task_complete(eng_id, "개발 완료", chat_id=-123)
+    third_wave_msgs = [call[0][1] for call in send_fn.call_args_list]
+    assert any("aiorg_ops_bot" in m for m in third_wave_msgs), "개발 완료 후 운영실 미발송"
