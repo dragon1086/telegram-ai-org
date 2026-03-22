@@ -18,13 +18,13 @@
 - **증상**: 이벤트 루프 블로킹, DB 락, 또는 네트워크 타임아웃
 - **해결**: `kill -9`로 강제 종료 후 재시작. 로그에서 마지막 처리 중인 작업 확인
 
-## Gotcha 4: 운영실이 아닌 부서가 Step 3c/3d(재시작/push) 직접 실행 — 스콥 오버
+## Gotcha 4: infra 역할 조직이 아닌 부서가 Step 3c/3d(재시작/push) 직접 실행 — 스콥 오버
 
-- **상황**: 개발실·리서치실 등 비운영 부서가 bot-triage를 사용하다 Step 3c(kill) 또는 Step 3d(restart/push)를 직접 실행
+- **상황**: 개발실·리서치실 등 infra 역할이 없는 부서가 bot-triage를 사용하다 Step 3c(kill) 또는 Step 3d(restart/push)를 직접 실행
 - **사고 사례**: T-238 이전 작업에서 개발실·리서치실이 재기동 및 git push를 직접 수행 → PM 지시 스콥 초과
 - **원인**: `bot-triage`가 `common_skills`로 전 부서에 배포되어 있으나, Step 3c/3d 실행 권한 경계가 명시되지 않았음
-- **규칙**: bot-triage Step 3c/3d는 **운영실(aiorg_ops_bot) 전용**. 타 부서는 Step 1~3b까지만 진단 후 아래와 같이 위임:
+- **규칙**: bot-triage Step 3c/3d는 **infra 역할 조직 전용** (`organizations.yaml`에서 `capabilities: [infra]`인 조직). 타 부서는 Step 1~3b까지만 진단 후 아래와 같이 위임:
   ```
   [COLLAB: 봇 재시작 필요 — 진단 완료, 글로벌 장애 확인 | 맥락: bot-triage Step 3d 진입 필요]
   ```
-- **git push/머지도 동일**: 코드 수정은 개발실, 커밋은 개발실까지. push/merge/재기동은 운영실 태스크로 분리.
+- **git push/머지도 동일**: 코드 수정은 개발실, 커밋은 개발실까지. push/merge/재기동은 infra 역할 조직 태스크로 분리.

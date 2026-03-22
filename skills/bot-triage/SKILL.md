@@ -8,8 +8,9 @@ description: "Use when a bot is unresponsive, crashed, or behaving abnormally. R
 봇 장애 발생 시 체계적 진단 → 복구 → 보고를 자율 수행하는 런북 스킬.
 
 > ⚠️ **실행 권한 경계**: Step 1~3b(진단, 로그 분석, 코드 버그 식별)는 모든 부서가 수행 가능.
-> **Step 3c(프로세스 강제 종료), Step 3d(전체 재시작/git push)는 운영실(aiorg_ops_bot)만 직접 실행.**
-> 운영실을 제외한 모든 specialist 조직은 이 단계에서 직접 실행하지 말고, 아래 방식으로 운영실에 위임한다:
+> **Step 3c(프로세스 강제 종료), Step 3d(전체 재시작/git push)는 infra 역할 조직만 직접 실행.**
+> infra 역할 조직 = `organizations.yaml`에서 `capabilities`에 `infra`가 포함된 조직 (org ID는 조직 구성마다 다름).
+> infra 역할 조직이 아닌 모든 specialist 조직은 이 단계에서 직접 실행하지 말고, COLLAB으로 위임한다:
 > ```
 > [COLLAB: 봇 전체 재시작 필요 — 글로벌 장애 확인됨 | 맥락: bot-triage Step 3d 단계 진입]
 > ```
@@ -62,12 +63,12 @@ python scripts/bot_manager.py start <org_id>
 
 ## Step 3d: 글로벌 장애
 
-> 🔒 **운영실(aiorg_ops_bot) 전용 실행 단계.** 타 부서는 3번까지 진단하고 운영실에 COLLAB 요청.
+> 🔒 **infra 역할 조직 전용 실행 단계.** 타 부서는 3번까지 진단하고 infra 역할 조직에 COLLAB 요청.
 
 1. `.env` 파일 검증 — 필수 토큰/키 존재 확인
 2. DB 연결 테스트 — `python -c "import aiosqlite"`
 3. 네트워크 확인 — `curl -s https://api.telegram.org`
-4. 전체 재시작 — `bash scripts/request_restart.sh --reason "글로벌 장애 복구"` (운영실만 실행)
+4. 전체 재시작 — `bash scripts/request_restart.sh --reason "글로벌 장애 복구"` (infra 역할 조직만 실행)
    - ❌ `bash scripts/restart_bots.sh` 직접 실행 금지 — watchdog 우회 위험
    - ✅ `scripts/request_restart.sh` 플래그 방식 사용 (watchdog가 안전하게 재시작 처리)
 

@@ -7,13 +7,14 @@ runtime:
 # CLAUDE.md/AGENTS.md를 자동으로 읽지 않는 엔진(gemini 등)에도 적용된다.
 global_instructions: |
   ## 업무 스콥 경계 원칙 (전체 조직 공통 — 필수)
-  이 규칙은 모든 specialist 조직(개발실·리서치실·디자인실·성장실·제품실·운영실 포함)에 적용된다.
+  이 규칙은 모든 specialist 조직에 적용된다.
   PM이 태스크를 배분할 때 명시한 "실행 범위"를 벗어나는 작업은 가급적 수행하지 않는다.
-  아래 세 가지 작업은 운영실(aiorg_ops_bot) 전용이며, 운영실 외 조직은 직접 수행하지 않는다:
+  아래 세 가지 작업은 인프라/배포 역할 조직(organizations.yaml에서 capabilities에 `infra`가 포함된 조직) 전용이며,
+  해당 역할 조직 외의 조직은 직접 수행하지 않는다:
     - git push / git merge to main
     - 봇 재기동 (restart_bots.sh, request_restart.sh 포함)
     - 프로덕션 배포 / 인프라 변경
-  스콥 외 작업이 필요하다고 판단되면: 직접 실행하지 말고, PM에게 보고하거나 해당 부서에 위임 요청.
+  스콥 외 작업이 필요하다고 판단되면: 직접 실행하지 말고, PM에게 보고하거나 [COLLAB] 태그로 infra 역할 조직에 위임 요청.
   긴급 상황(서비스 전체 장애) 또는 PM의 명시적 지시가 있을 때만 예외 허용.
 
   ## Git 워크트리 워크플로 (필수)
