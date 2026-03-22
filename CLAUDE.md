@@ -89,6 +89,18 @@ bash scripts/start_all.sh
 - 이 프로젝트는 hatchling 설정 미비로 pip install -e . 작동 안 함
 - rank-bm25 등 신규 패키지는 직접 설치: .venv/bin/pip install rank-bm25
 
+### [2026-03-22] 현재 시간 기준 작업 원칙 (전체 조직 공통)
+- **원칙**: 모든 봇은 태스크 시작 시 현재 날짜/시각을 확인하고, 사용자가 과거 시점을 명시하지 않는 한 항상 **현재 시각 기준**으로 조사·판단한다.
+- **적용 범위**: 웹검색, 모델/라이브러리 버전 확인, 시장조사, 레퍼런스 조사 등 시간 의존성 있는 모든 작업
+- **산출물 표기**: 보고서·분석물에 "YYYY-MM-DD 기준" 조사 시점을 반드시 명시
+- **글로벌 적용 위치**: `orchestration.yaml` → `global_instructions` 섹션 "현재 시간 사용 원칙"
+
+### [2026-03-22] Gemini Flash 모델 버전 — gemini-2.5-flash 사용
+- **현황**: `gemini-2.0-flash` → `gemini-2.5-flash` 로 업데이트 (2026-03-22 기준 최신 안정화 버전)
+- **주의**: 사용자가 "3.1 flash"로 알고 있었으나, 실제 Google 공식 최신 stable 모델은 `gemini-2.5-flash`. 3.x 계열은 Preview 단계임.
+- **변경 파일**: `tools/gemini_runner.py` (기본값 변경), `tools/base_runner.py` (주석 갱신)
+- **Deprecated**: `gemini-2.0-flash` 는 2026-06-01 서비스 종료 예정
+
 ### [2026-03-22] PM 봇 대화 히스토리 컨텍스트 창 튜닝
 PM 봇은 작업 배분 판단 시 최근 대화 이력을 `[CONTEXT]...[/CONTEXT]` 블록으로 프롬프트에 주입한다.
 아래 환경변수로 런타임 조정 가능 (`.env` 또는 실행 환경):
