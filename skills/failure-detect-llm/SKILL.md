@@ -1,13 +1,6 @@
 ---
 name: failure-detect-llm
-description: >
-  LLM(Gemini 2.5 Flash) 기반 실패 감지 보조 스킬.
-  알고리즘 방식(FailureCondition.check)이 불확실한 경계 케이스
-  (survival_rate 0.75~0.85, borderline regression, flaky 의심)에서
-  의미 기반 재검증을 수행한다.
-  Triggers: 'failure detect', 'LLM 실패감지', '알고리즘 불확실', 'borderline failure',
-  자가개선 파이프라인 ScanDiff 판정 애매 시, survival_rate 0.75~0.85 구간,
-  동일 task 3회 이상 FAILED 상태
+description: "LLM(Gemini 2.5 Flash) 기반 실패 감지 보조 스킬. Triggers: 'failure detect', 'LLM 실패감지', '알고리즘 불확실', 'borderline failure'. Use when survival_rate 0.75~0.85 경계 케이스이거나 알고리즘 판정이 불확실할 때."
 model: gemini-2.5-flash
 max_tokens_input: 3000
 max_tokens_output: 300

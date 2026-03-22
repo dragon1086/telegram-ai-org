@@ -2166,7 +2166,7 @@ class PMOrchestrator:
         from core.eval_runner import EvalRunner
 
         try:
-            bus = ImprovementBus(dry_run=True)
+            bus = ImprovementBus(dry_run=False)
             signals = bus.collect_signals()
             report = bus.run(signals)
             bus_text = bus.format_report(report)

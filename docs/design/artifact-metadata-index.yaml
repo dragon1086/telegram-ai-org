@@ -1,0 +1,122 @@
+# 봇 산출물 메타데이터 인덱싱 스키마 — 마스터 인덱스 (샘플/초기본)
+# 실제 artifact_index는 ~/.ai-org/memory/artifact_index.yaml 에 위치
+# 이 파일은 스키마 검증용 샘플 인덱스
+# schema_version: artifact_index/v1.0
+
+schema_version: "artifact_index/v1.0"
+last_updated: "2026-03-22T00:00:00Z"
+total_count: 3
+
+artifacts:
+  - id: "ART-20260322-art001"
+    title: "봇 산출물 메타데이터 인덱싱 — Phase 1: 요구사항 분석"
+    type: design_doc
+    status: completed
+    org: design
+    task_id: "T-aiorg_pm_bot-280"
+    task_phase: "Phase 1"
+    file_path: "docs/design/artifact-metadata-phase1-analysis.md"
+    created_at: "2026-03-22T00:00:00Z"
+    valid_until: null
+    priority: P1
+    summary_short: "봇 산출물 유형별 필드 목록표 및 write-time 트리거 시점 비교 분석"
+    keywords:
+      - metadata
+      - schema
+      - artifacts
+      - trigger
+      - memory
+      - key_entities
+      - decisions
+    key_decisions_summary:
+      - "T-1 (봇 응답 완료 직후) 트리거 채택"
+      - "T-3 크론 보완재 병행"
+    key_entities_names:
+      - "MemoryManager"
+      - "notify_task_done"
+      - "ProjectMemory"
+    tags_flat:
+      - "domain:memory"
+      - "domain:metadata"
+      - "org:design"
+      - "phase:schema-design"
+    meta_generated_by: "claude-sonnet-4-5"
+    meta_confidence: 0.93
+
+  - id: "ART-20260322-art002"
+    title: "봇 산출물 메타데이터 인덱싱 — Phase 2: 스키마 구조 설계"
+    type: design_doc
+    status: completed
+    org: design
+    task_id: "T-aiorg_pm_bot-280"
+    task_phase: "Phase 2"
+    file_path: "docs/design/artifact-metadata-phase2-schema.md"
+    created_at: "2026-03-22T00:00:00Z"
+    valid_until: null
+    priority: P1
+    summary_short: "YAML frontmatter 확장 스키마 초안, artifact_index.yaml 구조, retrieval 연계 방식 정의"
+    keywords:
+      - yaml
+      - frontmatter
+      - artifact_index
+      - retrieval
+      - schema
+      - bm25
+      - tags_flat
+    key_decisions_summary:
+      - "YAML 포맷 채택 (JSON 불채택)"
+      - "artifact_index.yaml 위치: ~/.ai-org/memory/"
+      - "retrieval L1~L4 4계층 구조"
+    key_entities_names:
+      - "artifact_index.yaml"
+      - "ArtifactIndexEntry"
+      - "MemoryNode"
+      - "build_context"
+    tags_flat:
+      - "domain:memory"
+      - "domain:metadata"
+      - "domain:storage"
+      - "org:design"
+      - "phase:schema-design"
+    meta_generated_by: "claude-sonnet-4-5"
+    meta_confidence: 0.95
+
+  - id: "ART-20260322-art003"
+    title: "봇 산출물 메타데이터 인덱싱 — Phase 3: 가이드라인 문서화"
+    type: design_doc
+    status: completed
+    org: design
+    task_id: "T-aiorg_pm_bot-280"
+    task_phase: "Phase 3"
+    file_path: "docs/design/artifact-metadata-phase3-guidelines.md"
+    created_at: "2026-03-22T00:00:00Z"
+    valid_until: null
+    priority: P1
+    summary_short: "샘플 3종 검증, 최종 확정 스키마, 적용 가이드라인, 버전 관리 정책"
+    keywords:
+      - guidelines
+      - migration
+      - versioning
+      - ttl
+      - valid_until
+      - llm-extraction
+      - checklist
+    key_decisions_summary:
+      - "key_decisions 선택(optional) 필드로 확정"
+      - "file_path nullable, inline_content 대안 필드 추가"
+      - "artifact_type_meta 자유형 확장 필드 추가"
+      - "유형별 권장 TTL 가이드 확정"
+      - "Major/Minor 버전 업그레이드 기준 확정"
+    key_entities_names:
+      - "artifact_type_meta"
+      - "inline_content"
+      - "valid_until"
+      - "schema_version"
+    tags_flat:
+      - "domain:memory"
+      - "domain:metadata"
+      - "org:design"
+      - "phase:schema-design"
+      - "phase:guidelines"
+    meta_generated_by: "claude-sonnet-4-5"
+    meta_confidence: 0.94

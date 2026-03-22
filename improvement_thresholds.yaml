@@ -1,0 +1,30 @@
+# 자가개선 트리거 기준 설정
+# health_report_parser.py, improvement_queue.py 에서 참조
+
+# --- 파일 크기 임계값 (KB) ---
+file_size:
+  warn_kb: 80        # 이 이상이면 warn
+  critical_kb: 150   # 이 이상이면 critical → 자동 분리 권장
+
+# --- 에러 패턴 반복 임계값 ---
+error_pattern:
+  repeat_threshold: 3      # 동일 예외/카테고리 N회 이상이면 트리거
+  lookback_days: 14        # 최근 N일 기준
+
+# --- 우선순위 매핑 (severity → priority 점수) ---
+priority_map:
+  critical: 8    # ImprovementBus priority 8 이상이면 auto-fix 시도
+  warn: 4
+  info: 1
+
+# --- 피드백 루프 설정 ---
+feedback_loop:
+  max_iterations: 3          # 개선 실행 후 최대 재스캔 횟수
+  rescan_delay_seconds: 2    # 재스캔 전 대기 시간(초)
+  unresolved_alert: true     # 미해소 항목 알림 발송 여부
+
+# --- 자동 실행 허용 액션 ---
+auto_actions:
+  file_size_critical: "split_large_file"     # 대형 파일 → 모듈 분리 요청
+  file_size_warn: "log_only"                 # warn → 로그만
+  error_pattern: "fix_error_pattern"         # 반복 에러 → 자동 수정 시도
