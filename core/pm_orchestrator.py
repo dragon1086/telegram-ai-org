@@ -24,6 +24,7 @@ from core.pm_decision import DecisionClientProtocol
 from core.pm_identity import PMIdentity
 from core.telegram_user_guardrail import ensure_user_friendly_output, extract_local_artifact_paths
 from core.staleness_checker import StalenessChecker
+from core.telegram_formatting import markdown_to_html, escape_html
 
 ENABLE_PM_ORCHESTRATOR = os.environ.get("ENABLE_PM_ORCHESTRATOR", "0") == "1"
 MAX_REWORK_RETRIES = int(os.environ.get("MAX_REWORK_RETRIES", "2"))
@@ -2190,16 +2191,19 @@ class PMOrchestrator:
         store = RoutingApprovalStore()
         proposal = store.load_pending()
         if not proposal:
-            await update.message.reply_text("대기 중인 라우팅 제안 없음.")
+            await update.message.reply_text("대기 중인 라우팅 제안 없음.", parse_mode="HTML")
             return
         applier = NLKeywordApplier()
         result = applier.apply(proposal.get("keyword_additions", {}))
         store.clear()
-        await update.message.reply_text(f"✅ 라우팅 키워드 적용 완료:\n{result}")
+        await update.message.reply_text(
+            markdown_to_html(f"✅ 라우팅 키워드 적용 완료:\n{result}"),
+            parse_mode="HTML",
+        )
 
     async def _handle_routing_reject(self, update, context) -> None:
         """대기 중인 라우팅 제안을 거절하고 삭제."""
         from core.routing_approval_store import RoutingApprovalStore
         store = RoutingApprovalStore()
         store.clear()
-        await update.message.reply_text("❌ 라우팅 제안 거절됨. 다음 분석 시까지 대기.")
+        await update.message.reply_text("❌ 라우팅 제안 거절됨. 다음 분석 시까지 대기.", parse_mode="HTML")

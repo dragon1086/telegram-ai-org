@@ -819,8 +819,9 @@ class TelegramRelay:
 
         if not tone_instruction:
             await update.effective_message.reply_text(
-                f"{matched_dept} 봇의 말투 지시를 입력해주세요.\n"
+                f"{escape_html(matched_dept)} 봇의 말투 지시를 입력해주세요.\n"
                 "예) '성장실 봇 말투를 데이터 지향적이고 직설적으로 바꿔줘'",
+                parse_mode="HTML",
             )
             return
 
@@ -1645,6 +1646,7 @@ class TelegramRelay:
                 await update.message.reply_text(
                     f"이미 처리 중인 동일 요청이 있습니다 ({age_min}분 전 접수). "
                     f"새로운 요청이라면 문구를 약간 바꿔서 다시 보내주세요.",
+                    parse_mode="HTML",
                 )
             return
 
@@ -2245,7 +2247,7 @@ class TelegramRelay:
     async def _process_attachment_bundle(self, bundle: AttachmentBundle, msg) -> None:
         attachment_names = ", ".join(item.local_path.name for item in bundle.items)
 
-        await msg.reply_text(f"📎 파일 수신: {attachment_names}\n처리 중...")
+        await msg.reply_text(f"📎 파일 수신: {escape_html(attachment_names)}\n처리 중...", parse_mode="HTML")
         logger.info(f"[on_attachment] 저장: {attachment_names}")
 
         task = bundle.build_task_prompt()
@@ -2469,10 +2471,10 @@ class TelegramRelay:
             await self.session_manager.writeback_and_reset(TEAM_ID, self.memory_manager)
             self._message_count = 0
             self.session_store.reset()
-            await update.message.reply_text("✅ 새 세션으로 시작합니다. 대화 기록도 초기화했습니다.")
+            await update.message.reply_text("✅ 새 세션으로 시작합니다. 대화 기록도 초기화했습니다.", parse_mode="HTML")
         except Exception as e:
             logger.error(f"리셋 실패: {e}")
-            await update.message.reply_text(f"❌ 리셋 실패: {e}")
+            await update.message.reply_text(f"❌ 리셋 실패: {escape_html(str(e))}", parse_mode="HTML")
 
     # ── 사용자 스케줄 커맨드 (pm_org 전용) ───────────────────────────────
 
@@ -2506,12 +2508,13 @@ class TelegramRelay:
                 self._org_scheduler.add_user_job(sched)
             await update.message.reply_text(
                 f"✅ 스케줄 등록!\n"
-                f"📋 ID: {sched.id}\n"
-                f"⏰ {parsed['human_readable']}\n"
-                f"📝 {parsed['task_description']}"
+                f"📋 ID: <code>{escape_html(str(sched.id))}</code>\n"
+                f"⏰ {escape_html(parsed['human_readable'])}\n"
+                f"📝 {escape_html(parsed['task_description'])}",
+                parse_mode="HTML",
             )
         except Exception as e:
-            await update.message.reply_text(f"❌ 등록 실패: {e}")
+            await update.message.reply_text(f"❌ 등록 실패: {escape_html(str(e))}", parse_mode="HTML")
 
     async def on_command_schedules(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """/schedules — 등록된 스케줄 목록."""
@@ -2632,10 +2635,11 @@ class TelegramRelay:
 
         if stopped:
             await update.message.reply_text(
-                f"🛑 작업 종료 완료\n종료된 세션: {', '.join(stopped)}"
+                f"🛑 작업 종료 완료\n종료된 세션: <code>{escape_html(', '.join(stopped))}</code>",
+                parse_mode="HTML",
             )
         else:
-            await update.message.reply_text("⚠️ 세션 종료 중 오류가 발생했습니다.")
+            await update.message.reply_text("⚠️ 세션 종료 중 오류가 발생했습니다.", parse_mode="HTML")
 
     async def on_command_restart(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """봇 전체 재시작 (scripts/restart_bots.sh 실행). PM봇 전용."""
@@ -2658,7 +2662,7 @@ class TelegramRelay:
             _asyncio.create_task(proc.wait())
         except Exception as exc:
             logger.error(f"/restart 실패: {exc}")
-            await update.message.reply_text(f"❌ 재시작 실패: {exc}")
+            await update.message.reply_text(f"❌ 재시작 실패: {escape_html(str(exc))}", parse_mode="HTML")
 
     async def on_command_set_engine(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """/set_engine <engine> — bots/*.yaml 엔진 변경 후 재시작. PM봇 전용."""
@@ -2750,12 +2754,12 @@ class TelegramRelay:
             _, stderr = await _asyncio.wait_for(proc.communicate(), timeout=30)
             if proc.returncode != 0:
                 logger.error(f"[set_engine] 재시작 실패 (rc={proc.returncode}): {stderr.decode()[:200]}")
-                await update.message.reply_text(f"❌ 재시작 실패 (rc={proc.returncode})")
+                await update.message.reply_text(f"❌ 재시작 실패 (rc={proc.returncode})", parse_mode="HTML")
         except _asyncio.TimeoutError:
             logger.warning("[set_engine] 재시작 타임아웃 — 백그라운드에서 계속 실행 중일 수 있음")
         except Exception as exc:
             logger.error(f"[set_engine] 재시작 실패: {exc}")
-            await update.message.reply_text(f"❌ 재시작 실패: {exc}")
+            await update.message.reply_text(f"❌ 재시작 실패: {escape_html(str(exc))}", parse_mode="HTML")
 
     async def on_command_setup(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """설정 마법사 진입 — 메뉴 표시."""
@@ -3541,7 +3545,7 @@ class TelegramRelay:
             return
 
         claim_text = f"{requester_mention} {make_collab_claim(self.org_id)}".strip()
-        await update.message.reply_text(claim_text)
+        await update.message.reply_text(escape_html(claim_text), parse_mode="HTML")
 
         # 요청 조직의 맥락 + 글로벌 맥락 모두 주입
         system_prompt = self.identity.build_system_prompt()
@@ -3919,13 +3923,15 @@ class TelegramRelay:
         # /context-budget — 조직별 세션 컨텍스트 예산 요약
         if cmd == "/context-budget":
             registry = self._session_registry()
-            lines = ["📏 context budget"]
+            lines = ["📏 <b>context budget</b>"]
             for item in registry.list_sessions():
                 usage_hint = f"tok={item['total_tokens']}" if item["total_tokens"] else f"msgs={item['msg_count']}"
                 lines.append(
-                    f"- {item['org_id']}: {item['context_percent']}% | {item['health']} | {usage_hint} | src={item['usage_source']}"
+                    f"- <code>{escape_html(item['org_id'])}</code>: {escape_html(str(item['context_percent']))}%"
+                    f" | {escape_html(str(item['health']))} | {escape_html(usage_hint)}"
+                    f" | src={escape_html(str(item['usage_source']))}"
                 )
-            await update.message.reply_text("\n".join(lines))
+            await update.message.reply_text("\n".join(lines), parse_mode="HTML")
             return
 
         # /session-policy [org_id]
