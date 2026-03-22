@@ -27,3 +27,41 @@ active_hours:
   start: 9
   end: 22
   timezone: "Asia/Seoul"
+phase_templates:
+  simple:
+    - name: 분석 및 전략
+      instructions: 요청에 대한 성장/마케팅 분석과 전략을 제시하세요.
+      deliverables:
+        - 전략 보고서
+  moderate:
+    - name: 시장 분석
+      instructions: 시장 현황과 경쟁 환경을 분석하세요.
+      deliverables:
+        - 시장 분석
+    - name: 전략 수립
+      instructions: 성장 전략과 실행 계획을 수립하세요.
+      deliverables:
+        - 성장 전략서
+    - name: KPI 설정
+      instructions: 성과 측정을 위한 KPI를 정의하세요.
+      deliverables:
+        - KPI 대시보드
+  complex:
+    - name: 현황 진단
+      instructions: 현재 성장 지표와 문제점을 진단하세요.
+      deliverables:
+        - 현황 진단 보고서
+    - name: 시장/경쟁사 분석
+      instructions: 시장 트렌드와 경쟁사를 심층 분석하세요.
+      deliverables:
+        - 시장 분석 보고서
+    - name: 전략 수립
+      instructions: 단계별 성장 전략을 수립하세요.
+      deliverables:
+        - 성장 전략서
+        - 실행 로드맵
+    - name: 측정 체계
+      instructions: 성과 측정 체계와 A/B 테스트 계획을 수립하세요.
+      deliverables:
+        - 측정 체계
+        - 실험 계획

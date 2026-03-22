@@ -1,0 +1,38 @@
+# 부서 미매핑 봇용 기본 phase 템플릿
+# load_default_phases() 가 _default 키로 참조한다.
+_default:
+  simple:
+    - name: 실행
+      instructions: 요청사항을 분석하고 실행하세요.
+      deliverables:
+        - 실행 결과
+  moderate:
+    - name: 분석
+      instructions: 요청사항을 분석하세요.
+      deliverables:
+        - 분석 결과
+    - name: 실행
+      instructions: 분석 결과를 바탕으로 실행하세요.
+      deliverables:
+        - 실행 결과
+    - name: 검증
+      instructions: 실행 결과를 검증하세요.
+      deliverables:
+        - 검증 보고서
+  complex:
+    - name: 현황 분석
+      instructions: 현재 상태를 분석하세요.
+      deliverables:
+        - 현황 분석
+    - name: 계획 수립
+      instructions: 상세 실행 계획을 수립하세요.
+      deliverables:
+        - 실행 계획서
+    - name: 실행
+      instructions: 계획에 따라 실행하세요.
+      deliverables:
+        - 실행 결과
+    - name: 검증 및 보고
+      instructions: 결과를 검증하고 보고서를 작성하세요.
+      deliverables:
+        - 최종 보고서

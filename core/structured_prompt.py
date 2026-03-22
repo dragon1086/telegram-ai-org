@@ -14,8 +14,25 @@ from enum import Enum
 
 from loguru import logger
 
-from core.constants import KNOWN_DEPTS, DEPT_ROLES
+from core.constants import KNOWN_DEPTS, DEPT_ROLES, DEFAULT_PHASES
 from core.pm_decision import DecisionClientProtocol
+
+# LLM 없이 _template_generate() 가 호출됐을 때 _default 도 로드 실패한 경우의
+# 최소 인라인 fallback (플랫폼 무관 범용 템플릿).
+_INLINE_FALLBACK_PHASE: dict[str, list[dict]] = {
+    "simple": [{"name": "실행", "instructions": "요청사항을 분석하고 실행하세요.", "deliverables": ["실행 결과"]}],
+    "moderate": [
+        {"name": "분석", "instructions": "요청사항을 분석하세요.", "deliverables": ["분석 결과"]},
+        {"name": "실행", "instructions": "분석 결과를 바탕으로 실행하세요.", "deliverables": ["실행 결과"]},
+        {"name": "검증", "instructions": "실행 결과를 검증하세요.", "deliverables": ["검증 보고서"]},
+    ],
+    "complex": [
+        {"name": "현황 분석", "instructions": "현재 상태를 분석하세요.", "deliverables": ["현황 분석"]},
+        {"name": "계획 수립", "instructions": "상세 실행 계획을 수립하세요.", "deliverables": ["실행 계획서"]},
+        {"name": "실행", "instructions": "계획에 따라 실행하세요.", "deliverables": ["실행 결과"]},
+        {"name": "검증 및 보고", "instructions": "결과를 검증하고 보고서를 작성하세요.", "deliverables": ["최종 보고서"]},
+    ],
+}
 
 
 class TaskComplexity(str, Enum):
@@ -203,8 +220,8 @@ class StructuredPromptGenerator:
         complexity: TaskComplexity, context: str,
     ) -> StructuredPrompt:
         """템플릿 기반 프롬프트 생성 (LLM fallback)."""
-        templates = _DEFAULT_PHASES.get(dept, _DEFAULT_PHASES["_default"])
-        phase_templates = templates.get(complexity.value, templates["simple"])
+        templates = DEFAULT_PHASES.get(dept) or DEFAULT_PHASES.get("_default") or _INLINE_FALLBACK_PHASE
+        phase_templates = templates.get(complexity.value) or templates.get("simple") or _INLINE_FALLBACK_PHASE["simple"]
 
         phases: list[Phase] = []
         for i, tmpl in enumerate(phase_templates, 1):
@@ -223,151 +240,7 @@ class StructuredPromptGenerator:
         )
 
 
-# ── 부서별 기본 Phase 템플릿 ──────────────────────────────────
-
-_DEFAULT_PHASES: dict[str, dict[str, list[dict]]] = {
-    "aiorg_product_bot": {
-        "simple": [
-            {"name": "분석 및 기획", "instructions": "요청을 분석하고 핵심 요구사항을 정리하세요.",
-             "deliverables": ["요구사항 정리 문서"]},
-        ],
-        "moderate": [
-            {"name": "요구사항 분석", "instructions": "요청의 배경과 목표를 분석하고 핵심 요구사항을 도출하세요.",
-             "deliverables": ["요구사항 목록"]},
-            {"name": "기획서 작성", "instructions": "도출된 요구사항을 바탕으로 구체적인 기획서를 작성하세요.",
-             "deliverables": ["기획서/PRD"]},
-            {"name": "검토", "instructions": "기획서의 완성도와 실현 가능성을 검토하세요.",
-             "deliverables": ["검토 의견"]},
-        ],
-        "complex": [
-            {"name": "현황 분석", "instructions": "현재 상태와 문제점을 분석하세요.",
-             "deliverables": ["현황 분석 보고서"]},
-            {"name": "요구사항 정의", "instructions": "기능/비기능 요구사항을 체계적으로 정의하세요.",
-             "deliverables": ["요구사항 명세서"]},
-            {"name": "기획서 작성", "instructions": "상세 기획서와 로드맵을 작성하세요.",
-             "deliverables": ["상세 기획서", "로드맵"]},
-            {"name": "리스크 분석", "instructions": "구현 시 예상되는 리스크와 대응 방안을 정리하세요.",
-             "deliverables": ["리스크 분석 보고서"]},
-        ],
-    },
-    "aiorg_engineering_bot": {
-        "simple": [
-            {"name": "구현", "instructions": "요청사항을 분석하고 코드를 구현하세요.",
-             "deliverables": ["구현 코드"]},
-        ],
-        "moderate": [
-            {"name": "기술 분석", "instructions": "기술적 접근 방법을 분석하고 구현 계획을 수립하세요.",
-             "deliverables": ["기술 분석 문서"]},
-            {"name": "구현", "instructions": "계획에 따라 코드를 구현하세요.",
-             "deliverables": ["구현 코드"]},
-            {"name": "테스트 및 검증", "instructions": "구현된 코드를 테스트하고 검증하세요.",
-             "deliverables": ["테스트 결과"]},
-        ],
-        "complex": [
-            {"name": "아키텍처 설계", "instructions": "시스템 아키텍처와 컴포넌트 구조를 설계하세요.",
-             "deliverables": ["아키텍처 문서"]},
-            {"name": "핵심 구현", "instructions": "핵심 로직과 데이터 모델을 구현하세요.",
-             "deliverables": ["핵심 코드"]},
-            {"name": "통합 구현", "instructions": "외부 연동과 API를 구현하세요.",
-             "deliverables": ["통합 코드"]},
-            {"name": "테스트", "instructions": "단위/통합 테스트를 작성하고 실행하세요.",
-             "deliverables": ["테스트 코드", "테스트 결과"]},
-        ],
-    },
-    "aiorg_design_bot": {
-        "simple": [
-            {"name": "디자인", "instructions": "요청에 맞는 UI/UX 디자인안을 제시하세요.",
-             "deliverables": ["디자인안"]},
-        ],
-        "moderate": [
-            {"name": "사용자 분석", "instructions": "대상 사용자와 사용 시나리오를 분석하세요.",
-             "deliverables": ["사용자 분석"]},
-            {"name": "와이어프레임", "instructions": "화면 구조와 인터랙션을 설계하세요.",
-             "deliverables": ["와이어프레임"]},
-            {"name": "디자인 시안", "instructions": "최종 디자인 시안을 제작하세요.",
-             "deliverables": ["디자인 시안"]},
-        ],
-        "complex": [
-            {"name": "UX 리서치", "instructions": "사용자 니즈와 경쟁사를 분석하세요.",
-             "deliverables": ["UX 리서치 보고서"]},
-            {"name": "정보 구조 설계", "instructions": "정보 계층과 네비게이션을 설계하세요.",
-             "deliverables": ["IA 문서"]},
-            {"name": "와이어프레임", "instructions": "주요 화면의 와이어프레임을 작성하세요.",
-             "deliverables": ["와이어프레임"]},
-            {"name": "디자인 시스템", "instructions": "일관된 디자인 시스템과 최종 시안을 제작하세요.",
-             "deliverables": ["디자인 시스템", "최종 시안"]},
-        ],
-    },
-    "aiorg_growth_bot": {
-        "simple": [
-            {"name": "분석 및 전략", "instructions": "요청에 대한 성장/마케팅 분석과 전략을 제시하세요.",
-             "deliverables": ["전략 보고서"]},
-        ],
-        "moderate": [
-            {"name": "시장 분석", "instructions": "시장 현황과 경쟁 환경을 분석하세요.",
-             "deliverables": ["시장 분석"]},
-            {"name": "전략 수립", "instructions": "성장 전략과 실행 계획을 수립하세요.",
-             "deliverables": ["성장 전략서"]},
-            {"name": "KPI 설정", "instructions": "성과 측정을 위한 KPI를 정의하세요.",
-             "deliverables": ["KPI 대시보드"]},
-        ],
-        "complex": [
-            {"name": "현황 진단", "instructions": "현재 성장 지표와 문제점을 진단하세요.",
-             "deliverables": ["현황 진단 보고서"]},
-            {"name": "시장/경쟁사 분석", "instructions": "시장 트렌드와 경쟁사를 심층 분석하세요.",
-             "deliverables": ["시장 분석 보고서"]},
-            {"name": "전략 수립", "instructions": "단계별 성장 전략을 수립하세요.",
-             "deliverables": ["성장 전략서", "실행 로드맵"]},
-            {"name": "측정 체계", "instructions": "성과 측정 체계와 A/B 테스트 계획을 수립하세요.",
-             "deliverables": ["측정 체계", "실험 계획"]},
-        ],
-    },
-    "aiorg_ops_bot": {
-        "simple": [
-            {"name": "운영 계획", "instructions": "요청에 대한 운영/배포 계획을 수립하세요.",
-             "deliverables": ["운영 계획"]},
-        ],
-        "moderate": [
-            {"name": "인프라 분석", "instructions": "현재 인프라 상태를 분석하세요.",
-             "deliverables": ["인프라 분석"]},
-            {"name": "배포 계획", "instructions": "배포 전략과 절차를 수립하세요.",
-             "deliverables": ["배포 계획서"]},
-            {"name": "모니터링", "instructions": "모니터링 및 롤백 계획을 수립하세요.",
-             "deliverables": ["모니터링 계획"]},
-        ],
-        "complex": [
-            {"name": "인프라 아키텍처", "instructions": "인프라 아키텍처를 설계/검토하세요.",
-             "deliverables": ["인프라 아키텍처 문서"]},
-            {"name": "CI/CD 파이프라인", "instructions": "빌드/배포 파이프라인을 설계하세요.",
-             "deliverables": ["CI/CD 설계서"]},
-            {"name": "배포 실행", "instructions": "단계별 배포 절차를 수립하세요.",
-             "deliverables": ["배포 절차서"]},
-            {"name": "운영 안정화", "instructions": "모니터링, 알림, 롤백 계획을 수립하세요.",
-             "deliverables": ["운영 매뉴얼"]},
-        ],
-    },
-    "_default": {
-        "simple": [
-            {"name": "실행", "instructions": "요청사항을 분석하고 실행하세요.",
-             "deliverables": ["실행 결과"]},
-        ],
-        "moderate": [
-            {"name": "분석", "instructions": "요청사항을 분석하세요.",
-             "deliverables": ["분석 결과"]},
-            {"name": "실행", "instructions": "분석 결과를 바탕으로 실행하세요.",
-             "deliverables": ["실행 결과"]},
-            {"name": "검증", "instructions": "실행 결과를 검증하세요.",
-             "deliverables": ["검증 보고서"]},
-        ],
-        "complex": [
-            {"name": "현황 분석", "instructions": "현재 상태를 분석하세요.",
-             "deliverables": ["현황 분석"]},
-            {"name": "계획 수립", "instructions": "상세 실행 계획을 수립하세요.",
-             "deliverables": ["실행 계획서"]},
-            {"name": "실행", "instructions": "계획에 따라 실행하세요.",
-             "deliverables": ["실행 결과"]},
-            {"name": "검증 및 보고", "instructions": "결과를 검증하고 보고서를 작성하세요.",
-             "deliverables": ["최종 보고서"]},
-        ],
-    },
-}
+# _DEFAULT_PHASES 하드코딩 제거 완료 (T-aiorg_pm_bot-252).
+# 부서별 phase 템플릿은 bots/*.yaml 의 phase_templates 필드와
+# bots/default_phases.yaml (_default 키) 로 이동.
+# core.constants.DEFAULT_PHASES 로 모듈 로드 시 한 번 캐싱됨.

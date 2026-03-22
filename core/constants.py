@@ -12,15 +12,6 @@ from loguru import logger
 # bots/ 디렉토리 위치
 _BOTS_DIR = Path(__file__).parent.parent / "bots"
 
-# 하드코딩 fallback (bots/ 디렉토리 없거나 파싱 실패 시)
-_FALLBACK_DEPTS: dict[str, str] = {
-    "aiorg_product_bot": "기획실",
-    "aiorg_engineering_bot": "개발실",
-    "aiorg_design_bot": "디자인실",
-    "aiorg_growth_bot": "성장실",
-    "aiorg_ops_bot": "운영실",
-}
-
 _FALLBACK_ENGINES: dict[str, str] = {
     "aiorg_engineering_bot": "codex",
     "aiorg_design_bot": "codex",
@@ -82,10 +73,13 @@ def _load_bot_configs(bots_dir: Path | None = None) -> list[dict]:
 
 
 def load_known_depts(bots_dir: Path | None = None) -> dict[str, str]:
-    """부서 봇 목록 로드 (PM 제외). {org_id: dept_name}"""
+    """부서 봇 목록 로드 (PM 제외). {org_id: dept_name}
+
+    bots/*.yaml 로드 실패 시 빈 dict 반환 (플랫폼 이식성 보장).
+    """
     configs = _load_bot_configs(bots_dir)
     if not configs:
-        return dict(_FALLBACK_DEPTS)
+        return {}
 
     depts: dict[str, str] = {}
     for cfg in configs:
@@ -95,7 +89,7 @@ def load_known_depts(bots_dir: Path | None = None) -> dict[str, str]:
         dept_name = cfg.get("dept_name", org_id)
         depts[org_id] = dept_name
 
-    return depts or dict(_FALLBACK_DEPTS)
+    return depts
 
 
 def load_bot_engines(bots_dir: Path | None = None) -> dict[str, str]:
@@ -150,8 +144,47 @@ def load_dept_instructions(bots_dir: Path | None = None) -> dict[str, str]:
     return instructions or dict(_FALLBACK_INSTRUCTIONS)
 
 
+def load_default_phases(bots_dir: Path | None = None) -> dict[str, dict[str, list[dict]]]:
+    """부서별 phase 템플릿 로드. {org_id: {complexity: [phases]}}
+
+    로드 우선순위:
+      1. 각 bots/*.yaml 의 phase_templates 필드
+      2. bots/default_phases.yaml 의 _default 키
+      3. 위 모두 실패 시 빈 dict 반환 (호출자가 인라인 기본값 사용)
+    """
+    target = bots_dir or _BOTS_DIR
+    result: dict[str, dict[str, list[dict]]] = {}
+
+    try:
+        import yaml  # noqa: PLC0415
+    except ImportError:
+        logger.debug("[constants] PyYAML 없음 — default_phases 로드 불가")
+        return result
+
+    # 봇별 phase_templates 로드
+    configs = _load_bot_configs(bots_dir)
+    for cfg in configs:
+        org_id = cfg.get("org_id")
+        templates = cfg.get("phase_templates")
+        if org_id and isinstance(templates, dict):
+            result[org_id] = templates
+
+    # _default 는 별도 파일에서 로드
+    default_file = target / "default_phases.yaml"
+    if default_file.exists():
+        try:
+            data = yaml.safe_load(default_file.read_text()) or {}
+            if "_default" in data:
+                result["_default"] = data["_default"]
+        except Exception as e:
+            logger.warning(f"[constants] default_phases.yaml 로드 실패: {e}")
+
+    return result
+
+
 # 모듈 로드 시 한 번만 실행 (캐싱)
 KNOWN_DEPTS: dict[str, str] = load_known_depts()
 BOT_ENGINE_MAP: dict[str, str] = load_bot_engines()
 DEPT_ROLES: dict[str, str] = load_dept_roles()
 DEPT_INSTRUCTIONS: dict[str, str] = load_dept_instructions()
+DEFAULT_PHASES: dict[str, dict[str, list[dict]]] = load_default_phases()
