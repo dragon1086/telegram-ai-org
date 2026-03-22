@@ -33,6 +33,19 @@ everything-claude-code 하네스 패턴 적용. 코드 병합/배포 전 자동 
 ### 4. 환경변수 확인
 필수 환경변수 존재 여부 체크 (토큰, API 키 등).
 
+## 실패 감지 / 고위험 코드 변경 시 사전 요건
+
+> `failure-detect`, `FailureCondition`, `ScanDiff` 관련 코드 변경이 포함된 경우:
+> **quality-gate 실행 전에 `safe-modify` 스킬 절차를 먼저 완료**해야 한다.
+
+```
+고위험 경로 수정 순서:
+1. safe-modify 스킬 — Pre-flight 체크리스트 + CRAP 점수 확인
+2. 코드 수정 (Minimal Footprint / Guard Clause / Feature Flag 적용)
+3. quality-gate — 린트 + 테스트 + import 검증
+4. engineering-review — 코드 품질 판단
+```
+
 ## When to Run First
 
 다음 상황에서는 **다른 스킬보다 quality-gate를 먼저 실행**해야 한다:

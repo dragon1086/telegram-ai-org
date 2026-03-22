@@ -117,6 +117,8 @@ bash scripts/start_all.sh
 - confidence 임계값(0.85, 0.60) 테스트 없이 변경
 - 한 PR에서 복수 판정 경로 동시 수정
 
+**실전 엣지케이스 축적**: `skills/safe-modify/gotchas.md` — 실제 인시던트 기반 7개 Gotcha (confidence 임계값 변경, 예외 삼킴, Minimal Footprint 위반 등)
+
 **트리거**: `safe-modify`, `안전 수정`, `failure detect 수정`, `스코프 제한`, `부작용 최소화`
 
 ### [2026-03-22] Gemini Flash 모델 버전 — gemini-2.5-flash 사용
