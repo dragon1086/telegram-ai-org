@@ -40,24 +40,32 @@ logging.basicConfig(
 log = logging.getLogger("bot_watchdog")
 
 # ── Telegram 알림 ────────────────────────────────────────────────────────────
-ROCKY_CHAT_ID = "7726642089"
+# 그룹 채팅으로 알림 전송 (개인 DM은 /start 필요 → 403 발생)
+ALERT_CHAT_ID = os.environ.get("TELEGRAM_GROUP_CHAT_ID", "-5203707291")
+
+
+def _load_env_config() -> dict[str, str]:
+    """~/.ai-org/config.yaml (.env 형식) 파싱."""
+    config_path = Path.home() / ".ai-org" / "config.yaml"
+    if not config_path.exists():
+        return {}
+    result = {}
+    for line in config_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            k, _, v = line.partition("=")
+            result[k.strip()] = v.strip()
+    return result
 
 
 def _get_admin_token() -> str | None:
     """PM 봇 토큰을 config에서 읽어 알림용으로 사용."""
-    config_path = Path.home() / ".ai-org" / "config.yaml"
-    if not config_path.exists():
-        return None
-    try:
-        import yaml
-        data = yaml.safe_load(config_path.read_text())
-        # PM_BOT_TOKEN or first available token
-        token = data.get("PM_BOT_TOKEN")
-        if token:
-            return str(token)
-    except Exception:
-        pass
-    # fallback: env
+    cfg = _load_env_config()
+    token = cfg.get("PM_BOT_TOKEN")
+    if token:
+        return token
     return os.environ.get("PM_BOT_TOKEN")
 
 
@@ -69,7 +77,7 @@ def notify_rocky(message: str) -> None:
         return
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = json.dumps({
-        "chat_id": ROCKY_CHAT_ID,
+        "chat_id": ALERT_CHAT_ID,
         "text": message,
         "parse_mode": "HTML",
     }).encode()
