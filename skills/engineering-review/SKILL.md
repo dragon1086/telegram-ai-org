@@ -16,6 +16,19 @@ description: "Use when the engineering bot needs to review code changes before m
 - [ ] async: 기존 async 패턴 유지하는가
 - [ ] 비밀: 하드코딩된 토큰/키 없는가
 
+## 안전 수정 추가 체크리스트 (실패 감지 / 고위험 경로 코드 변경 시)
+
+> 실패 감지(`failure-detect`, `FailureCondition`, `ScanDiff`) 관련 코드 변경이 포함된 경우
+> **engineering-review 전에 반드시 `safe-modify` 스킬 절차를 먼저 수행**한다.
+
+- [ ] **Defensive**: Guard Clause 우선 적용, `except: pass` 없음
+- [ ] **Minimal Footprint**: 변경 파일 3개 이하, public 시그니처 유지
+- [ ] **Feature Flag**: 판정 로직 변경 시 Feature Flag로 격리
+- [ ] **Idempotency**: 동일 입력 → 동일 출력 (전역 상태 변경 없음)
+- [ ] **CRAP 점수**: 변경 함수 CRAP < 30 확인 (초과 시 테스트 먼저)
+- [ ] **Fallback 보존**: LLM 호출 실패 시 알고리즘 fallback 경로 유지
+- [ ] **실패 주입 테스트**: null/empty/error 입력에서 safe default 반환 확인
+
 ## Prerequisites
 
 코드 변경이 완료된 후, **engineering-review 전에 quality-gate 스킬을 먼저 실행**하라.
