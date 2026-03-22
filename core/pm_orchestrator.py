@@ -24,6 +24,7 @@ from core.pm_decision import DecisionClientProtocol
 from core.pm_identity import PMIdentity
 from core.telegram_user_guardrail import ensure_user_friendly_output, extract_local_artifact_paths
 from core.staleness_checker import StalenessChecker
+from core.context_window import format_history_for_prompt
 
 ENABLE_PM_ORCHESTRATOR = os.environ.get("ENABLE_PM_ORCHESTRATOR", "0") == "1"
 MAX_REWORK_RETRIES = int(os.environ.get("MAX_REWORK_RETRIES", "2"))
@@ -140,8 +141,19 @@ class PMOrchestrator:
     def decision_client(self) -> DecisionClientProtocol | None:
         return self._decision_client
 
-    async def plan_request(self, user_message: str) -> RequestPlan:
-        """유저 요청을 직접 답변/PM 직접 실행/조직 위임 중 어디로 보낼지 결정한다."""
+    async def plan_request(
+        self,
+        user_message: str,
+        *,
+        conversation_history: list[dict] | None = None,
+    ) -> RequestPlan:
+        """유저 요청을 직접 답변/PM 직접 실행/조직 위임 중 어디로 보낼지 결정한다.
+
+        Args:
+            user_message: 현재 사용자 메시지 (+ replied_context 포함 가능).
+            conversation_history: 최근 대화 이력 dict 리스트 (DESC 정렬).
+                                  None 또는 빈 리스트면 현재 메시지만 사용 (하위 호환).
+        """
         dept_hints = self._detect_relevant_depts(user_message)
         # recommend_team feedback loop: 성과 데이터 기반 부서 힌트 보강
         # Only runs when dept_hints is non-empty AND apm is available
@@ -159,7 +171,10 @@ class PMOrchestrator:
             except Exception as _e:
                 logger.debug(f"[PM] recommend_team 조회 실패 (무시): {_e}")
         workdir = self._extract_workdir(user_message)
-        result = await self._llm_unified_classify(user_message, dept_hints, workdir=workdir)
+        result = await self._llm_unified_classify(
+            user_message, dept_hints, workdir=workdir,
+            conversation_history=conversation_history,
+        )
         return self._normalize_request_plan(result)
 
     # autoresearch 타겟: core/routing_keywords.py 에서 관리
@@ -270,12 +285,15 @@ class PMOrchestrator:
         dept_hints: list[str],
         *,
         workdir: str | None = None,
+        conversation_history: list[dict] | None = None,
     ) -> "RequestPlan":
         """lane + route + complexity를 단일 LLM 호출로 처리. 실패 시 heuristic fallback."""
         if self._decision_client is None:
             return self._heuristic_unified_classify(user_message, dept_hints)
 
         dept_list = ", ".join(dept_hints) if dept_hints else "없음"
+        prior_context = format_history_for_prompt(conversation_history or [])
+        context_block = f"\n\n{prior_context}" if prior_context else ""
         prompt = (
             "Classify the following user request and return JSON only.\n"
             "Fields:\n"
@@ -285,6 +303,7 @@ class PMOrchestrator:
             '  complexity: one of [low, medium, high]\n'
             '  rationale: brief Korean explanation (max 30 chars)\n\n'
             f"dept_hints: {dept_list}\n"
+            f"{context_block}\n"
             f"User request: {user_message[:800]}\n\n"
             "Return only valid JSON, no markdown."
         )
@@ -645,7 +664,13 @@ class PMOrchestrator:
         self._task_counter += 1
         return f"T-{self._org_id}-{self._task_counter:03d}"
 
-    def _build_decompose_prompt(self, message: str, dept_hints: list[str]) -> str:
+    def _build_decompose_prompt(
+        self,
+        message: str,
+        dept_hints: list[str],
+        *,
+        conversation_history: list[dict] | None = None,
+    ) -> str:
         """현재 specialist 조직 프로필 기반 LLM 분해 프롬프트 생성."""
         dept_profiles = self._dept_profiles()
         dept_lines = "\n".join(
@@ -656,11 +681,14 @@ class PMOrchestrator:
             f"- {dept} ({dept_profiles.get(dept, {}).get('dept_name', dept)})"
             for dept in dept_hints
         ) or "- none"
+        prior_context = format_history_for_prompt(conversation_history or [])
+        context_section = f"\n\nRecent conversation context (for understanding intent):\n{prior_context}\n" if prior_context else ""
         return (
             f"You are the PM of an AI organization with these departments:\n"
             f"{dept_lines}\n\n"
             f"Priority department hints (must be respected unless clearly irrelevant):\n"
-            f"{hint_lines}\n\n"
+            f"{hint_lines}\n"
+            f"{context_section}\n"
             f"Break the user's request into specific subtasks for each relevant department.\n"
             f"Each subtask should be a CONCRETE, ACTIONABLE instruction (not the user's raw message).\n\n"
             f"Reply in this exact format (one line per subtask):\n"
@@ -680,17 +708,30 @@ class PMOrchestrator:
             f"User request: {message[:500]}"
         )
 
-    async def decompose(self, user_message: str) -> list[SubTask]:
+    async def decompose(
+        self,
+        user_message: str,
+        *,
+        conversation_history: list[dict] | None = None,
+    ) -> list[SubTask]:
         """사용자 메시지를 부서별 서브태스크로 분해.
 
         LLM 기반 분해를 시도하고, 실패 시 키워드 기반 fallback.
+
+        Args:
+            user_message: 현재 사용자 메시지.
+            conversation_history: 최근 대화 이력 (DESC 정렬).
+                                  None 또는 빈 리스트면 현재 메시지만 사용 (하위 호환).
         """
         if not self._dept_map():
             logger.info("[PM] 활성 specialist 조직이 없어 분해를 건너뜁니다.")
             return []
         workdir = self._extract_workdir(user_message)
         dept_hints = self._detect_relevant_depts(user_message)
-        subtasks = await self._llm_decompose(user_message, dept_hints, workdir=workdir)
+        subtasks = await self._llm_decompose(
+            user_message, dept_hints, workdir=workdir,
+            conversation_history=conversation_history,
+        )
         if subtasks:
             for subtask in subtasks:
                 subtask.workdir = workdir
@@ -727,12 +768,16 @@ class PMOrchestrator:
         user_message: str,
         dept_hints: list[str],
         workdir: str | None = None,
+        *,
+        conversation_history: list[dict] | None = None,
     ) -> list[SubTask]:
         """LLM으로 태스크 분해. 실패 시 빈 리스트 반환."""
         if self._decision_client is None:
             return []
 
-        prompt = self._build_decompose_prompt(user_message, dept_hints)
+        prompt = self._build_decompose_prompt(
+            user_message, dept_hints, conversation_history=conversation_history
+        )
         try:
             response = await asyncio.wait_for(
                 self._decision_client.complete(prompt, workdir=workdir),
