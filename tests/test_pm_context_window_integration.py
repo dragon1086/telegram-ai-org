@@ -183,3 +183,107 @@ async def test_decompose_without_history_still_works():
                     subtasks = await orch.decompose("PM 봇 개선")  # history 없이
 
     assert len(subtasks) == 1
+
+
+# ── 봇 응답 저장 → 양방향 히스토리 검증 ──────────────────────────────────────
+
+def test_format_history_includes_bot_and_user_roles():
+    """conversation_messages에 is_bot=True 메시지가 포함될 때 'PM' 레이블로 직렬화되는지 검증."""
+    msgs = [
+        {
+            "content": "PM 봇 개선 방안 제안해줘",
+            "role": "user",
+            "is_bot": False,
+            "timestamp": "2026-03-22T06:00:00",
+        },
+        {
+            "content": "컨텍스트 창 기능을 추가하면 좋겠습니다.",
+            "role": "bot",
+            "is_bot": True,
+            "timestamp": "2026-03-22T06:01:00",
+        },
+        {
+            "content": "구현해달라는 소리였어",
+            "role": "user",
+            "is_bot": False,
+            "timestamp": "2026-03-22T06:02:00",
+        },
+    ]
+    result = format_history_for_prompt(msgs, max_messages=10, max_tokens=5000)
+    assert "사용자:" in result
+    assert "PM:" in result
+    assert "컨텍스트 창" in result
+    assert "구현해달라" in result
+
+
+def test_bidirectional_history_in_decompose_prompt():
+    """봇 응답이 포함된 양방향 히스토리가 분해 프롬프트에 반영되어야 함."""
+    orch = _make_orchestrator()
+    history = [
+        {
+            "content": "PM 봇 개선 방안 제안해줘",
+            "role": "user",
+            "is_bot": False,
+            "timestamp": "2026-03-22T06:00:00",
+        },
+        {
+            "content": "컨텍스트 창 기능을 추가하면 좋겠습니다.",
+            "role": "bot",
+            "is_bot": True,
+            "timestamp": "2026-03-22T06:01:00",
+        },
+        {
+            "content": "구현해달라는 소리였어",
+            "role": "user",
+            "is_bot": False,
+            "timestamp": "2026-03-22T06:02:00",
+        },
+    ]
+    prompt = orch._build_decompose_prompt(
+        "구현해달라는 소리였어", [], conversation_history=history
+    )
+    assert "[CONTEXT]" in prompt
+    assert "PM:" in prompt        # 봇 응답이 포함됨
+    assert "사용자:" in prompt    # 사용자 메시지도 포함됨
+
+
+@pytest.mark.asyncio
+async def test_plan_request_bidirectional_history_context():
+    """양방향 히스토리 전달 시 plan_request LLM 프롬프트에 봇 응답도 포함되어야 함."""
+    captured_prompts: list[str] = []
+
+    async def mock_complete(prompt: str, **kwargs) -> str:
+        captured_prompts.append(prompt)
+        return '{"lane":"single_org_execution","route":"delegate","complexity":"medium","rationale":"이전 맥락 반영"}'
+
+    mock_client = MagicMock()
+    mock_client.complete = mock_complete
+    orch = _make_orchestrator(decision_client=mock_client)
+
+    history = [
+        {
+            "content": "PM 봇 컨텍스트 개선 방안 제안해줘",
+            "role": "user",
+            "is_bot": False,
+            "timestamp": "2026-03-22T06:00:00",
+        },
+        {
+            "content": "슬라이딩 윈도우 방식으로 최근 10개 메시지를 포함하면 좋겠습니다.",
+            "role": "bot",
+            "is_bot": True,
+            "timestamp": "2026-03-22T06:01:00",
+        },
+        {
+            "content": "그 제안대로 구현해줘",
+            "role": "user",
+            "is_bot": False,
+            "timestamp": "2026-03-22T06:02:00",
+        },
+    ]
+    with patch.object(orch, "_detect_relevant_depts", return_value=[]):
+        with patch.object(orch, "_extract_workdir", return_value=None):
+            await orch.plan_request("그 제안대로 구현해줘", conversation_history=history)
+
+    assert len(captured_prompts) == 1
+    assert "PM:" in captured_prompts[0]   # 봇 응답 포함 확인
+    assert "슬라이딩 윈도우" in captured_prompts[0]

@@ -424,21 +424,21 @@ class TelegramRelay:
         if db_context:
             sections.append(f"## 진행 중인 관련 태스크\n{db_context[:1200]}")
 
-        # 최근 대화 이력 포함 (부서봇에 맥락 전달)
+        # 최근 대화 이력 포함 (사용자+봇 양방향 — prior context 주입)
         recent_conv = ""
         if self.context_db is not None:
             try:
+                from core.context_window import format_history_for_prompt, MAX_HISTORY_MESSAGES
                 recent_msgs = await self.context_db.get_conversation_messages(
-                    chat_id=str(self.allowed_chat_id), is_bot=False, limit=8
+                    chat_id=str(self.allowed_chat_id), limit=MAX_HISTORY_MESSAGES + 2
                 )
                 if recent_msgs:
-                    lines = [f"[{m['timestamp'][:16]}] {m['content'][:200]}" for m in recent_msgs[:8]]
-                    recent_conv = "\n".join(lines)
+                    recent_conv = format_history_for_prompt(recent_msgs)
             except Exception:
                 pass
 
         if recent_conv:
-            sections.append(f"## 최근 대화 이력 (참고용)\n{recent_conv[:1200]}")
+            sections.append(f"## 최근 대화 이력 (참고용)\n{recent_conv[:1800]}")
 
         return "\n\n".join(section.strip() for section in sections if section.strip())
 
@@ -979,6 +979,26 @@ class TelegramRelay:
             await self.global_context.extract_and_save(self.org_id, prompt, reply)
 
         await self.memory_manager.add_log(f"PM 응답: {reply[:200]}")
+
+        # PM 응답을 conversation_messages에 저장 — 다음 요청 시 prior context로 활용
+        if self.context_db is not None and reply:
+            try:
+                import asyncio as _asyncio
+                from datetime import datetime, UTC as _UTC
+                _asyncio.create_task(
+                    self.context_db.insert_conversation_message(
+                        msg_id=None,
+                        chat_id=str(self.allowed_chat_id),
+                        user_id=self.org_id,
+                        bot_id=self.org_id,
+                        role="bot",
+                        is_bot=True,
+                        content=reply[:4000],
+                        timestamp=datetime.now(_UTC).isoformat(),
+                    )
+                )
+            except Exception:
+                pass  # 저장 실패해도 응답 전송은 계속
 
         chunks = split_message(reply.strip() or "알겠습니다.", 3800)  # HTML 태그 팽창 여유 (~4096 한도)
         first = chunks[0]
