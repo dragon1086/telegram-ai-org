@@ -215,6 +215,36 @@ class TestFalseClaimDetection:
         result = ResultSynthesizer._parse_synthesis(response)
         assert result.follow_up_tasks == [], "FOLLOW_UP:none 이면 follow_up_tasks는 빈 리스트여야 함"
         assert result.judgment == SynthesisJudgment.SUFFICIENT
+        assert result.false_claim_detected is True, "허위 접수 주장 시 false_claim_detected=True여야 함"
+
+    def test_no_false_claim_when_followup_registered(self):
+        """REPORT에 '접수했습니다' 있고 FOLLOW_UP: 라인도 있으면 false_claim_detected=False."""
+        response = (
+            "JUDGMENT: sufficient\n"
+            "REASONING: 완료\n"
+            "SUMMARY: 완료\n"
+            "FOLLOW_UP: DEPT:aiorg_engineering_bot|TASK:OrgScheduler GroupChatHub 연결\n"
+            "ARTIFACTS: none\n"
+            "REPORT:\n"
+            "작업 완료. 추가 작업을 개발실에 후속 태스크로 접수했습니다.\n"
+            "END_REPORT"
+        )
+        result = ResultSynthesizer._parse_synthesis(response)
+        assert len(result.follow_up_tasks) == 1
+        assert result.false_claim_detected is False, "FOLLOW_UP 라인 있으면 허위 주장 아님"
+
+    def test_no_false_claim_when_no_접수_keyword(self):
+        """REPORT에 '접수' 키워드 없으면 false_claim_detected=False."""
+        response = (
+            "JUDGMENT: sufficient\n"
+            "REASONING: 완료\n"
+            "SUMMARY: 완료\n"
+            "FOLLOW_UP: none\n"
+            "ARTIFACTS: none\n"
+            "REPORT:\n작업이 모두 완료되었습니다.\nEND_REPORT"
+        )
+        result = ResultSynthesizer._parse_synthesis(response)
+        assert result.false_claim_detected is False, "접수 키워드 없으면 false_claim_detected=False여야 함"
 
     def test_correct_followup_line_parses(self):
         """올바른 FOLLOW_UP: DEPT:xxx|TASK:yyy 라인 → follow_up_tasks에 등록."""

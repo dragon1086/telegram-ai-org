@@ -34,6 +34,7 @@ class SynthesisResult:
     unified_report: str = ""
     reasoning: str = ""
     artifact_paths: list[str] = field(default_factory=list)  # LLM이 선별한 첨부 파일 경로
+    false_claim_detected: bool = False  # REPORT에 "접수" 주장했지만 FOLLOW_UP: 라인 없는 경우
 
 
 _SYNTHESIS_PROMPT = (
@@ -250,7 +251,9 @@ class ResultSynthesizer:
         # 허위 접수 주장 감지: REPORT에 "후속 태스크 접수" 패턴이 있지만 FOLLOW_UP:이 없는 경우
         _false_claim_keywords = ("후속 태스크로 접수", "후속태스크로 접수", "후속 태스크 접수", "태스크 접수 완료", "접수했습니다", "접수하였습니다")
         _report_claims_followup = any(kw in unified_report for kw in _false_claim_keywords)
+        false_claim_detected = False
         if _report_claims_followup and not follow_ups:
+            false_claim_detected = True
             logger.warning(
                 "[Synthesizer] REPORT에 '후속 태스크 접수' 주장이 있지만 FOLLOW_UP: 라인이 없음 — "
                 "LLM이 실제 dispatch 없이 접수를 허위 선언했을 가능성 있음. "
@@ -265,6 +268,7 @@ class ResultSynthesizer:
             unified_report=unified_report,
             reasoning=reasoning,
             artifact_paths=artifact_paths,
+            false_claim_detected=false_claim_detected,
         )
 
     @staticmethod
