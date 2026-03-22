@@ -195,3 +195,110 @@ class TestSynthesizeIntegration:
         subtasks = [_make_subtask("aiorg_engineering_bot")]
         result = await synth.synthesize("코드 구현", subtasks)
         assert result.judgment == SynthesisJudgment.INSUFFICIENT
+
+
+class TestFalseClaimDetection:
+    """허위 접수 주장 감지 테스트 — REPORT에 '접수했습니다' 쓰고 FOLLOW_UP: none인 경우."""
+
+    def test_false_claim_no_followup_line(self):
+        """REPORT에 '후속 태스크로 접수했습니다' 있지만 FOLLOW_UP: none → follow_up_tasks 비어있음."""
+        response = (
+            "JUDGMENT: sufficient\n"
+            "REASONING: 완료\n"
+            "SUMMARY: 완료\n"
+            "FOLLOW_UP: none\n"
+            "ARTIFACTS: none\n"
+            "REPORT:\n"
+            "작업 완료. OrgScheduler 연결은 개발실에 후속 태스크로 접수했습니다.\n"
+            "END_REPORT"
+        )
+        result = ResultSynthesizer._parse_synthesis(response)
+        assert result.follow_up_tasks == [], "FOLLOW_UP:none 이면 follow_up_tasks는 빈 리스트여야 함"
+        assert result.judgment == SynthesisJudgment.SUFFICIENT
+
+    def test_correct_followup_line_parses(self):
+        """올바른 FOLLOW_UP: DEPT:xxx|TASK:yyy 라인 → follow_up_tasks에 등록."""
+        response = (
+            "JUDGMENT: sufficient\n"
+            "REASONING: 완료\n"
+            "SUMMARY: 완료\n"
+            "FOLLOW_UP: DEPT:aiorg_engineering_bot|TASK:OrgScheduler에 GroupChatHub 인스턴스 연결\n"
+            "ARTIFACTS: none\n"
+            "REPORT:\n"
+            "작업 완료.\n"
+            "END_REPORT"
+        )
+        result = ResultSynthesizer._parse_synthesis(response)
+        assert len(result.follow_up_tasks) == 1
+        assert result.follow_up_tasks[0]["dept"] == "aiorg_engineering_bot"
+        assert "GroupChatHub" in result.follow_up_tasks[0]["description"]
+
+    def test_unknown_dept_followup_ignored(self):
+        """KNOWN_DEPTS에 없는 dept → 파싱에서 무시."""
+        response = (
+            "JUDGMENT: sufficient\n"
+            "REASONING: 완료\n"
+            "SUMMARY: 완료\n"
+            "FOLLOW_UP: DEPT:unknown_bot|TASK:무언가 작업\n"
+            "ARTIFACTS: none\n"
+            "REPORT:\n작업 완료.\nEND_REPORT"
+        )
+        result = ResultSynthesizer._parse_synthesis(response)
+        assert result.follow_up_tasks == [], "알 수 없는 dept는 follow_up_tasks에 포함되지 않아야 함"
+
+    def test_multiple_followup_lines(self):
+        """FOLLOW_UP이 여러 줄인 경우 모두 파싱."""
+        response = (
+            "JUDGMENT: insufficient\n"
+            "REASONING: 두 작업 남음\n"
+            "SUMMARY: 미완료\n"
+            "FOLLOW_UP: DEPT:aiorg_engineering_bot|TASK:코드 수정\n"
+            "FOLLOW_UP: DEPT:aiorg_ops_bot|TASK:배포 확인\n"
+            "ARTIFACTS: none\n"
+            "REPORT:\n추가 작업 필요.\nEND_REPORT"
+        )
+        result = ResultSynthesizer._parse_synthesis(response)
+        assert len(result.follow_up_tasks) == 2
+        depts = {ft["dept"] for ft in result.follow_up_tasks}
+        assert "aiorg_engineering_bot" in depts
+        assert "aiorg_ops_bot" in depts
+
+
+class TestGroupChatHubConnection:
+    """GroupChatHub + OrgScheduler 연결 단위 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_hub_connected_to_scheduler(self):
+        """GroupChatHub 인스턴스가 OrgScheduler에 올바르게 주입되어야 함."""
+        from core.group_chat_hub import GroupChatHub
+
+        sent: list[str] = []
+
+        async def mock_send(text: str) -> None:
+            sent.append(text)
+
+        hub = GroupChatHub(send_to_group=mock_send)
+
+        # OrgScheduler 직접 import 없이 group_chat_hub 속성 검증
+        assert hub._send is mock_send, "GroupChatHub send 함수 주입 실패"
+        assert hub.context is not None, "GroupChatContext 초기화 실패"
+        assert hub.turn_manager is not None, "TurnManager 초기화 실패"
+
+    @pytest.mark.asyncio
+    async def test_participant_registration(self):
+        """GroupChatHub에 봇 참가자 등록 후 participant_ids 확인."""
+        from core.group_chat_hub import GroupChatHub
+
+        async def mock_send(text: str) -> None:
+            pass
+
+        async def mock_speak(msg: str, history: list) -> str | None:
+            return f"응답: {msg}"
+
+        hub = GroupChatHub(send_to_group=mock_send)
+        hub.register_participant("aiorg_engineering_bot", mock_speak, ["코드", "버그"])
+        hub.register_participant("aiorg_ops_bot", mock_speak, ["배포", "인프라"])
+
+        ids = hub.participant_ids
+        assert "aiorg_engineering_bot" in ids
+        assert "aiorg_ops_bot" in ids

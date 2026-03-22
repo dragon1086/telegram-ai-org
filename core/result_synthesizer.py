@@ -64,10 +64,13 @@ _SYNTHESIS_PROMPT = (
     "- ARTIFACTS: list only files that are genuinely useful to the user (images, reports, docs).\n"
     "  Exclude temp files, logs, lock files. Write absolute paths as they appear in results.\n"
     "  If no files worth sending, write ARTIFACTS: none\n"
-    "- FOLLOW_UP: Only add when the user's original request is genuinely NOT yet fulfilled.\n"
-    "  DO NOT create follow-ups just because departments mentioned future plans or next steps.\n"
-    "  If judgment is SUFFICIENT, write FOLLOW_UP: none in almost all cases.\n"
-    "  Only exception: user explicitly asked for a multi-step deliverable and a step is missing.\n"
+    "- FOLLOW_UP: Only add when the user's original request is genuinely NOT yet fulfilled,\n"
+    "  OR when a department explicitly states that a specific implementation task remains incomplete.\n"
+    "  DO NOT create follow-ups just because departments mentioned vague future plans.\n"
+    "  If judgment is SUFFICIENT but a concrete remaining task was identified, USE FOLLOW_UP.\n"
+    "  CRITICAL: If you mention in the REPORT that a follow-up task was dispatched/접수, you MUST\n"
+    "  include the corresponding FOLLOW_UP: DEPT:xxx|TASK:yyy line. NEVER claim 접수 in the REPORT\n"
+    "  without a matching FOLLOW_UP: line — this creates a false promise to the user.\n"
 )
 
 
@@ -243,6 +246,17 @@ class ResultSynthesizer:
                 _parse_follow_up_line(stripped, follow_ups)
 
         unified_report = "\n".join(report_lines).strip()
+
+        # 허위 접수 주장 감지: REPORT에 "후속 태스크 접수" 패턴이 있지만 FOLLOW_UP:이 없는 경우
+        _false_claim_keywords = ("후속 태스크로 접수", "후속태스크로 접수", "후속 태스크 접수", "태스크 접수 완료", "접수했습니다", "접수하였습니다")
+        _report_claims_followup = any(kw in unified_report for kw in _false_claim_keywords)
+        if _report_claims_followup and not follow_ups:
+            logger.warning(
+                "[Synthesizer] REPORT에 '후속 태스크 접수' 주장이 있지만 FOLLOW_UP: 라인이 없음 — "
+                "LLM이 실제 dispatch 없이 접수를 허위 선언했을 가능성 있음. "
+                "REPORT 내용: %s",
+                unified_report[:200],
+            )
 
         return SynthesisResult(
             judgment=judgment,
