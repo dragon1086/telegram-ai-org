@@ -242,6 +242,18 @@ class ContextDB:
                 "updated_at": row[5],
             }
 
+    async def delete_context(self, slot_id: str) -> None:
+        """컨텍스트 슬롯 삭제."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM context_slots WHERE id = ?", (slot_id,))
+            await db.commit()
+
+    async def delete_project_contexts(self, project_id: str) -> None:
+        """프로젝트의 모든 컨텍스트 슬롯 삭제."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM context_slots WHERE project_id = ?", (project_id,))
+            await db.commit()
+
     async def list_project_contexts(self, project_id: str) -> list[dict]:
         """프로젝트의 모든 컨텍스트 슬롯 조회."""
         async with aiosqlite.connect(self.db_path) as db:
