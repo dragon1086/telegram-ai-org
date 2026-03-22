@@ -1661,9 +1661,46 @@ class TelegramRelay:
         if self._pm_orchestrator is not None:
             try:
                 request_text = text + _replied_context
+                # 대화 히스토리 컨텍스트 구성 (graceful fallback: 실패해도 계속)
+                _prior_context = ""
+                if self.context_db is not None:
+                    try:
+                        from core.context_window import (
+                            MAX_HISTORY_MESSAGES,
+                            MAX_HISTORY_TOKENS,
+                            build_context_window,
+                            format_history_for_prompt,
+                        )
+                        _raw_history = await self.context_db.get_conversation_messages(
+                            chat_id=str(update.effective_chat.id),
+                            limit=MAX_HISTORY_MESSAGES + 5,  # 약간 여유 확보
+                        )
+                        # 현재 메시지는 히스토리에 이미 insert됐을 수 있으므로 제외
+                        _current_msg_id = update.effective_message.message_id
+                        _history_without_current = [
+                            m for m in _raw_history
+                            if m.get("msg_id") != _current_msg_id
+                        ]
+                        _window = build_context_window(
+                            _history_without_current,
+                            max_messages=MAX_HISTORY_MESSAGES,
+                            max_tokens=MAX_HISTORY_TOKENS,
+                            current_message=request_text,
+                        )
+                        _prior_context = format_history_for_prompt(_window)
+                        if _prior_context:
+                            logger.debug(
+                                f"[PM] prior_context 주입: {len(_window)}개 메시지, "
+                                f"~{sum(len(m.get('content','')) for m in _window)} chars"
+                            )
+                    except Exception as _ctx_err:
+                        logger.debug(f"[PM] prior_context 빌드 실패 (무시): {_ctx_err}")
+
                 plan = await self._with_immediate_ack(
                     update,
-                    self._pm_orchestrator.plan_request(request_text),
+                    self._pm_orchestrator.plan_request(
+                        request_text, prior_context=_prior_context
+                    ),
                 )
                 if plan.interaction_mode == "discussion" and ENABLE_DISCUSSION_PROTOCOL:
                     disc_ids = await self._pm_orchestrator.discussion_dispatch(
