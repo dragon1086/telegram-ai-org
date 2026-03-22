@@ -130,16 +130,16 @@ def test_format_history_bot_role_renamed():
 
 
 def test_format_history_long_content_truncated():
-    """개별 메시지 500자 초과 시 잘라냄."""
-    long = "x" * 600
+    """개별 메시지 1500자 초과 시 잘라냄."""
+    long = "x" * 1600
     msgs = [_make_msg(long)]
     result = format_history_for_prompt(msgs)
-    # 잘린 내용이 포함돼야 하고, 500자를 크게 초과해선 안 됨
+    # 잘린 내용이 포함돼야 하고, 1500자를 크게 초과해선 안 됨
     assert "..." in result
-    # [user] 접두어 포함이므로 504자 이하
+    # [user] 접두어 포함이므로 1507자 이하
     for line in result.split("\n"):
         if line.startswith("[user]"):
-            assert len(line) <= 510
+            assert len(line) <= 1510
 
 
 def test_format_history_empty_content_skipped():
