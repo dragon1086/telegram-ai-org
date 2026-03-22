@@ -1341,7 +1341,6 @@ class TelegramRelay:
                 logger.debug(f"[auto_upload:{self.org_id}] 중복 업로드 스킵: {path_text}")
                 continue
             seen.add(path_text)
-            self._uploaded_artifacts.add(path_text)
             path = Path(path_text)
             for artifact in prepare_upload_bundle(path):
                 try:
@@ -1351,6 +1350,7 @@ class TelegramRelay:
                         str(artifact),
                         f"📎 {self.org_id} 산출물: {artifact.name}",
                     )
+                    self._uploaded_artifacts.add(path_text)
                 except Exception as exc:
                     logger.warning(f"[auto_upload:{self.org_id}] 업로드 실패 {artifact}: {exc}")
 
@@ -1358,14 +1358,16 @@ class TelegramRelay:
         self, result: str, token: str, chat_id: int
     ) -> None:
         """Cross-org artifact upload — calls upload_file directly, bypasses resolve_delivery_target."""
-        from core.artifact_pipeline import extract_local_artifact_paths, prepare_upload_bundle
+        from core.telegram_user_guardrail import extract_local_artifact_paths
+        from core.artifact_pipeline import prepare_upload_bundle
         from tools.telegram_uploader import upload_file
         for raw in extract_local_artifact_paths(result):
             for p in prepare_upload_bundle(raw):
-                if p not in self._uploaded_artifacts:
+                p_str = str(p)
+                if p_str not in self._uploaded_artifacts:
                     caption = f"📎 {self.org_id} 산출물: {p.name}"
-                    await upload_file(token, int(chat_id), str(p), caption)
-                    self._uploaded_artifacts.add(p)
+                    await upload_file(token, int(chat_id), p_str, caption)
+                    self._uploaded_artifacts.add(p_str)
 
     async def _inject_collab_result(self, task_info: dict) -> None:
         """When a collab PM_TASK completes, inject result back to the requester org."""
