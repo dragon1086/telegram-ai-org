@@ -186,8 +186,11 @@ class DynamicTeamBuilder:
                 )
             if not content or not content.strip():
                 raise ValueError("LLM returned empty response")
-            # LLM이 ```json ... ``` 으로 감싸서 반환하는 경우 처리
             stripped = content.strip()
+            # runner가 에러/빈 결과를 한국어로 반환하는 경우 거부
+            if stripped.startswith("ERROR:") or stripped == "(결과 없음)":
+                raise ValueError(f"LLM runner failed: {stripped[:200]}")
+            # LLM이 ```json ... ``` 으로 감싸서 반환하는 경우 처리
             if stripped.startswith("```"):
                 import re as _re
                 m = _re.search(r"```(?:json)?\s*\n?(.*?)```", stripped, _re.DOTALL)
