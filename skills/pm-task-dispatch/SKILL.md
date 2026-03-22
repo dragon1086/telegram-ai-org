@@ -101,3 +101,17 @@ UI/UX/디자인   → 디자인 역할 조직
 - ✅ 명확한 기대 산출물 명시
 - ✅ 코드/배포 태스크는 quality-gate 먼저
 - ✅ restart/deploy는 ops_bot 별도 서브태스크 (코드 작업 의존성 설정)
+
+## 신규 봇 온보딩 체크리스트
+
+새 조직(봇)을 추가할 때 아래 항목을 반드시 확인한다:
+
+- [ ] `organizations.yaml`에 등록 (capabilities 포함)
+- [ ] `orchestration.yaml` → `global_instructions` 자동 적용 확인 (별도 per-org 스코프 문구 추가 불필요)
+- [ ] `bots/{org_id}.yaml` 생성 (role, instruction, team_config 포함)
+- [ ] `CLAUDE.md`/`AGENTS.md` PM 스코프 원칙 인지 확인 (공통 파일 자동 적용)
+- [ ] infra 역할 여부 결정 (capabilities: [infra] → push/restart/deploy 가능)
+- [ ] 배분 메시지에 "실행 범위" 항목 포함 여부 확인
+
+> 글로벌 스코프 원칙(`orchestration.yaml` → `global_instructions`)은 신규 봇에도 자동 적용된다.
+> per-org 재기동 금지 문구나 개별 예외 규칙을 추가하지 않는다 — 과적합 위험.
