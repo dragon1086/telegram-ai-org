@@ -142,6 +142,8 @@ organizations:
 - id: aiorg_ops_bot
   enabled: true
   kind: specialist
+  capabilities:
+  - infra
   description: 운영/배포/인프라/모니터링
   telegram:
     username: aiorg_ops_bot

@@ -35,15 +35,17 @@
 ## ⚠️ Gotcha 7 [절대 금지]: 서버 재기동 · 브랜치 푸시 · 브랜치 머지 자체 수행 금지
 **상황**: 코드 수정 후 리뷰를 마치면 "커밋 → 푸시 → 재기동"까지 이어서 진행하려는 충동이 생길 때
 **증상**: 개발실이 `git push`, `git merge`, `bash scripts/restart_bots.sh` 또는 `request_restart.sh` 를 직접 실행 → 스스로 kill되거나 무한 루프 재실행 (T-224 사례)
-**규칙**: 개발실은 **코드 수정과 로컬 커밋까지만** 담당. 아래 세 가지는 반드시 운영실(@aiorg_ops_bot)에 위임 요청:
+**규칙**: 개발실은 **코드 수정과 로컬 커밋까지만** 담당. 아래 세 가지는 반드시 infra 역할 조직에 위임 요청.
+infra 역할 조직 = `organizations.yaml`에서 `capabilities`에 `infra`가 포함된 조직 (org ID는 구성마다 다름).
 ```
-❌ 개발실 자체 수행 금지:
+❌ 개발실 자체 수행 금지 (PM 명시 지시 없을 때):
   - git push origin <branch>
   - git merge <branch>
   - bash scripts/restart_bots.sh / scripts/bot_control.sh
   - bash scripts/request_restart.sh
 
-✅ 개발실 완료 후 운영실에 위임:
+✅ 개발실 완료 후 infra 역할 조직에 위임:
   "[COLLAB:브랜치 머지 및 전체 재기동 요청|맥락: 개발실 코드 수정 완료]"
 ```
-**해결**: engineering-review 스킬의 마지막 단계는 항상 운영실 위임 메시지 작성으로 끝낼 것
+**해결**: engineering-review 스킬의 마지막 단계는 항상 infra 역할 조직 위임 메시지 작성으로 끝낼 것.
+단, PM이 명시적으로 "직접 push/restart 하라"고 지시한 경우 예외 허용.
