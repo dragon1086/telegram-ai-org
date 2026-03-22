@@ -27,3 +27,39 @@ active_hours:
   start: 9
   end: 22
   timezone: "Asia/Seoul"
+phase_templates:
+  simple:
+    - name: 운영 계획
+      instructions: 요청에 대한 운영/배포 계획을 수립하세요.
+      deliverables:
+        - 운영 계획
+  moderate:
+    - name: 인프라 분석
+      instructions: 현재 인프라 상태를 분석하세요.
+      deliverables:
+        - 인프라 분석
+    - name: 배포 계획
+      instructions: 배포 전략과 절차를 수립하세요.
+      deliverables:
+        - 배포 계획서
+    - name: 모니터링
+      instructions: 모니터링 및 롤백 계획을 수립하세요.
+      deliverables:
+        - 모니터링 계획
+  complex:
+    - name: 인프라 아키텍처
+      instructions: 인프라 아키텍처를 설계/검토하세요.
+      deliverables:
+        - 인프라 아키텍처 문서
+    - name: CI/CD 파이프라인
+      instructions: 빌드/배포 파이프라인을 설계하세요.
+      deliverables:
+        - CI/CD 설계서
+    - name: 배포 실행
+      instructions: 단계별 배포 절차를 수립하세요.
+      deliverables:
+        - 배포 절차서
+    - name: 운영 안정화
+      instructions: 모니터링, 알림, 롤백 계획을 수립하세요.
+      deliverables:
+        - 운영 매뉴얼
