@@ -1661,9 +1661,22 @@ class TelegramRelay:
         if self._pm_orchestrator is not None:
             try:
                 request_text = text + _replied_context
+                # 대화 이력 수집 — plan_request/decompose에 prior context 주입
+                _conv_history: list[dict] = []
+                if self.context_db is not None:
+                    try:
+                        from core.context_window import MAX_HISTORY_MESSAGES
+                        _conv_history = await self.context_db.get_conversation_messages(
+                            chat_id=str(self.allowed_chat_id),
+                            limit=MAX_HISTORY_MESSAGES + 2,  # 약간 여유있게 가져옴
+                        )
+                    except Exception as _hist_err:
+                        logger.debug(f"[PM] 대화 이력 조회 실패 (무시): {_hist_err}")
                 plan = await self._with_immediate_ack(
                     update,
-                    self._pm_orchestrator.plan_request(request_text),
+                    self._pm_orchestrator.plan_request(
+                        request_text, conversation_history=_conv_history
+                    ),
                 )
                 if plan.interaction_mode == "discussion" and ENABLE_DISCUSSION_PROTOCOL:
                     disc_ids = await self._pm_orchestrator.discussion_dispatch(
@@ -1939,7 +1952,9 @@ class TelegramRelay:
                         "source_org_mention": self._org_mention(self.org_id),
                     },
                 )
-                subtasks = await self._pm_orchestrator.decompose(request_text)
+                subtasks = await self._pm_orchestrator.decompose(
+                    request_text, conversation_history=_conv_history
+                )
                 await self._pm_orchestrator.dispatch(
                     parent_id,
                     subtasks,
