@@ -247,17 +247,25 @@ class TelegramRelay:
 
         # OrgScheduler — pm_bot 내장 스케줄러 (회의·회고 자율 실행)
         self._org_scheduler = None
+        self._group_chat_hub = None
         self._schedule_store = None
         self._nl_parser = None
         if self._is_pm_org:
             from core.scheduler import OrgScheduler
             from core.user_schedule_store import UserScheduleStore
             from core.nl_schedule_parser import NLScheduleParser
+            from core.group_chat_hub import GroupChatHub
 
             async def _sched_send(text: str) -> None:
                 await self._pm_send_message(self.allowed_chat_id, text)
 
-            self._org_scheduler = OrgScheduler(send_text=_sched_send)
+            # GroupChatHub 인스턴스 생성 — OrgScheduler와 공유하여 주간회의·회고를
+            # 멀티봇 그룹채팅 방식으로 실행 가능하게 연결
+            self._group_chat_hub = GroupChatHub(send_to_group=_sched_send)
+            self._org_scheduler = OrgScheduler(
+                send_text=_sched_send,
+                group_chat_hub=self._group_chat_hub,
+            )
             self._schedule_store = UserScheduleStore()
             self._nl_parser = NLScheduleParser()
             self._org_scheduler.load_user_schedules(self._schedule_store)
