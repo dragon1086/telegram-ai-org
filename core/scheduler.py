@@ -102,6 +102,12 @@ class OrgScheduler:
             replace_existing=True,
         )
         self.scheduler.add_job(
+            self._self_improve_pipeline_daily,
+            CronTrigger(hour=1, minute=17, timezone=KST),
+            id="self_improve_pipeline_daily", misfire_grace_time=1800,
+            replace_existing=True,
+        )
+        self.scheduler.add_job(
             self._improvement_bus_daily,
             CronTrigger(hour=2, minute=0, timezone=KST),
             id="improvement_bus_daily", misfire_grace_time=1800,
@@ -436,6 +442,32 @@ class OrgScheduler:
                 await self._safe_send(report.summary())
         except Exception as e:
             logger.error(f"[OrgScheduler] code_health_daily 실패: {e}")
+
+    async def _self_improve_pipeline_daily(self) -> None:
+        """매일 01:17 KST — 자가 개선 파이프라인 실행 + 모니터링 로그 저장 + 실패 알림."""
+        logger.info("[OrgScheduler] self_improve_pipeline_daily 시작")
+        try:
+            import asyncio
+            from pathlib import Path
+            proc = await asyncio.create_subprocess_exec(
+                str(Path(__file__).parent.parent / ".venv" / "bin" / "python"),
+                "scripts/run_self_improve_pipeline.py",
+                cwd=str(Path(__file__).parent.parent),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
+            if proc.returncode == 0:
+                logger.info("[OrgScheduler] self_improve_pipeline 완료 (exit=0)")
+            else:
+                output = (stdout + stderr).decode(errors="replace")[-800:]
+                logger.warning(f"[OrgScheduler] self_improve_pipeline 실패 (exit={proc.returncode})\n{output}")
+                await self._safe_send(
+                    f"⚠️ 자가 개선 파이프라인 실패 (exit={proc.returncode})\n"
+                    f"```\n{output}\n```"
+                )
+        except Exception as e:
+            logger.error(f"[OrgScheduler] self_improve_pipeline_daily 실패: {e}")
 
     async def _improvement_bus_daily(self) -> None:
         """매일 02:00 KST — ImprovementBus 신호 수집 및 보고."""

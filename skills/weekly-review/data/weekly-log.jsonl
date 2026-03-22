@@ -22,3 +22,4 @@
 {"week": "2026-W99", "test": true, "saved_at": "2026-03-21T01:56:48.442779+00:00"}
 {"week": "2026-W99", "test": true, "saved_at": "2026-03-21T08:23:14.096962+00:00"}
 {"week": "2026-W99", "test": true, "saved_at": "2026-03-21T08:51:00.938884+00:00"}
+{"week": "2026-W12", "summary": "스킬 4종 완성 + 자동화 인프라(크론 4개) 등록 완료. venv 경로 수정. 첫 주간보고 Bootstrap 실행.", "highlights": ["스킬 시스템 4종 완성 (weekly-review/retro/performance-eval/pm-discussion)", "크론 4개 등록 (주간/일일회고/일일메트릭/월간)", "시스템 점검 3개 문제 발견 및 즉시 조치 완료"], "blockers": ["CronCreate 크론 세션 의존 — 영속 크론 방안 검토 필요"], "saved_at": "2026-03-22T12:00:20.706898+00:00"}

@@ -1,11 +1,6 @@
 ---
 name: safe-modify
-description: >
-  실패 감지 코드(failure-detect) 및 고위험 코드 수정 시 부작용을 최소화하는 안전 개발 방법론 스킬.
-  2026년 3월 기준 업계 Best Practice(Google/Shopify/Netflix/OWASP)를 녹인 수정 안전 체크리스트.
-  Triggers: 'safe modify', '안전 수정', 'failure detect 수정', 'safe code change',
-  'scope restriction', '스코프 제한', '부작용 최소화', 'failure-detect-llm 수정',
-  '실패감지 코드 변경', '고위험 코드 수정', 'minimal footprint'
+description: "실패 감지 코드(failure-detect) 및 고위험 코드 수정 시 부작용을 최소화하는 안전 개발 방법론 스킬. Triggers: 'safe modify', '안전 수정', 'failure detect 수정', 'safe code change', '스코프 제한', '부작용 최소화', 'minimal footprint'. Use when modifying high-risk or failure-detection code."
 ---
 
 # safe-modify — 안전 코드 수정 스킬
