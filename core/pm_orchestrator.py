@@ -1043,6 +1043,8 @@ class PMOrchestrator:
             task_ids.append(await self._next_task_id())
         for i, st in enumerate(subtasks):
             deps = [task_ids[int(d)] for d in st.depends_on if d.isdigit() and int(d) < len(task_ids)]
+            # 부모 태스크가 deps에 포함되면 제거 — 부모 완료는 _synthesize_and_act가 관리
+            deps = [d for d in deps if d != parent_task_id]
             await self._graph.add_task(task_ids[i], depends_on=deps)
         logger.debug(f"[PM] 의존성 사전 등록 완료: {len(task_ids)}개 태스크")
 
@@ -1123,6 +1125,13 @@ class PMOrchestrator:
                 except Exception as _e:
                     logger.warning(f"[PM] 태스크 {tid} 알림 전송 실패 (태스크는 assigned 상태): {_e}")
                 logger.info(f"[PM] 태스크 발송: {tid} → {dept}")
+
+        # 4. 부모 태스크 상태를 running으로 전환
+        # PM이 하위 태스크 결과를 수집·합성 대기 중임을 의미.
+        # 완료는 _synthesize_and_act가 all_done 시점에 처리한다.
+        if parent_task and parent_task.get("status") != "running":
+            await self._db.update_pm_task_status(parent_task_id, "running")
+            logger.info(f"[PM] 부모 태스크 {parent_task_id} → running (하위 {len(task_ids)}개 디스패치 완료)")
 
         return task_ids
 
