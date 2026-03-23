@@ -127,6 +127,36 @@ bash scripts/start_all.sh
 - **변경 파일**: `tools/gemini_runner.py` (기본값 변경), `tools/base_runner.py` (주석 갱신)
 - **Deprecated**: `gemini-2.0-flash` 는 2026-06-01 서비스 종료 예정
 
+### [2026-03-23] ⛔ 위험한 시스템 CLI/파일 탐색 절대 금지 (전체 조직 공통)
+
+**인시던트**: 봇 에이전트가 `glob.glob(str(Path.home()) + '/**/*.db', recursive=True)` 를 직접 생성·실행 → 홈 디렉토리 전체 재귀 탐색으로 CPU 68% 30분 이상 점유, 시스템 메모리 고갈 발생.
+
+**절대 금지 패턴** (에이전트가 코드 생성·실행 시 포함 금지):
+
+```python
+# ❌ 홈/루트 전체 재귀 탐색
+glob.glob(str(Path.home()) + '/**/*', recursive=True)
+glob.glob('/Users/**/*', recursive=True)
+os.walk(Path.home())
+os.walk('/')
+
+# ❌ 쉘에서도 동일하게 금지
+find ~ -name '*.db'
+find / -name '*.db'
+```
+
+**허용 패턴** — 반드시 프로젝트 디렉토리 내로 스코프 제한:
+
+```python
+# ✅ 프로젝트 루트 내부만
+glob.glob('/Users/rocky/telegram-ai-org/**/*.db', recursive=True)
+# ✅ 환경변수로 프로젝트 경로 특정
+glob.glob(os.environ['CLAUDE_PROJECT_DIR'] + '/**/*.db', recursive=True)
+```
+
+**적용 범위**: 에이전트가 직접 작성·실행하는 모든 Python/shell 코드, subprocess 호출, Bash tool 사용 포함.
+**글로벌 적용 위치**: `orchestration.yaml` → `global_instructions` 섹션 "위험한 시스템 탐색 금지"
+
 ### [2026-03-22] PM 봇 대화 히스토리 컨텍스트 창 튜닝
 PM 봇은 작업 배분 판단 시 최근 대화 이력을 `[CONTEXT]...[/CONTEXT]` 블록으로 프롬프트에 주입한다.
 아래 환경변수로 런타임 조정 가능 (`.env` 또는 실행 환경):

@@ -49,7 +49,11 @@
       "Read(//private/tmp/**)",
       "Read(//private/var/log/**)",
       "Bash(./.venv/bin/python scripts/bot_manager.py restart-all 2>&1)",
-      "Write(/Users/rocky/telegram-ai-org/.claude/agents/**)"
+      "Write(/Users/rocky/telegram-ai-org/.claude/agents/**)",
+      "Bash(kill 75607 42369)",
+      "Bash(for cmd:*)",
+      "Bash(do command:*)",
+      "Bash(done)"
     ]
   },
   "hooks": {
