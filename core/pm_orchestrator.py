@@ -38,6 +38,10 @@ class SubTask:
     assigned_dept: str  # org_id (e.g., "aiorg_engineering_bot")
     depends_on: list[str] = field(default_factory=list)  # 다른 subtask의 인덱스 (0-based)
     workdir: str | None = None
+    # LLM 자율 분류 (Step 0 판단 체인): 조사/분석/기획/설계/검토/수정/구현/운영
+    task_type: str | None = None
+    # 파일·코드 변경 허용 여부 (실행형=True, 사고형=False)
+    allow_file_change: bool | None = None
 
 
 @dataclass
@@ -688,7 +692,23 @@ class PMOrchestrator:
             f"Break the user's request into specific subtasks for each relevant department.\n"
             f"Each subtask should be a CONCRETE, ACTIONABLE instruction (not the user's raw message).\n\n"
             f"Reply in this exact format (one line per subtask):\n"
-            f"DEPT:<org_id>|TASK:specific task description|DEPENDS:comma-separated indices or none\n\n"
+            f"DEPT:<org_id>|TASK:specific task description|DEPENDS:comma-separated indices or none"
+            f"|TASK_TYPE:<type>|FILE_CHANGE:<yes|no>\n\n"
+            f"TASK_TYPE classification (decide autonomously per subtask using this chain):\n"
+            f"  Q1. What is the final output?\n"
+            f"    - code/file/config/DB change → execution group (구현/수정/운영)\n"
+            f"    - document/report/analysis/plan → thinking group (조사/분석/기획/설계/검토)\n"
+            f"  Q2. Core verb of the instruction?\n"
+            f"    만들어/구현/개발  → 구현  (FILE_CHANGE=yes)\n"
+            f"    수정/바꿔/개선   → 수정  (FILE_CHANGE=yes)\n"
+            f"    배포/인프라/재시작 → 운영  (FILE_CHANGE=yes)\n"
+            f"    조사/알아봐/찾아봐 → 조사  (FILE_CHANGE=no)\n"
+            f"    분석/비교/평가    → 분석  (FILE_CHANGE=no)\n"
+            f"    기획/PRD/요구사항 → 기획  (FILE_CHANGE=no)\n"
+            f"    설계/아키텍처    → 설계  (FILE_CHANGE=no)\n"
+            f"    봐줘/검토/리뷰   → 검토  (FILE_CHANGE=no)\n"
+            f"  Q3. Confidence < 60%? → default to 분석 (FILE_CHANGE=no)\n"
+            f"FILE_CHANGE: yes only for 구현/수정/운영. All thinking-group types = no.\n\n"
             f"Rules:\n"
             f"- Only include departments that are actually needed\n"
             f"- If the user explicitly asked for a department in the hints above, include it unless clearly unrelated\n"
@@ -767,11 +787,16 @@ class PMOrchestrator:
             logger.warning(f"[PM] LLM 분해 실패, 키워드 fallback: {e}")
             return []
 
+    # 유효한 태스크 유형 8종 (Step 0 판단 체인 기준)
+    _VALID_TASK_TYPES = frozenset(["조사", "분석", "기획", "설계", "검토", "수정", "구현", "운영"])
+    # 파일 변경이 허용되는 실행형 유형
+    _EXECUTION_TYPES = frozenset(["구현", "수정", "운영"])
+
     @staticmethod
     def _parse_decompose(response: str) -> list[SubTask]:
         """LLM 분해 응답 파싱.
 
-        형식: DEPT:aiorg_xxx_bot|TASK:description|DEPENDS:0,1
+        형식: DEPT:aiorg_xxx_bot|TASK:description|DEPENDS:0,1|TASK_TYPE:분석|FILE_CHANGE:no
         """
         known_depts = dict(KNOWN_DEPTS)
         subtasks: list[SubTask] = []
@@ -788,6 +813,8 @@ class PMOrchestrator:
             dept = parts.get("DEPT", "")
             task_desc = parts.get("TASK", "")
             depends_str = parts.get("DEPENDS", "none").lower()
+            task_type_raw = parts.get("TASK_TYPE", "").strip()
+            file_change_raw = parts.get("FILE_CHANGE", "").strip().lower()
 
             if not dept or dept not in known_depts or not task_desc:
                 continue
@@ -796,10 +823,23 @@ class PMOrchestrator:
             if depends_str and depends_str != "none":
                 deps = [d.strip() for d in depends_str.split(",") if d.strip().isdigit()]
 
+            # TASK_TYPE 검증 — 유효하지 않으면 None (렌더링 시 표시 생략)
+            task_type: str | None = task_type_raw if task_type_raw in PMOrchestrator._VALID_TASK_TYPES else None
+
+            # FILE_CHANGE 결정: LLM 응답 우선, 없으면 task_type에서 자동 결정
+            if file_change_raw in ("yes", "no"):
+                allow_file_change: bool | None = file_change_raw == "yes"
+            elif task_type is not None:
+                allow_file_change = task_type in PMOrchestrator._EXECUTION_TYPES
+            else:
+                allow_file_change = None
+
             subtasks.append(SubTask(
                 description=task_desc,
                 assigned_dept=dept,
                 depends_on=deps,
+                task_type=task_type,
+                allow_file_change=allow_file_change,
             ))
         return subtasks
 
@@ -931,7 +971,13 @@ class PMOrchestrator:
             dept_mention = self._org_mention(st.assigned_dept)
             desc_short = st.description[:100].replace("\n", " ")
             deps = f" (→ {','.join(st.depends_on)} 완료 후)" if st.depends_on else ""
-            lines.append(f"{i+1}. {dept_mention} **{dept_name}**: {desc_short}{deps}")
+            type_badge = f" [{st.task_type}]" if st.task_type else ""
+            file_badge = ""
+            if st.allow_file_change is True:
+                file_badge = " 📝파일변경O"
+            elif st.allow_file_change is False:
+                file_badge = " 🔍파일변경X"
+            lines.append(f"{i+1}. {dept_mention} **{dept_name}**{type_badge}{file_badge}: {desc_short}{deps}")
         lines.append(f"\n{len(subtasks)}개 팀에 나눠서 바로 시작할게요 🙌")
         try:
             await self._send(
@@ -1080,6 +1126,8 @@ class PMOrchestrator:
                     f"사용자 기대: {'; '.join(task_packet.get('user_expectations', [])[:4])}"
                     f"{_persona_ctx}"
                 ).strip(),
+                task_type=st.task_type,
+                allow_file_change=st.allow_file_change,
             )
             full_description = structured.render()
 
@@ -1094,6 +1142,8 @@ class PMOrchestrator:
                     "task_packet": task_packet,
                     "original_description": st.description,
                     **({"workdir": st.workdir} if st.workdir else {}),
+                    **({"task_type": st.task_type} if st.task_type else {}),
+                    **({"allow_file_change": st.allow_file_change} if st.allow_file_change is not None else {}),
                 },
             )
 
@@ -1111,7 +1161,15 @@ class PMOrchestrator:
                 prefix = f"{dept_mention} "
                 if requester:
                     prefix += f"(요청자: {requester}) "
-                msg = f"{prefix}[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정: {task['description'][:300]}"
+                task_meta = task.get("metadata") or {}
+                _task_type = task_meta.get("task_type", "")
+                _allow_fc = task_meta.get("allow_file_change")
+                _type_line = f"\n태스크 유형: {_task_type}" if _task_type else ""
+                _fc_line = f"\n파일·코드 변경 허용: {'예' if _allow_fc else '아니오'}" if _allow_fc is not None else ""
+                msg = (
+                    f"{prefix}[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정"
+                    f"{_type_line}{_fc_line}\n{task['description'][:300]}"
+                )
                 # DB 먼저 업데이트 — send 실패해도 task_poller가 감지 가능
                 await self._db.update_pm_task_status(tid, "assigned")
                 try:
@@ -1186,7 +1244,15 @@ class PMOrchestrator:
                 prefix = f"{dept_mention} "
                 if requester:
                     prefix += f"(요청자: {requester}) "
-                msg = f"{prefix}[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정: {task['description'][:300]}"
+                task_meta = task.get("metadata") or {}
+                _task_type = task_meta.get("task_type", "")
+                _allow_fc = task_meta.get("allow_file_change")
+                _type_line = f"\n태스크 유형: {_task_type}" if _task_type else ""
+                _fc_line = f"\n파일·코드 변경 허용: {'예' if _allow_fc else '아니오'}" if _allow_fc is not None else ""
+                msg = (
+                    f"{prefix}[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정"
+                    f"{_type_line}{_fc_line}\n{task['description'][:300]}"
+                )
                 await self._db.update_pm_task_status(tid, "assigned")
                 try:
                     await self._send(

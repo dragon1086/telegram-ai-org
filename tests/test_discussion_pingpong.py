@@ -216,7 +216,13 @@ async def test_persona_context_injected() -> None:
     # Capture the context passed to _prompt_gen.generate
     captured_contexts: list[str] = []
 
-    async def _fake_generate(description: str, dept: str, context: str = "") -> MagicMock:
+    async def _fake_generate(
+        description: str,
+        dept: str,
+        context: str = "",
+        task_type: str | None = None,
+        allow_file_change: bool | None = None,
+    ) -> MagicMock:
         captured_contexts.append(context)
         sp = MagicMock()
         sp.render.return_value = description
