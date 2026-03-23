@@ -48,7 +48,34 @@
       "Bash(/Users/rocky/telegram-ai-org/.venv/bin/python -m pytest tests/test_scheduler.py -v 2>&1)",
       "Read(//private/tmp/**)",
       "Read(//private/var/log/**)",
-      "Bash(./.venv/bin/python scripts/bot_manager.py restart-all 2>&1)"
+      "Bash(./.venv/bin/python scripts/bot_manager.py restart-all 2>&1)",
+      "Write(/Users/rocky/telegram-ai-org/.claude/agents/**)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // .tool_response.filePath' 2>/dev/null); if [[ \"$f\" == *.py ]]; then cd /Users/rocky/telegram-ai-org && .venv/bin/ruff check \"$f\" --fix --quiet 2>&1 | head -5; fi",
+            "timeout": 30,
+            "statusMessage": "ruff 린트 검사 중..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"[$(date '+%Y-%m-%d %H:%M')] Claude 세션 종료\" >> /Users/rocky/telegram-ai-org/logs/claude_sessions.log 2>/dev/null || true",
+            "async": true
+          }
+        ]
+      }
     ]
   }
 }
