@@ -1836,13 +1836,18 @@ class TelegramRelay:
                             idle = time.time() - _heartbeat_ts
                             elapsed = time.time() - _exec_start
                             if idle > _idle_timeout:
-                                # 마지막 진행 스냅샷으로 active/stuck 판단 힌트 생성
+                                # 마지막 진행 스냅샷 + heartbeat 횟수로 active/stuck 판단 힌트 생성
+                                hb_hint = f"heartbeat {_hb_count}회 발화"
                                 if _progress_snapshot:
                                     last_ts, last_line = _progress_snapshot[-1]
                                     since_last = time.time() - last_ts
-                                    snap_hint = f" | 마지막 출력 {since_last:.0f}s 전: {last_line[:80]}"
+                                    snap_hint = (
+                                        f" | 마지막 출력 {since_last:.0f}s 전: {last_line[:80]}"
+                                        f" [{hb_hint} — 작업 중 잘렸을 가능성]"
+                                    )
                                 else:
-                                    snap_hint = " | 실행 중 출력 없음 (stuck 가능성)"
+                                    diagnosis = "작업 시작 전 stuck" if _hb_count == 0 else "LLM 응답 대기 중"
+                                    snap_hint = f" | 실행 중 출력 없음 [{hb_hint} — {diagnosis}]"
                                 raise asyncio.TimeoutError(
                                     f"무응답 {idle:.0f}초 (한도 {_idle_timeout}s){snap_hint}"
                                 )
@@ -1860,13 +1865,30 @@ class TelegramRelay:
                         while True:
                             _hb_count += 1
                             elapsed_hb = time.time() - _exec_start
-                            logger.debug(
-                                f"[{self.org_id}] heartbeat #{_hb_count} (elapsed={elapsed_hb:.0f}s)"
+                            idle_hb = time.time() - _heartbeat_ts
+                            logger.info(  # debug→info: 프로덕션 로그에서 heartbeat 가시성 확보
+                                f"[{self.org_id}] heartbeat #{_hb_count} "
+                                f"(elapsed={elapsed_hb:.0f}s, idle={idle_hb:.0f}s)"
                             )
                             try:
                                 await on_progress("🤔 처리 중...")
                             except Exception:
                                 pass
+                            # 실시간 진행 표시: Telegram 진행 메시지에 경과 시간 + heartbeat 횟수 업데이트
+                            if self._show_progress():
+                                try:
+                                    elapsed_min = elapsed_hb / 60
+                                    hb_status = f"⏳ 처리 중... ({elapsed_min:.1f}분 경과, heartbeat #{_hb_count})"
+                                    if _progress_snapshot:
+                                        _, last_snap_line = _progress_snapshot[-1]
+                                        hb_status += f"\n마지막: {last_snap_line[:100]}"
+                                    await self.display.edit_progress(
+                                        progress_msg,
+                                        hb_status,
+                                        agent_id=self.org_id,
+                                    )
+                                except Exception:
+                                    pass
                             await asyncio.sleep(_hb_interval)
 
                     heartbeat_task = asyncio.ensure_future(_thinking_heartbeat_loop())
