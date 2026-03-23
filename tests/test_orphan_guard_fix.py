@@ -225,6 +225,76 @@ async def test_child_task_status_not_modified_when_parent_cancelled(db):
     )
 
 
+# ──────────────────────────────────────────────
+# Bug #2 regression: MAX_TASK_ATTEMPTS 조기 소진으로 태스크 픽업 차단
+# ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_task_reclaimed_before_max_attempts_exceeded(db):
+    """attempt_count가 MAX_TASK_ATTEMPTS 미만이면 expired lease 태스크를 재픽업할 수 있어야 한다.
+
+    Bug #2 회귀 방지:
+    - 이전 버그: MAX_TASK_ATTEMPTS=3, attempt_count=3 → get_tasks_for_dept에서 스킵
+      → 태스크가 'running' 상태로 영구 stuck
+    - 수정 후: MAX_TASK_ATTEMPTS=5, attempt_count=3 → 재클레임 가능
+    """
+    import json
+    import aiosqlite
+    from datetime import UTC, datetime, timedelta
+
+    await db.create_pm_task("T-maxattempt-001", "task", "engineering", "pm")
+    await db.update_pm_task_status("T-maxattempt-001", "running")
+
+    # attempt_count를 MAX 미만(3)으로, lease를 만료시킴
+    old_time = (datetime.now(UTC) - timedelta(seconds=300)).isoformat()
+    expired_lease = (datetime.now(UTC) - timedelta(seconds=200)).isoformat()
+    meta = json.dumps({"attempt_count": 3, "lease_expires_at": expired_lease})
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "UPDATE pm_tasks SET updated_at=?, metadata=? WHERE id=?",
+            (old_time, meta, "T-maxattempt-001"),
+        )
+        await conn.commit()
+
+    tasks = await db.get_tasks_for_dept("engineering")
+    task_ids = [t["id"] for t in tasks]
+
+    assert "T-maxattempt-001" in task_ids, (
+        "Bug #2 회귀: attempt_count=3, MAX=5 → 재픽업 가능해야 합니다. "
+        "MAX_TASK_ATTEMPTS=3이면 이 테스트가 실패합니다."
+    )
+
+
+@pytest.mark.asyncio
+async def test_task_blocked_at_max_attempts(db):
+    """attempt_count가 MAX_TASK_ATTEMPTS에 도달하면 expired lease 태스크를 재픽업하지 않아야 한다."""
+    import json
+    import aiosqlite
+    from datetime import UTC, datetime, timedelta
+
+    await db.create_pm_task("T-maxattempt-002", "task", "engineering", "pm")
+    await db.update_pm_task_status("T-maxattempt-002", "running")
+
+    max_val = db.MAX_TASK_ATTEMPTS
+    old_time = (datetime.now(UTC) - timedelta(seconds=300)).isoformat()
+    expired_lease = (datetime.now(UTC) - timedelta(seconds=200)).isoformat()
+    meta = json.dumps({"attempt_count": max_val, "lease_expires_at": expired_lease})
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "UPDATE pm_tasks SET updated_at=?, metadata=? WHERE id=?",
+            (old_time, meta, "T-maxattempt-002"),
+        )
+        await conn.commit()
+
+    tasks = await db.get_tasks_for_dept("engineering")
+    task_ids = [t["id"] for t in tasks]
+
+    assert "T-maxattempt-002" not in task_ids, (
+        f"attempt_count={max_val} >= MAX_TASK_ATTEMPTS={max_val}이면 "
+        "재픽업을 차단해야 합니다 (무한루프 방지)"
+    )
+
+
 @pytest.mark.asyncio
 async def test_stale_task_not_recovered_when_parent_failed(db):
     """부모가 failed이면 stale 태스크는 복구되면 안 된다 (안전 동작 보존)."""
