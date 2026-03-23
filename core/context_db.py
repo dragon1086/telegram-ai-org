@@ -628,8 +628,10 @@ class ContextDB:
     MAX_TASK_ATTEMPTS = 5  # 최대 lease claim 횟수 — 초과 시 자동 failed 처리
     # 3 → 5 (2026-03-23): 복잡한 장기 태스크(코드 분석·구현·리뷰)에서
     # 봇 재시작·Claude Code 타임아웃으로 attempt_count가 빠르게 소진되어
-    # 태스크가 조기 auto-fail되는 문제 해소. recover_stale_dept_tasks가
-    # attempt_count를 0으로 리셋하므로 무한루프 위험은 없음.
+    # 태스크가 조기 auto-fail되는 문제 해소.
+    # recover_stale_dept_tasks에서 recovery_count로 복구 횟수를 제한하여
+    # 무한 재시작 루프를 방지한다. MAX_RECOVERY_COUNT(3) × MAX_TASK_ATTEMPTS(5)
+    # = 최대 15회 시도 후 영구 중단.
     RECOVER_MAX_AGE_SECONDS = 86400  # 복구 대상 최대 나이: 24시간 (좀비 방지)
 
     async def claim_pm_task_lease(
@@ -805,11 +807,21 @@ class ContextDB:
                     except ValueError:
                         pass
                 # lease 만료 확인됨 — 복구
+                # ── 무한 복구 루프 방지: recovery_count 제한 ──
+                MAX_RECOVERY_COUNT = 3
+                recovery_count = metadata.get("recovery_count", 0) + 1
+                if recovery_count > MAX_RECOVERY_COUNT:
+                    logger.warning(
+                        f"[ContextDB] 태스크 {task_id} 최대 복구 횟수 초과 "
+                        f"({recovery_count}/{MAX_RECOVERY_COUNT}) — 복구 건너뜀"
+                    )
+                    continue
                 metadata.pop("lease_owner", None)
                 metadata.pop("lease_expires_at", None)
                 metadata.pop("lease_heartbeat_at", None)
                 metadata.pop("retry_after_at", None)
                 metadata["attempt_count"] = 0
+                metadata["recovery_count"] = recovery_count
                 metadata["recovered_at"] = now.isoformat()
                 now_iso = now.isoformat()
                 await db.execute(
@@ -819,7 +831,7 @@ class ContextDB:
                 recovered += 1
                 logger.info(
                     f"[ContextDB] stale 태스크 복구: {task_id} (dept={dept_id}, "
-                    f"attempt_count 리셋, running→assigned)"
+                    f"recovery={recovery_count}/{MAX_RECOVERY_COUNT}, running→assigned)"
                 )
             if recovered:
                 await db.commit()
