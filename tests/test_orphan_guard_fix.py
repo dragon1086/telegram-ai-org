@@ -13,6 +13,8 @@
   ④ 여러 자식 태스크 → 모두 픽업
   ⑤ stale 태스크 + 부모 cancelled → 복구 허용
   ⑥ stale 태스크 + 부모 없음 → 정상 복구
+  ⑦ 회귀 방지: 부모 cancelled 시 자식 태스크 DB 상태가 변경되지 않아야 함
+     (f9caca3 회귀: auto-cancel 로직이 재도입되는 것을 방지)
 """
 from __future__ import annotations
 
@@ -190,6 +192,36 @@ async def test_child_task_skipped_when_parent_failed(db):
 
     assert "T-child-fail-001" not in task_ids, (
         "부모가 failed이면 자식 태스크는 픽업되면 안 됩니다 (Orphan Guard 안전 동작)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_child_task_status_not_modified_when_parent_cancelled(db):
+    """[회귀 방지] 부모 cancelled 시 자식 태스크 DB 상태가 'assigned'로 유지되어야 한다.
+
+    f9caca3 회귀 재발 방지:
+    get_tasks_for_dept() 호출 후 자식 태스크가 auto-cancel로
+    DB에서 'cancelled'로 변경되어서는 안 된다.
+    """
+    await db.create_pm_task("T-parent-reg-001", "parent task", None, "pm")
+    await db.update_pm_task_status("T-parent-reg-001", "cancelled")
+
+    await db.create_pm_task(
+        "T-child-reg-001", "child task", "engineering", "pm",
+        parent_id="T-parent-reg-001"
+    )
+    await db.update_pm_task_status("T-child-reg-001", "assigned")
+
+    # 폴러 호출 시뮬레이션
+    await db.get_tasks_for_dept("engineering")
+
+    # DB 상태가 변경되지 않았는지 확인 (auto-cancel 회귀 방지)
+    task = await db.get_pm_task("T-child-reg-001")
+    assert task is not None
+    assert task["status"] == "assigned", (
+        f"f9caca3 회귀 감지: 자식 태스크 상태가 '{task['status']}'로 변경됨. "
+        "'assigned'를 유지해야 합니다. "
+        "Orphan Guard가 DB를 직접 수정해서는 안 됩니다."
     )
 
 
