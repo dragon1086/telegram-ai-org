@@ -60,7 +60,18 @@ class DispatchEngine:
                 continue
             dept = task["assigned_dept"]
             dept_name = KNOWN_DEPTS.get(dept, dept)
-            msg = f"[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정: {task['description'][:300]}"
+            task_meta = task.get("metadata") or {}
+            _task_type = task_meta.get("task_type", "")
+            _allow_fc = task_meta.get("allow_file_change")
+            _type_line = f"\n태스크 유형: {_task_type}" if _task_type else ""
+            _fc_line = (
+                f"\n파일·코드 변경 허용: {'예' if _allow_fc else '아니오'}"
+                if _allow_fc is not None else ""
+            )
+            msg = (
+                f"[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정"
+                f"{_type_line}{_fc_line}\n{task['description'][:300]}"
+            )
             await self._send(chat_id, msg)
             await self._db.update_pm_task_status(tid, "assigned")
             dispatched.append(tid)
