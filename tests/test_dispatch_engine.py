@@ -198,3 +198,77 @@ async def test_telegram_messages_sent(db, send_fn):
     assert send_fn.await_count >= 1
     call_args = [str(c) for c in send_fn.call_args_list]
     assert any("PM_TASK:T-B" in a for a in call_args)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_message_includes_task_type(db, send_fn):
+    """task_type이 있을 때 배분 메시지에 '태스크 유형:' 포함 확인."""
+    tg = TaskGraph(db)
+    engine = DispatchEngine(db, tg, send_fn)
+
+    await db.create_pm_task("T-root", "루트", None, "pm")
+    await db.create_pm_task(
+        "T-A", "분석 태스크", "aiorg_product_bot", "pm", parent_id="T-root"
+    )
+    await db.create_pm_task(
+        "T-B", "구현 태스크", "aiorg_engineering_bot", "pm", parent_id="T-root",
+        metadata={"task_type": "구현", "allow_file_change": True},
+    )
+    await tg.add_task("T-A")
+    await tg.add_task("T-B", depends_on=["T-A"])
+    await db.update_pm_task_status("T-A", "assigned")
+
+    await engine.on_task_complete("T-A", "A결과", chat_id=123)
+
+    call_args = [str(c) for c in send_fn.call_args_list]
+    b_msg = next((a for a in call_args if "PM_TASK:T-B" in a), None)
+    assert b_msg is not None, "T-B 배분 메시지 없음"
+    assert "태스크 유형: 구현" in b_msg
+    assert "파일·코드 변경 허용: 예" in b_msg
+
+
+@pytest.mark.asyncio
+async def test_dispatch_message_thinking_type_no_file_change(db, send_fn):
+    """사고형 task_type(분석)은 파일 변경 허용: 아니오 표시 확인."""
+    tg = TaskGraph(db)
+    engine = DispatchEngine(db, tg, send_fn)
+
+    await db.create_pm_task("T-root", "루트", None, "pm")
+    await db.create_pm_task("T-A", "선행 태스크", "aiorg_product_bot", "pm", parent_id="T-root")
+    await db.create_pm_task(
+        "T-B", "분석 태스크", "aiorg_research_bot", "pm", parent_id="T-root",
+        metadata={"task_type": "분석", "allow_file_change": False},
+    )
+    await tg.add_task("T-A")
+    await tg.add_task("T-B", depends_on=["T-A"])
+    await db.update_pm_task_status("T-A", "assigned")
+
+    await engine.on_task_complete("T-A", "A결과", chat_id=123)
+
+    call_args = [str(c) for c in send_fn.call_args_list]
+    b_msg = next((a for a in call_args if "PM_TASK:T-B" in a), None)
+    assert b_msg is not None, "T-B 배분 메시지 없음"
+    assert "태스크 유형: 분석" in b_msg
+    assert "파일·코드 변경 허용: 아니오" in b_msg
+
+
+@pytest.mark.asyncio
+async def test_dispatch_message_no_task_type_omits_type_line(db, send_fn):
+    """task_type 없으면 '태스크 유형:' 라인 자체를 생략 확인 (레거시 태스크 호환)."""
+    tg = TaskGraph(db)
+    engine = DispatchEngine(db, tg, send_fn)
+
+    await db.create_pm_task("T-root", "루트", None, "pm")
+    await db.create_pm_task("T-A", "선행", "aiorg_product_bot", "pm", parent_id="T-root")
+    await db.create_pm_task("T-B", "레거시 태스크", "aiorg_engineering_bot", "pm", parent_id="T-root")
+    await tg.add_task("T-A")
+    await tg.add_task("T-B", depends_on=["T-A"])
+    await db.update_pm_task_status("T-A", "assigned")
+
+    await engine.on_task_complete("T-A", "A결과", chat_id=123)
+
+    call_args = [str(c) for c in send_fn.call_args_list]
+    b_msg = next((a for a in call_args if "PM_TASK:T-B" in a), None)
+    assert b_msg is not None, "T-B 배분 메시지 없음"
+    assert "태스크 유형:" not in b_msg
+    assert "파일·코드 변경 허용:" not in b_msg
