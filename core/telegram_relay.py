@@ -1540,8 +1540,9 @@ class TelegramRelay:
                 await self._handle_pm_task(text, update, context)
             elif self._discussion_manager and is_discussion_message(text):
                 await self._handle_discussion_message(text, update, context)
-            # pm_bot: 워커봇 완료 메시지 감지 → 즉시 합성 트리거 (이벤트 드리븐)
-            elif self._pm_orchestrator is not None and re.search(r"태스크\s+T-[A-Za-z0-9_]+-\d+\s+완료", text):
+            # pm_bot: 워커봇 완료/실패 메시지 감지 → 즉시 합성 트리거 (이벤트 드리븐)
+            # 실패(❌) 메시지도 포함: 서브태스크 실패 시 부모 합성이 누락되는 버그 수정
+            elif self._pm_orchestrator is not None and re.search(r"태스크\s+T-[A-Za-z0-9_]+-\d+\s+(완료|실패)", text):
                 await self._handle_pm_done_event(text)
             return
 
@@ -3154,17 +3155,25 @@ class TelegramRelay:
         logger.info(f"[재시도] {task_id} → assigned 재설정, {dept} 폴러가 픽업 예정")
 
     async def _handle_pm_done_event(self, text: str) -> None:
-        """[PM_DONE:task_id|dept:xxx] 이벤트 수신 시 즉시 합성 트리거 (pm_bot 전용)."""
+        """워커봇 완료/실패 메시지 수신 시 즉시 합성 트리거 (pm_bot 전용).
+
+        "✅ [...] 태스크 T-xxx 완료" 또는 "❌ [...] 태스크 T-xxx 실패:" 패턴 모두 처리.
+        서브태스크 실패 시에도 모든 형제가 terminal(done/failed/cancelled) 상태이면
+        부모 태스크 합성을 즉시 트리거하여 부모가 영구 assigned 상태에 갇히는 버그 수정.
+        """
         import re as _re
-        # "✅ [X] 태스크 T-xxx-NNN 완료" 패턴에서 task_id 추출
-        m = _re.search(r"태스크\s+(T-[A-Za-z0-9_]+-\d+)\s+완료", text)
+        _TERMINAL_STATES = {"done", "failed", "cancelled"}
+        # "태스크 T-xxx 완료" 또는 "태스크 T-xxx 실패:" 패턴 모두 처리
+        m = _re.search(r"태스크\s+(T-[A-Za-z0-9_]+-\d+)\s+(완료|실패)", text)
         if not m:
             return
         task_id = m.group(1).strip()
-        logger.info(f"[PM_DONE 이벤트] {task_id} 완료 수신 → 합성 체크")
+        event_type = m.group(2)
+        logger.info(f"[PM_DONE 이벤트] {task_id} {event_type} 수신 → 합성 체크")
         try:
             task_info = await self.context_db.get_pm_task(task_id)
-            asyncio.create_task(self._inject_collab_result(task_info))
+            if task_info and event_type == "완료":
+                asyncio.create_task(self._inject_collab_result(task_info))
             if not task_info or not task_info.get("parent_id"):
                 return
             parent_id = task_info["parent_id"]
@@ -3173,9 +3182,13 @@ class TelegramRelay:
                 logger.debug(f"[PM_DONE 이벤트] {parent_id} 이미 합성 중 — 스킵")
                 return
             siblings = await self.context_db.get_subtasks(parent_id)
-            if siblings and all(s["status"] == "done" for s in siblings):
+            # 모든 형제가 terminal 상태(done/failed/cancelled)이면 합성 시작
+            # 기존: all done 체크 → 실패 서브태스크 있으면 합성 안 됨 (버그) → 수정
+            if siblings and all(s["status"] in _TERMINAL_STATES for s in siblings):
                 self._synthesizing.add(parent_id)
-                logger.info(f"[PM_DONE 이벤트] {parent_id} 전체 완료 → 즉시 합성")
+                failed_siblings = [s["id"] for s in siblings if s["status"] == "failed"]
+                log_suffix = f" (실패 포함: {failed_siblings})" if failed_siblings else ""
+                logger.info(f"[PM_DONE 이벤트] {parent_id} 전체 terminal → 즉시 합성{log_suffix}")
                 try:
                     await self._pm_orchestrator._synthesize_and_act(
                         parent_id, siblings, self.allowed_chat_id
@@ -3188,7 +3201,7 @@ class TelegramRelay:
                 finally:
                     self._synthesizing.discard(parent_id)
             else:
-                pending = [s["id"] for s in siblings if s["status"] != "done"]
+                pending = [s["id"] for s in siblings if s["status"] not in _TERMINAL_STATES]
                 logger.info(f"[PM_DONE 이벤트] {parent_id} 아직 미완료: {pending}")
         except Exception as e:
             logger.error(f"[PM_DONE 이벤트] 처리 오류: {e}")
@@ -3196,28 +3209,37 @@ class TelegramRelay:
     async def _synthesis_poll_loop(self) -> None:
         """완료된 parent 태스크의 합성을 보장하는 백그라운드 폴러 (pm_bot 전용).
 
-        모든 서브태스크가 done이지만 parent가 아직 pending/assigned 상태인 경우
-        자동으로 _synthesize_and_act()를 트리거한다.
+        모든 서브태스크가 terminal 상태(done/failed/cancelled)이고
+        parent가 아직 pending/assigned 상태인 경우 자동으로 _synthesize_and_act()를 트리거한다.
+        실패한 서브태스크도 포함하여 부모 태스크가 영구적으로 assigned 상태에 갇히는 버그 수정.
         """
+        _TERMINAL_STATES = {"done", "failed", "cancelled"}
         import asyncio as _asyncio
         while True:
             try:
-                await _asyncio.sleep(30)  # fallback only; primary via PM_DONE event
+                await _asyncio.sleep(30)  # fallback only; primary via PM_DONE/PM_FAILED event
                 if self.context_db is None or self._pm_orchestrator is None:
                     continue
 
                 import aiosqlite as _aiosqlite
                 async with _aiosqlite.connect(self.context_db.db_path) as _db:
                     _db.row_factory = _aiosqlite.Row
-                    # 서브태스크가 있고, 아직 완료 처리 안 된 parent 조회
+                    # 모든 서브태스크가 terminal(done/failed/cancelled)이고
+                    # parent가 아직 미완료인 parent 조회.
+                    # 기존: t.status = 'done' 만 봤으나, 전부 failed인 케이스는 누락됨 → 수정.
                     cursor = await _db.execute("""
                         SELECT DISTINCT t.parent_id FROM pm_tasks t
                         WHERE t.parent_id IS NOT NULL
-                          AND t.status = 'done'
+                          AND t.status IN ('done', 'failed', 'cancelled')
                         AND EXISTS (
                             SELECT 1 FROM pm_tasks p
                             WHERE p.id = t.parent_id
-                              AND p.status NOT IN ('done','failed')
+                              AND p.status NOT IN ('done', 'failed', 'cancelled')
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM pm_tasks sibling
+                            WHERE sibling.parent_id = t.parent_id
+                              AND sibling.status NOT IN ('done', 'failed', 'cancelled')
                         )
                     """)
                     candidates = [r[0] async for r in cursor]
@@ -3232,7 +3254,7 @@ class TelegramRelay:
                             and (sibling.get("metadata") or {}).get("collab")
                         ):
                             asyncio.create_task(self._inject_collab_result(sibling))
-                    if siblings and all(s["status"] == "done" for s in siblings):
+                    if siblings and all(s["status"] in _TERMINAL_STATES for s in siblings):
                         self._synthesizing.add(parent_id)
                         logger.info(f"[SynthesisPoller] {parent_id} 전체 완료 감지 → 합성 시작")
                         try:

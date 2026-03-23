@@ -1197,7 +1197,9 @@ class PMOrchestrator:
                 except Exception as _e:
                     logger.warning(f"[PM] 태스크 {tid} 알림 전송 실패 (태스크는 assigned 상태): {_e}")
 
-        # 모든 서브태스크 완료 확인
+        # 모든 서브태스크가 terminal 상태(done/failed/cancelled)인지 확인 후 합성
+        # 기존: all done 체크 → 실패 서브태스크가 있으면 합성 미트리거 (부모 stuck 버그) → 수정
+        _TERMINAL = {"done", "failed", "cancelled"}
         task_info = await self._db.get_pm_task(task_id)
         if task_info and task_info.get("parent_id"):
             parent_id = task_info["parent_id"]
@@ -1212,12 +1214,12 @@ class PMOrchestrator:
                         if s.get("metadata", {}).get("discussion_round") == current_round
                     ]
                     all_done = bool(round_siblings) and all(
-                        s["status"] == "done" for s in round_siblings
+                        s["status"] in _TERMINAL for s in round_siblings
                     )
                 else:
-                    all_done = all(s["status"] == "done" for s in siblings)
+                    all_done = bool(siblings) and all(s["status"] in _TERMINAL for s in siblings)
             else:
-                all_done = all(s["status"] == "done" for s in siblings)
+                all_done = bool(siblings) and all(s["status"] in _TERMINAL for s in siblings)
             if all_done:
                 await self._synthesize_and_act(parent_id, siblings, chat_id)
             else:
