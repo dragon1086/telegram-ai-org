@@ -1,0 +1,163 @@
+"""Orphan Guard 버그 수정 검증 테스트.
+
+수정 위치: .worktrees/bot-runtime/core/context_db.py
+수정 내용:
+  - Bug 1 (line 586): get_tasks_for_dept — 부모 'cancelled' → 자식 픽업 허용 (기존: 스킵)
+  - Bug 2 (line 795): recover_stale_dept_tasks — 부모 'cancelled' → 복구 허용 (기존: 스킵)
+
+메인 코드베이스(core/context_db.py)는 Orphan Guard 없음 → 이미 올바른 동작.
+이 테스트는 메인 코드베이스 기준으로 "의도된 동작"을 검증한다.
+"""
+from __future__ import annotations
+
+import sys
+import tempfile
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from core.context_db import ContextDB
+
+
+@pytest.fixture
+async def db():
+    with tempfile.TemporaryDirectory() as tmp:
+        cdb = ContextDB(Path(tmp) / "test.db")
+        await cdb.initialize()
+        yield cdb
+
+
+# ──────────────────────────────────────────────
+# 의도된 동작: 부모 cancelled여도 자식 픽업 가능
+# ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_child_task_runs_when_parent_cancelled(db):
+    """부모 태스크가 cancelled여도 자식 태스크는 픽업되어야 한다 (핵심 수정 검증)."""
+    await db.create_pm_task("T-parent-001", "parent task", None, "pm")
+    await db.update_pm_task_status("T-parent-001", "cancelled")
+
+    await db.create_pm_task("T-child-001", "child task", "engineering", "pm", parent_id="T-parent-001")
+    await db.update_pm_task_status("T-child-001", "assigned")
+
+    tasks = await db.get_tasks_for_dept("engineering")
+    task_ids = [t["id"] for t in tasks]
+
+    assert "T-child-001" in task_ids, (
+        "부모가 cancelled여도 자식 태스크는 픽업 가능해야 합니다 (Orphan Guard Bug 1 수정)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_child_task_runs_without_parent(db):
+    """부모 없는 태스크는 정상 픽업되어야 한다."""
+    await db.create_pm_task("T-solo-001", "solo task", "engineering", "pm")
+    await db.update_pm_task_status("T-solo-001", "assigned")
+
+    tasks = await db.get_tasks_for_dept("engineering")
+    task_ids = [t["id"] for t in tasks]
+
+    assert "T-solo-001" in task_ids, "부모 없는 태스크는 정상 픽업되어야 합니다"
+
+
+@pytest.mark.asyncio
+async def test_child_task_pending_runs_when_parent_cancelled(db):
+    """부모가 cancelled여도 pending 자식 태스크(의존성 없음)도 픽업되어야 한다."""
+    await db.create_pm_task("T-parent-003", "parent task", None, "pm")
+    await db.update_pm_task_status("T-parent-003", "cancelled")
+
+    # 자식 태스크 — pending 상태 (의존성 없음)
+    await db.create_pm_task(
+        "T-child-003", "child pending task", "engineering", "pm", parent_id="T-parent-003"
+    )
+
+    tasks = await db.get_tasks_for_dept("engineering")
+    task_ids = [t["id"] for t in tasks]
+
+    assert "T-child-003" in task_ids, (
+        "부모가 cancelled여도 pending 자식 태스크(deps 없음)는 픽업 가능해야 합니다"
+    )
+
+
+@pytest.mark.asyncio
+async def test_multiple_children_with_cancelled_parent_all_run(db):
+    """부모 cancelled일 때 여러 자식 태스크 모두 픽업 가능해야 한다."""
+    await db.create_pm_task("T-parent-010", "parent task", None, "pm")
+    await db.update_pm_task_status("T-parent-010", "cancelled")
+
+    for i in range(3):
+        await db.create_pm_task(
+            f"T-child-01{i}", f"child task {i}", "engineering", "pm", parent_id="T-parent-010"
+        )
+        await db.update_pm_task_status(f"T-child-01{i}", "assigned")
+
+    tasks = await db.get_tasks_for_dept("engineering")
+    task_ids = [t["id"] for t in tasks]
+
+    for i in range(3):
+        assert f"T-child-01{i}" in task_ids, (
+            f"T-child-01{i}: 부모가 cancelled여도 자식 태스크 모두 픽업 가능해야 합니다"
+        )
+
+
+# ──────────────────────────────────────────────
+# recover_stale_dept_tasks: 부모 cancelled → 복구 허용
+# ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_stale_task_recovered_when_parent_cancelled(db):
+    """부모가 cancelled여도 stale running 태스크는 복구되어야 한다 (Bug 2 수정 검증)."""
+    import json
+    import aiosqlite
+    from datetime import UTC, datetime, timedelta
+
+    await db.create_pm_task("T-parent-004", "parent task", None, "pm")
+    await db.update_pm_task_status("T-parent-004", "cancelled")
+
+    await db.create_pm_task(
+        "T-stale-001", "stale task", "engineering", "pm", parent_id="T-parent-004"
+    )
+    await db.update_pm_task_status("T-stale-001", "running")
+
+    # 타임스탬프를 과거로 조작하여 stale 조건 충족
+    old_time = (datetime.now(UTC) - timedelta(seconds=500)).isoformat()
+    expired_lease = (datetime.now(UTC) - timedelta(seconds=400)).isoformat()
+    meta = json.dumps({"lease_expires_at": expired_lease})
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "UPDATE pm_tasks SET updated_at=?, metadata=? WHERE id=?",
+            (old_time, meta, "T-stale-001"),
+        )
+        await conn.commit()
+
+    recovered = await db.recover_stale_dept_tasks("engineering", stale_seconds=300)
+
+    assert recovered >= 1, (
+        "부모가 cancelled여도 stale 태스크는 복구되어야 합니다 (Bug 2 수정 검증)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_stale_task_recovered_without_parent(db):
+    """부모 없는 stale 태스크는 정상적으로 복구되어야 한다."""
+    import json
+    import aiosqlite
+    from datetime import UTC, datetime, timedelta
+
+    await db.create_pm_task("T-stale-solo", "solo stale task", "engineering", "pm")
+    await db.update_pm_task_status("T-stale-solo", "running")
+
+    old_time = (datetime.now(UTC) - timedelta(seconds=500)).isoformat()
+    expired_lease = (datetime.now(UTC) - timedelta(seconds=400)).isoformat()
+    meta = json.dumps({"lease_expires_at": expired_lease})
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "UPDATE pm_tasks SET updated_at=?, metadata=? WHERE id=?",
+            (old_time, meta, "T-stale-solo"),
+        )
+        await conn.commit()
+
+    recovered = await db.recover_stale_dept_tasks("engineering", stale_seconds=300)
+    assert recovered >= 1, "부모 없는 stale 태스크는 정상 복구되어야 합니다"
