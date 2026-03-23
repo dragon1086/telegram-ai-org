@@ -576,14 +576,15 @@ class ContextDB:
                             continue
                     except ValueError:
                         pass
-                # ── 부모 태스크가 cancelled/failed면 자식도 스킵 ──
+                # ── 부모 태스크가 failed면 자식도 스킵 (cancelled는 제외: PM 상태전이에 의해
+                #    부모가 cancelled여도 자식 부서 태스크는 계속 실행되어야 함) ──
                 parent_id = task.get("parent_id")
                 if parent_id:
                     parent_cur = await db.execute(
                         "SELECT status FROM pm_tasks WHERE id = ?", (parent_id,),
                     )
                     parent_row = await parent_cur.fetchone()
-                    if parent_row and parent_row["status"] in ("cancelled", "failed"):
+                    if parent_row and parent_row["status"] in ("failed",):
                         logger.info(
                             f"[ORPHAN-GUARD] 태스크 {task['id']} 스킵: "
                             f"부모 {parent_id} 상태={parent_row['status']}"
@@ -785,14 +786,14 @@ class ContextDB:
             for row in rows:
                 task_id = row["id"]
                 metadata = json.loads(row["metadata"] or "{}")
-                # 부모가 cancelled/failed면 복구하지 않음
+                # 부모가 failed면 복구하지 않음 (cancelled는 제외: 부서 태스크는 계속 실행)
                 parent_id = row["parent_id"]
                 if parent_id:
                     pcur = await db.execute(
                         "SELECT status FROM pm_tasks WHERE id = ?", (parent_id,),
                     )
                     prow = await pcur.fetchone()
-                    if prow and prow["status"] in ("cancelled", "failed"):
+                    if prow and prow["status"] in ("failed",):
                         logger.info(
                             f"[RECOVER] 태스크 {task_id} 복구 스킵: "
                             f"부모 {parent_id} 상태={prow['status']}"
