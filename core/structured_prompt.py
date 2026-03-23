@@ -58,6 +58,10 @@ class StructuredPrompt:
     phases: list[Phase] = field(default_factory=list)
     context: str = ""
     constraints: list[str] = field(default_factory=list)
+    # LLM 자율 분류 태스크 유형 (조사/분석/기획/설계/검토/수정/구현/운영)
+    task_type: str | None = None
+    # 파일·코드 변경 허용 여부
+    allow_file_change: bool | None = None
 
     def render(self) -> str:
         """엔진 무관 텍스트 프롬프트로 변환."""
@@ -65,6 +69,17 @@ class StructuredPrompt:
 
         if self.context:
             parts.append(f"[배경]\n{self.context}")
+
+        # 태스크 유형 경계 — 봇이 스스로 범위를 인지하도록 첫 번째 섹션으로 주입
+        if self.task_type:
+            fc_str = "예 — 파일·코드 직접 수정 가능" if self.allow_file_change else "아니오 — 문서/보고서 산출만, 파일 변경 금지"
+            fc_str = fc_str if self.allow_file_change is not None else "명시되지 않음"
+            parts.append(
+                f"[태스크 유형]\n"
+                f"유형: {self.task_type}\n"
+                f"파일·코드 변경 허용: {fc_str}\n"
+                f"※ 이 유형의 범위를 초과하는 작업(예: 분석 요청에 코드 구현, 검토 요청에 파일 직접 수정)은 수행하지 않는다."
+            )
 
         if self.constraints:
             parts.append("[제약]\n" + "\n".join(f"- {c}" for c in self.constraints))
@@ -117,22 +132,34 @@ class StructuredPromptGenerator:
         return TaskComplexity.SIMPLE
 
     async def generate(
-        self, description: str, dept: str, context: str = "",
+        self,
+        description: str,
+        dept: str,
+        context: str = "",
+        task_type: str | None = None,
+        allow_file_change: bool | None = None,
     ) -> StructuredPrompt:
         """구조화 프롬프트 생성. LLM 실패 시 템플릿 fallback."""
         complexity = self.detect_complexity(description)
 
-        prompt = await self._llm_generate(description, dept, complexity, context)
+        prompt = await self._llm_generate(
+            description, dept, complexity, context,
+            task_type=task_type, allow_file_change=allow_file_change,
+        )
         if prompt is not None:
             return prompt
 
-        return self._template_generate(description, dept, complexity, context)
+        sp = self._template_generate(description, dept, complexity, context)
+        sp.task_type = task_type
+        sp.allow_file_change = allow_file_change
+        return sp
 
     _LLM_PROMPT = (
         "You are creating a structured work plan for a department.\n"
         "Department: {dept_name} ({dept_role})\n"
         "Task: {description}\n"
-        "Complexity: {complexity}\n\n"
+        "Complexity: {complexity}\n"
+        "{task_type_context}"
         "Create a phased work plan. Reply in this EXACT format (one line per phase):\n"
         "PHASE:<phase name>|INSTRUCTIONS:<detailed instructions>|DELIVERABLES:<comma-separated>\n\n"
         "Rules:\n"
@@ -141,11 +168,14 @@ class StructuredPromptGenerator:
         "- Each phase produces concrete deliverables\n"
         "- SIMPLE: 1 phase, MODERATE: 2-3 phases, COMPLEX: 4+ phases\n"
         "- Instructions should be actionable and specific\n"
+        "- CRITICAL: instructions must strictly match the task type scope — do NOT suggest file edits for analysis/review tasks\n"
     )
 
     async def _llm_generate(
         self, description: str, dept: str,
         complexity: TaskComplexity, context: str,
+        task_type: str | None = None,
+        allow_file_change: bool | None = None,
     ) -> StructuredPrompt | None:
         """LLM 기반 프롬프트 생성."""
         if self._decision_client is None:
@@ -154,11 +184,23 @@ class StructuredPromptGenerator:
         dept_name = KNOWN_DEPTS.get(dept, dept)
         dept_role = DEPT_ROLES.get(dept, "담당 부서")
 
+        # 태스크 유형이 있으면 LLM에 범위 경계 힌트 제공
+        _EXECUTION_TYPES = {"구현", "수정", "운영"}
+        if task_type:
+            fc_label = "허용" if allow_file_change else "금지"
+            fc_detail = "파일·코드 직접 변경 가능" if allow_file_change else "문서·보고서 산출만, 파일 변경 불가"
+            task_type_context = (
+                f"Task type: {task_type} (파일·코드 변경 {fc_label} — {fc_detail})\n"
+            )
+        else:
+            task_type_context = ""
+
         prompt = self._LLM_PROMPT.format(
             dept_name=dept_name,
             dept_role=dept_role,
             description=description[:500],
             complexity=complexity.value,
+            task_type_context=task_type_context,
         )
 
         try:
@@ -175,6 +217,8 @@ class StructuredPromptGenerator:
                 phases=phases,
                 context=context,
                 constraints=["엔진 특화 명령어 사용 금지", "단계별 산출물 명시"],
+                task_type=task_type,
+                allow_file_change=allow_file_change,
             )
         except Exception as e:
             logger.warning(f"[StructuredPrompt] LLM 생성 실패, fallback: {e}")
