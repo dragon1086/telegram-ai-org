@@ -3,7 +3,7 @@
 
 동작:
   1. 30초마다 aiorg_aiorg_* tmux 세션 모든 창 캡처
-  2. 콘텐츠가 STUCK_THRESHOLD(180초)간 변화 없고 입력 대기 감지 시
+  2. 콘텐츠가 STUCK_THRESHOLD(300초)간 변화 없고 입력 대기 감지 시
   3. 3단계 자동 처리:
      a) 안전한 패턴 (y/n, 계속 등) → 규칙 기반 고정 응답 주입
      b) 판단 필요한 질문 → 에이전트 자기 판단 유도 메시지 주입
@@ -29,7 +29,7 @@ from pathlib import Path
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 POLL_INTERVAL = 30           # 세션 확인 주기 (초)
-STUCK_THRESHOLD = 180        # 이 시간(초) 동안 변화 없으면 "stuck" 의심
+STUCK_THRESHOLD = 300        # 이 시간(초) 동안 변화 없으면 "stuck" 의심 (BOT_IDLE_TIMEOUT_SEC=300 기준 정렬)
 RESPONSE_COOLDOWN = 300      # 같은 세션에 연속 응답 최소 간격 (초)
 SESSION_PREFIX = "aiorg_aiorg_"
 STATE_FILE = Path("/tmp/agent-monitor-state.json")
