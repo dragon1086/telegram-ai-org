@@ -3073,22 +3073,10 @@ class TelegramRelay:
 
     async def _post_init(self, application: Application) -> None:
         """Application 초기화 후 백그라운드 작업 시작."""
-        # 재시작 시 stale 'running' 태스크 → 'assigned' 리셋
-        if self.context_db is not None:
-            try:
-                import aiosqlite as _aiosqlite
-                cutoff = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
-                async with _aiosqlite.connect(self.context_db.db_path) as _db:
-                    result = await _db.execute(
-                        "UPDATE pm_tasks SET status='assigned' "
-                        "WHERE status='running' AND assigned_dept=? AND updated_at < ?",
-                        (self.org_id, cutoff),
-                    )
-                    await _db.commit()
-                    if result.rowcount:
-                        logger.info(f"[{self.org_id}] stale running 태스크 {result.rowcount}개 → assigned 리셋")
-            except Exception as _e:
-                logger.warning(f"[{self.org_id}] stale 리셋 실패: {_e}")
+        # NOTE: stale running→assigned 복구는 recover_stale_dept_tasks()가
+        # TaskPoller._poll_loop 시작 시 안전하게 처리한다.
+        # 여기서 Raw SQL로 직접 리셋하면 metadata(attempt_count, lease_owner 등)를
+        # 무시하여 무한 재시도 루프가 발생할 수 있으므로 삭제함. (2026-03-23)
 
         if self._task_poller is not None:
             self._task_poller.start()
