@@ -548,7 +548,7 @@ class ContextDB:
             cursor = await db.execute("""
                 SELECT * FROM pm_tasks t
                 WHERE t.assigned_dept = ?
-                  AND t.status NOT IN ('done', 'failed')
+                  AND t.status NOT IN ('done', 'failed', 'cancelled')
                 ORDER BY t.created_at
             """, (dept_id,))
             rows = await cursor.fetchall()
@@ -564,6 +564,21 @@ class ContextDB:
                             continue
                     except ValueError:
                         pass
+                # ── Orphan Guard: 부모가 failed이면 자식 스킵
+                #    (cancelled는 제외 — PM 상태 전이로 부모가 cancelled여도
+                #     자식 부서 태스크는 계속 실행되어야 함) ──
+                parent_id = task.get("parent_id")
+                if parent_id:
+                    parent_cur = await db.execute(
+                        "SELECT status FROM pm_tasks WHERE id = ?", (parent_id,),
+                    )
+                    parent_row = await parent_cur.fetchone()
+                    if parent_row and parent_row["status"] in ("failed",):
+                        logger.info(
+                            f"[ORPHAN-GUARD] 태스크 {task['id']} 스킵: "
+                            f"부모 {parent_id} 상태={parent_row['status']}"
+                        )
+                        continue
                 if task["status"] == "assigned":
                     result.append(task)
                     continue
@@ -607,6 +622,7 @@ class ContextDB:
             return result
 
     MAX_TASK_ATTEMPTS = 3  # 최대 lease claim 횟수 — 초과 시 자동 failed 처리
+    RECOVER_MAX_AGE_SECONDS = 86400  # 복구 대상 최대 나이: 24시간 (좀비 방지)
 
     async def claim_pm_task_lease(
         self,
@@ -734,24 +750,45 @@ class ContextDB:
         영구 교착 상태에 빠진 태스크를 복구한다.
         attempt_count를 0으로 리셋하여 재실행 가능하게 만든다.
 
+        안전장치:
+        - 24시간 이상 된 태스크는 복구하지 않음 (좀비 방지)
+        - 부모가 failed인 태스크는 복구하지 않음 (orphan 방지)
+          단, 부모가 cancelled인 경우는 복구 허용 (부서 태스크 계속 실행)
+
         Returns: 복구된 태스크 수.
         """
         now = datetime.now(UTC)
         cutoff = (now - timedelta(seconds=stale_seconds)).isoformat()
+        max_age_cutoff = (now - timedelta(seconds=self.RECOVER_MAX_AGE_SECONDS)).isoformat()
         recovered = 0
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                """SELECT id, metadata FROM pm_tasks
+                """SELECT id, metadata, parent_id FROM pm_tasks
                    WHERE assigned_dept = ?
                      AND status = 'running'
-                     AND updated_at < ?""",
-                (dept_id, cutoff),
+                     AND updated_at < ?
+                     AND updated_at > ?""",
+                (dept_id, cutoff, max_age_cutoff),
             )
             rows = await cursor.fetchall()
             for row in rows:
                 task_id = row["id"]
                 metadata = json.loads(row["metadata"] or "{}")
+                # ── Orphan Guard: 부모가 failed이면 복구 스킵
+                #    (cancelled는 제외 — 부서 태스크는 계속 실행되어야 함) ──
+                parent_id = row["parent_id"]
+                if parent_id:
+                    pcur = await db.execute(
+                        "SELECT status FROM pm_tasks WHERE id = ?", (parent_id,),
+                    )
+                    prow = await pcur.fetchone()
+                    if prow and prow["status"] in ("failed",):
+                        logger.info(
+                            f"[RECOVER] 태스크 {task_id} 복구 스킵: "
+                            f"부모 {parent_id} 상태={prow['status']}"
+                        )
+                        continue
                 lease_exp = metadata.get("lease_expires_at")
                 if lease_exp:
                     try:
