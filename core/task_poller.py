@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import os
 import socket
+import time
 import uuid
 from typing import Callable, Awaitable
 
@@ -24,6 +25,10 @@ from core.context_db import ContextDB
 DEFAULT_POLL_INTERVAL = 2.0  # 의존성 체인 중간 태스크 감지 (PM_DONE은 최종 합성만 처리)
 DEFAULT_LEASE_TTL_SEC = 180.0
 DEFAULT_HEARTBEAT_INTERVAL_SEC = 30.0
+# Fast-failure 감지: 짧은 시간에 연속 실패 시 백오프
+FAST_FAIL_WINDOW_SEC = 60.0  # 이 시간 내 연속 실패 횟수 추적
+FAST_FAIL_THRESHOLD = 3  # 이 횟수 이상이면 백오프 적용
+FAST_FAIL_BACKOFF_SEC = 30.0  # 백오프 시간
 
 
 class TaskPoller:
@@ -50,6 +55,8 @@ class TaskPoller:
         self._processing: set[str] = set()
         self._heartbeat_tasks: dict[str, asyncio.Task] = {}
         self._worker_id = f"{org_id}:{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+        # Fast-failure 감지: 태스크별 최근 실패 타임스탬프
+        self._fail_timestamps: dict[str, list[float]] = {}
 
     def start(self) -> None:
         """백그라운드 폴링 시작."""
@@ -120,15 +127,44 @@ class TaskPoller:
         except Exception:
             logger.exception(f"[TaskPoller:{self._org_id}] heartbeat 오류: {task_id}")
 
+    def _is_fast_failing(self, task_id: str) -> bool:
+        """태스크가 짧은 시간 내 반복 실패 중인지 감지."""
+        timestamps = self._fail_timestamps.get(task_id, [])
+        if not timestamps:
+            return False
+        now = time.monotonic()
+        # 윈도우 내 실패만 유지
+        recent = [t for t in timestamps if now - t < FAST_FAIL_WINDOW_SEC]
+        self._fail_timestamps[task_id] = recent
+        return len(recent) >= FAST_FAIL_THRESHOLD
+
+    def _record_failure(self, task_id: str) -> None:
+        """태스크 실패 타임스탬프 기록."""
+        if task_id not in self._fail_timestamps:
+            self._fail_timestamps[task_id] = []
+        self._fail_timestamps[task_id].append(time.monotonic())
+
     async def _execute_task(self, task: dict) -> None:
         """태스크 콜백 실행 및 완료 후 processing set에서 제거."""
         task_id = task["id"]
         task_succeeded = False
+
+        # ── Fast-failure 감지: 빠른 연속 실패 시 백오프 ──
+        if self._is_fast_failing(task_id):
+            logger.warning(
+                f"[TaskPoller:{self._org_id}] 태스크 {task_id} fast-fail 감지 — "
+                f"{FAST_FAIL_BACKOFF_SEC}초 백오프"
+            )
+            await asyncio.sleep(FAST_FAIL_BACKOFF_SEC)
+
         try:
             await self._on_task(task)
             task_succeeded = True
+            # 성공 시 실패 이력 초기화
+            self._fail_timestamps.pop(task_id, None)
         except Exception:
             logger.exception(f"[TaskPoller:{self._org_id}] 태스크 실행 오류: {task_id}")
+            self._record_failure(task_id)
         finally:
             self._processing.discard(task_id)
             hb_task = self._heartbeat_tasks.pop(task_id, None)
