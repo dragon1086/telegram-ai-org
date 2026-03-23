@@ -576,24 +576,20 @@ class ContextDB:
                             continue
                     except ValueError:
                         pass
-                # ── 부모 태스크가 failed/cancelled면 자식도 자동 cancelled 처리 ──
+                # ── Orphan Guard: 부모가 failed이면 자식 스킵
+                #    (cancelled는 제외 — PM 상태 전이로 부모가 cancelled여도
+                #     자식 부서 태스크는 계속 실행되어야 함) ──
                 parent_id = task.get("parent_id")
                 if parent_id:
                     parent_cur = await db.execute(
                         "SELECT status FROM pm_tasks WHERE id = ?", (parent_id,),
                     )
                     parent_row = await parent_cur.fetchone()
-                    if parent_row and parent_row["status"] in ("failed", "cancelled"):
+                    if parent_row and parent_row["status"] in ("failed",):
                         logger.info(
-                            "[ORPHAN-GUARD] 태스크 {} 자동 cancelled: "
-                            "부모 {} 상태={}",
-                            task["id"], parent_id, parent_row["status"],
+                            f"[ORPHAN-GUARD] 태스크 {task['id']} 스킵: "
+                            f"부모 {parent_id} 상태={parent_row['status']}"
                         )
-                        await db.execute(
-                            "UPDATE pm_tasks SET status = 'cancelled' WHERE id = ?",
-                            (task["id"],),
-                        )
-                        await db.commit()
                         continue
                 if task["status"] == "assigned":
                     result.append(task)
