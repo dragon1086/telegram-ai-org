@@ -44,9 +44,9 @@
   - `MEMORY_UPDATE` 이벤트 통합
 
 ### 다음 단계 (W12 내 완료 목표)
-- [ ] `telegram_relay.py`에 P2PMessenger 인스턴스 주입
-- [ ] 각 봇이 태스크 완료 시 `notify_task_done()` 호출
-- [ ] SharedMemory를 `context_db`의 인메모리 캐시 레이어로 활용
+- [x] `telegram_relay.py`에 P2PMessenger 인스턴스 주입 (2026-03-22 완료)
+- [x] 각 봇이 태스크 완료 시 `notify_task_done()` 호출 (2026-03-22 완료, commit d650830)
+- [x] SharedMemory를 `context_db`의 인메모리 캐시 레이어로 활용 (2026-03-22, core/context_cache.py)
 - [ ] P2P 메시지 Telegram 그룹 에코 옵션 (디버그용)
 
 ### 완료 기준

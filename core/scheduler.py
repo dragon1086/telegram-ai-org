@@ -29,6 +29,7 @@ class OrgScheduler:
         execute_callback: Optional[Callable[[str], Coroutine[Any, Any, str]]] = None,
         claim_manager=None,
         context_db=None,
+        group_chat_hub=None,
     ) -> None:
         """
         Args:
@@ -36,11 +37,13 @@ class OrgScheduler:
             execute_callback: 사용자 태스크 실행 코루틴 (태스크 설명 → 결과 문자열). 없으면 알림만.
             claim_manager: ClaimManager 인스턴스. 제공 시 매시간 파일 정리 잡 등록.
             context_db: ContextDB 인스턴스. 미제공 시 weekly_bot_business_retro에서 자동 생성.
+            group_chat_hub: GroupChatHub 인스턴스. 제공 시 주간회의·회고를 그룹 허브로 실행.
         """
         self._send_text = send_text
         self._execute_callback = execute_callback
         self._claim_manager = claim_manager
         self._context_db = context_db
+        self._group_chat_hub = group_chat_hub  # GroupChatHub | None
         self.scheduler = AsyncIOScheduler(timezone=KST)
         self._register_jobs()
 
@@ -96,6 +99,12 @@ class OrgScheduler:
             self._code_health_daily,
             CronTrigger(hour=1, minute=0, timezone=KST),
             id="code_health_daily", misfire_grace_time=1800,
+            replace_existing=True,
+        )
+        self.scheduler.add_job(
+            self._self_improve_pipeline_daily,
+            CronTrigger(hour=1, minute=17, timezone=KST),
+            id="self_improve_pipeline_daily", misfire_grace_time=1800,
             replace_existing=True,
         )
         self.scheduler.add_job(
@@ -192,6 +201,13 @@ class OrgScheduler:
         """매주 월요일 09:00 KST — 주간 회의."""
         logger.info("[OrgScheduler] weekly_standup 시작")
         try:
+            # GroupChatHub 연동: 그룹방에서 멀티봇 자율 참가 회의 실행
+            if self._group_chat_hub is not None:
+                logger.info("[OrgScheduler] GroupChatHub를 통한 멀티봇 주간 스탠드업 실행")
+                await self._group_chat_hub.start_meeting(
+                    topic="주간 스탠드업 — 이번 주 계획 및 지난 주 성과 공유",
+                    participants=self._group_chat_hub.participant_ids,
+                )
             from scripts.weekly_standup import main as _weekly_main
             await _weekly_main()
             # Phase 2: LessonMemory 교훈 통계
@@ -230,6 +246,13 @@ class OrgScheduler:
         """매주 금요일 18:00 KST — 주간 회고."""
         logger.info("[OrgScheduler] friday_retro 시작")
         try:
+            # GroupChatHub 연동: 그룹방에서 멀티봇 자율 참가 회고 실행
+            if self._group_chat_hub is not None:
+                logger.info("[OrgScheduler] GroupChatHub를 통한 멀티봇 주간 회고 실행")
+                await self._group_chat_hub.start_meeting(
+                    topic="주간 회고 — 이번 주 잘한 점, 개선점, 다음 주 액션 아이템",
+                    participants=self._group_chat_hub.participant_ids,
+                )
             from scripts.daily_retro import (
                 get_today_tasks,
                 _llm_insights,
@@ -419,6 +442,32 @@ class OrgScheduler:
                 await self._safe_send(report.summary())
         except Exception as e:
             logger.error(f"[OrgScheduler] code_health_daily 실패: {e}")
+
+    async def _self_improve_pipeline_daily(self) -> None:
+        """매일 01:17 KST — 자가 개선 파이프라인 실행 + 모니터링 로그 저장 + 실패 알림."""
+        logger.info("[OrgScheduler] self_improve_pipeline_daily 시작")
+        try:
+            import asyncio
+            from pathlib import Path
+            proc = await asyncio.create_subprocess_exec(
+                str(Path(__file__).parent.parent / ".venv" / "bin" / "python"),
+                "scripts/run_self_improve_pipeline.py",
+                cwd=str(Path(__file__).parent.parent),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
+            if proc.returncode == 0:
+                logger.info("[OrgScheduler] self_improve_pipeline 완료 (exit=0)")
+            else:
+                output = (stdout + stderr).decode(errors="replace")[-800:]
+                logger.warning(f"[OrgScheduler] self_improve_pipeline 실패 (exit={proc.returncode})\n{output}")
+                await self._safe_send(
+                    f"⚠️ 자가 개선 파이프라인 실패 (exit={proc.returncode})\n"
+                    f"```\n{output}\n```"
+                )
+        except Exception as e:
+            logger.error(f"[OrgScheduler] self_improve_pipeline_daily 실패: {e}")
 
     async def _improvement_bus_daily(self) -> None:
         """매일 02:00 KST — ImprovementBus 신호 수집 및 보고."""

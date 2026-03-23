@@ -118,7 +118,7 @@ class LessonMemory:
     def _sync_get_category_stats(self) -> dict[str, int]:
         with sqlite3.connect(self.db_path, timeout=10) as conn:
             rows = conn.execute(
-                "SELECT category, COUNT(*) FROM lessons WHERE resolved=0 GROUP BY category"
+                "SELECT category, COUNT(*) FROM lessons WHERE resolved=0 AND outcome='failure' GROUP BY category"
             ).fetchall()
         return dict(rows)
 

@@ -189,11 +189,17 @@ async def run() -> None:
         print(f"   메시지: {msg}")
         print(f"   ⏳ 최대 {timeout}초 대기…")
 
+        # 리스너 초기화 시점의 최신 메시지 ID 기록 — cross-contamination 방지
+        _latest = await client.get_messages(chat_entity, limit=1)
+        min_id: int = _latest[0].id if _latest else 0
+
         collected: list[BotMessage] = []
         stop = [False]
 
-        async def handler(event, _c=collected, _s=stop):
+        async def handler(event, _c=collected, _s=stop, _min_id=min_id):
             if _s[0]:
+                return
+            if event.message.id <= _min_id:  # 초기화 이전 메시지 skip (cross-contamination 방지)
                 return
             sender = await event.get_sender()
             if sender and getattr(sender, "bot", False):

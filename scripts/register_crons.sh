@@ -6,7 +6,7 @@
 set -euo pipefail
 
 PROJ="/Users/rocky/telegram-ai-org"
-VENV="$PROJ/venv/bin/python"
+VENV="$PROJ/.venv/bin/python"
 
 echo "=== openclaw cron 등록 시작 ==="
 
@@ -14,7 +14,7 @@ echo "=== openclaw cron 등록 시작 ==="
 openclaw cron add \
   --name "weekly_standup" \
   --schedule "0 0 * * 0" \
-  --command "cd $PROJ && source venv/bin/activate && python scripts/weekly_standup.py >> logs/standup.log 2>&1" \
+  --command "cd $PROJ && source .venv/bin/activate && python scripts/weekly_standup.py >> logs/standup.log 2>&1" \
   --description "주간 회의: 매주 월요일 09:00 KST"
 
 echo "[OK] weekly_standup 등록"
@@ -23,7 +23,7 @@ echo "[OK] weekly_standup 등록"
 openclaw cron add \
   --name "daily_retro" \
   --schedule "30 14 * * *" \
-  --command "cd $PROJ && source venv/bin/activate && python scripts/daily_retro.py >> logs/retro.log 2>&1" \
+  --command "cd $PROJ && source .venv/bin/activate && python scripts/daily_retro.py >> logs/retro.log 2>&1" \
   --description "일일 회고: 매일 23:30 KST"
 
 echo "[OK] daily_retro 등록"
@@ -32,7 +32,7 @@ echo "[OK] daily_retro 등록"
 openclaw cron add \
   --name "daily_metrics" \
   --schedule "0 23 * * *" \
-  --command "cd $PROJ && source venv/bin/activate && python scripts/daily_metrics.py >> logs/metrics.log 2>&1" \
+  --command "cd $PROJ && source .venv/bin/activate && python scripts/daily_metrics.py >> logs/metrics.log 2>&1" \
   --description "일일 메트릭: 매일 08:00 KST"
 
 echo "[OK] daily_metrics 등록"
@@ -41,7 +41,7 @@ echo "[OK] daily_metrics 등록"
 openclaw cron add \
   --name "monthly_review" \
   --schedule "0 1 1 * *" \
-  --command "cd $PROJ && source venv/bin/activate && python scripts/monthly_review.py >> logs/monthly.log 2>&1" \
+  --command "cd $PROJ && source .venv/bin/activate && python scripts/monthly_review.py >> logs/monthly.log 2>&1" \
   --description "월간 리뷰: 매월 1일 10:00 KST"
 
 echo "[OK] monthly_review 등록"
