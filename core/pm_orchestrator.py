@@ -1124,6 +1124,19 @@ class PMOrchestrator:
                     logger.warning(f"[PM] 태스크 {tid} 알림 전송 실패 (태스크는 assigned 상태): {_e}")
                 logger.info(f"[PM] 태스크 발송: {tid} → {dept}")
 
+        # 4. PM 자체 할당 부모 태스크 자동 완료 처리
+        # PM은 TaskPoller를 사용하지 않으므로 자신에게 할당된 부모 태스크가
+        # 영원히 pending/assigned 상태로 남아 ORDER-GUARD가 하위 태스크를 차단한다.
+        # 하위 태스크 디스패치 완료 = PM의 역할(분해/배정) 완료이므로 done 처리.
+        if parent_task:
+            p_dept = parent_task.get("assigned_dept", "")
+            if p_dept == self._org_id:
+                await self._db.update_pm_task_status(parent_task_id, "done")
+                logger.info(
+                    "[PM] 부모 태스크 {} 자동 done 처리 (PM 자체 할당, 하위 {}개 디스패치 완료)",
+                    parent_task_id, len(task_ids),
+                )
+
         return task_ids
 
     async def build_status_snapshot(self, parent_task_id: str) -> str:
@@ -1996,6 +2009,15 @@ class PMOrchestrator:
             {"debate": True, "debate_topic": topic},
         )
 
+        # PM 자체 할당 부모 태스크 자동 완료 처리
+        parent_task = await self._db.get_pm_task(parent_task_id)
+        if parent_task and parent_task.get("assigned_dept") == self._org_id:
+            await self._db.update_pm_task_status(parent_task_id, "done")
+            logger.info(
+                "[PM] debate 부모 태스크 {} 자동 done 처리 (PM 자체 할당, 하위 {}개 디스패치 완료)",
+                parent_task_id, len(task_ids),
+            )
+
         return task_ids
 
     async def collab_dispatch(
@@ -2140,6 +2162,13 @@ class PMOrchestrator:
             except Exception as _e:
                 logger.warning(f"[PM] discussion 태스크 {tid} 알림 실패: {_e}")
             logger.info(f"[PM] discussion 태스크 발송: {tid} → {bot_id}")
+
+        # PM 자체 할당 부모 태스크 자동 완료 처리
+        await self._db.update_pm_task_status(parent_id, "done")
+        logger.info(
+            "[PM] discussion 부모 태스크 {} 자동 done 처리 (PM 자체 할당, 하위 {}개 디스패치 완료)",
+            parent_id, len(task_ids),
+        )
 
         return task_ids
 
