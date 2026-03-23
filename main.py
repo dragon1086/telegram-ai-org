@@ -122,6 +122,21 @@ if __name__ == "__main__":
         bus=bus,
         context_db=context_db,
     )
+    # ── idle heartbeat — watchdog hung 감지용 ────────────────────────────────
+    # idle 봇도 60초마다 파일을 touch해 "살아있음"을 알림.
+    # 이 파일이 10분 이상 갱신되지 않으면 → asyncio 루프 hang으로 판단.
+    import threading
+    _hb_file = Path.home() / ".ai-org" / f"{org_id}.heartbeat"
+    def _heartbeat_worker() -> None:
+        while True:
+            try:
+                _hb_file.touch()
+            except Exception:
+                pass
+            time.sleep(60)
+    threading.Thread(target=_heartbeat_worker, daemon=True, name=f"heartbeat-{org_id}").start()
+    # ─────────────────────────────────────────────────────────────────────────
+
     CONFLICT_WAIT = 70  # Telegram 서버 long-polling timeout(60s) + 여유
     RESTART_WAIT = 5    # 정상 종료 후 자동 재시작 대기
 

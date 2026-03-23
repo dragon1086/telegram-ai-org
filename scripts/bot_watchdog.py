@@ -101,27 +101,28 @@ def notify_rocky(message: str) -> None:
 
 
 # ── 봇 상태 확인 ──────────────────────────────────────────────────────────────
-def get_bot_log_path(org_id: str) -> Path:
-    """봇 로그 파일 경로 반환."""
-    return AI_ORG_LOG_DIR / f"{org_id}.log"
+def get_bot_heartbeat_path(org_id: str) -> Path:
+    """봇 heartbeat 파일 경로 반환 (~/.ai-org/{org_id}.heartbeat)."""
+    return AI_ORG_LOG_DIR / f"{org_id}.heartbeat"
 
 
 def check_log_hung(org_id: str) -> bool:
-    """봇이 hung 상태인지 로그 freshness로 판단.
+    """봇이 hung 상태인지 heartbeat freshness로 판단.
 
     조건:
       - 프로세스는 살아있지만
-      - 로그가 LOG_STALENESS_THRESHOLD(10분) 이상 갱신되지 않았고
-      - 로그가 1시간 이내에 활성화된 적 있음 (장기 idle 봇 오판 방지)
+      - heartbeat 파일이 LOG_STALENESS_THRESHOLD(10분) 이상 갱신되지 않음
+      - heartbeat 파일이 1시간 이내에 존재한 적 있음 (장기 미시작 봇 오판 방지)
 
-    NOTE: 정상 실행 중인 봇은 heartbeat가 30초마다 로그를 찍으므로
-    10분 침묵 = asyncio 이벤트 루프 hang 상태 (Claude Code 실행 중 아님).
+    NOTE: 봇은 idle/active 무관하게 60초마다 heartbeat 파일을 touch한다.
+    10분 침묵 = asyncio 이벤트 루프 hang (touch 스레드도 멈춤).
+    로그 파일은 idle 시 무음이므로 hung 감지에 사용하지 않는다.
     """
-    log_path = get_bot_log_path(org_id)
-    if not log_path.exists():
+    hb_path = get_bot_heartbeat_path(org_id)
+    if not hb_path.exists():
         return False
     now = time.time()
-    age = now - log_path.stat().st_mtime
+    age = now - hb_path.stat().st_mtime
     recently_active = age < 3600  # 1시간 이내 갱신된 적 있어야 hung 의심
     return age > LOG_STALENESS_THRESHOLD and recently_active
 
