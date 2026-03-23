@@ -1,12 +1,18 @@
 """Orphan Guard 버그 수정 검증 테스트.
 
-수정 위치: .worktrees/bot-runtime/core/context_db.py
+수정 위치: core/context_db.py (메인 브랜치 + worktree 공통 적용)
 수정 내용:
-  - Bug 1 (line 586): get_tasks_for_dept — 부모 'cancelled' → 자식 픽업 허용 (기존: 스킵)
-  - Bug 2 (line 795): recover_stale_dept_tasks — 부모 'cancelled' → 복구 허용 (기존: 스킵)
+  - Bug 1: get_tasks_for_dept — 부모 'cancelled' → 자식 픽업 허용 (failed만 스킵)
+  - Bug 2: recover_stale_dept_tasks — 부모 'cancelled' → 복구 허용 (failed만 스킵)
+  - 안전장치: recover_stale_dept_tasks 24시간 초과 태스크 복구 방지 (좀비 방지)
 
-메인 코드베이스(core/context_db.py)는 Orphan Guard 없음 → 이미 올바른 동작.
-이 테스트는 메인 코드베이스 기준으로 "의도된 동작"을 검증한다.
+검증 시나리오:
+  ① 부모 cancelled → 자식 픽업 가능 (Orphan Guard 수정 핵심)
+  ② 부모 failed → 자식 스킵 (기존 안전 동작 보존)
+  ③ 부모 없는 태스크 → 정상 픽업
+  ④ 여러 자식 태스크 → 모두 픽업
+  ⑤ stale 태스크 + 부모 cancelled → 복구 허용
+  ⑥ stale 태스크 + 부모 없음 → 정상 복구
 """
 from __future__ import annotations
 
@@ -161,3 +167,60 @@ async def test_stale_task_recovered_without_parent(db):
 
     recovered = await db.recover_stale_dept_tasks("engineering", stale_seconds=300)
     assert recovered >= 1, "부모 없는 stale 태스크는 정상 복구되어야 합니다"
+
+
+# ──────────────────────────────────────────────
+# 기존 동작 보존: 부모 failed → 자식 스킵
+# ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_child_task_skipped_when_parent_failed(db):
+    """부모 태스크가 failed이면 자식 태스크는 픽업되면 안 된다 (안전 동작 보존)."""
+    await db.create_pm_task("T-parent-fail-001", "parent task", None, "pm")
+    await db.update_pm_task_status("T-parent-fail-001", "failed")
+
+    await db.create_pm_task(
+        "T-child-fail-001", "child task", "engineering", "pm",
+        parent_id="T-parent-fail-001"
+    )
+    await db.update_pm_task_status("T-child-fail-001", "assigned")
+
+    tasks = await db.get_tasks_for_dept("engineering")
+    task_ids = [t["id"] for t in tasks]
+
+    assert "T-child-fail-001" not in task_ids, (
+        "부모가 failed이면 자식 태스크는 픽업되면 안 됩니다 (Orphan Guard 안전 동작)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_stale_task_not_recovered_when_parent_failed(db):
+    """부모가 failed이면 stale 태스크는 복구되면 안 된다 (안전 동작 보존)."""
+    import json
+    import aiosqlite
+    from datetime import UTC, datetime, timedelta
+
+    await db.create_pm_task("T-parent-fail-002", "parent task", None, "pm")
+    await db.update_pm_task_status("T-parent-fail-002", "failed")
+
+    await db.create_pm_task(
+        "T-stale-fail-001", "stale task", "engineering", "pm",
+        parent_id="T-parent-fail-002"
+    )
+    await db.update_pm_task_status("T-stale-fail-001", "running")
+
+    old_time = (datetime.now(UTC) - timedelta(seconds=500)).isoformat()
+    expired_lease = (datetime.now(UTC) - timedelta(seconds=400)).isoformat()
+    meta = json.dumps({"lease_expires_at": expired_lease})
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "UPDATE pm_tasks SET updated_at=?, metadata=? WHERE id=?",
+            (old_time, meta, "T-stale-fail-001"),
+        )
+        await conn.commit()
+
+    recovered = await db.recover_stale_dept_tasks("engineering", stale_seconds=300)
+
+    assert recovered == 0, (
+        "부모가 failed이면 stale 태스크는 복구되면 안 됩니다 (Orphan Guard 안전 동작)"
+    )
