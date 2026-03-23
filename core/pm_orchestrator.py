@@ -1682,7 +1682,7 @@ class PMOrchestrator:
         """
         # 원래 요청 복원
         parent = await self._db.get_pm_task(parent_task_id)
-        original_request = parent["description"][:500] if parent else ""
+        original_request = parent["description"][:1500] if parent else ""
 
         parent_meta = parent.get("metadata", {}) if parent else {}
         # 스탈니스 체크 — assigned 상태로 오래된 서브태스크 경고
