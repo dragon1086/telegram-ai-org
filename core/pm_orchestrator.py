@@ -1027,7 +1027,9 @@ class PMOrchestrator:
             "## 최종 전달본",
             report.strip() or "(보고서 없음)",
             "",
-            "## 조직별 핵심 결과",
+            "---",
+            "",
+            "## 부록: 조직 원문 (참고용 — 최종 전달본과 중복될 수 있음)",
         ]
         for task in subtasks:
             dept = task.get("assigned_dept") or "unknown"
@@ -1721,10 +1723,13 @@ class PMOrchestrator:
 
         if synthesis.judgment == SynthesisJudgment.SUFFICIENT:
             report = user_friendly_report
+            _artifact_suffix = (
+                f"\n\n---\n📎 첨부: {', '.join(f'`{Path(p).name}`' for p in _all_artifact_paths if p)}"
+                if _all_artifact_paths else ""
+            )
             await self._send(
                 chat_id,
-                f"✅ 모든 부서 작업 완료!\n\n{report}{_artifact_list_note}\n\n"
-                f"통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
+                f"{report}{_artifact_suffix}\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
             )
             if run_id:
                 try:
