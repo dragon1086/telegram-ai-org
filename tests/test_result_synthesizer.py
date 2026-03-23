@@ -336,6 +336,87 @@ class TestReportSectionFormat:
         default_limit = sig.parameters["limit"].default
         assert default_limit >= 3000, f"limit should be ≥3000, got {default_limit}"
 
+    def test_report_does_not_use_dept_name_as_header(self):
+        """LLM 합성 보고서에 부서명이 섹션 헤더(##)로 사용되어서는 안 된다."""
+        response = (
+            "JUDGMENT: sufficient\n"
+            "REASONING: 완료\n"
+            "SUMMARY: 완료\n"
+            "FOLLOW_UP: none\n"
+            "ARTIFACTS: none\n"
+            "REPORT:\n"
+            "## 결론\n"
+            "배포 파이프라인 개선 완료.\n\n"
+            "## 핵심 내용\n"
+            "- CI/CD 자동화 완료 (3시간 → 10분으로 단축)\n"
+            "- 모니터링 대시보드 구성 완료\n"
+            "END_REPORT"
+        )
+        result = ResultSynthesizer._parse_synthesis(response)
+        report = result.unified_report
+        # 부서명이 ## 섹션 헤더로 사용되지 않아야 함 (MECE 바이패싱 방지)
+        for dept_name in ["개발실", "기획실", "운영실", "디자인실", "조사실", "성장팀"]:
+            assert f"## {dept_name}" not in report, f"부서명 '{dept_name}'이 섹션 헤더로 사용됨 — 바이패싱 위반"
+
+
+class TestFallbackReportStructure:
+    """_build_fallback_public_report 3-섹션 포맷 준수 테스트 (LLM fallback 경로)."""
+
+    def test_fallback_report_has_결론_section(self, synth):
+        """LLM fallback 보고서에 ## 결론 섹션이 있어야 한다."""
+        subtasks = [_make_subtask("aiorg_engineering_bot", "구현 완료")]
+        result = synth._keyword_synthesize(subtasks)
+        assert "## 결론" in result.unified_report
+
+    def test_fallback_report_has_핵심_내용_section(self, synth):
+        """LLM fallback 보고서에 ## 핵심 내용 섹션이 있어야 한다."""
+        subtasks = [_make_subtask("aiorg_engineering_bot", "구현 완료")]
+        result = synth._keyword_synthesize(subtasks)
+        assert "## 핵심 내용" in result.unified_report
+
+    def test_fallback_missing_dept_has_다음조치_section(self, synth):
+        """누락 부서가 있을 때 ## 다음 조치 섹션이 추가되어야 한다."""
+        subtasks = [
+            _make_subtask("aiorg_engineering_bot", "구현 완료"),
+            _make_subtask("aiorg_product_bot"),  # 결과 없음 → missing
+        ]
+        result = synth._keyword_synthesize(subtasks)
+        assert "## 결론" in result.unified_report
+        assert "## 핵심 내용" in result.unified_report
+        assert "## 다음 조치" in result.unified_report
+
+    def test_fallback_no_section_headers_for_dept_names(self, synth):
+        """fallback 보고서에서 부서명이 ## 섹션 헤더로 사용되어서는 안 된다."""
+        subtasks = [
+            _make_subtask("aiorg_engineering_bot", "개발 완료"),
+            _make_subtask("aiorg_ops_bot", "배포 완료"),
+        ]
+        result = synth._keyword_synthesize(subtasks)
+        report = result.unified_report
+        # 부서명을 ## 헤더로 사용하지 않아야 함 (bold 표기는 허용)
+        assert "## 개발실" not in report
+        assert "## 운영실" not in report
+
+    def test_fallback_all_results_conclusion_text(self, synth):
+        """전체 결과 수신 시 결론 섹션이 완료 메시지를 포함해야 한다."""
+        subtasks = [_make_subtask("aiorg_engineering_bot", "API 구현 완료")]
+        result = synth._keyword_synthesize(subtasks)
+        # 결론 줄이 명확한 완료 메시지여야 함
+        lines = result.unified_report.splitlines()
+        conclusion_idx = next((i for i, ln in enumerate(lines) if "## 결론" in ln), None)
+        assert conclusion_idx is not None, "## 결론 섹션 없음"
+        # 결론 다음 줄에 내용이 있어야 함
+        assert conclusion_idx + 1 < len(lines) and lines[conclusion_idx + 1].strip()
+
+    def test_fallback_missing_conclusion_mentions_missing_dept(self, synth):
+        """누락 부서가 있을 때 결론에 해당 조직명이 언급되어야 한다."""
+        subtasks = [
+            _make_subtask("aiorg_engineering_bot"),  # 결과 없음
+        ]
+        result = synth._keyword_synthesize(subtasks)
+        # 결론에 누락 언급이 포함되어야 함
+        assert "개발실" in result.unified_report
+
 
 class TestGroupChatHubConnection:
     """GroupChatHub + OrgScheduler 연결 단위 테스트."""
