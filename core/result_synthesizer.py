@@ -54,31 +54,27 @@ _SYNTHESIS_PROMPT = (
     "FOLLOW_UP: DEPT:aiorg_xxx_bot|TASK:description (one per line, or 'none')\n"
     "ARTIFACTS: /absolute/path/to/file.png (one per line, or 'none')\n"
     "REPORT:\n"
-    "[structured final report — follow the 5-section format below]\n"
+    "[structured final report — follow the 3-section format below]\n"
     "END_REPORT\n\n"
     "JUDGMENT values:\n"
     "- SUFFICIENT: all departments delivered what was needed\n"
     "- INSUFFICIENT: key deliverables missing or incomplete\n"
     "- CONFLICTING: departments contradict each other\n"
     "- NEEDS_INTEGRATION: results are good but need to be combined into one coherent output\n\n"
-    "## REPORT: 5-section format (strictly follow — no exceptions):\n\n"
+    "## REPORT: 3-section format (strictly follow — no exceptions):\n\n"
     "  ## 결론\n"
-    "  [REQUIRED. ONE sentence max 50 chars. Directly answer the user's request + PM recommendation.\n"
+    "  [REQUIRED. ONE sentence max 60 chars. Directly answer the user's request.\n"
+    "   Include PM judgment/recommendation in this single sentence.\n"
     "   Example: '이번 스프린트 70% 달성, 배포 자동화 구축을 최우선 권고.'\n"
     "   DO NOT start with background. DO NOT start with department name.]\n\n"
-    "  ## 핵심 발견사항\n"
+    "  ## 핵심 내용\n"
     "  [REQUIRED. 3~5 bullet points. Topic-based grouping (NOT department-based).\n"
     "   If 2+ departments mention the same finding, merge into ONE bullet.\n"
-    "   Include concrete numbers/results. Each bullet = one distinct topic.]\n\n"
-    "  ## 위험·이슈 (있을 때만)\n"
-    "  [CONDITIONAL. Include risks, unresolved conflicts, incomplete items.\n"
-    "   OMIT this section entirely if nothing to report.]\n\n"
-    "  ## PM 결정 및 권고\n"
-    "  [REQUIRED. PM's explicit judgment + prioritized recommendations.\n"
-    "   Use P1/P2/P3 priority labels. At least 1 concrete recommendation.\n"
-    "   This is the PM's own voice — do NOT just summarize departments.]\n\n"
+    "   Include concrete numbers/results. Each bullet = one distinct topic.\n"
+    "   Include risks, unresolved items, or PM recommendations as bullets if applicable.\n"
+    "   Use **bold** for key terms. Use tables where useful.]\n\n"
     "  ## 다음 조치 (있을 때만)\n"
-    "  [CONDITIONAL. List only concrete follow-up tasks with owner/timeline.\n"
+    "  [CONDITIONAL. Concrete follow-up tasks with owner/timeline.\n"
     "   OMIT this section entirely if no tasks remain.]\n\n"
     "## REPORT content rules (CRITICAL — violating these degrades report quality):\n"
     "- NEVER copy department outputs verbatim. Synthesize, reframe from PM perspective.\n"
@@ -349,12 +345,13 @@ def _parse_follow_up_line(line: str, follow_ups: list[dict]) -> None:
         follow_ups.append({"dept": dept, "description": task})
 
 
-def _result_excerpt(result: str, limit: int = 2200) -> str:
+def _result_excerpt(result: str, limit: int = 3000) -> str:
+    """부서 결과를 LLM 컨텍스트용으로 자름. 합성 품질을 위해 충분한 길이 확보."""
     text = (result or "(결과 없음)").strip()
     if len(text) <= limit:
         return text
-    head = text[:1400].rstrip()
-    tail = text[-600:].lstrip()
+    head = text[:2000].rstrip()
+    tail = text[-800:].lstrip()
     return f"{head}\n\n[중간 내용 생략]\n\n{tail}"
 
 
