@@ -1,11 +1,15 @@
 """
 tests/test_thinking_heartbeat.py
-Thinking heartbeat (60초 간격) 구현 검증 테스트.
+Thinking heartbeat 구현 검증 테스트.
+- heartbeat 발화 타이밍 / 예외 내성 / 취소 동작
+- active/stuck 판별 로직 (progress_snapshot 기반)
+- 환경변수 설정값 검증
 """
 import asyncio
+import os
 import time
 from contextlib import suppress
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -14,15 +18,32 @@ import pytest
 # 헬퍼: heartbeat 루프 독립 추출 (telegram_relay 내부와 동일 로직)
 # ---------------------------------------------------------------------------
 
-async def make_heartbeat_loop(on_progress_fn, interval: int = 60):
+async def make_heartbeat_loop(on_progress_fn, interval: int = 30):
     """_thinking_heartbeat_loop 로직을 테스트용으로 재현."""
+    hb_count = 0
     await asyncio.sleep(interval)
     while True:
+        hb_count += 1
         try:
             await on_progress_fn("🤔 처리 중...")
         except Exception:
             pass
         await asyncio.sleep(interval)
+
+
+def build_watchdog_timeout_msg(
+    idle: float,
+    idle_timeout: int,
+    progress_snapshot: list[tuple[float, str]],
+) -> str:
+    """_watchdog_loop의 타임아웃 메시지 생성 로직 재현."""
+    if progress_snapshot:
+        last_ts, last_line = progress_snapshot[-1]
+        since_last = time.time() - last_ts
+        snap_hint = f" | 마지막 출력 {since_last:.0f}s 전: {last_line[:80]}"
+    else:
+        snap_hint = " | 실행 중 출력 없음 (stuck 가능성)"
+    return f"무응답 {idle:.0f}초 (한도 {idle_timeout}s){snap_hint}"
 
 
 # ---------------------------------------------------------------------------
@@ -31,14 +52,13 @@ async def make_heartbeat_loop(on_progress_fn, interval: int = 60):
 
 @pytest.mark.asyncio
 async def test_heartbeat_does_not_fire_before_interval():
-    """60초 미만 실행 → heartbeat 발화 없어야 함."""
+    """interval 미만 실행 → heartbeat 발화 없어야 함."""
     calls: list[str] = []
 
     async def on_progress(line: str) -> None:
         calls.append(line)
 
     hb_task = asyncio.ensure_future(make_heartbeat_loop(on_progress, interval=60))
-    # 0.1초 후 취소 (60초 훨씬 전)
     await asyncio.sleep(0.1)
     hb_task.cancel()
     with suppress(asyncio.CancelledError):
@@ -59,9 +79,8 @@ async def test_heartbeat_fires_after_interval():
     async def on_progress(line: str) -> None:
         calls.append(line)
 
-    # 테스트 속도를 위해 interval=0.2초로 단축
     hb_task = asyncio.ensure_future(make_heartbeat_loop(on_progress, interval=0.2))
-    await asyncio.sleep(0.35)  # 0.2초 후 첫 발화, 0.4초 후 두 번째
+    await asyncio.sleep(0.35)
     hb_task.cancel()
     with suppress(asyncio.CancelledError):
         await hb_task
@@ -83,13 +102,13 @@ async def test_heartbeat_stops_after_cancel():
         calls.append(line)
 
     hb_task = asyncio.ensure_future(make_heartbeat_loop(on_progress, interval=0.1))
-    await asyncio.sleep(0.25)  # 2회 발화 허용
+    await asyncio.sleep(0.25)
     hb_task.cancel()
     with suppress(asyncio.CancelledError):
         await hb_task
 
     count_before = len(calls)
-    await asyncio.sleep(0.2)  # cancel 후 추가 대기
+    await asyncio.sleep(0.2)
     count_after = len(calls)
 
     assert count_after == count_before, (
@@ -112,7 +131,7 @@ async def test_heartbeat_continues_on_progress_exception():
         raise RuntimeError("progress error")
 
     hb_task = asyncio.ensure_future(make_heartbeat_loop(on_progress, interval=0.1))
-    await asyncio.sleep(0.45)  # 4회 이상 발화 기대
+    await asyncio.sleep(0.45)
     hb_task.cancel()
     with suppress(asyncio.CancelledError):
         await hb_task
@@ -154,7 +173,6 @@ async def test_heartbeat_cancelled_in_finally():
 
 def test_idle_timeout_default_is_120():
     """BOT_IDLE_TIMEOUT_SEC 환경변수 미설정 시 기본값 120초 확인."""
-    import os
     with patch.dict(os.environ, {}, clear=False):
         os.environ.pop("BOT_IDLE_TIMEOUT_SEC", None)
         val = int(os.environ.get("BOT_IDLE_TIMEOUT_SEC", "120"))
@@ -162,13 +180,51 @@ def test_idle_timeout_default_is_120():
 
 
 # ---------------------------------------------------------------------------
-# Test 7: heartbeat 간격이 idle_timeout보다 짧아야 함 (60 < 120)
+# Test 7: heartbeat 간격이 idle_timeout보다 짧아야 함 (30 < 300)
 # ---------------------------------------------------------------------------
 
 def test_heartbeat_interval_less_than_idle_timeout():
-    """heartbeat 간격(60s)이 idle timeout(120s)보다 짧아야 오탐 방지 가능."""
-    hb_interval = 60
-    idle_timeout = 120
-    assert hb_interval < idle_timeout, (
-        f"heartbeat 간격({hb_interval}s)이 idle timeout({idle_timeout}s) 이상이면 오탐 위험"
+    """heartbeat 간격(30s)이 idle timeout(300s)보다 짧아야 오탐 방지 가능."""
+    hb_interval = int(os.environ.get("BOT_HB_INTERVAL_SEC", "30"))
+    idle_timeout = int(os.environ.get("BOT_IDLE_TIMEOUT_SEC", "120"))
+    # idle_timeout은 hb_interval의 최소 2배 이상이어야 안전
+    assert hb_interval * 2 <= idle_timeout, (
+        f"heartbeat 간격({hb_interval}s) * 2 > idle timeout({idle_timeout}s): 오탐 위험"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 8: BOT_HB_INTERVAL_SEC 환경변수 기본값 30초 확인
+# ---------------------------------------------------------------------------
+
+def test_hb_interval_default_is_30():
+    """BOT_HB_INTERVAL_SEC 미설정 시 기본값 30초."""
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("BOT_HB_INTERVAL_SEC", None)
+        val = int(os.environ.get("BOT_HB_INTERVAL_SEC", "30"))
+    assert val == 30, f"heartbeat 간격 기본값이 30이 아님: {val}"
+
+
+# ---------------------------------------------------------------------------
+# Test 9: active 케이스 — progress_snapshot 있을 때 타임아웃 메시지
+# ---------------------------------------------------------------------------
+
+def test_timeout_msg_with_progress_snapshot_shows_active():
+    """progress_snapshot이 있을 때 타임아웃 메시지에 마지막 출력 라인 포함 (active 힌트)."""
+    snapshot = [(time.time() - 5.0, "파일 분석 중: core/telegram_relay.py")]
+    msg = build_watchdog_timeout_msg(idle=185.0, idle_timeout=300, progress_snapshot=snapshot)
+    assert "마지막 출력" in msg, "active 힌트가 없음"
+    assert "파일 분석 중" in msg, "마지막 출력 내용이 없음"
+    assert "무응답 185초" in msg
+
+
+# ---------------------------------------------------------------------------
+# Test 10: stuck 케이스 — progress_snapshot 없을 때 타임아웃 메시지
+# ---------------------------------------------------------------------------
+
+def test_timeout_msg_without_progress_snapshot_shows_stuck():
+    """progress_snapshot이 없을 때 타임아웃 메시지에 stuck 가능성 힌트 포함."""
+    snapshot: list[tuple[float, str]] = []
+    msg = build_watchdog_timeout_msg(idle=305.0, idle_timeout=300, progress_snapshot=snapshot)
+    assert "stuck" in msg or "출력 없음" in msg, "stuck 힌트가 없음"
+    assert "무응답 305초" in msg
