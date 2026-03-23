@@ -1,0 +1,16 @@
+[Unit]
+Description=telegram-ai-org bot watchdog — auto-restart + hung detection
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=@@VENV_PYTHON@@ @@PROJECT_DIR@@/scripts/bot_watchdog.py
+WorkingDirectory=@@PROJECT_DIR@@
+Restart=always
+RestartSec=10
+StandardOutput=append:@@HOME@@/.ai-org/bot-watchdog.log
+StandardError=append:@@HOME@@/.ai-org/bot-watchdog.log
+Environment=HOME=@@HOME@@
+
+[Install]
+WantedBy=default.target
