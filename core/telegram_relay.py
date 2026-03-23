@@ -1799,10 +1799,18 @@ class TelegramRelay:
                     _idle_timeout = int(os.environ.get("BOT_IDLE_TIMEOUT_SEC", "120"))  # 무응답 타임아웃
                     _max_timeout = int(os.environ.get("BOT_MAX_TIMEOUT_SEC", "1800"))  # 절대 상한 30분
                     _exec_start = time.time()
+                    # 마지막 실제 진행 라인 스냅샷 (타임아웃 시 active/stuck 진단용)
+                    _progress_snapshot: list[tuple[float, str]] = []  # [(timestamp, line), ...]
+                    _SNAPSHOT_MAX = 5
 
                     async def on_progress(line: str) -> None:
                         nonlocal last_edit, _heartbeat_ts
                         _heartbeat_ts = time.time()  # 하트비트 갱신
+                        stripped_for_snap = self._clean_progress_line(line) if line != "🤔 처리 중..." else ""
+                        if stripped_for_snap:
+                            _progress_snapshot.append((time.time(), stripped_for_snap))
+                            if len(_progress_snapshot) > _SNAPSHOT_MAX:
+                                _progress_snapshot.pop(0)
                         if not self._show_progress():
                             return
                         stripped = self._clean_progress_line(line)
@@ -1828,16 +1836,33 @@ class TelegramRelay:
                             idle = time.time() - _heartbeat_ts
                             elapsed = time.time() - _exec_start
                             if idle > _idle_timeout:
-                                raise asyncio.TimeoutError(f"무응답 {idle:.0f}초 (한도 {_idle_timeout}s)")
+                                # 마지막 진행 스냅샷으로 active/stuck 판단 힌트 생성
+                                if _progress_snapshot:
+                                    last_ts, last_line = _progress_snapshot[-1]
+                                    since_last = time.time() - last_ts
+                                    snap_hint = f" | 마지막 출력 {since_last:.0f}s 전: {last_line[:80]}"
+                                else:
+                                    snap_hint = " | 실행 중 출력 없음 (stuck 가능성)"
+                                raise asyncio.TimeoutError(
+                                    f"무응답 {idle:.0f}초 (한도 {_idle_timeout}s){snap_hint}"
+                                )
                             if elapsed > _max_timeout:
                                 raise asyncio.TimeoutError(f"총 실행 {elapsed:.0f}초 (한도 {_max_timeout}s)")
 
-                    _hb_interval = 60  # thinking heartbeat 간격(초) — idle timeout 절반으로 부하/오탐 균형
+                    # heartbeat 간격: BOT_HB_INTERVAL_SEC (기본 30s) — idle_timeout의 1/10 수준
+                    _hb_interval = int(os.environ.get("BOT_HB_INTERVAL_SEC", "30"))
+                    _hb_count = 0  # heartbeat 발화 횟수 (진단용)
 
                     async def _thinking_heartbeat_loop() -> None:
-                        """60초마다 on_progress 자동 호출 → idle watchdog 리셋 (LLM thinking 무응답 오탐 방지)."""
+                        """주기적 on_progress 자동 호출 → idle watchdog 리셋 (LLM thinking 무응답 오탐 방지)."""
+                        nonlocal _hb_count
                         await asyncio.sleep(_hb_interval)
                         while True:
+                            _hb_count += 1
+                            elapsed_hb = time.time() - _exec_start
+                            logger.debug(
+                                f"[{self.org_id}] heartbeat #{_hb_count} (elapsed={elapsed_hb:.0f}s)"
+                            )
                             try:
                                 await on_progress("🤔 처리 중...")
                             except Exception:
