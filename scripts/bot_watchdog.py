@@ -24,6 +24,8 @@ from pathlib import Path
 CHECK_INTERVAL = 30  # 초
 MAX_RESTART_PER_BOT = 5  # 연속 재시작 한도 (무한루프 방지)
 RESTART_COUNT_RESET_AFTER = 600  # 10분 동안 안정적이면 카운터 리셋
+LOG_STALENESS_THRESHOLD = 600  # 10분간 로그 갱신 없으면 hung으로 판단
+AI_ORG_LOG_DIR = Path.home() / ".ai-org"
 PID_FILE = Path("/tmp/bot-watchdog.pid")
 RESTART_FLAG = Path.home() / ".ai-org" / "restart_requested"
 
@@ -99,6 +101,43 @@ def notify_rocky(message: str) -> None:
 
 
 # ── 봇 상태 확인 ──────────────────────────────────────────────────────────────
+def get_bot_log_path(org_id: str) -> Path:
+    """봇 로그 파일 경로 반환."""
+    return AI_ORG_LOG_DIR / f"{org_id}.log"
+
+
+def check_log_hung(org_id: str) -> bool:
+    """봇이 hung 상태인지 로그 freshness로 판단.
+
+    조건:
+      - 프로세스는 살아있지만
+      - 로그가 LOG_STALENESS_THRESHOLD(10분) 이상 갱신되지 않았고
+      - 로그가 1시간 이내에 활성화된 적 있음 (장기 idle 봇 오판 방지)
+
+    NOTE: 정상 실행 중인 봇은 heartbeat가 30초마다 로그를 찍으므로
+    10분 침묵 = asyncio 이벤트 루프 hang 상태 (Claude Code 실행 중 아님).
+    """
+    log_path = get_bot_log_path(org_id)
+    if not log_path.exists():
+        return False
+    now = time.time()
+    age = now - log_path.stat().st_mtime
+    recently_active = age < 3600  # 1시간 이내 갱신된 적 있어야 hung 의심
+    return age > LOG_STALENESS_THRESHOLD and recently_active
+
+
+def kill_hung_bot(org_id: str) -> None:
+    """응답 없는 hung 봇 프로세스를 SIGKILL로 강제 종료."""
+    from scripts.bot_manager import _find_live_pids
+    pids = _find_live_pids(org_id)
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+            log.info(f"hung 봇 강제 종료: {org_id} PID={pid}")
+        except OSError as e:
+            log.warning(f"봇 {org_id} PID={pid} 종료 실패: {e}")
+
+
 def get_expected_orgs() -> list[dict]:
     """orchestration config에서 실행되어야 할 봇 목록 로드."""
     try:
@@ -207,9 +246,25 @@ class BotWatchdog:
                 self.restart_counts[org_id] = 0
 
             if check_bot_alive(org_id):
-                continue
+                if check_log_hung(org_id):
+                    # 프로세스 살아있지만 hung — 강제 종료 후 재시작
+                    log.warning(
+                        f"봇 {org_id}: 프로세스 alive지만 {LOG_STALENESS_THRESHOLD}초간 "
+                        f"로그 갱신 없음 — hung 감지, 강제 재시작"
+                    )
+                    notify_rocky(
+                        f"<b>봇 hung 감지 → 자동 재시작</b>\n"
+                        f"봇: <code>{org_id}</code>\n"
+                        f"증상: {LOG_STALENESS_THRESHOLD}초 이상 로그 무응답\n"
+                        f"(heartbeat 멈춤 = asyncio 이벤트 루프 hang)\n"
+                        f"시각: {time.strftime('%H:%M:%S')}"
+                    )
+                    kill_hung_bot(org_id)
+                    time.sleep(2)  # 프로세스 정리 대기
+                else:
+                    continue  # 정상 동작 중
 
-            # 죽은 봇 발견
+            # 죽은 봇 (또는 hung으로 강제 종료된 봇) 재시작
             count = self.restart_counts.get(org_id, 0)
             if count >= MAX_RESTART_PER_BOT:
                 log.error(
