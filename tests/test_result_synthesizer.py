@@ -294,6 +294,49 @@ class TestFalseClaimDetection:
         assert "aiorg_ops_bot" in depts
 
 
+class TestReportSectionFormat:
+    """보고서 섹션 포맷 일관성 테스트 — 3-섹션(결론/핵심 내용/다음 조치) 표준 준수."""
+
+    def test_synthesis_prompt_uses_3section_format(self):
+        """_SYNTHESIS_PROMPT가 3-섹션 포맷(핵심 내용)을 사용해야 한다."""
+        from core.result_synthesizer import _SYNTHESIS_PROMPT
+        assert "## 핵심 내용" in _SYNTHESIS_PROMPT
+        assert "## 핵심 발견사항" not in _SYNTHESIS_PROMPT, "구 섹션명 '핵심 발견사항' 제거됐어야 함"
+        assert "## 결론" in _SYNTHESIS_PROMPT
+        assert "## 다음 조치" in _SYNTHESIS_PROMPT
+
+    def test_3section_report_is_parsed_correctly(self):
+        """3-섹션 보고서(결론/핵심 내용/다음 조치)가 올바르게 파싱되어야 한다."""
+        response = (
+            "JUDGMENT: sufficient\n"
+            "REASONING: 모든 부서 완료\n"
+            "SUMMARY: 완료\n"
+            "FOLLOW_UP: none\n"
+            "ARTIFACTS: none\n"
+            "REPORT:\n"
+            "## 결론\n"
+            "프로젝트 A 완료, 배포 즉시 권고.\n\n"
+            "## 핵심 내용\n"
+            "- 코드 3파일 수정 완료\n"
+            "- 테스트 12건 통과\n\n"
+            "## 다음 조치\n"
+            "- 배포 팀 인계\n"
+            "END_REPORT"
+        )
+        result = ResultSynthesizer._parse_synthesis(response)
+        assert result.judgment == SynthesisJudgment.SUFFICIENT
+        assert "## 결론" in result.unified_report
+        assert "## 핵심 내용" in result.unified_report
+        assert "## 다음 조치" in result.unified_report
+
+    def test_result_excerpt_increased_limit(self):
+        """_result_excerpt 기본 limit이 3000으로 증가되었어야 한다."""
+        import inspect
+        sig = inspect.signature(_result_excerpt)
+        default_limit = sig.parameters["limit"].default
+        assert default_limit >= 3000, f"limit should be ≥3000, got {default_limit}"
+
+
 class TestGroupChatHubConnection:
     """GroupChatHub + OrgScheduler 연결 단위 테스트."""
 

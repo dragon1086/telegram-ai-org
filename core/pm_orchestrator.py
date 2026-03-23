@@ -1712,10 +1712,13 @@ class PMOrchestrator:
             if st.get("result")
         )
         report_text = synthesis.unified_report or full_results or synthesis.summary
+        # 합성 LLM 성공 시 이미 구조화된 보고서 → full_context 불필요 (이중 재작성 방지).
+        # 합성 fallback(keyword) 시에만 full_results를 context로 전달해 재구조화.
+        _synthesis_succeeded = bool(synthesis.unified_report)
         user_friendly_report = await ensure_user_friendly_output(
             report_text,
             original_request=original_request,
-            full_context=full_results,
+            full_context="" if _synthesis_succeeded else full_results,
             decision_client=self._decision_client,
         )
         artifact_path = self._write_unified_report_artifact(
@@ -1879,9 +1882,13 @@ class PMOrchestrator:
             )
         else:  # NEEDS_INTEGRATION
             report = user_friendly_report
+            _artifact_suffix = (
+                f"\n\n---\n📎 첨부: {', '.join(f'`{Path(p).name}`' for p in _all_artifact_paths if p)}"
+                if _all_artifact_paths else ""
+            )
             await self._send(
                 chat_id,
-                f"📋 결과 통합 보고서:\n\n{report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
+                f"{report}{_artifact_suffix}\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
             )
             if run_id:
                 try:
