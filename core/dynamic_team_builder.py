@@ -167,6 +167,7 @@ class DynamicTeamBuilder:
                 guidance=guidance,
             )
 
+        content = ""
         try:
             task_context = (
                 f"Task: {task}\n"
@@ -187,16 +188,26 @@ class DynamicTeamBuilder:
             if not content or not content.strip():
                 raise ValueError("LLM returned empty response")
             stripped = content.strip()
+            logger.debug("LLM team build raw response (first 500 chars): {}", stripped[:500])
             # runner가 에러/빈 결과를 한국어로 반환하는 경우 거부
             if stripped.startswith("ERROR:") or stripped == "(결과 없음)":
                 raise ValueError(f"LLM runner failed: {stripped[:200]}")
             # LLM이 ```json ... ``` 으로 감싸서 반환하는 경우 처리
+            import re as _re
             if stripped.startswith("```"):
-                import re as _re
                 m = _re.search(r"```(?:json)?\s*\n?(.*?)```", stripped, _re.DOTALL)
                 if m:
                     stripped = m.group(1).strip()
-            data = json.loads(stripped)
+            # JSON 직접 파싱 시도 → 실패 시 응답 내부에서 JSON 객체 추출
+            try:
+                data = json.loads(stripped)
+            except json.JSONDecodeError:
+                # 응답에 자연어 텍스트 + JSON이 섞인 경우 { ... } 추출
+                m = _re.search(r"\{[\s\S]*\}", stripped)
+                if m:
+                    data = json.loads(m.group(0))
+                else:
+                    raise ValueError(f"No JSON found in LLM response: {stripped[:200]}")
             return self._parse_llm_response(
                 data,
                 preferred_agents=preferred_agents,
@@ -206,7 +217,7 @@ class DynamicTeamBuilder:
             )
 
         except Exception as exc:  # noqa: BLE001
-            logger.warning("LLM team build failed ({}), using fallback", exc)
+            logger.warning("LLM team build failed ({}), using fallback. raw={}", exc, content[:300])
             return self._fallback_team(
                 task,
                 role=role,
