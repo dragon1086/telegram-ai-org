@@ -89,6 +89,74 @@ bash scripts/start_all.sh
 - 이 프로젝트는 hatchling 설정 미비로 pip install -e . 작동 안 함
 - rank-bm25 등 신규 패키지는 직접 설치: .venv/bin/pip install rank-bm25
 
+### [2026-03-22] 현재 시간 기준 작업 원칙 (전체 조직 공통)
+- **원칙**: 모든 봇은 태스크 시작 시 현재 날짜/시각을 확인하고, 사용자가 과거 시점을 명시하지 않는 한 항상 **현재 시각 기준**으로 조사·판단한다.
+- **적용 범위**: 웹검색, 모델/라이브러리 버전 확인, 시장조사, 레퍼런스 조사 등 시간 의존성 있는 모든 작업
+- **산출물 표기**: 보고서·분석물에 "YYYY-MM-DD 기준" 조사 시점을 반드시 명시
+- **글로벌 적용 위치**: `orchestration.yaml` → `global_instructions` 섹션 "현재 시간 사용 원칙"
+
+### [2026-03-22] 안전 코드 수정 방법론 — safe-modify 스킬 (전체 조직 공통)
+
+> 실패 감지(failure-detect) 코드 및 고위험 경로 수정 시 아래 6개 방법론을 반드시 따른다.
+> 상세 절차: `skills/safe-modify/SKILL.md`
+
+**6개 핵심 원칙 요약**:
+
+| 원칙 | 한 줄 요약 | 실무 규칙 |
+|------|-----------|-----------|
+| **Defensive Programming** | 예상 밖 입력에서도 안전 기본값 반환 | Guard Clause 우선, `except: pass` 금지 |
+| **Minimal Footprint** | 최소 범위만 변경 | PR당 파일 3개 이하, 시그니처 유지 |
+| **Feature Flags** | 새 로직은 flag 뒤에 감추기 | 판정 로직 변경 시 Feature Flag 필수 |
+| **Idempotency** | 동일 입력 → 동일 출력 | 전역 상태 변경 금지, 순수 함수 지향 |
+| **CRAP 점수 관리** | 복잡도 × 미커버리지 = 위험도 | CRAP > 30이면 테스트 먼저, 수정 금지 |
+| **산업 표준 체크리스트** | Google/Shopify/Netflix 공통 원칙 | Dark Launch → 실패 주입 테스트 → 롤백 경로 확인 |
+
+**절대 금지 항목** (failure-detect 코드 수정 시):
+- `except: pass` 예외 삼킴
+- LLM fallback 경로 제거
+- confidence 임계값(0.85, 0.60) 테스트 없이 변경
+- 한 PR에서 복수 판정 경로 동시 수정
+
+**실전 엣지케이스 축적**: `skills/safe-modify/gotchas.md` — 실제 인시던트 기반 7개 Gotcha (confidence 임계값 변경, 예외 삼킴, Minimal Footprint 위반 등)
+
+**트리거**: `safe-modify`, `안전 수정`, `failure detect 수정`, `스코프 제한`, `부작용 최소화`
+
+### [2026-03-22] Gemini Flash 모델 버전 — gemini-2.5-flash 사용
+- **현황**: `gemini-2.0-flash` → `gemini-2.5-flash` 로 업데이트 (2026-03-22 기준 최신 안정화 버전)
+- **주의**: 사용자가 "3.1 flash"로 알고 있었으나, 실제 Google 공식 최신 stable 모델은 `gemini-2.5-flash`. 3.x 계열은 Preview 단계임.
+- **변경 파일**: `tools/gemini_runner.py` (기본값 변경), `tools/base_runner.py` (주석 갱신)
+- **Deprecated**: `gemini-2.0-flash` 는 2026-06-01 서비스 종료 예정
+
+### [2026-03-23] ⛔ 위험한 시스템 CLI/파일 탐색 절대 금지 (전체 조직 공통)
+
+**인시던트**: 봇 에이전트가 `glob.glob(str(Path.home()) + '/**/*.db', recursive=True)` 를 직접 생성·실행 → 홈 디렉토리 전체 재귀 탐색으로 CPU 68% 30분 이상 점유, 시스템 메모리 고갈 발생.
+
+**절대 금지 패턴** (에이전트가 코드 생성·실행 시 포함 금지):
+
+```python
+# ❌ 홈/루트 전체 재귀 탐색
+glob.glob(str(Path.home()) + '/**/*', recursive=True)
+glob.glob('/Users/**/*', recursive=True)
+os.walk(Path.home())
+os.walk('/')
+
+# ❌ 쉘에서도 동일하게 금지
+find ~ -name '*.db'
+find / -name '*.db'
+```
+
+**허용 패턴** — 반드시 프로젝트 디렉토리 내로 스코프 제한:
+
+```python
+# ✅ 프로젝트 루트 내부만
+glob.glob('/Users/rocky/telegram-ai-org/**/*.db', recursive=True)
+# ✅ 환경변수로 프로젝트 경로 특정
+glob.glob(os.environ['CLAUDE_PROJECT_DIR'] + '/**/*.db', recursive=True)
+```
+
+**적용 범위**: 에이전트가 직접 작성·실행하는 모든 Python/shell 코드, subprocess 호출, Bash tool 사용 포함.
+**글로벌 적용 위치**: `orchestration.yaml` → `global_instructions` 섹션 "위험한 시스템 탐색 금지"
+
 ### [2026-03-22] PM 봇 대화 히스토리 컨텍스트 창 튜닝
 PM 봇은 작업 배분 판단 시 최근 대화 이력을 `[CONTEXT]...[/CONTEXT]` 블록으로 프롬프트에 주입한다.
 아래 환경변수로 런타임 조정 가능 (`.env` 또는 실행 환경):
@@ -124,6 +192,7 @@ PM 봇은 작업 배분 판단 시 최근 대화 이력을 `[CONTEXT]...[/CONTEX
 | 매주 금요일 | `weekly-review` |
 | 스프린트 끝날 때 | `retro` |
 | 코드 리뷰 요청 시 | `engineering-review` |
+| 실패 감지 / 고위험 코드 수정 시 | `safe-modify` |
 | 시스템 점검 시 | `harness-audit` |
 | 장시간 루프 실행 시 | `loop-checkpoint` |
 

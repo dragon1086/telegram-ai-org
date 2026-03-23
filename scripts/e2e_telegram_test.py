@@ -132,11 +132,17 @@ async def run_e2e_tests() -> None:
         active_collected.clear()
         active_collecting = True  # noqa: F841 — used via closure
 
+        # 리스너 초기화 시점의 최신 메시지 ID 기록 — cross-contamination 방지
+        _latest = await client.get_messages(chat_entity, limit=1)
+        _min_id: int = _latest[0].id if _latest else 0
+
         # Python closure workaround: use nonlocal trick via mutable container
         _flag = [True]
 
-        async def _scoped_handler(event, _f=_flag, _c=active_collected):
+        async def _scoped_handler(event, _f=_flag, _c=active_collected, _mid=_min_id):
             if not _f[0]:
+                return
+            if event.message.id <= _mid:  # 초기화 이전 메시지 skip (cross-contamination 방지)
                 return
             sender = await event.get_sender()
             if sender and getattr(sender, "bot", False):

@@ -60,6 +60,7 @@ bash scripts/start_all.sh
 | `weekly-review` | '주간회의', 'weekly review' | 주간회의 자율 진행 |
 | `retro` | '회고', 'retrospective' | 스프린트 회고 |
 | `engineering-review` | '코드리뷰', 'code review' | 코드 품질 검토 |
+| `safe-modify` | '안전 수정', 'safe modify', '실패감지 수정', '부작용 최소화' | 실패 감지·고위험 코드 안전 수정 체크리스트 |
 | `harness-audit` | '하네스 감사', 'harness audit' | 시스템 신뢰성 감사 |
 | `loop-checkpoint` | '체크포인트', 'checkpoint' | 루프 상태 저장/재개 |
 | `autonomous-skill-proxy` | '자율모드', 'autonomous mode' | 인터랙티브 스킬 자동 응답 |
@@ -82,6 +83,20 @@ bash scripts/start_all.sh
 - async 동작과 기존 public 메서드 시그니처 유지.
 - 시크릿/봇 토큰 하드코딩 금지. 환경변수만 사용.
 - 줄 길이: Ruff 설정 기준 100자.
+
+## 안전 코드 수정 원칙 (safe-modify — 2026-03-22 도입)
+
+> 실패 감지 코드 및 고위험 경로 수정 시 `skills/safe-modify/SKILL.md` 절차를 따른다.
+
+**수정 전 Pre-flight**: CRAP 점수 확인 → 스코프 명시 → 롤백 경로 확보 → quality-gate PASS 기준선 확인
+**수정 중**: Guard Clause 우선 · Feature Flag 적용 · Idempotency 유지 · Minimal Footprint 준수
+**수정 후**: 실패 주입 테스트 → pytest 회귀 → quality-gate → engineering-review
+
+**절대 금지**:
+- `except: pass` 예외 삼킴
+- LLM fallback 경로 제거
+- CRAP > 30 함수 테스트 없이 수정
+- 한 PR에서 복수 판정 경로 동시 수정
 
 ## Git 워크트리 워크플로 (필수)
 

@@ -44,7 +44,7 @@ class GeminiRunner(BaseRunner):
                 "Run: pip install google-genai"
             )
 
-        model = ctx.engine_config.get("model", "gemini-2.0-flash")
+        model = ctx.engine_config.get("model", "gemini-2.5-flash")
 
         if ctx.progress_callback:
             # Streaming variant
@@ -89,7 +89,7 @@ class GeminiRunner(BaseRunner):
             )
 
         if ctx.system_prompt:
-            model = ctx.engine_config.get("model", "gemini-2.0-flash")
+            model = ctx.engine_config.get("model", "gemini-2.5-flash")
             config = types.GenerateContentConfig(
                 system_instruction=ctx.system_prompt,
             )

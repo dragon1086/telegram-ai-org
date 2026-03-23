@@ -646,6 +646,7 @@ class ContextDB:
     # 봇 재시작·Claude Code 타임아웃으로 attempt_count가 빠르게 소진되어
     # 태스크가 조기 auto-fail되는 문제 해소. recover_stale_dept_tasks가
     # attempt_count를 0으로 리셋하므로 무한루프 위험은 없음.
+    RECOVER_MAX_AGE_SECONDS = 86400  # 복구 대상 최대 나이: 24시간 (좀비 방지)
 
     async def claim_pm_task_lease(
         self,

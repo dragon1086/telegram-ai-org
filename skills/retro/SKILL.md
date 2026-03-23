@@ -36,7 +36,7 @@ BLOCKER: 근본 원인 (5 Whys 적용)
 회고 완료 즉시 결과를 JSONL 로그에 기록한다:
 
 ```bash
-python skills/_shared/save-log.py '{"date": "YYYY-MM-DD", "sprint": "...", "summary": "...", "action_items": [], "patterns": []}' skills/retro/data/retro-log.jsonl
+python skills/_shared/save-log.py '{"date": "YYYY-MM-DD", "sprint": "...", "summary": "...", "action_items": [], "patterns": []}' ../telegram-ai-org-data/skills/retro/data/retro-log.jsonl
 ```
 
 - `date`: 회고 실행 날짜

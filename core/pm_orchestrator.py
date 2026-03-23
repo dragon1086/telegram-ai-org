@@ -1206,7 +1206,9 @@ class PMOrchestrator:
                 except Exception as _e:
                     logger.warning(f"[PM] 태스크 {tid} 알림 전송 실패 (태스크는 assigned 상태): {_e}")
 
-        # 모든 서브태스크 완료 확인
+        # 모든 서브태스크가 terminal 상태(done/failed/cancelled)인지 확인 후 합성
+        # 기존: all done 체크 → 실패 서브태스크가 있으면 합성 미트리거 (부모 stuck 버그) → 수정
+        _TERMINAL = {"done", "failed", "cancelled"}
         task_info = await self._db.get_pm_task(task_id)
         if task_info and task_info.get("parent_id"):
             parent_id = task_info["parent_id"]
@@ -1221,12 +1223,12 @@ class PMOrchestrator:
                         if s.get("metadata", {}).get("discussion_round") == current_round
                     ]
                     all_done = bool(round_siblings) and all(
-                        s["status"] == "done" for s in round_siblings
+                        s["status"] in _TERMINAL for s in round_siblings
                     )
                 else:
-                    all_done = all(s["status"] == "done" for s in siblings)
+                    all_done = bool(siblings) and all(s["status"] in _TERMINAL for s in siblings)
             else:
-                all_done = all(s["status"] == "done" for s in siblings)
+                all_done = bool(siblings) and all(s["status"] in _TERMINAL for s in siblings)
             if all_done:
                 await self._synthesize_and_act(parent_id, siblings, chat_id)
             else:
@@ -1674,6 +1676,13 @@ class PMOrchestrator:
                     runbook.advance_phase(run_id, note="delegated run 완료")
                 except Exception as e:
                     logger.warning(f"[PM] runbook 완료 처리 실패 ({run_id}): {e}")
+            # 허위 접수 주장 감지: 보고서에 "접수했습니다" 썼지만 실제 FOLLOW_UP 없는 경우 사용자에게 알림
+            if synthesis.false_claim_detected:
+                await self._send(
+                    chat_id,
+                    "⚠️ **보고서 불일치 감지**: 보고서에 후속 태스크를 접수했다고 기재되어 있으나 "
+                    "실제 등록된 태스크가 없습니다. 보고서 내용을 검토하고 필요한 작업을 명시적으로 요청해 주세요.",
+                )
             # 향후 계획/추가 작업이 있으면 자동 실행 (LLM이 FOLLOW_UP으로 추출한 것)
             if synthesis.follow_up_tasks:
                 follow_ups = [
@@ -2168,7 +2177,7 @@ class PMOrchestrator:
         from core.eval_runner import EvalRunner
 
         try:
-            bus = ImprovementBus(dry_run=True)
+            bus = ImprovementBus(dry_run=False)
             signals = bus.collect_signals()
             report = bus.run(signals)
             bus_text = bus.format_report(report)
