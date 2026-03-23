@@ -621,6 +621,10 @@ class ContextDB:
                 # ── Expired lease reclaim: attempt 횟수 초과 시 스킵 ──
                 attempt_count = metadata.get("attempt_count", 0)
                 if attempt_count >= self.MAX_TASK_ATTEMPTS:
+                    logger.warning(
+                        f"[ContextDB] 태스크 {task['id']} attempt_count={attempt_count} "
+                        f">= MAX={self.MAX_TASK_ATTEMPTS} — 봇 재시작 시 recover_stale_dept_tasks로 복구됨"
+                    )
                     continue
                 lease_until = metadata.get("lease_expires_at")
                 if not lease_until:
@@ -632,7 +636,11 @@ class ContextDB:
                     result.append(task)
             return result
 
-    MAX_TASK_ATTEMPTS = 3  # 최대 lease claim 횟수 — 초과 시 자동 failed 처리
+    MAX_TASK_ATTEMPTS = 5  # 최대 lease claim 횟수 — 초과 시 자동 failed 처리
+    # 3 → 5 (2026-03-23): 복잡한 장기 태스크(코드 분석·구현·리뷰)에서
+    # 봇 재시작·Claude Code 타임아웃으로 attempt_count가 빠르게 소진되어
+    # 태스크가 조기 auto-fail되는 문제 해소. recover_stale_dept_tasks가
+    # attempt_count를 0으로 리셋하므로 무한루프 위험은 없음.
 
     async def claim_pm_task_lease(
         self,
@@ -764,7 +772,8 @@ class ContextDB:
 
         안전장치:
         - 24시간 이상 된 태스크는 복구하지 않음 (좀비 방지)
-        - 부모가 cancelled/failed인 태스크는 복구하지 않음 (고아 방지)
+        - 부모가 failed인 태스크는 복구하지 않음 (고아 방지)
+          ※ 부모가 cancelled여도 자식 부서 태스크는 계속 실행 (Orphan Guard 정책)
 
         Returns: 복구된 태스크 수.
         """
