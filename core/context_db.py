@@ -605,6 +605,10 @@ class ContextDB:
                             (task["id"],),
                         )
                         blocking_row = await dep_cursor.fetchone()
+                        # 부모 태스크가 dep에 잘못 등록된 경우 무시
+                        # (부모 완료는 _synthesize_and_act가 관리)
+                        if blocking_row and blocking_row[0] == task.get("parent_id"):
+                            blocking_row = None
                         deps_ready = blocking_row is None
                     if deps_ready:
                         result.append(task)
