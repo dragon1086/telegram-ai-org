@@ -228,3 +228,123 @@ def test_timeout_msg_without_progress_snapshot_shows_stuck():
     msg = build_watchdog_timeout_msg(idle=305.0, idle_timeout=300, progress_snapshot=snapshot)
     assert "stuck" in msg or "출력 없음" in msg, "stuck 힌트가 없음"
     assert "무응답 305초" in msg
+
+
+# ---------------------------------------------------------------------------
+# Test 11: heartbeat count 0 → "작업 시작 전 stuck" 진단
+# ---------------------------------------------------------------------------
+
+def build_watchdog_timeout_msg_v2(
+    idle: float,
+    idle_timeout: int,
+    progress_snapshot: list[tuple[float, str]],
+    hb_count: int,
+) -> str:
+    """개선된 _watchdog_loop 타임아웃 메시지 생성 로직 (hb_count 포함)."""
+    hb_hint = f"heartbeat {hb_count}회 발화"
+    if progress_snapshot:
+        last_ts, last_line = progress_snapshot[-1]
+        since_last = time.time() - last_ts
+        snap_hint = (
+            f" | 마지막 출력 {since_last:.0f}s 전: {last_line[:80]}"
+            f" [{hb_hint} — 작업 중 잘렸을 가능성]"
+        )
+    else:
+        diagnosis = "작업 시작 전 stuck" if hb_count == 0 else "LLM 응답 대기 중"
+        snap_hint = f" | 실행 중 출력 없음 [{hb_hint} — {diagnosis}]"
+    return f"무응답 {idle:.0f}초 (한도 {idle_timeout}s){snap_hint}"
+
+
+def test_timeout_msg_hb_count_0_shows_stuck_from_start():
+    """heartbeat 0회 발화 + 출력 없음 → '작업 시작 전 stuck' 진단."""
+    msg = build_watchdog_timeout_msg_v2(
+        idle=310.0, idle_timeout=300, progress_snapshot=[], hb_count=0
+    )
+    assert "작업 시작 전 stuck" in msg, f"예상 진단 없음: {msg}"
+    assert "heartbeat 0회 발화" in msg
+    assert "무응답 310초" in msg
+
+
+# ---------------------------------------------------------------------------
+# Test 12: heartbeat count >0, 출력 없음 → "LLM 응답 대기 중" 진단
+# ---------------------------------------------------------------------------
+
+def test_timeout_msg_hb_gt0_no_output_shows_llm_waiting():
+    """heartbeat 발화됐지만 출력 없음 → 'LLM 응답 대기 중' 진단."""
+    msg = build_watchdog_timeout_msg_v2(
+        idle=310.0, idle_timeout=300, progress_snapshot=[], hb_count=5
+    )
+    assert "LLM 응답 대기 중" in msg, f"예상 진단 없음: {msg}"
+    assert "heartbeat 5회 발화" in msg
+
+
+# ---------------------------------------------------------------------------
+# Test 13: heartbeat count >0, 출력 있음 → "작업 중 잘렸을 가능성" 진단
+# ---------------------------------------------------------------------------
+
+def test_timeout_msg_hb_gt0_with_output_shows_active():
+    """heartbeat 발화됐고 출력도 있음 → '작업 중 잘렸을 가능성' 진단."""
+    snapshot = [(time.time() - 10.0, "tests/ 디렉토리 스캔 중")]
+    msg = build_watchdog_timeout_msg_v2(
+        idle=310.0, idle_timeout=300, progress_snapshot=snapshot, hb_count=8
+    )
+    assert "작업 중 잘렸을 가능성" in msg, f"예상 진단 없음: {msg}"
+    assert "heartbeat 8회 발화" in msg
+    assert "tests/ 디렉토리" in msg
+
+
+# ---------------------------------------------------------------------------
+# Test 14: heartbeat loop가 idle 시간 포함한 info 로그 emit (mock logger)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_heartbeat_loop_emits_elapsed_and_idle():
+    """heartbeat 루프가 elapsed와 idle 정보를 포함한 로그를 남기는지 확인."""
+    log_messages: list[str] = []
+
+    async def on_progress(line: str) -> None:
+        pass
+
+    async def mock_heartbeat_loop_with_logging(on_progress_fn, interval: float = 0.1):
+        hb_count = 0
+        start = time.time()
+        heartbeat_ts = time.time()
+        await asyncio.sleep(interval)
+        while True:
+            hb_count += 1
+            elapsed_hb = time.time() - start
+            idle_hb = time.time() - heartbeat_ts
+            log_messages.append(
+                f"heartbeat #{hb_count} (elapsed={elapsed_hb:.0f}s, idle={idle_hb:.0f}s)"
+            )
+            try:
+                await on_progress_fn("🤔 처리 중...")
+                heartbeat_ts = time.time()
+            except Exception:
+                pass
+            await asyncio.sleep(interval)
+
+    task = asyncio.ensure_future(mock_heartbeat_loop_with_logging(on_progress, interval=0.1))
+    await asyncio.sleep(0.35)
+    task.cancel()
+    from contextlib import suppress as _suppress
+    with _suppress(asyncio.CancelledError):
+        await task
+
+    assert len(log_messages) >= 1, "로그 메시지가 없음"
+    assert "elapsed=" in log_messages[0], f"elapsed 없음: {log_messages[0]}"
+    assert "idle=" in log_messages[0], f"idle 없음: {log_messages[0]}"
+
+
+# ---------------------------------------------------------------------------
+# Test 15: BOT_IDLE_TIMEOUT_SEC=300 이 hb_interval=30 의 4배 이상 (여유 확보)
+# ---------------------------------------------------------------------------
+
+def test_idle_timeout_at_least_4x_hb_interval():
+    """idle timeout(300s)이 heartbeat 간격(30s)의 4배 이상이어야 충분한 여유."""
+    hb_interval = int(os.environ.get("BOT_HB_INTERVAL_SEC", "30"))
+    idle_timeout = int(os.environ.get("BOT_IDLE_TIMEOUT_SEC", "120"))
+    assert idle_timeout >= hb_interval * 4, (
+        f"idle timeout({idle_timeout}s) < heartbeat({hb_interval}s) × 4: "
+        "heartbeat 2회 실패 시 오탐 위험"
+    )
