@@ -275,7 +275,7 @@ class PMOrchestrator:
             '- "local_execution": the PM should handle it like a single coding agent.\n'
             '- "delegate": coordinate one or more specialist organizations.\n\n'
             "Choose direct_reply for simple questions, confirmations, status checks, and lightweight explanations.\n"
-            "Choose local_execution for focused tasks that do not need cross-team coordination.\n"
+            "Choose local_execution ONLY for simple single-step tasks that a PM can do alone (e.g. rename a file, quick config change). If the task involves code changes, system improvements, analysis, or multiple steps, choose delegate.\n"
             "Choose delegate only when multi-discipline collaboration, explicit planning/brainstorming, or longer multi-step execution is needed.\n\n"
             "Department hints:\n"
             f"{dept_lines}\n\n"
@@ -343,6 +343,18 @@ class PMOrchestrator:
                 route = "delegate"
             if lane == "single_org_execution" and route == "direct_reply":
                 route = "delegate"
+
+            # local_execution이지만 실제로는 여러 부서 협업이 필요한 경우 delegate로 강제 전환
+            if route == "local_execution" and (
+                lane == "multi_org_execution"
+                or len(dept_hints) >= 2
+                or data.get("complexity") == "high"
+            ):
+                route = "delegate"
+                logger.info(
+                    f"[PM] local_execution → delegate 강제 전환 "
+                    f"(lane={lane}, depts={len(dept_hints)}, complexity={data.get('complexity')})"
+                )
 
             complexity = data.get("complexity", "medium")
             if complexity not in {"low", "medium", "high"}:
@@ -632,6 +644,19 @@ class PMOrchestrator:
                 route="delegate",
                 complexity=complexity,
                 rationale="복수 조직 협업 또는 다단계 실행이 필요해 보여 조직 오케스트레이션으로 보냅니다.",
+                dept_hints=dept_hints,
+                confidence=0.75,
+            )
+
+        # 코딩 요청이면 PM 직접 처리 대신 engineering에 위임
+        if self._has_coding_request(text):
+            if "aiorg_engineering_bot" not in dept_hints:
+                dept_hints = ["aiorg_engineering_bot"] + dept_hints
+            return RequestPlan(
+                lane="single_org_execution",
+                route="delegate",
+                complexity="medium",
+                rationale="코딩 요청이라 전문 조직에 위임합니다.",
                 dept_hints=dept_hints,
                 confidence=0.75,
             )
