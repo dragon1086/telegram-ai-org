@@ -641,11 +641,11 @@ class ContextDB:
                     result.append(task)
             return result
 
-    MAX_TASK_ATTEMPTS = 5  # 최대 lease claim 횟수 — 초과 시 자동 failed 처리
-    # 3 → 5 (2026-03-23): 복잡한 장기 태스크(코드 분석·구현·리뷰)에서
-    # 봇 재시작·Claude Code 타임아웃으로 attempt_count가 빠르게 소진되어
-    # 태스크가 조기 auto-fail되는 문제 해소. recover_stale_dept_tasks가
-    # attempt_count를 0으로 리셋하므로 무한루프 위험은 없음.
+    MAX_TASK_ATTEMPTS = 5  # 최대 lease claim 횟수 (복구 시 리셋됨)
+    MAX_TOTAL_ATTEMPTS = 15  # 절대 상한 — recovery로도 리셋 불가
+    # recover_stale_dept_tasks에서 recovery_count(MAX=3)로 복구 횟수를 제한하고,
+    # total_attempt_count(MAX=15)로 전체 시도를 절대 제한하여
+    # 무한 재시작 루프를 이중으로 방지한다.
     RECOVER_MAX_AGE_SECONDS = 86400  # 복구 대상 최대 나이: 24시간 (좀비 방지)
 
     async def claim_pm_task_lease(
@@ -656,57 +656,99 @@ class ContextDB:
     ) -> dict | None:
         """태스크 lease를 획득한다. 이미 유효한 lease가 있으면 None.
 
-        무한 재시작 루프 방지: attempt_count가 MAX_TASK_ATTEMPTS를 초과하면
-        태스크를 자동으로 'failed' 상태로 전환하고 None을 반환한다.
+        TOCTOU 방지: SELECT + UPDATE를 단일 트랜잭션(BEGIN IMMEDIATE)으로 처리.
+        무한 재시작 루프 방지: attempt_count/total_attempt_count 초과 시 자동 failed.
         """
-        task = await self.get_pm_task(task_id)
-        if task is None:
-            return None
-        metadata = dict(task.get("metadata") or {})
-        now = datetime.now(UTC)
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            # BEGIN IMMEDIATE: 다른 writer를 즉시 차단하여 TOCTOU 방지
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = await db.execute(
+                    "SELECT * FROM pm_tasks WHERE id = ?", (task_id,),
+                )
+                row = await cursor.fetchone()
+                if row is None:
+                    await db.rollback()
+                    return None
 
-        # ── 무한 루프 방지: attempt 횟수 체크 ──
-        attempt_count = metadata.get("attempt_count", 0) + 1
-        if attempt_count > self.MAX_TASK_ATTEMPTS:
-            logger.warning(
-                f"[ContextDB] 태스크 {task_id} 최대 시도 횟수 초과 "
-                f"({attempt_count}/{self.MAX_TASK_ATTEMPTS}) — 자동 failed 처리"
-            )
-            metadata["fail_reason"] = (
-                f"최대 실행 시도 횟수 초과 ({self.MAX_TASK_ATTEMPTS}회). "
-                "무한 재시작 루프 방지를 위해 자동 중단됨."
-            )
-            now_iso = _utcnow_iso()
-            async with aiosqlite.connect(self.db_path) as db:
+                task = dict(row)
+                metadata_raw = task.get("metadata")
+                if isinstance(metadata_raw, str):
+                    metadata = json.loads(metadata_raw or "{}")
+                else:
+                    metadata = dict(metadata_raw or {})
+                now = datetime.now(UTC)
+
+                # ── 무한 루프 방지: attempt 횟수 체크 ──
+                total_attempt_count = metadata.get("total_attempt_count", 0) + 1
+                attempt_count = metadata.get("attempt_count", 0) + 1
+
+                # 절대 상한 체크 (recovery로도 리셋 불가)
+                if total_attempt_count > self.MAX_TOTAL_ATTEMPTS:
+                    logger.warning(
+                        f"[ContextDB] 태스크 {task_id} 절대 시도 상한 초과 "
+                        f"(total={total_attempt_count}/{self.MAX_TOTAL_ATTEMPTS}) — 자동 failed 처리"
+                    )
+                    metadata["fail_reason"] = (
+                        f"전체 실행 시도 횟수 절대 상한 초과 ({self.MAX_TOTAL_ATTEMPTS}회). "
+                        "복구 포함 모든 시도가 실패하여 자동 중단됨."
+                    )
+                    metadata["total_attempt_count"] = total_attempt_count
+                    now_iso = _utcnow_iso()
+                    await db.execute(
+                        "UPDATE pm_tasks SET status='failed', metadata=?, updated_at=? WHERE id=?",
+                        (json.dumps(metadata, ensure_ascii=False), now_iso, task_id),
+                    )
+                    await db.commit()
+                    return None
+
+                if attempt_count > self.MAX_TASK_ATTEMPTS:
+                    logger.warning(
+                        f"[ContextDB] 태스크 {task_id} 최대 시도 횟수 초과 "
+                        f"({attempt_count}/{self.MAX_TASK_ATTEMPTS}) — 자동 failed 처리"
+                    )
+                    metadata["fail_reason"] = (
+                        f"최대 실행 시도 횟수 초과 ({self.MAX_TASK_ATTEMPTS}회). "
+                        "무한 재시작 루프 방지를 위해 자동 중단됨."
+                    )
+                    now_iso = _utcnow_iso()
+                    await db.execute(
+                        "UPDATE pm_tasks SET status='failed', metadata=?, updated_at=? WHERE id=?",
+                        (json.dumps(metadata, ensure_ascii=False), now_iso, task_id),
+                    )
+                    await db.commit()
+                    return None
+
+                # ── 유효한 lease 체크 ──
+                lease_until_raw = metadata.get("lease_expires_at")
+                lease_owner = metadata.get("lease_owner")
+                if lease_until_raw and lease_owner and lease_owner != owner:
+                    try:
+                        lease_until = datetime.fromisoformat(lease_until_raw)
+                        if lease_until > now:
+                            await db.rollback()
+                            return None
+                    except ValueError:
+                        pass
+
+                # ── Lease 획득 ──
+                metadata.update({
+                    "lease_owner": owner,
+                    "lease_expires_at": (now + timedelta(seconds=ttl_seconds)).isoformat(),
+                    "lease_heartbeat_at": now.isoformat(),
+                    "attempt_count": attempt_count,
+                    "total_attempt_count": total_attempt_count,
+                })
+                now_iso = _utcnow_iso()
                 await db.execute(
-                    "UPDATE pm_tasks SET status='failed', metadata=?, updated_at=? WHERE id=?",
+                    "UPDATE pm_tasks SET status='running', metadata=?, updated_at=? WHERE id=?",
                     (json.dumps(metadata, ensure_ascii=False), now_iso, task_id),
                 )
                 await db.commit()
-            return None
-
-        lease_until_raw = metadata.get("lease_expires_at")
-        lease_owner = metadata.get("lease_owner")
-        if lease_until_raw and lease_owner and lease_owner != owner:
-            try:
-                lease_until = datetime.fromisoformat(lease_until_raw)
-                if lease_until > now:
-                    return None
-            except ValueError:
-                pass
-        metadata.update({
-            "lease_owner": owner,
-            "lease_expires_at": (now + timedelta(seconds=ttl_seconds)).isoformat(),
-            "lease_heartbeat_at": now.isoformat(),
-            "attempt_count": attempt_count,
-        })
-        now_iso = _utcnow_iso()
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                "UPDATE pm_tasks SET status='running', metadata=?, updated_at=? WHERE id=?",
-                (json.dumps(metadata, ensure_ascii=False), now_iso, task_id),
-            )
-            await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
         return await self.get_pm_task(task_id)
 
     async def heartbeat_pm_task_lease(
@@ -822,11 +864,21 @@ class ContextDB:
                     except ValueError:
                         pass
                 # lease 만료 확인됨 — 복구
+                # ── 무한 복구 루프 방지: recovery_count 제한 ──
+                MAX_RECOVERY_COUNT = 3
+                recovery_count = metadata.get("recovery_count", 0) + 1
+                if recovery_count > MAX_RECOVERY_COUNT:
+                    logger.warning(
+                        f"[ContextDB] 태스크 {task_id} 최대 복구 횟수 초과 "
+                        f"({recovery_count}/{MAX_RECOVERY_COUNT}) — 복구 건너뜀"
+                    )
+                    continue
                 metadata.pop("lease_owner", None)
                 metadata.pop("lease_expires_at", None)
                 metadata.pop("lease_heartbeat_at", None)
                 metadata.pop("retry_after_at", None)
                 metadata["attempt_count"] = 0
+                metadata["recovery_count"] = recovery_count
                 metadata["recovered_at"] = now.isoformat()
                 now_iso = now.isoformat()
                 await db.execute(
@@ -836,7 +888,7 @@ class ContextDB:
                 recovered += 1
                 logger.info(
                     f"[ContextDB] stale 태스크 복구: {task_id} (dept={dept_id}, "
-                    f"attempt_count 리셋, running→assigned)"
+                    f"recovery={recovery_count}/{MAX_RECOVERY_COUNT}, running→assigned)"
                 )
             if recovered:
                 await db.commit()
