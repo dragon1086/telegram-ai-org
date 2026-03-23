@@ -53,70 +53,10 @@
       "Bash(kill 75607 42369)",
       "Bash(for cmd:*)",
       "Bash(do command:*)",
-      "Bash(done)",
-      "Bash(kill 47546 39183 39813 40547 42551 49745)",
-      "Bash(kill -9 47546 39183 39813 40547 42551 49745)",
-      "Bash(.venv/bin/python -c \"import ast; ast.parse\\(open\\(''scripts/bot_watchdog.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
-      "Bash(kill 6241)",
-      "Bash(kill -9 6241)",
-      "Bash(.venv/bin/python -c \"\nfrom core.orchestration_config import load_orchestration_config\ncfg = load_orchestration_config\\(force_reload=True\\)\norgs = cfg.list_orgs\\(\\)\nfor o in orgs:\n    print\\(f'{o.id}: token={bool\\(o.token\\)}, chat_id={o.chat_id}'\\)\n\")",
-      "Bash(.venv/bin/python -c \"\nfrom dotenv import load_dotenv\nload_dotenv\\('.env'\\)\nfrom core.orchestration_config import load_orchestration_config\ncfg = load_orchestration_config\\(force_reload=True\\)\nfor o in cfg.list_orgs\\(\\):\n    print\\(f'{o.id}: token={bool\\(o.token\\)}, chat_id={o.chat_id}'\\)\n\")",
-      "Bash(ps eww:*)",
-      "Bash(plutil -lint /Users/rocky/Library/LaunchAgents/ai.telegram-ai-org.bot-watchdog.plist)"
+      "Bash(done)"
     ]
   },
   "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /Users/rocky/telegram-ai-org/scripts/hooks/session-start.sh",
-            "timeout": 15,
-            "statusMessage": "세션 컨텍스트 로드 중..."
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /Users/rocky/telegram-ai-org/scripts/hooks/detect-gaps.sh",
-            "timeout": 15,
-            "async": true,
-            "statusMessage": "Harness gap 체크 중..."
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /Users/rocky/telegram-ai-org/scripts/hooks/validate-dangerous-patterns.sh",
-            "timeout": 10,
-            "statusMessage": "위험 패턴 검사 중..."
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /Users/rocky/telegram-ai-org/scripts/hooks/log-agent.sh",
-            "timeout": 5,
-            "async": true
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
