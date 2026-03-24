@@ -1,6 +1,7 @@
 ---
 name: brainstorming-auto
 description: "Use instead of brainstorming when running in autonomous mode with no human available to answer clarifying questions. Produces design docs without user approval gates. Triggers: 'auto design', '자동 설계', 'autonomous brainstorm', 'brainstorm without user', when brainstorming is needed in a headless/automated context"
+allowed-tools: Read, Write, Glob, Grep
 ---
 
 # Brainstorming Auto (자율 브레인스토밍)

@@ -10,24 +10,26 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent
 
+# ── httpcore/sniffio 호환성 패치 ─────────────────────────────────────────────
+# Python 3.14 + httpcore 1.0.9 + sniffio: polling 종료 시 async context 소실로
+# AsyncLibraryNotFoundError 발생 → PM봇 반복 재시작. asyncio 기본값으로 fallback.
+try:
+    import httpcore._synchronization as _hc_sync
+    _original_cal = _hc_sync.current_async_library
+    def _patched_current_async_library() -> str:
+        try:
+            return _original_cal()
+        except Exception:
+            return "asyncio"
+    _hc_sync.current_async_library = _patched_current_async_library
+except Exception:
+    pass
+
 
 def _load_env_file(path: Path) -> None:
     if not path.exists():
         return
-    # .yaml/.yml 파일은 yaml.safe_load로 파싱
-    if path.suffix in (".yaml", ".yml"):
-        try:
-            import yaml  # type: ignore[import]
-            data = yaml.safe_load(path.read_text())
-            if isinstance(data, dict):
-                for k, v in data.items():
-                    if isinstance(v, dict):
-                        # 중첩 딕셔너리는 건너뜀
-                        continue
-                    os.environ.setdefault(str(k).strip(), str(v).strip())
-        except Exception:
-            pass
-        return
+    # config.yaml은 실제로 .env 형식 (KEY=VALUE) — 통일된 파서 사용
     for line in path.read_text().splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
@@ -120,6 +122,21 @@ if __name__ == "__main__":
         bus=bus,
         context_db=context_db,
     )
+    # ── idle heartbeat — watchdog hung 감지용 ────────────────────────────────
+    # idle 봇도 60초마다 파일을 touch해 "살아있음"을 알림.
+    # 이 파일이 10분 이상 갱신되지 않으면 → asyncio 루프 hang으로 판단.
+    import threading
+    _hb_file = Path.home() / ".ai-org" / f"{org_id}.heartbeat"
+    def _heartbeat_worker() -> None:
+        while True:
+            try:
+                _hb_file.touch()
+            except Exception:
+                pass
+            time.sleep(60)
+    threading.Thread(target=_heartbeat_worker, daemon=True, name=f"heartbeat-{org_id}").start()
+    # ─────────────────────────────────────────────────────────────────────────
+
     CONFLICT_WAIT = 70  # Telegram 서버 long-polling timeout(60s) + 여유
     RESTART_WAIT = 5    # 정상 종료 후 자동 재시작 대기
 
@@ -147,6 +164,11 @@ if __name__ == "__main__":
                 print(f'[CONFLICT] Telegram 서버 연결 만료 대기 ({CONFLICT_WAIT}초)...', flush=True)
                 time.sleep(CONFLICT_WAIT)
                 continue  # 재시도
+            elif 'AsyncLibraryNotFoundError' in err_str:
+                # httpcore/sniffio 호환성 문제 — 일시적 오류로 재시도
+                print(f'[ASYNC-ERR] sniffio 감지 실패, {RESTART_WAIT}초 후 재시도...', flush=True)
+                time.sleep(RESTART_WAIT)
+                continue
             else:
                 raise
         _elapsed = time.time() - _start

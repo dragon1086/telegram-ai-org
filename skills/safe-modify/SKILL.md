@@ -1,6 +1,7 @@
 ---
 name: safe-modify
 description: "실패 감지 코드(failure-detect) 및 고위험 코드 수정 시 부작용을 최소화하는 안전 개발 방법론 스킬. Triggers: 'safe modify', '안전 수정', 'failure detect 수정', 'safe code change', '스코프 제한', '부작용 최소화', 'minimal footprint'. Use when modifying high-risk or failure-detection code."
+allowed-tools: Bash, Read, Glob, Grep
 ---
 
 # safe-modify — 안전 코드 수정 스킬

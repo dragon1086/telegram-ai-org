@@ -3,7 +3,7 @@
 
 동작:
   1. 30초마다 aiorg_aiorg_* tmux 세션 모든 창 캡처
-  2. 콘텐츠가 STUCK_THRESHOLD(180초)간 변화 없고 입력 대기 감지 시
+  2. 콘텐츠가 STUCK_THRESHOLD(300초)간 변화 없고 입력 대기 감지 시
   3. 3단계 자동 처리:
      a) 안전한 패턴 (y/n, 계속 등) → 규칙 기반 고정 응답 주입
      b) 판단 필요한 질문 → 에이전트 자기 판단 유도 메시지 주입
@@ -21,6 +21,7 @@ import hashlib
 import json
 import logging
 import os
+import sqlite3
 import subprocess
 import sys
 import time
@@ -28,12 +29,90 @@ from pathlib import Path
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 POLL_INTERVAL = 30           # 세션 확인 주기 (초)
-STUCK_THRESHOLD = 180        # 이 시간(초) 동안 변화 없으면 "stuck" 의심
+STUCK_THRESHOLD = 300        # 이 시간(초) 동안 변화 없으면 "stuck" 의심 (BOT_IDLE_TIMEOUT_SEC=300 기준 정렬)
 RESPONSE_COOLDOWN = 300      # 같은 세션에 연속 응답 최소 간격 (초)
 SESSION_PREFIX = "aiorg_aiorg_"
 STATE_FILE = Path("/tmp/agent-monitor-state.json")
 LOG_FILE = Path.home() / ".ai-org" / "agent-monitor.log"
 PID_FILE = Path("/tmp/agent-monitor.pid")
+
+# ── ContextDB 태스크 조회 (동기) ──────────────────────────────────────────────
+CONTEXT_DB_PATH = Path(os.environ.get("CONTEXT_DB_PATH", "~/.ai-org/context.db")).expanduser()
+
+
+def _session_to_dept_id(session_name: str) -> str:
+    """tmux 세션 이름 → ContextDB assigned_dept 변환.
+
+    예: 'aiorg_aiorg_engineering' → 'aiorg_engineering_bot'
+    """
+    bot_name = session_name.replace(SESSION_PREFIX, "")  # 'engineering'
+    return f"aiorg_{bot_name}_bot"
+
+
+def get_running_task_for_dept(dept_id: str) -> dict | None:
+    """해당 부서의 running 태스크 + 부모 태스크 설명 조회 (동기 sqlite3)."""
+    if not CONTEXT_DB_PATH.exists():
+        return None
+    try:
+        db = sqlite3.connect(str(CONTEXT_DB_PATH), timeout=5)
+        db.row_factory = sqlite3.Row
+        # running 태스크 우선, 없으면 assigned
+        cursor = db.execute(
+            "SELECT id, description, parent_id, metadata "
+            "FROM pm_tasks WHERE assigned_dept = ? AND status IN ('running', 'assigned') "
+            "ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END, updated_at DESC LIMIT 1",
+            (dept_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            db.close()
+            return None
+        task = dict(row)
+        # 부모 태스크 설명 가져오기 (전체 맥락 파악)
+        parent_desc = None
+        if task.get("parent_id"):
+            pcur = db.execute(
+                "SELECT description FROM pm_tasks WHERE id = ?",
+                (task["parent_id"],),
+            )
+            prow = pcur.fetchone()
+            if prow:
+                parent_desc = prow[0]
+        task["parent_description"] = parent_desc
+        db.close()
+        return task
+    except Exception as e:
+        log.warning(f"ContextDB 조회 실패: {e}")
+        return None
+
+
+def build_context_nudge(session_name: str) -> str | None:
+    """세션의 현재 태스크 맥락으로 구체적 넛지 메시지 생성.
+
+    태스크 DB에서 설명을 가져와 봇에게 구체적 방향성을 제시한다.
+    태스크가 없으면 None 반환 → 기존 NUDGE_MESSAGE 사용.
+    """
+    dept_id = _session_to_dept_id(session_name)
+    task = get_running_task_for_dept(dept_id)
+    if not task or not task.get("description"):
+        return None
+
+    desc = task["description"]
+    parent_desc = task.get("parent_description")
+
+    # 태스크 설명에서 핵심 지시 추출 (앞부분 500자)
+    task_summary = desc[:500].strip()
+
+    # tmux send_keys는 줄바꿈을 Enter로 해석 → 단일 라인으로 구성
+    task_oneline = task_summary.replace("\n", " ").replace("  ", " ")
+    parts = [f"현재 배정된 태스크가 있어. 이 내용을 바탕으로 진행해: [태스크] {task_oneline}"]
+    if parent_desc:
+        parent_oneline = parent_desc[:300].strip().replace("\n", " ").replace("  ", " ")
+        parts.append(f" [상위 맥락] {parent_oneline}")
+    parts.append(" 위 태스크를 기반으로 스스로 판단해서 진행해. 위험한 작업(삭제, 프로덕션 변경)은 하지 마.")
+
+    return "".join(parts)
+
 
 # ── 3단계 응답 분류 ───────────────────────────────────────────────────────────
 # SAFE: 규칙 기반 고정 응답 (LLM 불필요)
@@ -171,6 +250,7 @@ def classify_stuck(pane: str) -> tuple[str, str, str]:
         marker in recent for marker in FRESH_SESSION_MARKERS
     )
     if is_fresh:
+        # fresh 세션에도 태스크 맥락이 있으면 구체적 지시 제공
         return "fresh", FRESH_NUDGE, context
 
     # 2) 안전한 패턴 매칭 (y/n 등) — 프롬프트 직전 5줄에서만 매칭
@@ -283,6 +363,13 @@ def monitor_loop(poll_interval: int = POLL_INTERVAL, stuck_threshold: int = STUC
                 action, response, context = classify_stuck(pane)
                 if action == "none":
                     continue
+
+                # ── nudge/fresh: 태스크 맥락 기반 응답 생성 ─────────────
+                if action in ("nudge", "fresh"):
+                    ctx_response = build_context_nudge(session)
+                    if ctx_response:
+                        response = ctx_response
+                        log.info(f"[{key}] 태스크 맥락 기반 {action} 응답 생성 완료")
 
                 # ── 3단계 자동 처리 ──────────────────────────────────────
                 stuck_min = int(stuck_secs / 60)

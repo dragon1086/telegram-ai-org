@@ -1,6 +1,7 @@
 ---
 name: error-gotcha
 description: "Use after fixing a runtime error or bug to automatically add a gotcha entry to the relevant skill. Prevents the same mistake from recurring. Triggers: 'gotcha 추가', 'error gotcha', '에러 회고', 'add gotcha', after fixing any NameError/ImportError/UnboundLocalError or runtime crash"
+allowed-tools: Read, Write, Edit, Grep
 ---
 
 # Error Gotcha (에러 → 자동 Gotcha 추가)

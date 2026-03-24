@@ -129,7 +129,7 @@ Week 3-4:      P-6 → P-7
 | harness-audit, brainstorming-auto allowed-tools 추가 | ✅ 완료 |
 | harness-audit, brainstorming-auto, quality-gate context 블록 추가 | ✅ 완료 |
 
-### Phase B (1주 내)
+### Phase B (완료 — 2026-03-24)
 
 **목표**: 스킬 전체 allowed-tools 완성 + Anti-patterns orchestration 반영
 
@@ -139,7 +139,7 @@ Week 3-4:      P-6 → P-7
 | session-stop.sh 구현 (Stop 이벤트 → 작업 로그 + 미완료 태스크 요약) | engineering bot | 1-2시간 |
 | logrotate 설정 (ai-org-agent-audit.log) | ops bot | 30분 |
 
-### Phase C (2-3주)
+### Phase C (완료 — 2026-03-24)
 
 **목표**: 문서 템플릿 + 조율 맵 완성
 

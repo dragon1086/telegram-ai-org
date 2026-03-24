@@ -12,8 +12,8 @@ if TYPE_CHECKING:
     pass
 
 # ── 환경변수 기반 기본값 ──────────────────────────────────────────────────────
-MAX_HISTORY_MESSAGES: int = int(os.environ.get("MAX_HISTORY_MESSAGES", "10"))
-MAX_HISTORY_TOKENS: int = int(os.environ.get("MAX_HISTORY_TOKENS", "2000"))
+MAX_HISTORY_MESSAGES: int = int(os.environ.get("MAX_HISTORY_MESSAGES", "20"))
+MAX_HISTORY_TOKENS: int = int(os.environ.get("MAX_HISTORY_TOKENS", "6000"))
 
 
 def _estimate_tokens(text: str) -> int:
@@ -129,9 +129,9 @@ def format_history_for_prompt(messages: list[dict]) -> str:
         content = (msg.get("content") or "").strip()
         if not content:
             continue
-        # 너무 긴 개별 메시지는 잘라냄 (단일 메시지 최대 500자)
-        if len(content) > 500:
-            content = content[:497] + "..."
+        # 너무 긴 개별 메시지는 잘라냄 (단일 메시지 최대 1500자)
+        if len(content) > 1500:
+            content = content[:1497] + "..."
         lines.append(f"[{role}] {content}")
     lines.append("[/CONTEXT]")
 

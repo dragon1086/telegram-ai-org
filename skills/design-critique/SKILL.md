@@ -1,6 +1,7 @@
 ---
 name: design-critique
 description: "Use when reviewing UI/UX deliverables for accessibility, consistency, and usability. Checks WCAG compliance. Triggers: 'design review', '디자인 리뷰', 'design critique', 'UX review', 'UI 검토', 'accessibility check'"
+allowed-tools: Read, Glob, Grep
 ---
 
 # Design Critique (디자인 리뷰 스킬)

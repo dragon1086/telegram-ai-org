@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.telegram-ai-org.bot-watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>@@VENV_PYTHON@@</string>
+        <string>@@PROJECT_DIR@@/scripts/bot_watchdog.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>@@PROJECT_DIR@@</string>
+
+    <key>StandardOutPath</key>
+    <string>@@HOME@@/.ai-org/bot-watchdog.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>@@HOME@@/.ai-org/bot-watchdog.log</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>@@HOME@@</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+    </dict>
+</dict>
+</plist>

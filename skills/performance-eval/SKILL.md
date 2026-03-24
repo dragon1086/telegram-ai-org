@@ -1,6 +1,7 @@
 ---
 name: performance-eval
 description: "Use to evaluate how well each department bot is performing over a period. Scores bots on completion rate, quality, speed, collaboration, and learning. Triggers: '성과평가', '평가', 'performance eval', 'evaluation', '봇 평가', 'bot performance'"
+allowed-tools: Read, Glob, Grep
 ---
 
 # Performance Eval (성과평가 스킬)

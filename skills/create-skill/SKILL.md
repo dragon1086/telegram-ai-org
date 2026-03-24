@@ -2,6 +2,7 @@
 name: create-skill
 description: "Create a new Claude Code skill following official best practices. Use when building new skills for this project's bots. Triggers: '스킬 만들기', 'create skill', 'new skill', '새 스킬'"
 disable-model-invocation: true
+allowed-tools: Read, Write
 ---
 
 # Skill Factory (스킬 제작 가이드)

@@ -24,6 +24,8 @@ from pathlib import Path
 CHECK_INTERVAL = 30  # 초
 MAX_RESTART_PER_BOT = 5  # 연속 재시작 한도 (무한루프 방지)
 RESTART_COUNT_RESET_AFTER = 600  # 10분 동안 안정적이면 카운터 리셋
+LOG_STALENESS_THRESHOLD = 600  # 10분간 로그 갱신 없으면 hung으로 판단
+AI_ORG_LOG_DIR = Path.home() / ".ai-org"
 PID_FILE = Path("/tmp/bot-watchdog.pid")
 RESTART_FLAG = Path.home() / ".ai-org" / "restart_requested"
 
@@ -33,6 +35,15 @@ _BOT_RUNTIME = PROJECT_DIR / ".worktrees" / "bot-runtime"
 RUNTIME_DIR = _BOT_RUNTIME if (_BOT_RUNTIME / "main.py").exists() else PROJECT_DIR
 sys.path.insert(0, str(RUNTIME_DIR))
 
+# ── 환경변수 자동 로드 (nohup 독립 실행 시 env 미상속 대비) ─────────────────
+for _env_src in (Path.home() / ".ai-org" / "config.yaml", RUNTIME_DIR / ".env"):
+    if _env_src.exists():
+        for _line in _env_src.read_text().splitlines():
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-5s | bot_watchdog | %(message)s",
@@ -40,24 +51,32 @@ logging.basicConfig(
 log = logging.getLogger("bot_watchdog")
 
 # ── Telegram 알림 ────────────────────────────────────────────────────────────
-ROCKY_CHAT_ID = "7726642089"
+# 그룹 채팅으로 알림 전송 (개인 DM은 /start 필요 → 403 발생)
+ALERT_CHAT_ID = os.environ.get("TELEGRAM_GROUP_CHAT_ID", "-5203707291")
+
+
+def _load_env_config() -> dict[str, str]:
+    """~/.ai-org/config.yaml (.env 형식) 파싱."""
+    config_path = Path.home() / ".ai-org" / "config.yaml"
+    if not config_path.exists():
+        return {}
+    result = {}
+    for line in config_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            k, _, v = line.partition("=")
+            result[k.strip()] = v.strip()
+    return result
 
 
 def _get_admin_token() -> str | None:
     """PM 봇 토큰을 config에서 읽어 알림용으로 사용."""
-    config_path = Path.home() / ".ai-org" / "config.yaml"
-    if not config_path.exists():
-        return None
-    try:
-        import yaml
-        data = yaml.safe_load(config_path.read_text())
-        # PM_BOT_TOKEN or first available token
-        token = data.get("PM_BOT_TOKEN")
-        if token:
-            return str(token)
-    except Exception:
-        pass
-    # fallback: env
+    cfg = _load_env_config()
+    token = cfg.get("PM_BOT_TOKEN")
+    if token:
+        return token
     return os.environ.get("PM_BOT_TOKEN")
 
 
@@ -69,7 +88,7 @@ def notify_rocky(message: str) -> None:
         return
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = json.dumps({
-        "chat_id": ROCKY_CHAT_ID,
+        "chat_id": ALERT_CHAT_ID,
         "text": message,
         "parse_mode": "HTML",
     }).encode()
@@ -82,6 +101,44 @@ def notify_rocky(message: str) -> None:
 
 
 # ── 봇 상태 확인 ──────────────────────────────────────────────────────────────
+def get_bot_heartbeat_path(org_id: str) -> Path:
+    """봇 heartbeat 파일 경로 반환 (~/.ai-org/{org_id}.heartbeat)."""
+    return AI_ORG_LOG_DIR / f"{org_id}.heartbeat"
+
+
+def check_log_hung(org_id: str) -> bool:
+    """봇이 hung 상태인지 heartbeat freshness로 판단.
+
+    조건:
+      - 프로세스는 살아있지만
+      - heartbeat 파일이 LOG_STALENESS_THRESHOLD(10분) 이상 갱신되지 않음
+      - heartbeat 파일이 1시간 이내에 존재한 적 있음 (장기 미시작 봇 오판 방지)
+
+    NOTE: 봇은 idle/active 무관하게 60초마다 heartbeat 파일을 touch한다.
+    10분 침묵 = asyncio 이벤트 루프 hang (touch 스레드도 멈춤).
+    로그 파일은 idle 시 무음이므로 hung 감지에 사용하지 않는다.
+    """
+    hb_path = get_bot_heartbeat_path(org_id)
+    if not hb_path.exists():
+        return False
+    now = time.time()
+    age = now - hb_path.stat().st_mtime
+    recently_active = age < 3600  # 1시간 이내 갱신된 적 있어야 hung 의심
+    return age > LOG_STALENESS_THRESHOLD and recently_active
+
+
+def kill_hung_bot(org_id: str) -> None:
+    """응답 없는 hung 봇 프로세스를 SIGKILL로 강제 종료."""
+    from scripts.bot_manager import _find_live_pids
+    pids = _find_live_pids(org_id)
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+            log.info(f"hung 봇 강제 종료: {org_id} PID={pid}")
+        except OSError as e:
+            log.warning(f"봇 {org_id} PID={pid} 종료 실패: {e}")
+
+
 def get_expected_orgs() -> list[dict]:
     """orchestration config에서 실행되어야 할 봇 목록 로드."""
     try:
@@ -190,9 +247,25 @@ class BotWatchdog:
                 self.restart_counts[org_id] = 0
 
             if check_bot_alive(org_id):
-                continue
+                if check_log_hung(org_id):
+                    # 프로세스 살아있지만 hung — 강제 종료 후 재시작
+                    log.warning(
+                        f"봇 {org_id}: 프로세스 alive지만 {LOG_STALENESS_THRESHOLD}초간 "
+                        f"로그 갱신 없음 — hung 감지, 강제 재시작"
+                    )
+                    notify_rocky(
+                        f"<b>봇 hung 감지 → 자동 재시작</b>\n"
+                        f"봇: <code>{org_id}</code>\n"
+                        f"증상: {LOG_STALENESS_THRESHOLD}초 이상 로그 무응답\n"
+                        f"(heartbeat 멈춤 = asyncio 이벤트 루프 hang)\n"
+                        f"시각: {time.strftime('%H:%M:%S')}"
+                    )
+                    kill_hung_bot(org_id)
+                    time.sleep(2)  # 프로세스 정리 대기
+                else:
+                    continue  # 정상 동작 중
 
-            # 죽은 봇 발견
+            # 죽은 봇 (또는 hung으로 강제 종료된 봇) 재시작
             count = self.restart_counts.get(org_id, 0)
             if count >= MAX_RESTART_PER_BOT:
                 log.error(
@@ -217,10 +290,34 @@ class BotWatchdog:
 
         return restarted
 
+    @staticmethod
+    def _kill_stale_instances():
+        """기존 watchdog 프로세스 모두 종료 (좀비 방지)."""
+        import subprocess
+        my_pid = os.getpid()
+        try:
+            out = subprocess.check_output(
+                ["pgrep", "-f", "bot_watchdog\\.py"], text=True,
+            ).strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return
+        for line in out.splitlines():
+            pid = int(line.strip())
+            if pid == my_pid:
+                continue
+            try:
+                os.kill(pid, signal.SIGKILL)
+                log.info(f"좀비 watchdog 종료: PID {pid}")
+            except OSError:
+                pass
+
     def run(self, once: bool = False):
         """메인 루프."""
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
+
+        # 기존 좀비 watchdog 정리 후 시작
+        self._kill_stale_instances()
 
         # PID 파일 기록
         PID_FILE.write_text(str(os.getpid()))

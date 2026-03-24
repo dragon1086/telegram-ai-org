@@ -13,6 +13,9 @@ class DecisionClientProtocol(Protocol):
 LOCAL_PATH_RE = re.compile(r"(?:(?<=\s)|^)(~?/[^ \t\r\n'\"`]+)")
 ARTIFACT_MARKER_RE = re.compile(r"\[ARTIFACT:([^\]]+)\]")
 
+# 이미 구조화된 보고서 감지: ## 결론 으로 시작하는 경우
+_STRUCTURED_REPORT_RE = re.compile(r"^\s*##\s*결론", re.MULTILINE)
+
 
 def extract_local_artifact_paths(text: str) -> list[str]:
     paths: list[str] = []
@@ -34,6 +37,15 @@ def extract_local_artifact_names(text: str) -> list[str]:
         if name and name not in names:
             names.append(name)
     return names
+
+
+def is_already_structured_report(text: str) -> bool:
+    """합성 단계에서 이미 3-섹션 구조(## 결론)로 정제된 보고서인지 감지.
+
+    이미 구조화된 경우 LLM 재작성을 건너뛰고 heuristic cleanup만 수행.
+    """
+    stripped = (text or "").strip()
+    return bool(_STRUCTURED_REPORT_RE.search(stripped))
 
 
 def needs_rewrite_for_telegram(text: str) -> bool:
@@ -59,6 +71,11 @@ async def ensure_user_friendly_output(
     cleaned = (draft or "").strip()
     artifact_names = extract_local_artifact_names(cleaned)
 
+    # 이미 ## 결론 구조로 정제된 보고서는 LLM 재작성 불필요.
+    # full_context가 있을 때만 재작성 (합성 fallback 케이스 — raw 부서 결과를 구조화해야 함).
+    if is_already_structured_report(cleaned) and not full_context:
+        return _heuristic_cleanup(cleaned, artifact_names)
+
     should_rewrite = needs_rewrite_for_telegram(cleaned) or bool(full_context)
     if decision_client is not None and should_rewrite:
         context_section = (
@@ -73,22 +90,19 @@ async def ensure_user_friendly_output(
             "  1. Identify the single most important conclusion (will go in ## 결론).\n"
             "  2. Cluster all findings by TOPIC (not by department).\n"
             "  3. Merge any duplicate findings into ONE bullet.\n"
-            "  4. Extract PM's explicit recommendation (will go in ## PM 결정 및 권고).\n\n"
-            "## Required 5-section structure (follow exactly):\n\n"
+            "  4. Fold PM recommendation, risks, and key decisions into ## 핵심 내용 bullets.\n\n"
+            "## Required 3-section structure (follow exactly — same as PM identity format):\n\n"
             "  ## 결론\n"
-            "  [REQUIRED. ONE sentence max 50 chars. Directly answer user's request + PM recommendation.]\n\n"
-            "  ## 핵심 발견사항\n"
+            "  [REQUIRED. ONE sentence max 60 chars. Directly answer user's request + PM judgment.]\n\n"
+            "  ## 핵심 내용\n"
             "  [REQUIRED. 3~5 bullets. Topic-based, NOT department-based.\n"
-            "   If 2+ departments say the same thing, merge into ONE bullet with concrete numbers.]\n\n"
-            "  ## 위험·이슈 (있을 때만)\n"
-            "  [CONDITIONAL. Risks, conflicts, unresolved items. OMIT entirely if nothing to report.]\n\n"
-            "  ## PM 결정 및 권고\n"
-            "  [REQUIRED. PM's own judgment + prioritized action recommendations (P1/P2/P3).\n"
-            "   Not a department summary — this is the PM's voice.]\n\n"
+            "   If 2+ departments say the same thing, merge into ONE bullet with concrete numbers.\n"
+            "   Include risks, PM recommendations, and key decisions as bullets if applicable.\n"
+            "   Use **bold** for key terms. Use tables where useful.]\n\n"
             "  ## 다음 조치 (있을 때만)\n"
             "  [CONDITIONAL. Concrete tasks with owner/timeline. OMIT entirely if no tasks remain.]\n\n"
             "## Hard rules (violating degrades quality):\n"
-            "- 결론 must be the FIRST section — no background paragraph before it.\n"
+            "- ## 결론 must be the FIRST section — no background paragraph before it.\n"
             "- NEVER use department name as a section header.\n"
             "- NEVER copy raw department text verbatim — synthesize from PM perspective.\n"
             "- NEVER repeat the same finding across 2+ sections (MECE).\n"
@@ -96,7 +110,7 @@ async def ensure_user_friendly_output(
             "- Remove all internal tags: [TEAM:], [COLLAB:], [ARTIFACT:], '역할은 여기서 끝',\n"
             "  '운영실에 위임', or any bot-internal control language.\n"
             "- Preserve all factual claims, numbers, commit hashes, and proper nouns.\n"
-            "- Total report body: 15 lines max. Overflow goes to 다음 조치 or omit.\n"
+            "- Total report: 20 lines max. Use ## 다음 조치 for overflow tasks.\n"
             "- Use Telegram markdown only: ## headers, **bold**, - bullets,\n"
             "  `inline code`, ```lang\\ncode\\n```. NO HTML tags.\n"
             "- If artifacts exist, list filenames only at the very end (after 다음 조치).\n\n"
