@@ -539,3 +539,167 @@ class TestGeminiCLIRunnerDispatch:
 
         metrics = runner.get_last_metrics()
         assert metrics["total_tokens"] == 200
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 추가: CodexRunner mock-based dispatch 테스트
+# ---------------------------------------------------------------------------
+
+
+class TestCodexRunnerDispatch:
+    """CodexRunner run() 메서드 — 모의(mock) 기반 디스패치/에러 핸들링."""
+
+    def _make_mock_proc(
+        self,
+        returncode: int = 0,
+        stdout: bytes = b"",
+        stderr: bytes = b"",
+    ) -> MagicMock:
+        proc = MagicMock()
+        proc.returncode = returncode
+        proc.communicate = AsyncMock(return_value=(stdout, stderr))
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+        proc.stdout = None
+        proc.stderr = None
+        return proc
+
+    async def test_run_returns_sanitized_output(self) -> None:
+        """정상 실행 시 sanitized 출력을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        output = b"[TEAM:solo]\n## \xea\xb2\xb0\xeb\xa1\xa0\n\xeb\xb6\x84\xec\x84\x9d \xec\x99\x84\xeb\xa3\x8c"
+        mock_proc = self._make_mock_proc(returncode=0, stdout=output)
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            runner = CodexRunner()
+            ctx = RunContext(prompt="분석해줘")
+            result = await runner.run(ctx)
+
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    async def test_run_with_nonzero_exit_returns_error_string(self) -> None:
+        """0이 아닌 종료 코드면 에러 문자열을 반환한다 (RunnerError 아님)."""
+        from tools.codex_runner import CodexRunner
+
+        mock_proc = self._make_mock_proc(returncode=1, stderr=b"execution failed")
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            runner = CodexRunner()
+            ctx = RunContext(prompt="에러 유발")
+            result = await runner.run(ctx)
+
+        assert "❌" in result
+
+    async def test_run_cli_not_found_returns_error_string(self) -> None:
+        """Codex CLI 미설치 시 에러 문자열을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        with patch(
+            "asyncio.create_subprocess_exec",
+            side_effect=FileNotFoundError("No such file"),
+        ):
+            runner = CodexRunner()
+            ctx = RunContext(prompt="실행 불가")
+            result = await runner.run(ctx)
+
+        assert "❌" in result
+
+    async def test_run_timeout_returns_error_string(self) -> None:
+        """타임아웃 시 에러 문자열을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        mock_proc = self._make_mock_proc()
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
+                runner = CodexRunner()
+                runner.timeout = 1
+                ctx = RunContext(prompt="느린 작업")
+                result = await runner.run(ctx)
+
+        assert "타임아웃" in result
+
+    async def test_run_with_engine_config_model_passes_flag(self) -> None:
+        """engine_config에 model이 있으면 -c model=... 플래그가 cmd에 포함된다."""
+        from tools.codex_runner import CodexRunner
+
+        captured_cmds: list[list[str]] = []
+
+        async def mock_exec(*args: str, **kwargs):
+            captured_cmds.append(list(args))
+            return self._make_mock_proc(returncode=0, stdout=b"ok")
+
+        with patch("asyncio.create_subprocess_exec", side_effect=mock_exec):
+            runner = CodexRunner()
+            ctx = RunContext(prompt="모델 테스트", engine_config={"model": "o3-mini"})
+            await runner.run(ctx)
+
+        # asyncio.create_subprocess_exec 은 Claude SDK 내부에서도 호출될 수 있으므로
+        # codex 실행 cmd를 명확하게 찾는다 (exec 서브커맨드 포함 여부 기준)
+        assert len(captured_cmds) > 0
+        codex_cmds = [cmd for cmd in captured_cmds if "exec" in cmd or "-c" in cmd]
+        assert codex_cmds, (
+            f"codex exec 명령어를 찾을 수 없음. 캡처된 커맨드: {captured_cmds}"
+        )
+        codex_cmd = codex_cmds[0]
+        assert "-c" in codex_cmd
+        assert "model=o3-mini" in codex_cmd
+
+    def test_capabilities_includes_streaming(self) -> None:
+        """CodexRunner는 streaming capability를 선언한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        assert "streaming" in runner.capabilities()
+
+    def test_sanitize_codex_output_drops_noise(self) -> None:
+        """_sanitize_codex_output은 노이즈 라인을 제거한다."""
+        from tools.codex_runner import _sanitize_codex_output
+
+        noisy = "workdir: /tmp\nmodel: o3\n[TEAM:solo]\n## 결론\n결과입니다"
+        result = _sanitize_codex_output(noisy)
+        assert "결과입니다" in result
+        assert "workdir:" not in result
+
+    def test_sanitize_codex_output_preserves_team_tag(self) -> None:
+        """_sanitize_codex_output은 [TEAM:] 이후 내용을 보존한다."""
+        from tools.codex_runner import _sanitize_codex_output
+
+        text = "잡음\n[TEAM:solo]\n## 결론\n핵심 결과"
+        result = _sanitize_codex_output(text)
+        assert "[TEAM:solo]" in result
+        assert "핵심 결과" in result
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 추가: ClaudeSubprocessRunner 인터페이스 검증
+# ---------------------------------------------------------------------------
+
+
+class TestClaudeRunnerInterface:
+    """ClaudeSubprocessRunner BaseRunner 인터페이스 준수 검증."""
+
+    def test_claude_subprocess_runner_is_base_runner(self) -> None:
+        """ClaudeSubprocessRunner는 BaseRunner 서브클래스다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        assert issubclass(ClaudeSubprocessRunner, BaseRunner)
+
+    def test_claude_subprocess_runner_has_required_methods(self) -> None:
+        """ClaudeSubprocessRunner는 run/run_single/run_task/capabilities를 모두 구현한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        for method_name in ("run", "run_single", "run_task", "capabilities", "get_last_metrics"):
+            assert hasattr(ClaudeSubprocessRunner, method_name), (
+                f"ClaudeSubprocessRunner: {method_name} 메서드 누락"
+            )
+
+    def test_claude_subprocess_runner_capabilities(self) -> None:
+        """ClaudeSubprocessRunner.capabilities()는 set을 반환한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        caps = runner.capabilities()
+        assert isinstance(caps, set)

@@ -1,0 +1,14 @@
+{
+  "response": "분석 완료: 3개 엔진(claude-code, codex, gemini-cli) 모두 BaseRunner 인터페이스를 준수합니다.",
+  "stats": {
+    "models": {
+      "gemini-2.5-flash": {
+        "tokens": {
+          "input": 120,
+          "output": 80,
+          "total": 200
+        }
+      }
+    }
+  }
+}

@@ -1,8 +1,11 @@
 """E2E 테스트 공통 fixture."""
 from __future__ import annotations
 
+import json
+import os
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -13,6 +16,7 @@ from core.agent_persona_memory import AgentPersonaMemory
 from core.collaboration_tracker import CollaborationTracker
 from core.shoutout_system import ShoutoutSystem
 from core.pm_orchestrator import PMOrchestrator
+from tools.base_runner import RunContext
 
 
 class _FakeOrg:
@@ -81,3 +85,114 @@ def make_orchestrator():
             decision_client=None,
         )
     return _factory
+
+
+# ---------------------------------------------------------------------------
+# 3엔진 공통 픽스처 (Phase 2 보완)
+# ---------------------------------------------------------------------------
+
+ALL_ENGINES = ["claude-code", "codex", "gemini-cli"]
+
+
+@pytest.fixture(params=ALL_ENGINES)
+def engine_name(request) -> str:
+    """3엔진 이름 parametrize 픽스처."""
+    return request.param
+
+
+@pytest.fixture
+def make_run_context():
+    """RunContext 팩토리 픽스처."""
+    def _factory(
+        prompt: str = "테스트 프롬프트",
+        *,
+        workdir: str | None = None,
+        system_prompt: str | None = None,
+        engine_config: dict | None = None,
+        org_id: str | None = None,
+    ) -> RunContext:
+        return RunContext(
+            prompt=prompt,
+            workdir=workdir,
+            system_prompt=system_prompt,
+            engine_config=engine_config or {},
+            org_id=org_id,
+        )
+    return _factory
+
+
+@pytest.fixture
+def mock_proc_factory():
+    """asyncio subprocess mock 프로세스 팩토리 픽스처."""
+    def _make(
+        returncode: int = 0,
+        stdout: bytes = b"",
+        stderr: bytes = b"",
+    ) -> MagicMock:
+        proc = MagicMock()
+        proc.returncode = returncode
+        proc.communicate = AsyncMock(return_value=(stdout, stderr))
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+        proc.stdout = None
+        proc.stderr = None
+        return proc
+    return _make
+
+
+@pytest.fixture
+def gemini_json_response():
+    """Gemini CLI 정상 JSON 응답 bytes 픽스처."""
+    fixtures_dir = Path(__file__).parent / "fixtures"
+    fpath = fixtures_dir / "gemini_cli_mock_response.json"
+    if fpath.exists():
+        return fpath.read_bytes()
+    payload = {"response": "테스트 응답", "stats": {"models": {}}}
+    return json.dumps(payload).encode()
+
+
+@pytest.fixture
+def codex_plain_response():
+    """Codex CLI 정상 plain text 응답 bytes 픽스처."""
+    fixtures_dir = Path(__file__).parent / "fixtures"
+    fpath = fixtures_dir / "codex_mock_response.txt"
+    if fpath.exists():
+        return fpath.read_bytes()
+    return "[TEAM:solo]\n## 결론\n작업 완료".encode("utf-8")
+
+
+@pytest.fixture
+def gemini_cli_available() -> bool:
+    """Gemini CLI 바이너리 가용 여부."""
+    import shutil
+    cli_path = os.environ.get("GEMINI_CLI_PATH", "gemini")
+    return shutil.which(cli_path) is not None
+
+
+@pytest.fixture
+def codex_available() -> bool:
+    """Codex CLI 바이너리 가용 여부."""
+    import shutil
+    cli_path = os.environ.get("CODEX_CLI_PATH", "codex")
+    return shutil.which(cli_path) is not None
+
+
+def validate_run_result(result: Any) -> None:
+    """run() 결과가 표준 인터페이스를 만족하는지 검증하는 헬퍼."""
+    assert result is not None, "run() 결과가 None"
+    assert isinstance(result, str), f"run() 결과가 str이 아님: {type(result)}"
+    assert len(result) > 0, "run() 결과가 빈 문자열"
+
+
+def validate_metrics(metrics: Any) -> None:
+    """get_last_metrics() 결과가 표준 인터페이스를 만족하는지 검증하는 헬퍼."""
+    assert metrics is not None, "get_last_metrics() 결과가 None"
+    assert isinstance(metrics, dict), f"get_last_metrics() 결과가 dict가 아님: {type(metrics)}"
+
+
+def skip_if_cli_unavailable(cli_name: str, env_var: str = "") -> None:
+    """CLI가 없으면 pytest.skip()으로 우아하게 건너뛴다."""
+    import shutil
+    path = os.environ.get(env_var, cli_name) if env_var else cli_name
+    if not shutil.which(path):
+        pytest.skip(f"{cli_name} CLI 미설치 — 실제 엔진 테스트 건너뜀")
