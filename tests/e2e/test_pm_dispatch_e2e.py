@@ -613,3 +613,117 @@ class TestFallbackEngineConfig:
                 pytest.fail(
                     f"{org_id}: fallback_engine={fallback!r} RunnerFactory 생성 실패: {e}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 보완: 엔진 디스패치 라우팅 경로 end-to-end 검증
+# ---------------------------------------------------------------------------
+
+
+class TestEngineDispatchRoutePathE2E:
+    """PM → 부서 디스패치 시 엔진 선택 라우팅 경로 end-to-end 정합성 검증."""
+
+    @pytest.mark.parametrize("dept_id,expected_engine,expected_cls_prefix", [
+        # claude-code 엔진: ClaudeAgentRunner(SDK 설치) 또는 ClaudeSubprocessRunner(fallback)
+        ("aiorg_engineering_bot", "claude-code", "Claude"),
+        ("aiorg_ops_bot", "codex", "Codex"),
+        ("aiorg_research_bot", "gemini-cli", "GeminiCLI"),
+    ])
+    def test_dispatch_routing_path_org_to_engine_to_runner(
+        self,
+        dept_id: str,
+        expected_engine: str,
+        expected_cls_prefix: str,
+    ) -> None:
+        """BOT_ENGINE_MAP → RunnerFactory 완전한 3단계 라우팅 경로를 검증한다."""
+        from core.constants import BOT_ENGINE_MAP
+        from tools.base_runner import RunnerFactory, BaseRunner
+
+        # Step 1: 부서 → 엔진 라우팅 (BOT_ENGINE_MAP)
+        actual_engine = BOT_ENGINE_MAP.get(dept_id)
+        assert actual_engine == expected_engine, (
+            f"[Step1] {dept_id}: 예상 엔진={expected_engine}, 실제={actual_engine}"
+        )
+
+        # Step 2: 엔진명 → 러너 인스턴스 생성 (RunnerFactory)
+        runner = RunnerFactory.create(actual_engine)
+        assert isinstance(runner, BaseRunner), (
+            f"[Step2] {dept_id}: RunnerFactory.create({actual_engine!r})가 BaseRunner 아님"
+        )
+
+        # Step 3: 러너 클래스 이름에 엔진 계열 접두사 포함 여부 확인
+        # (claude-code: ClaudeAgentRunner or ClaudeSubprocessRunner → "Claude" 접두사 공통)
+        assert expected_cls_prefix in type(runner).__name__, (
+            f"[Step3] {dept_id}: 러너 클래스에 '{expected_cls_prefix}' 접두사 없음 "
+            f"(실제: {type(runner).__name__})"
+        )
+
+    def test_organizations_yaml_and_engine_map_consistent(self) -> None:
+        """organizations.yaml의 preferred_engine이 BOT_ENGINE_MAP 값과 일치한다."""
+        import yaml
+        from pathlib import Path
+        from core.constants import BOT_ENGINE_MAP
+
+        config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
+        if not config_path.exists():
+            pytest.skip("organizations.yaml not found")
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        for org in config.get("organizations", []):
+            org_id = org.get("id", "")
+            preferred = org.get("execution", {}).get("preferred_engine", "")
+            if org_id in BOT_ENGINE_MAP:
+                assert BOT_ENGINE_MAP[org_id] == preferred, (
+                    f"{org_id}: organizations.yaml preferred_engine='{preferred}' vs "
+                    f"BOT_ENGINE_MAP='{BOT_ENGINE_MAP[org_id]}' — 불일치"
+                )
+
+    def test_three_engine_types_all_represented_in_dispatch_map(self) -> None:
+        """BOT_ENGINE_MAP에 3개 엔진 타입(claude-code/codex/gemini-cli)이 모두 존재한다."""
+        from core.constants import BOT_ENGINE_MAP
+
+        engines_in_map = set(BOT_ENGINE_MAP.values())
+        required_engines = {"claude-code", "codex", "gemini-cli"}
+        missing = required_engines - engines_in_map
+        assert not missing, (
+            f"BOT_ENGINE_MAP에 누락된 엔진 타입: {missing} — "
+            f"현재 등록된 엔진: {engines_in_map}"
+        )
+
+    def test_invalid_engine_in_dispatch_raises_error(self) -> None:
+        """잘못된 엔진 이름으로 디스패치 시 ValueError 또는 ImportError를 발생시킨다."""
+        from tools.base_runner import RunnerFactory
+
+        with pytest.raises((ValueError, ImportError)):
+            RunnerFactory.create("invalid-engine-for-dispatch-test-xyz")
+
+    def test_pm_bot_engine_assignment_consistent_across_sources(self) -> None:
+        """PM 봇(aiorg_pm_bot)의 엔진이 organizations.yaml과 BOT_ENGINE_MAP에서 모두 일치한다."""
+        import yaml
+        from pathlib import Path
+        from core.constants import BOT_ENGINE_MAP
+
+        config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
+        if not config_path.exists():
+            pytest.skip("organizations.yaml not found")
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        pm_org = next(
+            (org for org in config.get("organizations", []) if org.get("id") == "aiorg_pm_bot"),
+            None,
+        )
+        assert pm_org is not None, "organizations.yaml에서 aiorg_pm_bot을 찾을 수 없음"
+
+        yaml_engine = pm_org.get("execution", {}).get("preferred_engine", "")
+        assert yaml_engine == "claude-code", (
+            f"PM 봇의 preferred_engine이 claude-code가 아님: {yaml_engine!r}"
+        )
+        # BOT_ENGINE_MAP에는 PM 봇 자신은 없어도 됨 (부서 봇만 포함)
+        # 하지만 개발실(PM이 가장 많이 위임하는 대상)은 claude-code이어야 함
+        assert BOT_ENGINE_MAP.get("aiorg_engineering_bot") == "claude-code", (
+            "개발실 봇이 claude-code를 사용하지 않음 — PM 디스패치 기본 엔진 불일치"
+        )

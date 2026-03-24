@@ -955,3 +955,168 @@ class TestParametrizedEngineDispatch:
         assert fallback_cls in type(runner).__name__ or isinstance(runner, BaseRunner), (
             f"{engine}: 예상 클래스 {fallback_cls}, 실제: {type(runner).__name__}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 보완: GeminiCLIRunner 응답 구조 엣지케이스 검증
+# ---------------------------------------------------------------------------
+
+
+class TestGeminiCLIResponseEdgeCases:
+    """GeminiCLIRunner 응답 구조 엣지케이스 — 조직 표준 정합성 검증."""
+
+    def _make_mock_proc(
+        self,
+        returncode: int = 0,
+        stdout: bytes = b"",
+        stderr: bytes = b"",
+    ) -> MagicMock:
+        proc = MagicMock()
+        proc.returncode = returncode
+        proc.communicate = AsyncMock(return_value=(stdout, stderr))
+        proc.kill = MagicMock()
+        return proc
+
+    async def test_null_response_field_returns_default(self) -> None:
+        """JSON response 필드가 null이면 '(결과 없음)'을 반환한다."""
+        from tools.gemini_cli_runner import GeminiCLIRunner
+
+        payload = json.dumps({"response": None, "stats": {}}).encode()
+        mock_proc = self._make_mock_proc(returncode=0, stdout=payload)
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            runner = GeminiCLIRunner()
+            result = await runner.run(RunContext(prompt="null 응답 테스트"))
+
+        assert result == "(결과 없음)", (
+            f"null response 필드는 '(결과 없음)'을 반환해야 함 (실제: {result!r})"
+        )
+
+    async def test_missing_response_key_returns_default(self) -> None:
+        """JSON에 response 키가 없으면 '(결과 없음)'을 반환한다."""
+        from tools.gemini_cli_runner import GeminiCLIRunner
+
+        payload = json.dumps({"stats": {"models": {}}}).encode()
+        mock_proc = self._make_mock_proc(returncode=0, stdout=payload)
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            runner = GeminiCLIRunner()
+            result = await runner.run(RunContext(prompt="response 키 없음 테스트"))
+
+        assert result == "(결과 없음)", (
+            f"response 키 없는 JSON은 '(결과 없음)'을 반환해야 함 (실제: {result!r})"
+        )
+
+    async def test_stats_missing_models_key_gives_zero_tokens(self) -> None:
+        """stats에 models 키가 없으면 total_tokens가 0이다."""
+        from tools.gemini_cli_runner import GeminiCLIRunner
+
+        payload = json.dumps({"response": "ok", "stats": {}}).encode()
+        mock_proc = self._make_mock_proc(returncode=0, stdout=payload)
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            runner = GeminiCLIRunner()
+            await runner.run(RunContext(prompt="stats 구조 테스트"))
+
+        metrics = runner.get_last_metrics()
+        assert metrics["total_tokens"] == 0, (
+            f"stats.models 키 없을 때 total_tokens=0이어야 함 (실제: {metrics['total_tokens']})"
+        )
+
+    async def test_metrics_has_all_required_keys_after_json_run(self) -> None:
+        """JSON run 후 get_last_metrics()는 output_chars/total_tokens/usage_source를 모두 포함한다."""
+        from tools.gemini_cli_runner import GeminiCLIRunner
+
+        payload = json.dumps({"response": "응답 결과", "stats": {}}).encode()
+        mock_proc = self._make_mock_proc(returncode=0, stdout=payload)
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            runner = GeminiCLIRunner()
+            await runner.run(RunContext(prompt="메트릭 구조 테스트"))
+
+        metrics = runner.get_last_metrics()
+        assert "output_chars" in metrics, "output_chars 키 누락"
+        assert "total_tokens" in metrics, "total_tokens 키 누락"
+        assert "usage_source" in metrics, "usage_source 키 누락"
+        assert isinstance(metrics["output_chars"], int)
+        assert isinstance(metrics["total_tokens"], int)
+        assert isinstance(metrics["usage_source"], str)
+
+    async def test_response_with_unicode_and_emoji_content(self) -> None:
+        """응답이 한국어/이모지를 포함해도 정상 반환된다."""
+        from tools.gemini_cli_runner import GeminiCLIRunner
+
+        payload = json.dumps(
+            {"response": "✅ 작업 완료! 결과를 확인하세요.", "stats": {}}
+        ).encode()
+        mock_proc = self._make_mock_proc(returncode=0, stdout=payload)
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            runner = GeminiCLIRunner()
+            result = await runner.run(RunContext(prompt="유니코드 테스트"))
+
+        assert "✅" in result
+        assert "완료" in result
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 보완: 3엔진 run() 반환값 str 타입 명시 검증 (parametrized)
+# ---------------------------------------------------------------------------
+
+
+class TestEngineRunReturnTypeParametrized:
+    """3엔진 run() 메서드 반환값이 str임을 mock 기반으로 명시 검증한다."""
+
+    async def test_gemini_cli_run_returns_str(self) -> None:
+        """GeminiCLIRunner.run()은 str 타입을 반환한다."""
+        from tools.gemini_cli_runner import GeminiCLIRunner
+
+        payload = json.dumps({"response": "gemini 응답", "stats": {}}).encode()
+        proc = MagicMock()
+        proc.returncode = 0
+        proc.communicate = AsyncMock(return_value=(payload, b""))
+        proc.kill = MagicMock()
+
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            runner = GeminiCLIRunner()
+            result = await runner.run(RunContext(prompt="타입 검증"))
+
+        assert isinstance(result, str), (
+            f"GeminiCLIRunner.run()의 반환 타입이 str이 아님: {type(result)}"
+        )
+
+    async def test_codex_run_returns_str(self) -> None:
+        """CodexRunner.run()은 str 타입을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        proc = MagicMock()
+        proc.returncode = 0
+        proc.communicate = AsyncMock(
+            return_value=("[TEAM:solo]\n## 결론\n완료".encode("utf-8"), b"")
+        )
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+        proc.stdout = None
+        proc.stderr = None
+
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            runner = CodexRunner()
+            result = await runner.run(RunContext(prompt="타입 검증"))
+
+        assert isinstance(result, str), (
+            f"CodexRunner.run()의 반환 타입이 str이 아님: {type(result)}"
+        )
+
+    async def test_claude_subprocess_run_returns_str(self) -> None:
+        """ClaudeSubprocessRunner.run()은 str 타입을 반환한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        runner._runner.run = AsyncMock(return_value="[TEAM:solo]\n## 결론\nclaude 응답")
+
+        result = await runner.run(RunContext(prompt="타입 검증"))
+
+        assert isinstance(result, str), (
+            f"ClaudeSubprocessRunner.run()의 반환 타입이 str이 아님: {type(result)}"
+        )

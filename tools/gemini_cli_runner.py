@@ -100,7 +100,8 @@ class GeminiCLIRunner(BaseRunner):
 
             try:
                 data = json.loads(json_text)
-                response: str = data.get("response", "")
+                # data.get("response", "") 은 null JSON 값이면 None 반환 → or "" 로 보정
+                response: str = data.get("response") or ""
 
                 # 토큰 메트릭 추출
                 total_tokens = 0
