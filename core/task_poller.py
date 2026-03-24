@@ -28,7 +28,14 @@ DEFAULT_HEARTBEAT_INTERVAL_SEC = 30.0
 # Fast-failure 감지: 짧은 시간에 연속 실패 시 백오프
 FAST_FAIL_WINDOW_SEC = 60.0  # 이 시간 내 연속 실패 횟수 추적
 FAST_FAIL_THRESHOLD = 3  # 이 횟수 이상이면 백오프 적용
-FAST_FAIL_BACKOFF_SEC = 30.0  # 백오프 시간
+FAST_FAIL_BACKOFF_SEC = 30.0  # 일반 실패 백오프 시간
+# 토큰/레이트 리밋 에러 감지 시 장기 백오프
+TOKEN_LIMIT_BACKOFF_SEC = 600.0  # 10분 — 토큰 한도는 보통 수십분~1시간 후 풀림
+TOKEN_LIMIT_KEYWORDS = (
+    "token", "rate_limit", "rate limit", "overloaded", "429",
+    "quota", "capacity", "throttl", "too many requests",
+    "context window", "max_tokens_exceeded",
+)
 
 
 class TaskPoller:
@@ -144,6 +151,12 @@ class TaskPoller:
             self._fail_timestamps[task_id] = []
         self._fail_timestamps[task_id].append(time.monotonic())
 
+    @staticmethod
+    def _is_token_limit_error(exc: BaseException) -> bool:
+        """토큰/레이트 리밋 관련 에러인지 판별."""
+        error_str = str(exc).lower()
+        return any(kw in error_str for kw in TOKEN_LIMIT_KEYWORDS)
+
     async def _execute_task(self, task: dict) -> None:
         """태스크 콜백 실행 및 완료 후 processing set에서 제거."""
         task_id = task["id"]
@@ -162,9 +175,16 @@ class TaskPoller:
             task_succeeded = True
             # 성공 시 실패 이력 초기화
             self._fail_timestamps.pop(task_id, None)
-        except Exception:
-            logger.exception(f"[TaskPoller:{self._org_id}] 태스크 실행 오류: {task_id}")
+        except Exception as exc:
             self._record_failure(task_id)
+            if self._is_token_limit_error(exc):
+                logger.error(
+                    f"[TaskPoller:{self._org_id}] 태스크 {task_id} 토큰/레이트 리밋 감지 — "
+                    f"{TOKEN_LIMIT_BACKOFF_SEC}초 장기 백오프 적용: {exc}"
+                )
+                await asyncio.sleep(TOKEN_LIMIT_BACKOFF_SEC)
+            else:
+                logger.exception(f"[TaskPoller:{self._org_id}] 태스크 실행 오류: {task_id}")
         finally:
             self._processing.discard(task_id)
             hb_task = self._heartbeat_tasks.pop(task_id, None)
