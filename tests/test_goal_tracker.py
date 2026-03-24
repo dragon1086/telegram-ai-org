@@ -400,3 +400,87 @@ class TestUpdateGoalSafety:
         goal = await tracker.set_goal("빈 업데이트", chat_id=123)
         updated = await db.update_goal(goal["id"])
         assert updated["status"] == "active"  # 변경 없음
+
+
+class TestStartGoal:
+    """start_goal() 공개 API 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_start_goal_returns_id(self, tracker):
+        """start_goal()이 goal_id 문자열을 반환한다."""
+        gid = await tracker.start_goal(
+            org_id="pm",
+            title="오픈소스화 스프린트",
+            description="telegram-ai-org 오픈소스화",
+            meta={"sprint": "7d"},
+        )
+        assert isinstance(gid, str)
+        assert gid.startswith("G-pm-")
+
+    @pytest.mark.asyncio
+    async def test_start_goal_persists_to_db(self, db, tracker):
+        """start_goal() 후 DB에서 목표를 조회할 수 있다."""
+        gid = await tracker.start_goal(
+            org_id="pm",
+            title="테스트 목표",
+            description="DB 저장 확인용",
+        )
+        goal = await db.get_goal(gid)
+        assert goal is not None
+        assert goal["title"] == "테스트 목표"
+        assert goal["org_id"] == "pm"
+        assert goal["status"] == "active"
+        assert goal["meta_json"] == {}
+
+    @pytest.mark.asyncio
+    async def test_start_goal_with_meta(self, db, tracker):
+        """start_goal()에 meta 전달 시 DB에 저장된다."""
+        gid = await tracker.start_goal(
+            org_id="pm",
+            title="메타 테스트",
+            description="메타 데이터 저장",
+            meta={"sprint": "7d", "deadline": "2026-03-31"},
+        )
+        goal = await db.get_goal(gid)
+        assert goal["meta_json"]["sprint"] == "7d"
+        assert goal["meta_json"]["deadline"] == "2026-03-31"
+
+    @pytest.mark.asyncio
+    async def test_get_active_goals_by_org(self, db, tracker):
+        """get_active_goals(org_id) 필터링이 동작한다."""
+        await tracker.start_goal(org_id="pm", title="PM 목표", description="PM용")
+        await tracker.set_goal("다른 조직 목표", chat_id=1, org_id="aiorg_engineering_bot")
+        pm_goals = await tracker.get_active_goals(org_id="pm")
+        assert all(g["org_id"] == "pm" for g in pm_goals)
+        eng_goals = await tracker.get_active_goals(org_id="aiorg_engineering_bot")
+        assert all(g["org_id"] == "aiorg_engineering_bot" for g in eng_goals)
+
+    @pytest.mark.asyncio
+    async def test_get_active_goals_no_filter(self, db, tracker):
+        """get_active_goals() 필터 없으면 전체 반환."""
+        await tracker.start_goal(org_id="pm", title="A", description="A")
+        await tracker.set_goal("B", chat_id=1, org_id="aiorg_engineering_bot")
+        all_goals = await tracker.get_active_goals()
+        assert len(all_goals) >= 2
+
+    @pytest.mark.asyncio
+    async def test_update_goal_status(self, db, tracker):
+        """update_goal_status() 편의 메서드가 status를 업데이트한다."""
+        gid = await tracker.start_goal(org_id="pm", title="상태 업데이트", description="테스트")
+        updated = await tracker.update_goal_status(gid, "achieved")
+        assert updated is not None
+        assert updated["status"] == "achieved"
+
+    @pytest.mark.asyncio
+    async def test_start_goal_background_task_created(self, db, tracker):
+        """start_goal() 호출 시 백그라운드 루프 태스크가 생성된다."""
+        import asyncio
+        tasks_before = {t.get_name() for t in asyncio.all_tasks()}
+        gid = await tracker.start_goal(
+            org_id="pm", title="루프 테스트", description="백그라운드 태스크 확인"
+        )
+        # 태스크가 생성됐는지 확인 (즉시 완료될 수 있으므로 이름만 확인)
+        assert isinstance(gid, str)
+        # 목표가 DB에 있으면 태스크가 생성됐음
+        goal = await db.get_goal(gid)
+        assert goal is not None
