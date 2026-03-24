@@ -164,11 +164,16 @@ Gemini CLI가 배정된 조직과 그 이유:
 - **금지**: `gemini-2.0-flash` (2026-06-01 서비스 종료)
 - **Preview 주의**: `gemini-3.x` 계열은 프로덕션 사용 자제
 
-### [2026-03-16] 봇 재시작 전 패키지 sync 필수
-```bash
-# ❌ pip install -e . 는 이 프로젝트에서 작동하지 않음 (hatchling 설정 미비)
-.venv/bin/pip install <package> -q  # 누락 패키지 개별 설치
-```
+### [2026-03-25] 로컬 패키지 설치 — pip install -e . 사용 가능 (setuptools 전환 완료)
+- **빌드 백엔드**: hatchling → setuptools+wheel 전환 완료
+- **로컬 설치**: `pip install -e .` 이제 정상 작동
+  ```bash
+  # 로컬 개발 설치 (editable 모드)
+  .venv/bin/pip install -e .
+
+  # 개발 도구 포함 설치
+  .venv/bin/pip install -e ".[dev]"
+  ```
 
 ### [2026-03-23] 위험한 시스템 탐색 절대 금지 (전체 조직 공통)
 ```python

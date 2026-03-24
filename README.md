@@ -35,6 +35,40 @@
     내장 스케줄러 (반복 태스크 자율 실행)
 ```
 
+## 설치 (Installation)
+
+### 방법 1: PyPI 설치 (권장)
+
+```bash
+pip install telegram-ai-org
+```
+
+### 방법 2: 소스에서 직접 설치 (개발용)
+
+```bash
+git clone https://github.com/dragon1086/aimesh.git
+cd aimesh
+
+# 로컬 패키지 설치 (editable 모드)
+pip install -e .
+
+# 개발 도구 포함 설치
+pip install -e ".[dev]"
+```
+
+### 환경변수 설정
+
+```bash
+# .env.example 을 복사해 .env 파일 생성
+cp .env.example .env
+
+# 필수 항목 입력:
+#   TELEGRAM_BOT_TOKEN=<PM 봇 토큰>
+#   TELEGRAM_GROUP_CHAT_ID=<그룹 채팅 ID (음수)>
+#   BOT_TOKEN_AIORG_*=<각 부서 봇 토큰>
+nano .env
+```
+
 ## 빠른 시작
 
 ```bash

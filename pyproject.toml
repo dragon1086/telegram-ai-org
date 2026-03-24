@@ -3,7 +3,7 @@ name = "telegram-ai-org"
 version = "0.1.0"
 description = "AI organization on Telegram — PM bot coordinates AI teams with shared context"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
     { name = "telegram-ai-org contributors" },
 ]
@@ -12,7 +12,7 @@ keywords = ["telegram", "ai", "multi-agent", "llm", "bot", "orchestration"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    # License classifier removed — SPDX expression `license = "MIT"` is used instead (PEP 639)
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -53,16 +53,26 @@ gemini = [
 all = [
     "google-genai>=1.0",
 ]
+test = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-mock>=3.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
     "pytest-mock>=3.0",
     "ruff>=0.1",
+    "black>=23.0",
+    "build>=1.0",
+    "twine>=5.0",
     "google-genai>=1.0",
 ]
 
 [project.scripts]
-# PM 봇 실행 (메인 진입점) — cli.py:pm() 이 main.py 를 runpy로 실행
+# PyPI 공식 진입점 (패키지 이름과 동일)
+telegram-ai-org = "telegram_ai_org.__main__:main"
+# PM 봇 실행 (단축 별칭) — cli.py:pm() 이 main.py 를 runpy로 실행
 aiorg-pm = "cli:pm"
 # 워커 봇 실행: aiorg-worker --name <worker_name>
 aiorg-worker = "core.run_worker:main"
@@ -75,13 +85,20 @@ Repository = "https://github.com/dragon1086/aimesh"
 Issues = "https://github.com/dragon1086/aimesh/issues"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-# 패키지 디렉토리 목록 (cli.py, main.py 는 루트에 위치하므로 별도 include)
-packages = ["core", "tools", "skills"]
-include = ["cli.py", "main.py", "orchestration.yaml", "workers.yaml", "bots/*.yaml"]
+[tool.setuptools]
+# 루트 레벨 모듈 (cli.py, main.py 등) — entry_point 참조용
+py-modules = ["cli", "main", "simulation_mode"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["telegram_ai_org*", "core*", "tools*", "skills*"]
+exclude = [".venv*", ".worktrees*", "tests*", "dist*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.toml", "*.md", "*.json"]
 
 [tool.ruff]
 line-length = 100
