@@ -302,12 +302,13 @@ case "$SELECTED_ENGINE" in
         fi
         ;;
     gemini-cli)
-        # gemini-cli: google-generativeai (scoring/REST API 호출용)
-        if "$VENV_PYTHON" -c "import google.generativeai" 2>/dev/null; then
-            ok "google-generativeai 이미 설치됨 (gemini-cli)"
+        # gemini-cli: google-genai SDK (scoring/REST API 호출용)
+        # pyproject.toml 기준: google-genai>=1.0 (import: google.genai)
+        if "$VENV_PYTHON" -c "import google.genai" 2>/dev/null; then
+            ok "google-genai SDK 이미 설치됨 (gemini-cli)"
         else
-            info "gemini-cli용 google-generativeai 패키지 설치 중..."
-            "$VENV_PYTHON" -m pip install google-generativeai --quiet && ok "google-generativeai 설치 완료"
+            info "gemini-cli용 google-genai 패키지 설치 중..."
+            "$VENV_PYTHON" -m pip install google-genai --quiet && ok "google-genai 설치 완료"
         fi
         ;;
 esac
