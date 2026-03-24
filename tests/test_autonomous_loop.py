@@ -227,6 +227,8 @@ class TestAutonomousLoopClass:
         ))
         t.update_goal_status = AsyncMock(return_value={"id": "G-pm-001", "status": "achieved"})
         t.replan = AsyncMock(return_value=[])
+        # tick_iteration은 (new_iteration, max_iterations) 튜플 반환
+        t.tick_iteration = AsyncMock(return_value=(1, 10))
         return t
 
     @pytest.fixture
@@ -301,6 +303,85 @@ class TestAutonomousLoopClass:
     def test_infer_org_none(self):
         from core.autonomous_loop import AutonomousLoop
         assert AutonomousLoop.infer_org_for_task("아무 키워드 없는 설명") is None
+
+
+class TestAutonomousLoopIterationTracking:
+    """AutonomousLoop._tick() — iteration 카운터 증가 및 max_iterations 종료 검증."""
+
+    @pytest.fixture
+    def mock_tracker_with_iteration(self):
+        """iteration을 실제로 증가시키는 mock GoalTracker."""
+        t = AsyncMock()
+        # 목표: iteration=0, max_iterations=2
+        goal_state = {"iteration": 0, "max_iterations": 2}
+
+        async def tick_iteration(goal_id):
+            goal_state["iteration"] += 1
+            return goal_state["iteration"], goal_state["max_iterations"]
+
+        t.get_active_goals = AsyncMock(return_value=[
+            {"id": "G-pm-001", "title": "반복 추적 테스트", "description": "...",
+             "chat_id": 0, "iteration": 0, "max_iterations": 2}
+        ])
+        t.evaluate_progress = AsyncMock(return_value=GoalStatus(
+            achieved=False, progress_summary="0/1", remaining_work="미완",
+            done_count=0, total_count=1, confidence=0.0,
+        ))
+        t.tick_iteration = AsyncMock(side_effect=tick_iteration)
+        t.update_goal_status = AsyncMock(return_value={"id": "G-pm-001", "status": "active"})
+        t.replan = AsyncMock(return_value=[])
+        return t, goal_state
+
+    @pytest.mark.asyncio
+    async def test_tick_increments_iteration_on_replan(self, mock_tracker_with_iteration):
+        """_tick()이 replan 전에 tick_iteration()을 호출한다."""
+        t, state = mock_tracker_with_iteration
+        from core.autonomous_loop import AutonomousLoop
+        al = AutonomousLoop(goal_tracker=t, idle_sleep_sec=0.01, send_func=AsyncMock())
+
+        await al._tick()
+
+        t.tick_iteration.assert_called_once_with("G-pm-001")
+        assert state["iteration"] == 1
+
+    @pytest.mark.asyncio
+    async def test_tick_stops_at_max_iterations(self, mock_tracker_with_iteration):
+        """iteration이 max_iterations를 초과하면 max_iterations_reached로 종료한다."""
+        t, state = mock_tracker_with_iteration
+        # 이미 max에 도달한 상태로 설정 (tick 후 new_iter=3 > max_iter=2)
+        state["iteration"] = 2  # 다음 tick 시 new_iter=3 > max_iter=2
+
+        from core.autonomous_loop import AutonomousLoop
+        al = AutonomousLoop(goal_tracker=t, idle_sleep_sec=0.01, send_func=AsyncMock())
+
+        await al._tick()
+
+        # max_iterations_reached로 상태 업데이트 호출 확인
+        t.update_goal_status.assert_called_with("G-pm-001", "max_iterations_reached")
+        # 한계 초과 시 replan은 호출되지 않아야 함
+        t.replan.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_tick_no_infinite_loop(self, mock_tracker_with_iteration):
+        """max_iterations=2인 목표에서 _tick()을 3회 호출해도 3번째엔 replan 안함."""
+        t, state = mock_tracker_with_iteration
+
+        from core.autonomous_loop import AutonomousLoop
+        al = AutonomousLoop(goal_tracker=t, idle_sleep_sec=0.01, send_func=AsyncMock())
+
+        # 1st tick: iteration=1/2 → replan 호출
+        await al._tick()
+        assert t.replan.call_count == 1
+
+        # 2nd tick: iteration=2/2 → replan 호출 (아직 한계 미초과)
+        # get_active_goals는 매번 동일 목표 반환 (status 업데이트 mock은 반영 안됨)
+        await al._tick()
+        assert t.replan.call_count == 2
+
+        # 3rd tick: iteration=3 > max_iter=2 → replan NOT 호출, max_iterations_reached
+        await al._tick()
+        assert t.replan.call_count == 2  # 추가 replan 없음
+        t.update_goal_status.assert_called_with("G-pm-001", "max_iterations_reached")
 
 
 class TestLoadLoopConfig:

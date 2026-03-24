@@ -3203,6 +3203,14 @@ class TelegramRelay:
                 if not title:
                     continue
                 try:
+                    # 이미 등록된 목표(달성/정체 포함 모든 상태)가 있으면 재시딩 금지
+                    existing = await self._goal_tracker.get_goals_by_title(title)
+                    if existing:
+                        logger.info(
+                            f"[{self.org_id}] 장기 목표 이미 존재 — 시딩 스킵: "
+                            f"{title[:60]} (status={existing[0]['status']})"
+                        )
+                        continue
                     gid = await self._goal_tracker.start_goal(
                         title=title,
                         description=description,
