@@ -55,3 +55,15 @@ data/
 # 스킬 프로덕션 데이터 (외부 루트 telegram-ai-org-data로 이동됨)
 skills/*/data/*.jsonl
 skills/*/data/*.json.bak
+
+# 런타임 생성 보고서/태스크 파일 (세션별 임시 산출물)
+reports/
+tasks/
+
+# 보안 민감 파일 (절대 커밋 금지)
+시크릿_목록.md
+*_목록.md
+
+# PM/봇 세션 보고서 (타임스탬프 포함 임시 파일)
+PM봇_*.md
+*_보고서_2026*.md
