@@ -115,6 +115,33 @@ bash scripts/start_all.sh
 - **글로벌 적용 위치**: bot-triage/SKILL.md Step 3d, pm_identity.py 봇 재기동 규칙 섹션, pm-task-dispatch/SKILL.md 안티패턴 항목
 - **새 조직 추가 시**: organizations.yaml에 추가만 하면 위 글로벌 규칙이 자동 적용됨 (per-org 중복 명시 불필요)
 
+### [2026-03-25] Docker Compose 다중 엔진 실행 가이드
+
+서비스 구조: `x-bot-common`(공통 앵커) + 엔진 프로파일 3개 (`claude` / `codex` / `gemini`)
+
+```bash
+# 1. 환경변수 준비
+cp .env.example .env
+# .env에 최소값 입력: TELEGRAM_BOT_TOKEN, BOT_TOKEN_* 6개, ANTHROPIC/OPENAI/GEMINI API 키
+
+# 2. 단일 엔진 실행 (예: Claude 계열 — PM/기획/디자인)
+docker compose --profile claude up -d
+
+# 3. 특정 엔진 실행 (Codex: 개발/운영, Gemini: 성장/리서치)
+docker compose --profile codex up -d
+docker compose --profile gemini up -d
+
+# 4. 전체 조직 동시 실행
+docker compose --profile claude --profile codex --profile gemini up -d
+
+# 5. 로그 확인
+docker compose ps
+docker compose logs -f aiorg-pm
+```
+
+볼륨 마운트: `./logs`, `./data`, `./reports`, `./tasks`, `./skills`(read-only)
+엔진별 자동 주입: `ENGINE_TYPE`, `*_CLI_PATH`, `GEMINI_CLI_MODEL` (각 서비스 environment 블록)
+
 ### [2026-03-25] 로컬 패키지 설치 — pip install -e . 사용 가능 (setuptools 전환 완료)
 - **빌드 백엔드**: hatchling → setuptools+wheel 전환 완료 (`pyproject.toml` 기준)
 - **로컬 설치**: `pip install -e .` 이제 정상 작동

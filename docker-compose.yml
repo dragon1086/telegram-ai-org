@@ -27,6 +27,7 @@ x-bot-common: &bot-common
     - ./data:/app/data
     - ./reports:/app/reports
     - ./tasks:/app/tasks
+    - ./skills:/app/skills:ro
   restart: unless-stopped
   depends_on:
     aiorg-redis:
