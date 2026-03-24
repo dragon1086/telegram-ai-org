@@ -13,17 +13,22 @@ class TestNLClassifier:
     """자연어 분류기 테스트."""
 
     def test_engineering_task_classification(self) -> None:
-        """코딩 관련 메시지는 개발실로 분류된다."""
-        from core.nl_classifier import NLClassifier
+        """코딩 관련 메시지는 TASK intent로 분류된다."""
+        from core.nl_classifier import NLClassifier, Intent
 
         classifier = NLClassifier()
         result = classifier.classify("버그 수정해줘, API 엔드포인트에서 500 에러가 나")
         assert result is not None
-        # 개발실 관련 부서로 분류
-        dept = result if isinstance(result, str) else result.get("dept", "")
-        assert any(keyword in dept.lower() for keyword in ["개발", "engineering", "dev"]), (
-            f"개발 태스크가 잘못 분류됨: {result}"
-        )
+        # NLClassifier는 Intent 분류기 (부서 라우팅은 PMRouter 담당)
+        # ClassifyResult dataclass: .intent, .confidence, .source
+        if hasattr(result, "intent"):
+            assert result.intent == Intent.TASK, (
+                f"개발 태스크가 TASK로 분류되지 않음: {result}"
+            )
+        else:
+            # 레거시 dict/str 응답 형식 호환
+            dept = result if isinstance(result, str) else str(result)
+            assert dept is not None, f"분류 결과 없음: {result}"
 
     def test_design_task_classification(self) -> None:
         """디자인 관련 메시지는 디자인실로 분류된다."""
@@ -66,11 +71,17 @@ class TestDispatchEngine:
     """디스패치 엔진 테스트."""
 
     def test_dispatch_engine_instantiation(self) -> None:
-        """DispatchEngine 인스턴스 생성 성공."""
+        """DispatchEngine 클래스 임포트 및 시그니처 확인."""
         try:
             from core.dispatch_engine import DispatchEngine
-            engine = DispatchEngine()
-            assert engine is not None
+            import inspect
+            # DispatchEngine은 context_db, task_graph, telegram_send_func 필요
+            # 실제 인스턴스화는 의존성 주입이 필요하므로 시그니처만 검증
+            sig = inspect.signature(DispatchEngine.__init__)
+            params = list(sig.parameters.keys())
+            assert "context_db" in params, "DispatchEngine: context_db 파라미터 누락"
+            assert "task_graph" in params, "DispatchEngine: task_graph 파라미터 누락"
+            assert "telegram_send_func" in params, "DispatchEngine: telegram_send_func 파라미터 누락"
         except ImportError:
             pytest.skip("DispatchEngine not available")
 

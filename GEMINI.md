@@ -137,13 +137,14 @@ Gemini CLI가 배정된 조직과 그 이유:
 - 한 파일을 수정하면 나머지 두 파일도 같은 내용으로 업데이트
 - CLAUDE.md가 가장 진보되어 있으므로 베이스로 사용
 
-### [2026-03-25] GitHub Actions CI/CD 운영 원칙
-- `.github/workflows/ci.yml` 은 Python 3.11 기준으로 `validate-config` 와 E2E 회귀(`tests/e2e/test_engine_compat_e2e.py`, `tests/e2e/test_pm_dispatch_e2e.py`)를 검증한다.
-- `.github/workflows/build-pypi.yml` 은 `python -m build` 와 `twine check dist/*` 로 배포 전 패키지 무결성을 확인한다.
-- `.github/workflows/build-docker.yml` 은 `docker buildx build --load` 로 push 없이 이미지 빌드만 단계적으로 검증한다.
-- GitHub Actions secret 이름은 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` 로 고정한다.
-- secret이 없는 fork PR 또는 외부 기여 상황에서는 live smoke step을 notice + skip 처리하고, offline-safe 테스트는 계속 실행한다.
-- `GEMINI_API_KEY` 는 CI 전용 secret이다. 로컬 Gemini CLI 운영은 계속 OAuth 기준으로 유지한다.
+### [2026-03-25] CI/CD 파이프라인 추가됨
+- `.github/workflows/e2e-test.yml` 은 `push` / `pull_request` / `workflow_dispatch` 기준 Python 3.11 + 3엔진 매트릭스(`claude-code`, `codex`, `gemini-cli`)로 `validate-config` 와 E2E 회귀(`tests/e2e/test_engine_compat_e2e.py`, `tests/e2e/test_pm_dispatch_e2e.py`)를 검증한다.
+- `.github/workflows/publish-pypi.yml` 은 `main` push + `v*` 태그 + 수동 실행 기준 `python -m build` → `twine check dist/*` → `twine upload --skip-existing dist/*` 순서로 PyPI 배포를 수행한다.
+- `.github/workflows/docker-build-push.yml` 은 `main` push + `v*` 태그 + 수동 실행 기준 `docker/build-push-action` 으로 `claude` / `codex` / `gemini` 이미지를 빌드·푸시한다.
+- GitHub Actions secret 이름은 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_OAUTH_CREDS`, `PYPI_API_TOKEN`, `DOCKER_USERNAME`, `DOCKER_PASSWORD` 로 고정한다.
+- secret이 없는 PR/수동 실행에서도 E2E는 notice + skip 방식으로 계속 진행하고, Gemini CI는 `GEMINI_OAUTH_CREDS` 를 `~/.gemini/oauth_creds.json` 으로 복원해 사용한다.
+- `e2e-test.yml` 을 branch protection required check로 묶어 `main` 배포 전 테스트를 강제한다.
+- 상세 운영 절차와 로컬 재현 명령은 `docs/CI_CD_GUIDE.md` 를 따른다.
 
 ### [2026-03-24] Gemini CLI OAuth 환경 주의사항
 - **GEMINI_API_KEY 환경변수 설정 금지**: GeminiCLIRunner는 subprocess 실행 시 API Key 환경변수를 자동 제거한다. 혼재 시 OAuth 충돌 발생.
