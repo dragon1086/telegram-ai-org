@@ -1067,6 +1067,16 @@ class ContextDB:
                 return None
             d = dict(row)
             d["milestones"] = json.loads(d["milestones"])
+            # meta_json: JSON 문자열을 dict로 파싱 (API 일관성)
+            raw_meta = d.get("meta_json", "{}")
+            if isinstance(raw_meta, str):
+                try:
+                    d["meta_json"] = json.loads(raw_meta)
+                except (json.JSONDecodeError, TypeError):
+                    d["meta_json"] = {}
+            # org_id를 created_by의 alias로 제공
+            if "org_id" not in d:
+                d["org_id"] = d.get("created_by", "")
             return d
 
     async def get_active_goals(self, org_id: str | None = None) -> list[dict]:
@@ -1091,6 +1101,16 @@ class ContextDB:
             for r in rows:
                 d = dict(r)
                 d["milestones"] = json.loads(d.get("milestones") or "[]")
+                # meta_json: JSON 문자열을 dict로 파싱
+                raw_meta = d.get("meta_json", "{}")
+                if isinstance(raw_meta, str):
+                    try:
+                        d["meta_json"] = json.loads(raw_meta)
+                    except (json.JSONDecodeError, TypeError):
+                        d["meta_json"] = {}
+                # org_id를 created_by의 alias로 제공 (API 일관성)
+                if "org_id" not in d:
+                    d["org_id"] = d.get("created_by", "")
                 result.append(d)
             return result
 

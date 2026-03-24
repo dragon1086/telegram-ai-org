@@ -56,6 +56,53 @@ class OrgScheduler:
         self.scheduler = AsyncIOScheduler(timezone=KST)
         self._register_jobs()
 
+    def set_goal_tracker(self, goal_tracker) -> None:
+        """GoalTracker 동적 주입 — 초기화 이후에도 설정 가능."""
+        self._goal_tracker = goal_tracker
+
+    async def _register_retro_action_items(self, meeting_type: str) -> None:
+        """회의 후 실패/미완료 태스크를 GoalTracker에 자동 등록 (DB 직접 쿼리).
+
+        context_db에서 최근 2일 failed/pending 태스크를 부서별 집계 후
+        GoalTracker.start_goal()로 개선 목표를 생성한다.
+        """
+        if self._goal_tracker is None or self._context_db is None:
+            return
+        try:
+            import aiosqlite as _sq
+            async with _sq.connect(self._context_db.db_path) as _db:
+                _db.row_factory = _sq.Row
+                cur = await _db.execute(
+                    "SELECT assigned_dept, COUNT(*) as cnt FROM pm_tasks "
+                    "WHERE status IN ('failed','pending') "
+                    "AND created_at >= datetime('now','-2 days') "
+                    "GROUP BY assigned_dept ORDER BY cnt DESC LIMIT 5"
+                )
+                dept_rows = await cur.fetchall()
+
+            if not dept_rows:
+                return
+
+            summary_lines = [f"📋 *{meeting_type} 조치사항 자동 등록*"]
+            for row in dept_rows:
+                dept = row["assigned_dept"] or "unknown"
+                cnt = row["cnt"]
+                desc = (
+                    f"{meeting_type} 후 조치 — {dept} 부서 미완료/실패 태스크 {cnt}건 해결.\n"
+                    f"실패 원인 분석 후 재시도 또는 대안 방안 제시."
+                )
+                gid = await self._goal_tracker.start_goal(
+                    title=f"[{meeting_type}] {dept} 조치사항",
+                    description=desc,
+                    meta={"source": meeting_type, "dept": dept, "task_count": cnt},
+                )
+                summary_lines.append(f"  • {dept}: {cnt}건 → 목표 {gid} 등록")
+
+            await self._safe_send("\n".join(summary_lines))
+            logger.info(f"[OrgScheduler] {meeting_type} 조치사항 등록: {len(dept_rows)}건")
+        except Exception as e:
+            logger.warning(f"[OrgScheduler] _register_retro_action_items 실패 (무시): {e}")
+
     # ── 잡 등록 ──────────────────────────────────────────────────────────────
 
     def _register_jobs(self) -> None:
@@ -148,7 +195,7 @@ class OrgScheduler:
     async def broadcast_meeting_start(
         self,
         meeting_type: str,
-        topic: str,
+        topic: str = "",
         collect_timeout_sec: float = 120.0,
     ) -> list[dict]:
         """전 조직에 회의 참여 메시지를 브로드캐스트하고 응답을 수집.

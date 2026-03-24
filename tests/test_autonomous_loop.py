@@ -209,3 +209,113 @@ class TestDispatchOrgMapping:
         # 배분된 부서가 알려진 부서 목록에 있어야 함
         for dept in dispatched_depts:
             assert dept in KNOWN_DEPTS or dept, f"알 수 없는 부서: {dept}"
+
+
+# ── AutonomousLoop 신규 클래스 단위 테스트 ────────────────────────────────────
+
+
+class TestAutonomousLoopClass:
+    """core.autonomous_loop.AutonomousLoop 클래스 직접 테스트."""
+
+    @pytest.fixture
+    def mock_goal_tracker(self):
+        t = AsyncMock()
+        t.get_active_goals = AsyncMock(return_value=[])
+        t.evaluate_progress = AsyncMock(return_value=GoalStatus(
+            achieved=False, progress_summary="0/1", remaining_work="미완",
+            done_count=0, total_count=1, confidence=0.0,
+        ))
+        t.update_goal_status = AsyncMock(return_value={"id": "G-pm-001", "status": "achieved"})
+        t.replan = AsyncMock(return_value=[])
+        return t
+
+    @pytest.fixture
+    def al(self, mock_goal_tracker):
+        from core.autonomous_loop import AutonomousLoop
+        return AutonomousLoop(
+            goal_tracker=mock_goal_tracker,
+            idle_sleep_sec=0.02,
+            max_dispatch=2,
+            send_func=AsyncMock(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_initial_state_idle(self, al):
+        from core.autonomous_loop import LoopState
+        assert al.state == LoopState.IDLE
+
+    @pytest.mark.asyncio
+    async def test_no_goals_stays_idle(self, al, mock_goal_tracker):
+        mock_goal_tracker.get_active_goals.return_value = []
+        await al._tick()
+        from core.autonomous_loop import LoopState
+        assert al.state == LoopState.IDLE
+        mock_goal_tracker.evaluate_progress.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_achieved_goal_updated(self, al, mock_goal_tracker):
+        from core.goal_tracker import GoalStatus
+        mock_goal_tracker.get_active_goals.return_value = [
+            {"id": "G-pm-001", "title": "달성", "description": "...", "chat_id": 0}
+        ]
+        mock_goal_tracker.evaluate_progress.return_value = GoalStatus(
+            achieved=True, progress_summary="완료", remaining_work="",
+            done_count=1, total_count=1, confidence=1.0,
+        )
+        await al._tick()
+        mock_goal_tracker.update_goal_status.assert_called_once_with("G-pm-001", "achieved")
+
+    @pytest.mark.asyncio
+    async def test_not_achieved_calls_replan(self, al, mock_goal_tracker):
+        from core.goal_tracker import GoalStatus
+        mock_goal_tracker.get_active_goals.return_value = [
+            {"id": "G-pm-002", "title": "미달성", "description": "...", "chat_id": 99}
+        ]
+        mock_goal_tracker.evaluate_progress.return_value = GoalStatus(
+            achieved=False, progress_summary="0/2", remaining_work="남은일",
+            done_count=0, total_count=2, confidence=0.0,
+        )
+        await al._tick()
+        mock_goal_tracker.replan.assert_called_once_with(
+            goal_id="G-pm-002",
+            remaining_work="남은일",
+            chat_id=99,
+        )
+
+    @pytest.mark.asyncio
+    async def test_stop_terminates_run(self, al):
+        task = asyncio.create_task(al.run())
+        await asyncio.sleep(0.05)
+        al.stop()
+        await asyncio.wait_for(task, timeout=3.0)
+        assert not al._running
+
+    def test_infer_org_engineering(self):
+        from core.autonomous_loop import AutonomousLoop
+        assert AutonomousLoop.infer_org_for_task("버그 수정 및 API 구현") == "aiorg_engineering_bot"
+
+    def test_infer_org_ops(self):
+        from core.autonomous_loop import AutonomousLoop
+        assert AutonomousLoop.infer_org_for_task("배포 파이프라인 설정") == "aiorg_ops_bot"
+
+    def test_infer_org_none(self):
+        from core.autonomous_loop import AutonomousLoop
+        assert AutonomousLoop.infer_org_for_task("아무 키워드 없는 설명") is None
+
+
+class TestLoadLoopConfig:
+    """orchestration.yaml 설정 로드."""
+
+    def test_defaults_on_missing_file(self, tmp_path):
+        from core.autonomous_loop import load_loop_config
+        cfg = load_loop_config(str(tmp_path / "missing.yaml"))
+        assert cfg["idle_sleep_sec"] == 300
+        assert cfg["max_dispatch"] == 3
+
+    def test_reads_autonomous_loop_section(self, tmp_path):
+        from core.autonomous_loop import load_loop_config
+        yaml_path = tmp_path / "orchestration.yaml"
+        yaml_path.write_text("autonomous_loop:\n  idle_sleep_sec: 60\n  max_dispatch: 5\n")
+        cfg = load_loop_config(str(yaml_path))
+        assert cfg["idle_sleep_sec"] == 60
+        assert cfg["max_dispatch"] == 5

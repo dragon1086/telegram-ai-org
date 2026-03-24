@@ -90,16 +90,23 @@ class GoalTracker:
         self._goal_counter += 1
         return f"G-{self._org_id}-{self._goal_counter:03d}"
 
-    async def set_goal(self, description: str, chat_id: int) -> dict:
+    async def set_goal(
+        self,
+        description: str,
+        chat_id: int,
+        org_id: str | None = None,
+        title: str = "",
+    ) -> dict:
         """새 목표 설정 및 DB 저장."""
         await self._init_counter()
         goal_id = self._next_goal_id()
         goal = await self._db.create_goal(
             goal_id=goal_id,
             description=description,
-            created_by=self._org_id,
+            created_by=org_id or self._org_id,
             chat_id=chat_id,
             max_iterations=self._max_iterations,
+            title=title or description[:80],
         )
         logger.info(f"[GoalTracker] 목표 설정: {goal_id} — {description[:80]}")
         return goal
@@ -110,6 +117,7 @@ class GoalTracker:
         description: str,
         meta: dict | None = None,
         chat_id: int = 0,
+        org_id: str | None = None,
     ) -> str:
         """목표를 DB에 저장하고 자율 루프를 백그라운드 태스크로 시작.
 
@@ -154,13 +162,12 @@ class GoalTracker:
         """활성 목표 목록 조회.
 
         Args:
-            org_id: 필터링할 조직 ID. None이면 인스턴스 org_id 기준.
+            org_id: 필터링할 조직 ID. None이면 전체 반환.
 
         Returns:
             활성(status='active') 목표 dict 리스트.
         """
-        filter_org = org_id or self._org_id
-        return await self._db.get_active_goals(org_id=filter_org)
+        return await self._db.get_active_goals(org_id=org_id)
 
     async def update_goal_status(self, goal_id: str, status: str) -> dict | None:
         """목표 상태 업데이트.
