@@ -147,7 +147,7 @@ class RunnerFactory:
         """Create a runner for the given engine.
 
         Args:
-            engine: Engine name ('claude-code', 'codex', 'gemini')
+            engine: Engine name ('claude-code', 'codex', 'gemini', 'gemini-cli')
             **kwargs: Passed to runner constructor
 
         Returns:

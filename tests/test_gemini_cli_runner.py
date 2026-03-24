@@ -184,5 +184,5 @@ def test_runner_factory_creates_gemini_cli() -> None:
 
 
 def test_runner_factory_unknown_engine_error() -> None:
-    with pytest.raises(ValueError, match="gemini-cli"):
+    with pytest.raises(ValueError, match="Unknown engine"):
         RunnerFactory.create("unknown-engine-xyz")
