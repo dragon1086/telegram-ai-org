@@ -40,7 +40,8 @@ COPY tools/ ./tools/
 COPY skills/ ./skills/
 COPY bots/ ./bots/
 COPY telegram_ai_org/ ./telegram_ai_org/
-COPY cli.py main.py orchestration.yaml organizations.yaml workers.yaml ./
+COPY cli.py main.py orchestration.yaml organizations.yaml workers.yaml \
+     agent_hints.yaml improvement_thresholds.yaml ./
 
 # PEP 517 빌드 — dist/*.whl 생성
 RUN python -m build --wheel --outdir dist/
@@ -113,6 +114,8 @@ RUN pip install --no-cache-dir --no-deps /tmp/*.whl && rm /tmp/*.whl
 COPY --from=builder /build/orchestration.yaml /app/orchestration.yaml
 COPY --from=builder /build/organizations.yaml /app/organizations.yaml
 COPY --from=builder /build/workers.yaml /app/workers.yaml
+COPY --from=builder /build/agent_hints.yaml /app/agent_hints.yaml
+COPY --from=builder /build/improvement_thresholds.yaml /app/improvement_thresholds.yaml
 COPY --from=builder /build/bots /app/bots
 
 # ④ Node CLI 복사 (엔진별)
