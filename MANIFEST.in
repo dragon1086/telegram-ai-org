@@ -1,0 +1,25 @@
+# MANIFEST.in — sdist 포함 파일 목록
+# setuptools는 기본적으로 *.py 파일만 포함하므로
+# 추가 파일(YAML, markdown 등)을 명시적으로 선언한다.
+
+include pyproject.toml
+include README.md
+include CLAUDE.md
+include AGENTS.md
+include GEMINI.md
+include orchestration.yaml
+include workers.yaml
+include .env.example
+include LICENSE
+
+recursive-include bots *.yaml
+recursive-include core *.py *.yaml *.md
+recursive-include tools *.py *.yaml *.md
+recursive-include skills *.py *.yaml *.md
+recursive-include telegram_ai_org *.py
+
+prune .venv
+prune .worktrees
+prune dist
+prune __pycache__
+prune .git

@@ -102,19 +102,19 @@ bash scripts/start_all.sh
     "[COLLAB:머지/푸시/재기동 요청|맥락: 코드 수정 완료]"
   ```
 
-### [2026-03-16] 봇 재시작 전 패키지 sync 필수
-- **증상**: 재시작 후 `ModuleNotFoundError` 반복 크래시 → 봇 무응답
-- **원인**: `pyproject.toml`에 선언된 패키지도 venv에 자동 설치되지 않음
-- **체크리스트**:
+### [2026-03-25] 로컬 패키지 설치 — pip install -e . 사용 가능 (setuptools 전환 완료)
+- **빌드 백엔드**: hatchling → setuptools+wheel 전환 완료
+- **로컬 설치**: `pip install -e .` 이제 정상 작동
   ```bash
-  # ❌ pip install -e . 는 이 프로젝트에서 작동하지 않음 (hatchling 설정 미비)
-  .venv/bin/pip install aiosqlite -q  # 누락 패키지 개별 설치
-  bash scripts/start_all.sh
-  ```
+  # 로컬 개발 설치 (editable 모드)
+  .venv/bin/pip install -e .
 
-### [2026-03-17] rank-bm25 등 신규 패키지 설치
-- 이 프로젝트는 hatchling 설정 미비로 pip install -e . 작동 안 함
-- 신규 패키지는 직접 설치: `.venv/bin/pip install <package-name>`
+  # 개발 도구 포함 설치
+  .venv/bin/pip install -e ".[dev]"
+
+  # 봇 재시작 전 패키지 동기화
+  .venv/bin/pip install -e . && bash scripts/start_all.sh
+  ```
 
 ### [2026-03-22] 현재 시간 기준 작업 원칙 (전체 조직 공통)
 - **원칙**: 모든 봇은 태스크 시작 시 현재 날짜/시각을 확인하고, 항상 **현재 시각 기준**으로 조사·판단

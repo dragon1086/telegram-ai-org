@@ -106,20 +106,21 @@ bash scripts/start_all.sh
 - **글로벌 적용 위치**: bot-triage/SKILL.md Step 3d, pm_identity.py 봇 재기동 규칙 섹션, pm-task-dispatch/SKILL.md 안티패턴 항목
 - **새 조직 추가 시**: organizations.yaml에 추가만 하면 위 글로벌 규칙이 자동 적용됨 (per-org 중복 명시 불필요)
 
-### [2026-03-16] 봇 재시작 전 패키지 sync 필수
-- **증상**: 재시작 후 `ModuleNotFoundError` 반복 크래시 → 봇 무응답
-- **원인**: `pyproject.toml`에 선언된 패키지도 venv에 자동 설치되지 않음
-- **체크리스트**:
+### [2026-03-25] 로컬 패키지 설치 — pip install -e . 사용 가능 (setuptools 전환 완료)
+- **빌드 백엔드**: hatchling → setuptools+wheel 전환 완료 (`pyproject.toml` 기준)
+- **로컬 설치**: `pip install -e .` 이제 정상 작동
   ```bash
-  # 소스 수정 후 재시작 전 항상 실행
-  # ❌ pip install -e . 는 이 프로젝트에서 작동하지 않음 (hatchling 설정 미비)
-  .venv/bin/pip install aiosqlite -q  # 누락 패키지 개별 설치
-  bash scripts/start_all.sh
-  ```
+  # 로컬 개발 설치 (editable 모드)
+  .venv/bin/pip install -e .
 
-### [2026-03-17] rank-bm25 설치 시 pip install -e . 사용 불가
-- 이 프로젝트는 hatchling 설정 미비로 pip install -e . 작동 안 함
-- rank-bm25 등 신규 패키지는 직접 설치: .venv/bin/pip install rank-bm25
+  # 개발 도구 포함 설치
+  .venv/bin/pip install -e ".[dev]"
+
+  # 봇 재시작 전 패키지 동기화
+  .venv/bin/pip install -e . && bash scripts/start_all.sh
+  ```
+- **PyPI 배포**: `python -m build --wheel --sdist` → `twine upload dist/*`
+- **twine 검증**: `twine check dist/*` (PASS 확인됨)
 
 ### [2026-03-22] 현재 시간 기준 작업 원칙 (전체 조직 공통)
 - **원칙**: 모든 봇은 태스크 시작 시 현재 날짜/시각을 확인하고, 사용자가 과거 시점을 명시하지 않는 한 항상 **현재 시각 기준**으로 조사·판단한다.
