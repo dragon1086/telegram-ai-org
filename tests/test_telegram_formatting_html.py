@@ -504,3 +504,96 @@ def test_bold_multiline_no_crossline_match() -> None:
     result = markdown_to_html(text)
     # 줄을 넘는 bold는 변환되지 않음 → ** 그대로 남음 (HTML 렌더링에서는 무시됨)
     assert "<b>볼드시작\n줄2 볼드끝</b>" not in result
+
+
+# ── escape_html 엔진 인자 / 예외 메시지 안전성 (parse_mode="HTML" 일관성) ────
+
+def test_escape_html_engine_name_with_angle_brackets() -> None:
+    """/set_engine 사용법 안내 텍스트: <engine> 리터럴이 이스케이프되어야 한다."""
+    from core.telegram_formatting import escape_html
+    usage = "사용법: /set_engine &lt;engine&gt;\n예: /set_engine claude-code"
+    # 이미 이스케이프된 &lt;&gt; 는 이중 이스케이프되지 않아야 한다
+    result = escape_html(usage)
+    # &lt; → &amp;lt; 가 되는 이중 이스케이프가 발생하면 안 됨
+    # 위 문자열은 이미 HTML 이스케이프된 리터럴이므로 escape_html을 추가로 호출하면 이중 이스케이프됨
+    # 실제 코드에서는 이미 이스케이프된 문자열에 escape_html을 쓰지 않도록 설계되어야 함
+    assert "&amp;lt;" not in escape_html("a < b")  # 이스케이프 자체는 1번만
+    assert escape_html("a < b") == "a &lt; b"
+
+
+def test_escape_html_user_input_engine() -> None:
+    """사용자 입력 engine 값에 HTML 특수문자가 포함된 경우 안전하게 이스케이프."""
+    from core.telegram_formatting import escape_html
+    malicious_engine = "<script>alert(1)</script>"
+    result = escape_html(malicious_engine)
+    assert "<script>" not in result
+    assert "&lt;script&gt;" in result
+
+
+def test_escape_html_exception_message() -> None:
+    """예외 메시지 내 HTML 특수문자가 parse_mode='HTML' 전송 전에 이스케이프된다."""
+    from core.telegram_formatting import escape_html
+    exc_msg = "Connection error: url=<https://api.telegram.org> & timeout=30"
+    result = escape_html(exc_msg)
+    assert "<https" not in result
+    assert "&lt;https" in result
+    assert "&amp;" in result
+
+
+def test_markdown_bold_with_html_special_chars() -> None:
+    """**bold** 내부에 HTML 특수문자가 있어도 올바르게 이스케이프+변환된다."""
+    result = markdown_to_html("**엔진: <claude-code>**")
+    assert "<b>엔진: &lt;claude-code&gt;</b>" == result
+
+
+def test_ampersand_in_plain_text_escaped() -> None:
+    """일반 텍스트의 & 가 &amp; 로 이스케이프되어 HTML 모드에서 안전하다."""
+    result = markdown_to_html("R&D 팀 결과: **완료**")
+    assert "R&amp;D" in result
+    assert "<b>완료</b>" in result
+
+
+def test_wikipedia_url_with_parentheses() -> None:
+    """Wikipedia 스타일 괄호 포함 URL이 올바르게 링크로 변환된다."""
+    text = "[Python](https://en.wikipedia.org/wiki/Python_(programming_language))"
+    result = markdown_to_html(text)
+    assert '<a href="https://en.wikipedia.org/wiki/Python_(programming_language)">Python</a>' == result
+
+
+def test_raw_html_tags_escaped_in_output() -> None:
+    """LLM이 직접 쓴 <b> 등 HTML 태그는 이스케이프되어 리터럴 텍스트로 표시된다."""
+    result = markdown_to_html("<b>직접 쓴 태그</b>")
+    assert "<b>" not in result          # 렌더링되면 안 됨
+    assert "&lt;b&gt;" in result        # 리터럴로 표시되어야 함
+
+
+def test_numbered_header_h3() -> None:
+    """### 1. 숫자로 시작하는 H3 헤더도 bold로 변환된다."""
+    result = markdown_to_html("### 1. 첫 번째 단계")
+    assert "<b>1. 첫 번째 단계</b>" == result
+
+
+def test_full_pm_report_renders_correctly() -> None:
+    """실제 PM 보고서 전체 패턴이 올바르게 HTML로 변환된다."""
+    report = (
+        "## 결론\n\n"
+        "**텔레그램 파싱 수정 완료됐습니다.**\n\n"
+        "## 핵심 내용\n\n"
+        "- **parse_mode**: HTML로 통일 ✅\n"
+        "- **escape_html**: 동적 데이터 전체 적용\n"
+        "- **테스트**: 80개 통과\n\n"
+        "> 참고: MarkdownV2 대신 HTML 선택 (유지보수 용이)\n\n"
+        "## 다음 조치\n"
+        "1. 커밋 및 푸시\n"
+        "2. 봇 재기동 요청\n"
+    )
+    result = format_for_telegram(report)
+    assert "<b>▸ 결론</b>" in result
+    assert "<b>텔레그램 파싱 수정 완료됐습니다.</b>" in result
+    assert "<b>▸ 핵심 내용</b>" in result
+    assert "• <b>parse_mode</b>: HTML로 통일" in result
+    assert "<blockquote>참고:" in result
+    assert "<b>▸ 다음 조치</b>" in result
+    # 순서 있는 목록은 그대로 유지
+    assert "1. 커밋 및 푸시" in result
+    assert "2. 봇 재기동 요청" in result

@@ -2795,7 +2795,8 @@ class TelegramRelay:
         args = (update.message.text or "").split()
         if len(args) < 2:
             await update.message.reply_text(
-                "사용법: /set_engine <engine>\n예: /set_engine claude-code"
+                "사용법: /set_engine &lt;engine&gt;\n예: /set_engine claude-code",
+                parse_mode="HTML",
             )
             return
 
@@ -2803,7 +2804,8 @@ class TelegramRelay:
         _VALID_ENGINES = {"claude-code", "codex"}
         if engine not in _VALID_ENGINES:
             await update.message.reply_text(
-                f"❌ 유효하지 않은 엔진: {engine}\n사용 가능: {', '.join(sorted(_VALID_ENGINES))}"
+                f"❌ 유효하지 않은 엔진: {escape_html(engine)}\n사용 가능: {', '.join(sorted(_VALID_ENGINES))}",
+                parse_mode="HTML",
             )
             return
 
@@ -2852,7 +2854,10 @@ class TelegramRelay:
             errors.append("organizations")
 
         if not updated and not errors:
-            await update.message.reply_text(f"ℹ️ 모든 봇이 이미 {engine} 엔진을 사용 중입니다.")
+            await update.message.reply_text(
+                f"ℹ️ 모든 봇이 이미 {escape_html(engine)} 엔진을 사용 중입니다.",
+                parse_mode="HTML",
+            )
             return
 
         msg = f"⚙️ 엔진 변경: {engine}\n"
@@ -3066,7 +3071,7 @@ class TelegramRelay:
             )
         except Exception as e:
             logger.error(f"봇 등록 실패: {e}")
-            await processing_msg.edit_text(f"❌ 등록 실패: {e}")
+            await processing_msg.edit_text(f"❌ 등록 실패: {escape_html(str(e))}", parse_mode="HTML")
 
         return ConversationHandler.END
 
