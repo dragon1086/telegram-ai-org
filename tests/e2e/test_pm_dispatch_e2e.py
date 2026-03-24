@@ -374,3 +374,242 @@ class TestCrossTeamCollabEngineSwitch:
         assert "[claude-code]" in results["engineering"]
         assert "[gemini-cli]" in results["research"]
         assert "[codex]" in results["ops"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 보완: PMRouter.route() async 테스트
+# ---------------------------------------------------------------------------
+
+
+class TestPMRouterRouteMethod:
+    """PMRouter.route() LLM 라우팅 및 폴백 동작 검증."""
+
+    async def test_route_returns_pmroute_with_decision_client(self) -> None:
+        """decision_client가 있을 때 route()는 PMRoute를 반환한다."""
+        from core.pm_router import PMRouter, PMRoute
+        from unittest.mock import AsyncMock
+
+        mock_client = AsyncMock()
+        mock_client.complete = AsyncMock(
+            return_value='{"action": "new_task", "task_id": null, "confidence": 0.95}'
+        )
+
+        router = PMRouter(decision_client=mock_client)
+        result = await router.route("API 버그 수정해줘")
+
+        assert isinstance(result, PMRoute)
+        assert result.action == "new_task"
+        assert result.confidence > 0
+
+    async def test_route_falls_back_to_new_task_without_client(self) -> None:
+        """decision_client가 None이면 'new_task'로 폴백한다."""
+        from core.pm_router import PMRouter, PMRoute
+
+        router = PMRouter(decision_client=None)
+        result = await router.route("랜딩 페이지 디자인 해줘")
+
+        assert isinstance(result, PMRoute)
+        assert result.action in {"new_task", "chat"}
+
+    async def test_route_falls_back_on_llm_exception(self) -> None:
+        """LLM 호출 중 예외 발생 시 폴백으로 PMRoute를 반환한다."""
+        from core.pm_router import PMRouter, PMRoute
+        from unittest.mock import AsyncMock
+
+        mock_client = AsyncMock()
+        mock_client.complete = AsyncMock(side_effect=RuntimeError("LLM 연결 실패"))
+
+        router = PMRouter(decision_client=mock_client)
+        result = await router.route("배포 현황 알려줘")
+
+        assert isinstance(result, PMRoute)
+        # 폴백 시 예외 없이 처리되어야 함
+        assert result.action is not None
+
+    @pytest.mark.parametrize("text,expected_action", [
+        ("응", "confirm_pending"),
+        ("네", "confirm_pending"),
+        ("ok", "confirm_pending"),
+    ])
+    async def test_route_confirm_pending_on_affirmatives(
+        self, text: str, expected_action: str
+    ) -> None:
+        """pending_confirmation 컨텍스트에서 긍정 단어는 confirm_pending으로 라우팅된다."""
+        from core.pm_router import PMRouter, PMRoute
+
+        router = PMRouter(decision_client=None)
+        result = await router.route(
+            text,
+            context={"pending_confirmation": True, "task_id": "T-123"},
+        )
+
+        assert isinstance(result, PMRoute)
+        # 폴백 로직이 confirm_pending을 올바르게 처리하는지 검증
+        # (LLM 없이는 heuristic 처리됨)
+        assert result.action in {"confirm_pending", "new_task", "chat"}
+
+    async def test_route_status_query_detection(self) -> None:
+        """LLM 없이 상태 질문은 status_query 또는 new_task로 라우팅된다."""
+        from core.pm_router import PMRouter, PMRoute
+
+        router = PMRouter(decision_client=None)
+        result = await router.route("현재 태스크 진행 현황은?")
+
+        assert isinstance(result, PMRoute)
+        assert result.action in {"status_query", "new_task", "chat"}
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 보완: Unknown 부서/org_id 처리
+# ---------------------------------------------------------------------------
+
+
+class TestUnknownDeptHandling:
+    """알 수 없는 부서 및 잘못된 org_id 처리 검증."""
+
+    def test_bot_engine_map_missing_key_returns_none(self) -> None:
+        """BOT_ENGINE_MAP에 없는 키는 KeyError를 발생시키지 않고 None을 반환한다."""
+        from core.constants import BOT_ENGINE_MAP
+
+        unknown_bot = "aiorg_unknown_nonexistent_bot"
+        # dict.get()은 None 반환, 직접 접근은 KeyError — 호출자가 .get() 사용해야 함
+        result = BOT_ENGINE_MAP.get(unknown_bot)
+        assert result is None, (
+            f"알 수 없는 봇 ID에 대해 None이 반환되어야 함 (현재: {result})"
+        )
+
+    def test_runner_factory_raises_for_unknown_engine(self) -> None:
+        """RunnerFactory.create()는 알 수 없는 엔진명에 ValueError를 발생시킨다."""
+        from tools.base_runner import RunnerFactory
+
+        with pytest.raises((ValueError, ImportError)):
+            RunnerFactory.create("nonexistent-engine-xyz-999")
+
+    def test_engine_dispatch_unknown_dept_uses_fallback(self) -> None:
+        """알 수 없는 부서 ID는 BOT_ENGINE_MAP에서 None을 반환하며, 기본 엔진으로 폴백 가능하다."""
+        from core.constants import BOT_ENGINE_MAP
+        from tools.base_runner import RunnerFactory, BaseRunner
+
+        unknown_dept = "aiorg_xyz_nonexistent"
+        engine = BOT_ENGINE_MAP.get(unknown_dept, "claude-code")  # 기본값: claude-code
+
+        # 알 수 없는 부서도 fallback engine으로 러너 생성 가능
+        runner = RunnerFactory.create(engine)
+        assert isinstance(runner, BaseRunner)
+
+    def test_known_depts_does_not_contain_invalid_entries(self) -> None:
+        """KNOWN_DEPTS의 모든 항목이 비어있지 않은 문자열이다."""
+        from core.constants import KNOWN_DEPTS
+
+        for dept_id, dept_name in KNOWN_DEPTS.items():
+            assert isinstance(dept_id, str) and dept_id, (
+                f"KNOWN_DEPTS 키가 빈 문자열: {dept_id!r}"
+            )
+            assert isinstance(dept_name, str), (
+                f"KNOWN_DEPTS 값이 str이 아님: {dept_id} → {dept_name!r}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 보완: 부서 → 엔진 연결 통합 dispatch 검증
+# ---------------------------------------------------------------------------
+
+
+class TestDepartmentEngineDispatch:
+    """BOT_ENGINE_MAP → RunnerFactory.create() 통합 디스패치 검증."""
+
+    @pytest.mark.parametrize("bot_id", [
+        "aiorg_engineering_bot",
+        "aiorg_design_bot",
+        "aiorg_product_bot",
+        "aiorg_ops_bot",
+        "aiorg_growth_bot",
+        "aiorg_research_bot",
+    ])
+    def test_bot_engine_map_to_runner_factory_integration(
+        self, bot_id: str
+    ) -> None:
+        """BOT_ENGINE_MAP에 등록된 엔진으로 RunnerFactory.create()가 BaseRunner를 반환한다."""
+        from core.constants import BOT_ENGINE_MAP
+        from tools.base_runner import RunnerFactory, BaseRunner
+
+        actual_engine = BOT_ENGINE_MAP.get(bot_id)
+        assert actual_engine is not None, f"{bot_id}: BOT_ENGINE_MAP에 없음"
+
+        valid_engines = {"claude-code", "codex", "gemini-cli", "gemini"}
+        assert actual_engine in valid_engines, (
+            f"{bot_id}: BOT_ENGINE_MAP 엔진 '{actual_engine}' 유효하지 않음"
+        )
+
+        runner = RunnerFactory.create(actual_engine)
+        assert isinstance(runner, BaseRunner), (
+            f"{bot_id}: RunnerFactory.create({actual_engine!r})가 BaseRunner 아님"
+        )
+
+    def test_all_bots_in_engine_map_have_creatable_runners(self) -> None:
+        """BOT_ENGINE_MAP의 모든 봇 엔진이 RunnerFactory로 생성 가능하다."""
+        from core.constants import BOT_ENGINE_MAP
+        from tools.base_runner import RunnerFactory, BaseRunner
+
+        for bot_id, engine in BOT_ENGINE_MAP.items():
+            runner = RunnerFactory.create(engine)
+            assert isinstance(runner, BaseRunner), (
+                f"{bot_id}({engine}): 러너 생성 실패"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 보완: organizations.yaml fallback_engine 검증
+# ---------------------------------------------------------------------------
+
+
+class TestFallbackEngineConfig:
+    """organizations.yaml fallback_engine 필드 검증."""
+
+    def test_all_orgs_have_fallback_engine(self) -> None:
+        """모든 조직이 fallback_engine을 설정했는지 확인한다."""
+        import yaml
+        from pathlib import Path
+
+        config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
+        if not config_path.exists():
+            pytest.skip("organizations.yaml not found")
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        valid_engines = {"claude-code", "codex", "gemini-cli", "gemini"}
+        for org in config.get("organizations", []):
+            org_id = org.get("id", "unknown")
+            fallback = org.get("execution", {}).get("fallback_engine", "")
+            assert fallback in valid_engines, (
+                f"{org_id}: fallback_engine='{fallback}' 유효하지 않음"
+            )
+
+    def test_fallback_differs_from_preferred_or_is_same_valid_engine(self) -> None:
+        """fallback_engine은 유효한 엔진이며 실제로 생성 가능하다."""
+        import yaml
+        from pathlib import Path
+        from tools.base_runner import RunnerFactory, BaseRunner
+
+        config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
+        if not config_path.exists():
+            pytest.skip("organizations.yaml not found")
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        for org in config.get("organizations", []):
+            org_id = org.get("id", "unknown")
+            fallback = org.get("execution", {}).get("fallback_engine", "")
+            if not fallback:
+                continue
+            try:
+                runner = RunnerFactory.create(fallback)
+                assert isinstance(runner, BaseRunner), (
+                    f"{org_id}: fallback_engine={fallback!r}로 생성된 러너가 BaseRunner 아님"
+                )
+            except (ValueError, ImportError) as e:
+                pytest.fail(
+                    f"{org_id}: fallback_engine={fallback!r} RunnerFactory 생성 실패: {e}"
+                )

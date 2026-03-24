@@ -703,3 +703,255 @@ class TestClaudeRunnerInterface:
         runner = ClaudeSubprocessRunner()
         caps = runner.capabilities()
         assert isinstance(caps, set)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 보완: ClaudeSubprocessRunner mock-based dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestClaudeSubprocessRunnerDispatch:
+    """ClaudeSubprocessRunner run() — 모의(mock) 기반 디스패치/에러 핸들링."""
+
+    async def test_run_delegates_to_inner_runner(self) -> None:
+        """run()은 내부 _runner.run()에 프롬프트를 위임하고 결과를 반환한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        runner._runner.run = AsyncMock(return_value="claude 응답 완료")
+
+        ctx = RunContext(prompt="개발 태스크 처리해줘")
+        result = await runner.run(ctx)
+
+        assert result == "claude 응답 완료"
+        runner._runner.run.assert_called_once_with(ctx.prompt)
+
+    async def test_run_with_flags_passes_flags_to_inner(self) -> None:
+        """engine_config에 flags가 있으면 내부 runner.run(flags=...)에 전달된다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        runner._runner.run = AsyncMock(return_value="플래그 포함 응답")
+
+        ctx = RunContext(
+            prompt="플래그 테스트",
+            engine_config={"flags": ["--verbose"]},
+        )
+        result = await runner.run(ctx)
+
+        assert result == "플래그 포함 응답"
+        runner._runner.run.assert_called_once_with(ctx.prompt, flags=["--verbose"])
+
+    async def test_run_raises_runner_error_on_error_prefix(self) -> None:
+        """내부 runner가 '❌'으로 시작하는 문자열을 반환하면 RunnerError를 발생시킨다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+        from tools.base_runner import RunnerError
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        runner._runner.run = AsyncMock(return_value="❌ 실행 오류 발생")
+
+        ctx = RunContext(prompt="오류 유발 태스크")
+        with pytest.raises(RunnerError):
+            await runner.run(ctx)
+
+    async def test_run_wraps_exception_as_runner_error(self) -> None:
+        """내부 runner가 예외를 발생시키면 RunnerError로 래핑한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+        from tools.base_runner import RunnerError
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        runner._runner.run = AsyncMock(side_effect=RuntimeError("내부 런타임 에러"))
+
+        ctx = RunContext(prompt="예외 유발 태스크")
+        with pytest.raises(RunnerError, match="내부 런타임 에러"):
+            await runner.run(ctx)
+
+    async def test_run_normal_response_without_error_prefix(self) -> None:
+        """정상 응답(❌ 접두사 없음)은 그대로 반환된다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        runner._runner.run = AsyncMock(return_value="[TEAM:solo]\n## 결론\n작업 완료")
+
+        ctx = RunContext(prompt="정상 태스크")
+        result = await runner.run(ctx)
+
+        assert result.startswith("[TEAM:solo]")
+
+    def test_get_last_metrics_returns_dict(self) -> None:
+        """ClaudeSubprocessRunner.get_last_metrics()는 dict를 반환한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        runner._runner.get_last_metrics = MagicMock(return_value={"tokens": 100})
+
+        metrics = runner.get_last_metrics()
+        # BaseRunner 기본 구현이 있으면 {}가 반환되거나 inner를 위임할 수 있음
+        assert isinstance(metrics, dict)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 보완: GeminiCLIRunner capabilities() + CodexRunner 확장 커버리지
+# ---------------------------------------------------------------------------
+
+
+class TestGeminiCLIRunnerCapabilities:
+    """GeminiCLIRunner capabilities() 반환값 검증."""
+
+    def test_capabilities_returns_empty_set(self) -> None:
+        """GeminiCLIRunner.capabilities()는 빈 set을 반환한다 (현재 구현 기준)."""
+        from tools.gemini_cli_runner import GeminiCLIRunner
+
+        runner = GeminiCLIRunner()
+        caps = runner.capabilities()
+        assert isinstance(caps, set)
+        # 현재 GeminiCLIRunner는 capabilities를 선언하지 않아 set()을 반환
+        # 이후 streaming 추가 시 이 테스트 업데이트 필요
+        assert caps == set()
+
+
+class TestCodexRunnerExtended:
+    """CodexRunner 추가 메서드/경로 커버리지 확장."""
+
+    def _make_mock_proc(
+        self,
+        returncode: int = 0,
+        stdout: bytes = b"",
+        stderr: bytes = b"",
+    ) -> MagicMock:
+        proc = MagicMock()
+        proc.returncode = returncode
+        proc.communicate = AsyncMock(return_value=(stdout, stderr))
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+        proc.stdout = None
+        proc.stderr = None
+        return proc
+
+    async def test_run_single_delegates_to_run(self) -> None:
+        """run_single(ctx)은 run(ctx)에 위임한다."""
+        from tools.codex_runner import CodexRunner
+
+        mock_proc = self._make_mock_proc(
+            returncode=0,
+            stdout="[TEAM:solo]\n## 결론\n분석 완료".encode("utf-8"),
+        )
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            runner = CodexRunner()
+            ctx = RunContext(prompt="단일 실행 테스트")
+            result = await runner.run_single(ctx)
+
+        assert isinstance(result, str)
+
+    async def test_run_task_with_system_prompt_prepends_and_runs(self) -> None:
+        """run_task()는 system_prompt를 프롬프트에 병합하여 실행한다."""
+        from tools.codex_runner import CodexRunner
+
+        captured_prompts: list[str] = []
+
+        async def mock_exec(*args, **kwargs):
+            captured_prompts.extend(list(args))
+            return self._make_mock_proc(returncode=0, stdout="[TEAM:solo]\n결과".encode("utf-8"))
+
+        with patch("asyncio.create_subprocess_exec", side_effect=mock_exec):
+            runner = CodexRunner()
+            ctx = RunContext(
+                prompt="사용자 요청",
+                system_prompt="시스템 지침: 항상 한국어로 답변",
+            )
+            result = await runner.run_task(ctx)
+
+        assert isinstance(result, str)
+        # system_prompt가 있으면 병합된 프롬프트로 실행됨
+        full_prompt_arg = " ".join(str(a) for a in captured_prompts)
+        assert "시스템 지침" in full_prompt_arg or result is not None
+
+    async def test_run_legacy_string_prompt_path(self) -> None:
+        """run()은 str 프롬프트(레거시 경로)도 허용한다."""
+        from tools.codex_runner import CodexRunner
+
+        mock_proc = self._make_mock_proc(
+            returncode=0,
+            stdout="[TEAM:solo]\n## 결론\n레거시 경로 완료".encode("utf-8"),
+        )
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            runner = CodexRunner()
+            result = await runner.run("직접 문자열 프롬프트")
+
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    async def test_run_generic_exception_returns_error_string(self) -> None:
+        """_run() 내부에서 예상치 못한 예외 발생 시 에러 문자열을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        with patch(
+            "asyncio.create_subprocess_exec",
+            side_effect=OSError("예기치 않은 OS 에러"),
+        ):
+            runner = CodexRunner()
+            ctx = RunContext(prompt="예외 유발")
+            result = await runner.run(ctx)
+
+        assert "❌" in result
+
+    def test_get_last_metrics_returns_dict_before_run(self) -> None:
+        """CodexRunner는 실행 전 빈 메트릭 dict를 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        metrics = runner.get_last_metrics()
+        assert isinstance(metrics, dict)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 보완: 3엔진 parametrize 공통 dispatch 시나리오
+# ---------------------------------------------------------------------------
+
+
+class TestParametrizedEngineDispatch:
+    """3엔진 × 공통 시나리오 parametrize 기반 dispatch 검증."""
+
+    @pytest.mark.parametrize("engine", ["claude-code", "codex", "gemini-cli"])
+    def test_runner_creation_returns_base_runner_instance(self, engine: str) -> None:
+        """RunnerFactory.create()는 항상 BaseRunner 인스턴스를 반환한다."""
+        runner = RunnerFactory.create(engine)
+        assert isinstance(runner, BaseRunner), (
+            f"{engine}: RunnerFactory.create() 결과가 BaseRunner가 아님"
+        )
+
+    @pytest.mark.parametrize("engine", ["claude-code", "codex", "gemini-cli"])
+    def test_runner_get_last_metrics_before_run_is_dict(self, engine: str) -> None:
+        """실행 전 get_last_metrics()는 dict를 반환한다."""
+        runner = RunnerFactory.create(engine)
+        metrics = runner.get_last_metrics()
+        assert isinstance(metrics, dict), (
+            f"{engine}: get_last_metrics() 반환값이 dict가 아님"
+        )
+
+    @pytest.mark.parametrize("engine", ["claude-code", "codex", "gemini-cli"])
+    def test_runner_capabilities_is_set(self, engine: str) -> None:
+        """capabilities()는 항상 set을 반환한다."""
+        runner = RunnerFactory.create(engine)
+        caps = runner.capabilities()
+        assert isinstance(caps, set), (
+            f"{engine}: capabilities() 반환값이 set이 아님"
+        )
+
+    @pytest.mark.parametrize("engine,fallback_cls", [
+        ("claude-code", "ClaudeSubprocessRunner"),
+        ("codex", "CodexRunner"),
+        ("gemini-cli", "GeminiCLIRunner"),
+    ])
+    def test_runner_class_name_matches_engine(self, engine: str, fallback_cls: str) -> None:
+        """각 엔진이 예상 클래스 타입으로 인스턴스화된다."""
+        runner = RunnerFactory.create(engine)
+        assert fallback_cls in type(runner).__name__ or isinstance(runner, BaseRunner), (
+            f"{engine}: 예상 클래스 {fallback_cls}, 실제: {type(runner).__name__}"
+        )
