@@ -52,7 +52,7 @@ class GeminiCLIRunner(BaseRunner):
     def __init__(self, **kwargs: Any) -> None:
         self.cli_path = GEMINI_CLI
         self.timeout = DEFAULT_TIMEOUT
-        self._last_metrics: dict = {}
+        self._last_metrics: dict[str, int | str] = {}
 
     async def run(self, ctx: RunContext) -> str:
         """프롬프트를 실행하고 결과 텍스트를 반환한다."""
