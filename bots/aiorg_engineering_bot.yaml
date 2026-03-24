@@ -3,9 +3,9 @@ organization_ref: aiorg_engineering_bot
 username: aiorg_engineering_bot
 org_id: aiorg_engineering_bot
 token_env: BOT_TOKEN_AIORG_ENGINEERING_BOT
-# engine note: claude-code — 복잡한 코드 아키텍처, 멀티스텝 디버깅, 테스트 작성에 최적
+# claude-code: 복잡한 코드 아키텍처, 멀티스텝 디버깅, 테스트 작성에 최적
 chat_id: -5203707291
-engine: codex
+engine: claude-code
 dept_name: 개발실
 role: 개발/코딩/API 구현/버그 수정
 instruction: 다음 요청에 대해 기술적 관점에서 분석하고 코드 구현 계획 또는 구현을 수행하세요
