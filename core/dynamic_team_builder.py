@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -52,19 +53,38 @@ Available agent names: executor, debugger, architect, analyst, scientist, writer
 document-specialist, code-reviewer, security-reviewer, quality-reviewer,
 test-engineer, verifier, qa-tester, planner, explore, designer, build-fixer, critic.
 
-Respond ONLY with valid JSON in this exact format:
-{
-  "agents": [{"name": "executor", "count": 2}, {"name": "analyst", "count": 1}],
-  "execution_mode": "structured_team",
-  "engine": "claude-code",
-  "reasoning": "brief reason"
-}
+CRITICAL: You MUST respond with ONLY a single JSON object. No markdown, no explanation, no prose.
+Do NOT execute or answer the task — only decide the team composition.
+
+Output format (nothing else):
+{"agents": [{"name": "executor", "count": 2}, {"name": "analyst", "count": 1}], "execution_mode": "structured_team", "engine": "claude-code", "reasoning": "brief reason"}
 
 Rules:
 - Use at most 3 distinct agent types.
 - Each count must be 1, 2, or 3.
 - agent names must be from the available list above.
+- NEVER answer or summarize the task. ONLY output JSON.
 """
+
+
+def _extract_json_from_response(text: str) -> dict:
+    """LLM 응답에서 JSON 객체를 추출한다.
+
+    순수 JSON, ```json 코드블록, 텍스트 속 {...} 모두 처리.
+    """
+    text = text.strip()
+    # 1) 순수 JSON
+    if text.startswith("{"):
+        return json.loads(text)
+    # 2) ```json ... ``` 코드블록
+    m = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
+    if m:
+        return json.loads(m.group(1))
+    # 3) 텍스트 안에 섞인 JSON 객체
+    m = re.search(r"\{[^{}]*\"agents\"[^{}]*\[.*?\].*?\}", text, re.DOTALL)
+    if m:
+        return json.loads(m.group(0))
+    raise ValueError(f"No JSON found in LLM response: {text[:200]}")
 
 
 def _build_team_format(agents_spec: list[dict]) -> str:
@@ -167,7 +187,6 @@ class DynamicTeamBuilder:
                 guidance=guidance,
             )
 
-        content = ""
         try:
             task_context = (
                 f"Task: {task}\n"
@@ -185,29 +204,8 @@ class DynamicTeamBuilder:
                     task_context,
                     system_prompt=_TEAM_SYSTEM_PROMPT,
                 )
-            if not content or not content.strip():
-                raise ValueError("LLM returned empty response")
-            stripped = content.strip()
-            logger.debug("LLM team build raw response (first 500 chars): {}", stripped[:500])
-            # runner가 에러/빈 결과를 한국어로 반환하는 경우 거부
-            if stripped.startswith("ERROR:") or stripped == "(결과 없음)":
-                raise ValueError(f"LLM runner failed: {stripped[:200]}")
-            # LLM이 ```json ... ``` 으로 감싸서 반환하는 경우 처리
-            import re as _re
-            if stripped.startswith("```"):
-                m = _re.search(r"```(?:json)?\s*\n?(.*?)```", stripped, _re.DOTALL)
-                if m:
-                    stripped = m.group(1).strip()
-            # JSON 직접 파싱 시도 → 실패 시 응답 내부에서 JSON 객체 추출
-            try:
-                data = json.loads(stripped)
-            except json.JSONDecodeError:
-                # 응답에 자연어 텍스트 + JSON이 섞인 경우 { ... } 추출
-                m = _re.search(r"\{[\s\S]*\}", stripped)
-                if m:
-                    data = json.loads(m.group(0))
-                else:
-                    raise ValueError(f"No JSON found in LLM response: {stripped[:200]}")
+            logger.debug("LLM team build raw response (first 500 chars): {}", content[:500])
+            data = _extract_json_from_response(content)
             return self._parse_llm_response(
                 data,
                 preferred_agents=preferred_agents,
@@ -217,7 +215,7 @@ class DynamicTeamBuilder:
             )
 
         except Exception as exc:  # noqa: BLE001
-            logger.warning("LLM team build failed ({}), using fallback. raw={}", exc, content[:300])
+            logger.warning("LLM team build failed ({}), using fallback", exc)
             return self._fallback_team(
                 task,
                 role=role,
