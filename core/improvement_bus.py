@@ -58,6 +58,7 @@ class ImprovementBus:
 
     def __init__(self, dry_run: bool = False) -> None:
         self.dry_run = dry_run
+        self.pending_notifications: list[str] = []
 
     # ------------------------------------------------------------------
     # 신호 수집
@@ -250,20 +251,69 @@ class ImprovementBus:
         if self.dry_run:
             return f"[dry_run] {label}"
 
-        # priority >= 8이고 code 타겟이면 자동 수정 시도
+        # priority >= 8이고 code 타겟이면 승인 게이트로 전달
         if signal.priority >= 8 and signal.target.startswith("code:"):
-            from core.self_code_improver import SelfCodeImprover
-            target_file = signal.target.replace("code:", "")
+            import dataclasses
+            from core.code_improvement_approval_store import CodeImprovementApprovalStore
+
+            store = CodeImprovementApprovalStore()
+            approval_id = store.enqueue(dataclasses.asdict(signal))
+            msg = self._format_approval_notification(signal, approval_id)
+            self.pending_notifications.append(msg)
+            return f"[pending_approval] {label} approval_id={approval_id}"
+
+        return label
+
+    def _format_approval_notification(self, signal: ImprovementSignal, approval_id: str) -> str:
+        """승인 요청 알림 메시지 생성."""
+        target_file = signal.target.replace("code:", "")
+        return (
+            f"🔧 *코드 자동 수정 승인 요청*\n"
+            f"대상: `{target_file}`\n"
+            f"우선순위: {signal.priority}/10\n"
+            f"내용: {signal.suggested_action}\n"
+            f"승인 ID: `{approval_id}`\n\n"
+            f"승인: `approve_code_fix {approval_id}`\n"
+            f"거절: `reject_code_fix {approval_id}`\n"
+            f"⏰ 24시간 내 미응답 시 자동 만료됩니다."
+        )
+
+    def process_approved_signals(self) -> list[str]:
+        """승인된 신호에 대해 SelfCodeImprover.fix() 실행."""
+        from core.code_improvement_approval_store import CodeImprovementApprovalStore
+        from core.self_code_improver import SelfCodeImprover
+
+        store = CodeImprovementApprovalStore()
+        approved = store.list_approved()
+        results: list[str] = []
+
+        for item in approved:
+            sig = item["signal"]
+            target_file = sig.get("target", "").replace("code:", "")
             improver = SelfCodeImprover()
             result = improver.fix(
                 target=target_file,
-                error_summary=signal.suggested_action,
+                error_summary=sig.get("suggested_action", ""),
                 related_files=[target_file],
             )
+            store.mark_executed(item["approval_id"])
             if result and result.success:
-                return f"[auto_fixed] {label} branch={result.branch}"
+                results.append(f"[executed] {target_file} branch={result.branch}")
+            else:
+                results.append(f"[executed_failed] {target_file}")
+        return results
 
-        return label
+    def expire_pending_signals(self, hours: int = 24) -> list[dict]:
+        """24h 초과 pending 항목 만료 처리."""
+        from core.code_improvement_approval_store import CodeImprovementApprovalStore
+
+        store = CodeImprovementApprovalStore()
+        expired = store.expire_old_pending(hours=hours)
+        for item in expired:
+            sig = item.get("signal", {})
+            target = sig.get("target", "unknown")
+            logger.info(f"[ImprovementBus] 만료: {target} (approval_id={item['approval_id']})")
+        return expired
 
     def _log_report(self, report: ImprovementReport) -> None:
         summary_lines = [
