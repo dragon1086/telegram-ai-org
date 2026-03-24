@@ -1,0 +1,95 @@
+# =============================================================================
+# .dockerignore — Docker 빌드 컨텍스트 제외 목록
+# =============================================================================
+
+# ─── 보안: 절대 포함하지 말 것 ────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+*.p12
+**/.netrc
+**/.npmrc
+**/.pypirc
+
+# ─── Git ──────────────────────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+.worktrees/
+
+# ─── Python 캐시/빌드 결과물 ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+*.whl
+
+# ─── 테스트 및 개발 도구 ──────────────────────────────────────────────────────
+tests/
+evals/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.test.py
+**/*_test.py
+
+# ─── IDE / 에디터 ─────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── 로컬 데이터 (런타임 생성) ────────────────────────────────────────────────
+logs/
+data/
+reports/
+tasks/
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.pid
+
+# ─── 문서 ─────────────────────────────────────────────────────────────────────
+docs/
+*.md
+!README.md
+
+# ─── CI/CD ────────────────────────────────────────────────────────────────────
+.github/
+.circleci/
+.travis.yml
+Jenkinsfile
+
+# ─── 스크립트 (컨테이너 내부 불필요) ─────────────────────────────────────────
+scripts/
+
+# ─── 기타 ─────────────────────────────────────────────────────────────────────
+simulation_mode.py
+migrations/
+*.yaml.bak
+*.yaml.orig
+improvement_thresholds.yaml
+agent_hints.yaml
+organizations.yaml
+PM봇_로그분석_보고서_*.md
