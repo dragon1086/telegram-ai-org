@@ -384,6 +384,84 @@ class TestRunLoop:
         assert g["stagnation_count"] == 0  # 리셋됨
 
 
+class TestTickIteration:
+    """tick_iteration() — iteration 카운터 증가 및 max_iterations 반환 검증."""
+
+    @pytest.mark.asyncio
+    async def test_tick_increments_db(self, db, tracker):
+        """tick_iteration() 호출 시 DB의 iteration 값이 1 증가한다."""
+        goal = await tracker.set_goal("tick 테스트", chat_id=1)
+        assert goal["iteration"] == 0
+
+        new_iter, max_iter = await tracker.tick_iteration(goal["id"])
+        assert new_iter == 1
+        assert max_iter == 3  # tracker fixture max_iterations=3
+
+        updated = await db.get_goal(goal["id"])
+        assert updated["iteration"] == 1
+
+    @pytest.mark.asyncio
+    async def test_tick_increments_sequentially(self, db, tracker):
+        """tick_iteration() 연속 호출 시 1씩 증가한다."""
+        goal = await tracker.set_goal("연속 tick 테스트", chat_id=1)
+        for expected in range(1, 4):
+            new_iter, _ = await tracker.tick_iteration(goal["id"])
+            assert new_iter == expected
+
+    @pytest.mark.asyncio
+    async def test_tick_exceeds_max_returns_over_limit(self, db, tracker):
+        """iteration이 max_iterations를 초과하면 new_iter > max_iter를 반환한다."""
+        goal = await tracker.set_goal("한계 초과 테스트", chat_id=1)
+        # max_iterations=3이므로 4번째 tick은 new_iter=4 > max_iter=3
+        for _ in range(3):
+            await tracker.tick_iteration(goal["id"])
+        new_iter, max_iter = await tracker.tick_iteration(goal["id"])
+        assert new_iter > max_iter
+
+    @pytest.mark.asyncio
+    async def test_tick_nonexistent_goal_returns_zeros(self, tracker):
+        """존재하지 않는 goal_id는 (0, max_iterations) 반환."""
+        new_iter, max_iter = await tracker.tick_iteration("G-nonexistent")
+        assert new_iter == 0
+
+    @pytest.mark.asyncio
+    async def test_run_loop_resume_starts_from_saved_iteration(self, db, tracker, send_fn):
+        """_run_loop_inner 재시작 시 DB에 저장된 iteration부터 재개한다."""
+        goal = await tracker.set_goal("재개 테스트", chat_id=123)
+        # iteration=2로 미리 설정 (이전 실행에서 2번 완료된 상태 시뮬레이션)
+        await db.update_goal(goal["id"], iteration=2)
+
+        iterations_seen: list[int] = []
+        original_update = db.update_goal
+
+        async def tracking_update(goal_id, **kwargs):
+            if "iteration" in kwargs:
+                iterations_seen.append(kwargs["iteration"])
+            return await original_update(goal_id, **kwargs)
+
+        db.update_goal = tracking_update
+
+        # dispatch를 mock하여 즉시 done으로 처리
+        async def mock_dispatch(parent_id, subtasks, chat_id):
+            task_ids = []
+            for i, st in enumerate(subtasks):
+                tid = f"T-resume-{i}"
+                await db.create_pm_task(tid, st.description, st.assigned_dept,
+                                        "pm", parent_id=parent_id)
+                await db.update_pm_task_status(tid, "done", result="완료")
+                task_ids.append(tid)
+            return task_ids
+
+        tracker._orch.dispatch = mock_dispatch
+        await tracker._run_loop_inner(goal["id"], 123)
+
+        # iteration=2에서 재개했으므로 첫 번째로 저장되는 iteration은 3이어야 함
+        assert iterations_seen, "iteration 업데이트가 한 번도 없었음"
+        assert iterations_seen[0] == 3, (
+            f"재개 시 첫 iteration이 1이 아닌 3이어야 하는데 {iterations_seen[0]}임"
+        )
+
+
 class TestUpdateGoalSafety:
     """update_goal의 SQL injection 방지 테스트."""
 
@@ -484,3 +562,126 @@ class TestStartGoal:
         # 목표가 DB에 있으면 태스크가 생성됐음
         goal = await db.get_goal(gid)
         assert goal is not None
+
+
+class TestIterationBugFixes:
+    """iteration 카운터 버그 수정 검증 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_get_goals_by_title_returns_all_statuses(self, db, tracker):
+        """get_goals_by_title은 achieved/stagnated 상태도 반환해야 한다 (재시딩 방지)."""
+        goal = await tracker.set_goal("고정된 목표 제목", chat_id=1)
+        await db.update_goal(goal["id"], status="achieved")
+
+        results = await tracker.get_goals_by_title("고정된 목표 제목")
+        assert len(results) == 1
+        assert results[0]["status"] == "achieved"
+
+        # 활성 목표 조회에서는 빠져야 함
+        active = await tracker.get_active_goals()
+        assert not any(g["id"] == goal["id"] for g in active)
+
+    @pytest.mark.asyncio
+    async def test_get_goals_by_title_no_match(self, db, tracker):
+        """존재하지 않는 제목 조회 시 빈 리스트 반환."""
+        results = await tracker.get_goals_by_title("존재하지않는제목123")
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_cancel_old_subtasks_includes_done(self, db, tracker, orch):
+        """_cancel_old_subtasks가 done 상태 서브태스크도 취소해야 한다."""
+        goal = await tracker.set_goal("취소 테스트 목표", chat_id=1)
+        goal_id = goal["id"]
+
+        # done 서브태스크 생성
+        task = await db.create_pm_task(
+            task_id="T-done-001",
+            description="완료된 태스크",
+            assigned_dept="aiorg_engineering_bot",
+            created_by="pm",
+            parent_id=goal_id,
+        )
+        await db.update_pm_task_status("T-done-001", "done")
+
+        # pending 서브태스크 생성
+        await db.create_pm_task(
+            task_id="T-pending-001",
+            description="대기중 태스크",
+            assigned_dept="aiorg_engineering_bot",
+            created_by="pm",
+            parent_id=goal_id,
+        )
+
+        # _cancel_old_subtasks 실행
+        await tracker._cancel_old_subtasks(goal_id)
+
+        subtasks = await db.get_subtasks(goal_id)
+        statuses = {s["id"]: s["status"] for s in subtasks}
+        # done 포함 모두 cancelled 되어야 함
+        assert statuses["T-done-001"] == "cancelled"
+        assert statuses["T-pending-001"] == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_evaluate_progress_excludes_cancelled(self, db, tracker):
+        """evaluate_progress가 cancelled 서브태스크를 제외하고 평가해야 한다."""
+        goal = await tracker.set_goal("평가 테스트 목표", chat_id=1)
+        goal_id = goal["id"]
+
+        # 이전 iteration에서 취소된 서브태스크 (3개)
+        for i in range(3):
+            await db.create_pm_task(
+                task_id=f"T-old-{i:03d}",
+                description=f"이전 태스크 {i}",
+                assigned_dept="aiorg_engineering_bot",
+                created_by="pm",
+                parent_id=goal_id,
+            )
+            await db.update_pm_task_status(f"T-old-{i:03d}", "cancelled")
+
+        # 현재 iteration 서브태스크 (2개, 아직 pending)
+        for i in range(2):
+            await db.create_pm_task(
+                task_id=f"T-new-{i:03d}",
+                description=f"새 태스크 {i}",
+                assigned_dept="aiorg_engineering_bot",
+                created_by="pm",
+                parent_id=goal_id,
+            )
+
+        status = await tracker.evaluate_progress(goal_id)
+        # cancelled 3개는 제외, pending 2개만 평가 → done 0개 → achieved=False
+        assert not status.achieved
+        assert status.total_count == 2
+        assert status.done_count == 0
+
+    @pytest.mark.asyncio
+    async def test_evaluate_progress_achieved_when_active_all_done(self, db, tracker):
+        """현재 iteration 서브태스크가 모두 done이면 fallback에서 achieved=True."""
+        goal = await tracker.set_goal("달성 평가 목표", chat_id=1)
+        goal_id = goal["id"]
+
+        # 이전 iteration cancelled 서브태스크
+        await db.create_pm_task(
+            task_id="T-cancelled-001",
+            description="이전 태스크",
+            assigned_dept="aiorg_engineering_bot",
+            created_by="pm",
+            parent_id=goal_id,
+        )
+        await db.update_pm_task_status("T-cancelled-001", "cancelled")
+
+        # 현재 iteration done 서브태스크
+        await db.create_pm_task(
+            task_id="T-active-001",
+            description="현재 태스크",
+            assigned_dept="aiorg_engineering_bot",
+            created_by="pm",
+            parent_id=goal_id,
+        )
+        await db.update_pm_task_status("T-active-001", "done")
+
+        status = await tracker.evaluate_progress(goal_id)
+        # cancelled 제외 → done 1/1 → achieved=True (LLM 없으므로 fallback)
+        assert status.achieved
+        assert status.total_count == 1
+        assert status.done_count == 1

@@ -1131,6 +1131,23 @@ class ContextDB:
             except (ValueError, IndexError):
                 return 0
 
+    async def get_goals_by_title(self, title: str) -> list[dict]:
+        """제목이 일치하는 목표를 상태와 무관하게 조회 (중복 시딩 방지용).
+
+        Args:
+            title: 정확히 일치하는 목표 제목.
+
+        Returns:
+            [{id, status, title}] 리스트. 없으면 빈 리스트.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, status, title FROM pm_goals WHERE title=? ORDER BY created_at DESC",
+                (title,),
+            )
+            rows = await cursor.fetchall()
+            return [{"id": r[0], "status": r[1], "title": r[2]} for r in rows]
+
     async def update_goal(self, goal_id: str, **kwargs) -> dict | None:
         """PM 목표 업데이트. milestones, status, iteration, stagnation_count, last_progress 지원."""
         now = _utcnow_iso()

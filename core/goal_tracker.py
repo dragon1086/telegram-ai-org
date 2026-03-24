@@ -158,6 +158,16 @@ class GoalTracker:
         )
         return goal_id
 
+    async def get_goals_by_title(self, title: str) -> list[dict]:
+        """제목이 일치하는 목표를 상태와 무관하게 조회.
+
+        중복 시딩 방지 — 달성(achieved)·정체(stagnated) 상태 포함.
+
+        Returns:
+            [{id, status, title}] 리스트.
+        """
+        return await self._db.get_goals_by_title(title)
+
     async def get_active_goals(self, org_id: str | None = None) -> list[dict]:
         """활성 목표 목록 조회.
 
@@ -182,6 +192,27 @@ class GoalTracker:
         result = await self._db.update_goal(goal_id, status=status)
         logger.info(f"[GoalTracker] update_goal_status: {goal_id} → {status}")
         return result
+
+    async def tick_iteration(self, goal_id: str) -> tuple[int, int]:
+        """iteration 카운터를 1 증가시키고 (new_iteration, max_iterations) 반환.
+
+        AutonomousLoop에서 매 사이클마다 호출하여 반복 횟수를 추적한다.
+        new_iteration > max_iterations 이면 호출 측에서 max_iterations_reached 처리.
+
+        Args:
+            goal_id: 목표 ID.
+
+        Returns:
+            (new_iteration, max_iterations) 튜플.
+        """
+        goal = await self._db.get_goal(goal_id)
+        if not goal:
+            return 0, self._max_iterations
+        new_iter = goal.get("iteration", 0) + 1
+        max_iter = goal.get("max_iterations", self._max_iterations)
+        await self._db.update_goal(goal_id, iteration=new_iter)
+        logger.debug(f"[GoalTracker] tick_iteration: {goal_id} → {new_iter}/{max_iter}")
+        return new_iter, max_iter
 
     async def resume_active_goals(self) -> int:
         """재시작 시 DB의 활성 목표를 루프 재개.
@@ -240,20 +271,26 @@ class GoalTracker:
             return GoalStatus(achieved=False, progress_summary="아직 태스크가 없음",
                               remaining_work="태스크 분해 필요", confidence=0.0)
 
-        total = len(subtasks)
-        done = [s for s in subtasks if s["status"] == "done"]
-        failed = [s for s in subtasks if s["status"] == "failed"]
-        in_progress = [s for s in subtasks if s["status"] in ("assigned", "in_progress")]
+        # cancelled 서브태스크 제외 — 이전 iteration 이력이 평가에 섞이지 않도록
+        active_subtasks = [s for s in subtasks if s["status"] != "cancelled"]
+        if not active_subtasks:
+            return GoalStatus(achieved=False, progress_summary="활성 태스크 없음 (재계획 필요)",
+                              remaining_work="태스크 재분해 필요", confidence=0.0)
 
-        # LLM 평가 시도
-        llm_status = await self._llm_evaluate(goal, subtasks, done)
+        total = len(active_subtasks)
+        done = [s for s in active_subtasks if s["status"] == "done"]
+        failed = [s for s in active_subtasks if s["status"] == "failed"]
+        in_progress = [s for s in active_subtasks if s["status"] in ("assigned", "in_progress")]
+
+        # LLM 평가 시도 (active_subtasks 기준으로 전달)
+        llm_status = await self._llm_evaluate(goal, active_subtasks, done)
         if llm_status is not None:
             # LLM 결과에도 안정 지표(done_count, total_count) 추가
             llm_status.done_count = len(done)
             llm_status.total_count = total
             return llm_status
 
-        # Fallback: 규칙 기반
+        # Fallback: 규칙 기반 (active_subtasks 기준)
         if len(done) == total:
             return GoalStatus(
                 achieved=True,
@@ -269,7 +306,7 @@ class GoalTracker:
         if in_progress:
             progress += f", {len(in_progress)}개 진행중"
 
-        remaining_descs = [s["description"][:50] for s in subtasks if s["status"] != "done"]
+        remaining_descs = [s["description"][:50] for s in active_subtasks if s["status"] != "done"]
         remaining = "; ".join(remaining_descs)
 
         return GoalStatus(
@@ -351,11 +388,22 @@ class GoalTracker:
         )
 
     async def _cancel_old_subtasks(self, goal_id: str) -> None:
-        """이전 iteration의 미완료 서브태스크를 cancelled로 마킹."""
+        """이전 iteration의 모든 서브태스크를 cancelled로 마킹.
+
+        replan() 호출 시 새 iteration을 위한 슬레이트 초기화.
+        done 서브태스크도 포함하여 취소해야 evaluate_progress가
+        새 iteration 서브태스크만 평가할 수 있다.
+        """
         subtasks = await self._db.get_subtasks(goal_id)
+        cancelled_count = 0
         for st in subtasks:
-            if st["status"] in ("pending", "assigned", "in_progress"):
+            if st["status"] in ("pending", "assigned", "in_progress", "done"):
                 await self._db.update_pm_task_status(st["id"], "cancelled")
+                cancelled_count += 1
+        if cancelled_count:
+            logger.debug(
+                f"[GoalTracker] _cancel_old_subtasks: {goal_id} → {cancelled_count}개 취소"
+            )
 
     async def replan(self, goal_id: str, remaining_work: str,
                      chat_id: int) -> list[str]:
@@ -414,19 +462,31 @@ class GoalTracker:
             return GoalStatus(achieved=False, progress_summary="목표 없음",
                               remaining_work="", confidence=0.0)
 
-        await self._send(chat_id,
-            f"🎯 목표 설정 완료: {goal['description'][:200]}\n"
-            f"최대 {self._max_iterations}회 반복으로 목표 달성을 추진합니다.")
+        # 재시작 복구: DB에 저장된 iteration부터 재개 (0이면 신규 → 1부터)
+        start_iter = goal.get("iteration", 0) + 1
 
-        # 첫 분해·배분
-        subtasks = await self._orch.decompose(goal["description"])
-        task_ids = await self._orch.dispatch(goal_id, subtasks, chat_id)
-        if not task_ids:
-            logger.warning(f"[GoalTracker] 첫 dispatch 결과 없음 ({goal_id})")
+        if start_iter == 1:
+            # 신규 목표: 환영 메시지 및 첫 분해·배분
+            await self._send(chat_id,
+                f"🎯 목표 설정 완료: {goal['description'][:200]}\n"
+                f"최대 {self._max_iterations}회 반복으로 목표 달성을 추진합니다.")
+            subtasks = await self._orch.decompose(goal["description"])
+            task_ids = await self._orch.dispatch(goal_id, subtasks, chat_id)
+            if not task_ids:
+                logger.warning(f"[GoalTracker] 첫 dispatch 결과 없음 ({goal_id})")
+        else:
+            # 재시작 복구: 이전 iteration에서 이어서 실행
+            logger.info(
+                f"[GoalTracker] {goal_id} 재시작 복구 — "
+                f"iteration {start_iter - 1}/{self._max_iterations}에서 재개"
+            )
+            await self._send(chat_id,
+                f"♻️ 목표 재개: {goal['description'][:200]}\n"
+                f"iteration {start_iter - 1}/{self._max_iterations}에서 재시작합니다.")
 
         last_done_count = 0
         stagnation = 0
-        for iteration in range(1, self._max_iterations + 1):
+        for iteration in range(start_iter, self._max_iterations + 1):
             # 취소 확인
             if self._is_cancelled(goal_id):
                 await self._db.update_goal(goal_id, status="cancelled")
