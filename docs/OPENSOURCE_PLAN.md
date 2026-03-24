@@ -56,20 +56,19 @@
 
 ## CI/CD
 
-현재 오픈소스 배포 파이프라인은 세 단계로 분리된다.
+현재 오픈소스 배포 파이프라인은 두 단계로 운영한다.
 
 | 순서 | 워크플로우 | 트리거 | 필요 secret | 산출물 |
 |------|------|------|------|------|
-| 1 | `e2e-test.yml` | `push`, `pull_request`, `workflow_dispatch` | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_OAUTH_CREDS` | 3엔진 호환 E2E 결과 |
-| 2 | `publish-pypi.yml` | `push` to `main`, tags `v*`, `workflow_dispatch` | `PYPI_API_TOKEN` | PyPI sdist/wheel 배포 |
-| 3 | `docker-build-push.yml` | `push` to `main`, tags `v*`, `workflow_dispatch` | `DOCKER_USERNAME`, `DOCKER_PASSWORD` | `claude`, `codex`, `gemini` Docker 이미지 푸시 |
+| 1 | `ci.yml` | `pull_request` | 테스트용 API key 또는 OAuth secret | `telegram_ai_org` 범위 lint, 설정 검증, `tests/e2e/` 회귀 결과 |
+| 2 | `release.yml` | `push` to `main` | 테스트용 API key 또는 OAuth secret, `PYPI_TOKEN`, `DOCKER_USERNAME`, `DOCKER_TOKEN` | PyPI 배포 + Docker Hub 이미지(`latest`, commit SHA) 푸시 |
 
 운영 원칙:
 
-- 배포 전 항상 테스트: `e2e-test.yml`을 branch protection required check로 묶어 `main` 머지 전에 통과시킨다.
-- 인프라 변경은 단계적으로: Docker 이미지는 엔진별(`claude`, `codex`, `gemini`)로 분리해 개별 롤백 가능하게 유지한다.
+- 배포 전 항상 테스트: `ci.yml`을 branch protection required check로 묶어 `main` 머지 전에 통과시킨다.
+- 인프라 변경은 단계적으로: `release.yml`은 `verify` → `publish-pypi` → `docker-push` 순서로 직렬 실행한다.
 - PyPI 배포는 `python -m build`와 `twine check dist/*`를 통과한 뒤에만 진행한다.
-- Gemini CI credential은 API key가 아니라 OAuth JSON secret(`GEMINI_OAUTH_CREDS`)로 관리한다.
+- Gemini CI credential은 필요 시 OAuth JSON secret(`GEMINI_OAUTH_CREDS`)로 복원한다.
 
 ---
 

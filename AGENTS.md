@@ -95,13 +95,12 @@ bash scripts/start_all.sh
 - 각 파일은 엔진별 특성만 다르게 유지 (기본 내용은 동일)
 
 ### [2026-03-25] CI/CD 파이프라인 추가됨
-- `.github/workflows/e2e-test.yml` 은 `push` / `pull_request` / `workflow_dispatch` 기준 Python 3.11 + 3엔진 매트릭스(`claude-code`, `codex`, `gemini-cli`)로 `validate-config` 와 E2E 회귀(`tests/e2e/test_engine_compat_e2e.py`, `tests/e2e/test_pm_dispatch_e2e.py`)를 검증한다.
-- `.github/workflows/publish-pypi.yml` 은 `main` push + `v*` 태그 + 수동 실행 기준 `python -m build` → `twine check dist/*` → `twine upload --skip-existing dist/*` 순서로 PyPI 배포를 수행한다.
-- `.github/workflows/docker-build-push.yml` 은 `main` push + `v*` 태그 + 수동 실행 기준 `docker/build-push-action` 으로 `claude` / `codex` / `gemini` 이미지를 빌드·푸시한다.
-- GitHub Actions secret 이름은 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_OAUTH_CREDS`, `PYPI_API_TOKEN`, `DOCKER_USERNAME`, `DOCKER_PASSWORD` 로 고정한다.
-- secret이 없는 PR/수동 실행에서도 E2E는 notice + skip 방식으로 계속 진행하고, Gemini CI는 `GEMINI_OAUTH_CREDS` 를 `~/.gemini/oauth_creds.json` 으로 복원해 사용한다.
-- `e2e-test.yml` 을 branch protection required check로 묶어 `main` 배포 전 테스트를 강제한다.
-- 상세 운영 절차와 로컬 재현 명령은 `docs/CI_CD_GUIDE.md` 를 따른다.
+- `.github/workflows/ci.yml` 은 `pull_request` 기준 Python 3.11 환경에서 `pip install -e ".[dev]"`, `ruff check telegram_ai_org`, `python tools/orchestration_cli.py validate-config`, `pytest tests/e2e/ -q` 순서로 PR 검증을 수행한다.
+- `.github/workflows/release.yml` 은 `main` push 기준 `verify` → `publish-pypi` → `docker-push` 순서로 직렬 실행되며, 검증 재실행 뒤 `python -m build` / `twine upload` 와 `docker/build-push-action` 배포를 수행한다.
+- GitHub Actions secret 이름은 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `GEMINI_OAUTH_CREDS`, `CLAUDE_CODE_OAUTH_TOKEN`, `PYPI_TOKEN`, `DOCKER_USERNAME`, `DOCKER_TOKEN` 을 사용한다.
+- Gemini CI는 `GEMINI_OAUTH_CREDS` 가 있으면 `~/.gemini/oauth_creds.json` 으로 복원해 사용한다.
+- `ci.yml` 을 branch protection required check로 묶어 `main` 배포 전 테스트를 강제한다.
+- 상세 운영 절차와 로컬 재현 명령은 `docs/CI_CD_SETUP.md` 를 따른다.
 
 ### [2026-03-21] 배포 행위는 운영실(aiorg_ops_bot) 전담 — 전체 조직 적용
 - **원칙**: 운영실을 제외한 **모든 specialist 조직**은 로컬 커밋까지만 수행.
