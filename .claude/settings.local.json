@@ -64,7 +64,20 @@
       "Bash(bash scripts/restart_bots.sh)",
       "WebSearch",
       "Bash(claude --version)",
-      "Bash(bun --version)"
+      "Bash(bun --version)",
+      "Skill(bot-triage)",
+      "Bash(.venv/bin/python -c \"import core.telegram_relay; print\\(''''OK''''\\)\")",
+      "Bash(.venv/bin/python -c \"import core.scheduler; print\\(''''OK''''\\)\")",
+      "Bash(.venv/bin/python -c \"\nimport asyncio\nimport core.context_db as db\nasyncio.run\\(db.initialize\\(\\)\\)\nprint\\('OK'\\)\n\" 2>&1)",
+      "Bash(.venv/bin/python -c \"\nimport asyncio\nfrom core.context_db import ContextDB\nasyncio.run\\(ContextDB\\(\\).initialize\\(\\)\\)\nprint\\('OK'\\)\n\" 2>&1)",
+      "Bash(kill 45442 47775)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); plugins=[p for p in d.get\\(''''plugins'''',{}\\).get\\(''''installed'''',[]\\) if ''''telegram'''' in str\\(p\\).lower\\(\\)]; print\\(''''telegram plugins:'''', plugins\\)\")",
+      "mcp__plugin_telegram_telegram__reply",
+      "Bash(mkdir -p ~/.claude/channels/telegram/approved)",
+      "Bash(~/.claude/channels/telegram/approved/7726642089)",
+      "Read(//Users/rocky/.bun/bin/**)",
+      "Bash(~/.bun/bin/bun --version)",
+      "Bash(sudo ln:*)"
     ]
   },
   "hooks": {
