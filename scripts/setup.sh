@@ -35,10 +35,12 @@ step() { echo -e "\n${BOLD}${BLUE}▶ $*${RESET}"; }
 # ── 인수 파싱 ──────────────────────────────────────────────────────────────────
 SKIP_VERIFY=false
 NO_VENV=false
+NON_INTERACTIVE=false  # --yes / --non-interactive: CI 환경 무인 설치 (프롬프트 건너뜀)
 for arg in "$@"; do
     case "$arg" in
-        --skip-verify) SKIP_VERIFY=true ;;
-        --no-venv)     NO_VENV=true ;;
+        --skip-verify)                SKIP_VERIFY=true ;;
+        --no-venv)                    NO_VENV=true ;;
+        --yes|-y|--non-interactive)   NON_INTERACTIVE=true ;;
     esac
 done
 
@@ -113,16 +115,26 @@ if [ -n "$GEMINI_PATH" ]; then
     ok "gemini-cli 감지됨: $GEMINI_PATH"
     DETECTED_ENGINES+=("gemini-cli")
 else
-    warn "gemini CLI 미감지 (설치: https://github.com/google-gemini/gemini-cli)"
+    warn "gemini CLI 미감지. 설치 방법:"
+    if [ "$OS_NAME" = "macOS" ]; then
+        echo "    macOS:  brew install gemini-cli"
+        echo "            또는 npm install -g @google/gemini-cli"
+    else
+        echo "    Linux:  npm install -g @google/gemini-cli"
+    fi
 fi
 
 # 하나도 없으면 경고 후 종료
 if [ ${#DETECTED_ENGINES[@]} -eq 0 ]; then
     err "AI 엔진이 하나도 감지되지 않았습니다."
     err "최소 하나의 엔진을 설치해주세요:"
-    echo "  • claude:  https://claude.ai/code"
+    echo "  • claude:  npm install -g @anthropic-ai/claude-code"
+    echo "             (또는 https://claude.ai/code 에서 직접 설치)"
     echo "  • codex:   npm install -g @openai/codex"
-    echo "  • gemini:  https://github.com/google-gemini/gemini-cli"
+    echo "  • gemini:  npm install -g @google/gemini-cli"
+    if [ "$OS_NAME" = "macOS" ]; then
+        echo "             (또는 brew install gemini-cli)"
+    fi
     exit 1
 fi
 
@@ -133,6 +145,13 @@ SELECTED_ENGINE=""
 if [ ${#DETECTED_ENGINES[@]} -eq 1 ]; then
     SELECTED_ENGINE="${DETECTED_ENGINES[0]}"
     info "기본 엔진 자동 선택: $SELECTED_ENGINE"
+elif [ "$NON_INTERACTIVE" = true ]; then
+    # --yes 플래그: claude-code 우선, 없으면 감지 순서 첫 번째
+    SELECTED_ENGINE="${DETECTED_ENGINES[0]}"
+    for _e in "${DETECTED_ENGINES[@]}"; do
+        [ "$_e" = "claude-code" ] && SELECTED_ENGINE="claude-code" && break
+    done
+    info "--yes 모드: 기본 엔진 자동 선택 → $SELECTED_ENGINE"
 else
     echo ""
     echo -e "${BOLD}${YELLOW}복수의 엔진이 감지되었습니다. 기본 엔진을 선택해주세요:${RESET}"
@@ -162,12 +181,13 @@ step "Step 2/5: Python 환경 확인"
 # Python 3.10+ 탐색: 명시적 버전 순으로 시도 (macOS 시스템 python3 = 3.9 우회)
 PYTHON_BIN=""
 PYTHON_VERSION=""
-for _candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+for _candidate in python3.13 python3.12 python3.11 python3; do
     if command -v "$_candidate" &>/dev/null; then
         _ver=$("$_candidate" --version 2>&1 | awk '{print $2}')
         _major=$(echo "$_ver" | cut -d. -f1)
         _minor=$(echo "$_ver" | cut -d. -f2)
-        if [ "$_major" -ge 3 ] && [ "$_minor" -ge 10 ]; then
+        # pyproject.toml requires-python = ">=3.11"
+        if [ "$_major" -ge 3 ] && [ "$_minor" -ge 11 ]; then
             PYTHON_BIN="$_candidate"
             PYTHON_VERSION="$_ver"
             break
@@ -178,7 +198,8 @@ done
 if [ -z "$PYTHON_BIN" ]; then
     # 시스템 python3 버전 정보도 출력해서 원인 파악 용이하게
     _sys_ver=$(python3 --version 2>&1 | awk '{print $2}' 2>/dev/null || echo "미설치")
-    err "Python 3.10 이상을 찾을 수 없습니다 (시스템 python3: $_sys_ver)"
+    err "Python 3.11 이상을 찾을 수 없습니다 (시스템 python3: $_sys_ver)"
+    err "(pyproject.toml requires-python = \">=3.11\" 기준)"
     case "$OS_NAME" in
         macOS) err "설치: brew install python@3.11" ;;
         Linux) err "설치: sudo apt-get install python3.11 (Debian/Ubuntu)" ;;
@@ -279,39 +300,39 @@ install_deps() {
 
 install_deps
 
-# ── 엔진별 추가 패키지 설치 ─────────────────────────────────────────────────────
+# ── 엔진별 추가 패키지 설치 (감지된 모든 엔진 대상) ──────────────────────────
+# 봇별로 다른 엔진을 사용하므로 감지된 엔진의 SDK는 모두 설치
 echo ""
-info "엔진별 추가 패키지 확인 중 (선택된 엔진: $SELECTED_ENGINE)..."
-case "$SELECTED_ENGINE" in
-    claude-code)
-        # claude-code: anthropic SDK (이미 pyproject.toml 의존성에 포함)
-        if "$VENV_PYTHON" -c "import anthropic" 2>/dev/null; then
-            ok "anthropic SDK 이미 설치됨 (claude-code)"
-        else
-            info "anthropic SDK 설치 중..."
-            "$VENV_PYTHON" -m pip install anthropic --quiet && ok "anthropic 설치 완료"
-        fi
-        ;;
-    codex)
-        # codex: openai 패키지 (scoring/API 호출용)
-        if "$VENV_PYTHON" -c "import openai" 2>/dev/null; then
-            ok "openai 이미 설치됨 (codex)"
-        else
-            info "codex용 openai 패키지 설치 중..."
-            "$VENV_PYTHON" -m pip install openai --quiet && ok "openai 설치 완료"
-        fi
-        ;;
-    gemini-cli)
-        # gemini-cli: google-genai SDK (scoring/REST API 호출용)
-        # pyproject.toml 기준: google-genai>=1.0 (import: google.genai)
-        if "$VENV_PYTHON" -c "import google.genai" 2>/dev/null; then
-            ok "google-genai SDK 이미 설치됨 (gemini-cli)"
-        else
-            info "gemini-cli용 google-genai 패키지 설치 중..."
-            "$VENV_PYTHON" -m pip install google-genai --quiet && ok "google-genai 설치 완료"
-        fi
-        ;;
-esac
+info "엔진별 SDK 확인 중 (감지된 엔진: ${DETECTED_ENGINES[*]})..."
+
+# claude-code: anthropic SDK (pyproject.toml base deps에 포함, 감지 여부와 무관하게 체크)
+if "$VENV_PYTHON" -c "import anthropic" 2>/dev/null; then
+    ok "anthropic SDK 설치됨 (claude-code)"
+else
+    info "anthropic SDK 설치 중..."
+    "$VENV_PYTHON" -m pip install anthropic --quiet && ok "anthropic 설치 완료"
+fi
+
+# codex: openai SDK (pyproject.toml base deps에 포함, 감지 여부와 무관하게 체크)
+if "$VENV_PYTHON" -c "import openai" 2>/dev/null; then
+    ok "openai SDK 설치됨 (codex)"
+else
+    info "openai SDK 설치 중..."
+    "$VENV_PYTHON" -m pip install openai --quiet && ok "openai 설치 완료"
+fi
+
+# gemini-cli: google-genai SDK (선택적 의존성 — gemini 감지 시 설치)
+# pyproject.toml [gemini] extra: google-genai>=1.0 (import: google.genai)
+if [ -n "$GEMINI_PATH" ]; then
+    if "$VENV_PYTHON" -c "import google.genai" 2>/dev/null; then
+        ok "google-genai SDK 설치됨 (gemini-cli)"
+    else
+        info "gemini-cli용 google-genai SDK 설치 중..."
+        "$VENV_PYTHON" -m pip install google-genai --quiet && ok "google-genai 설치 완료"
+    fi
+else
+    info "gemini-cli 미감지 — google-genai SDK 설치 건너뜀 (필요시: pip install google-genai)"
+fi
 
 # ── Node/npm 존재 여부 확인 (codex 설치 시 필요) ───────────────────────────────
 if [ -n "$CODEX_PATH" ]; then
@@ -327,6 +348,111 @@ fi
 # 추가: workspace 디렉토리 생성
 mkdir -p ~/.ai-org/workspace
 info "컨텍스트 DB 디렉토리 준비: ~/.ai-org/"
+
+# =============================================================================
+# [함수] configure_engine — 선택된 엔진의 인증 상태 확인 및 안내
+# =============================================================================
+configure_engine() {
+    local engine="$1"
+    echo ""
+    info "엔진 인증 상태 확인: $engine"
+
+    case "$engine" in
+        claude-code)
+            # ANTHROPIC_API_KEY 확인 (scoring용; claude CLI 자체는 OAuth 브라우저 인증)
+            if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+                ok "ANTHROPIC_API_KEY 감지됨 — claude-code scoring 사용 가능"
+            else
+                warn "ANTHROPIC_API_KEY 미설정 — .env에서 입력하거나 claude CLI OAuth 인증 사용"
+                info "  → claude 첫 실행 시 브라우저 인증 자동 진행 (CLAUDE_CODE_OAUTH_TOKEN)"
+            fi
+            ;;
+        codex)
+            # OPENAI_API_KEY 확인 (codex CLI는 ~/.codex/auth.json OAuth 우선)
+            if [ -n "${OPENAI_API_KEY:-}" ]; then
+                ok "OPENAI_API_KEY 감지됨 — codex API 키 인증 사용 가능"
+            elif [ -f "$HOME/.codex/auth.json" ]; then
+                ok "~/.codex/auth.json 감지됨 — codex OAuth 인증 완료"
+            else
+                warn "OPENAI_API_KEY 미설정, ~/.codex/auth.json 없음"
+                info "  → codex 인증: codex login 실행 (OAuth 브라우저 인증)"
+                info "  → 또는 .env에 OPENAI_API_KEY 입력"
+            fi
+            ;;
+        gemini-cli)
+            # OAuth 인증 파일 존재 확인
+            if [ -f "$HOME/.gemini/oauth_creds.json" ]; then
+                ok "~/.gemini/oauth_creds.json 감지됨 — gemini-cli OAuth 인증 완료"
+            else
+                warn "~/.gemini/oauth_creds.json 없음 — gemini-cli 인증 필요"
+                if [ -n "$GEMINI_PATH" ] && [ -x "$GEMINI_PATH" ]; then
+                    info "  → 인증 명령: $GEMINI_PATH auth login"
+                else
+                    info "  → 인증 명령: gemini auth login"
+                fi
+                info "  → 브라우저에서 Google 계정 로그인 후 자동 완료"
+            fi
+            ;;
+    esac
+}
+
+# =============================================================================
+# [함수] setup_env — .env 파일에 선택된 엔진명 및 CLI 경로 자동 기재
+# =============================================================================
+setup_env() {
+    local engine="$1"
+    local env_file="$2"
+    local os_name="$3"
+
+    # sed 헬퍼: OS별 분기
+    _sed_inplace() {
+        local pattern="$1"
+        if [ "$os_name" = "macOS" ]; then
+            sed -i '' "$pattern" "$env_file"
+        else
+            sed -i "$pattern" "$env_file"
+        fi
+    }
+
+    # CLAUDE_CLI_PATH 자동 치환
+    if [ -n "$CLAUDE_PATH" ]; then
+        _sed_inplace "s|CLAUDE_CLI_PATH=.*|CLAUDE_CLI_PATH=$CLAUDE_PATH|"
+        info "CLAUDE_CLI_PATH → $CLAUDE_PATH (자동 설정)"
+    fi
+
+    # CODEX_CLI_PATH 자동 치환
+    if [ -n "$CODEX_PATH" ]; then
+        _sed_inplace "s|CODEX_CLI_PATH=.*|CODEX_CLI_PATH=$CODEX_PATH|"
+        info "CODEX_CLI_PATH → $CODEX_PATH (자동 설정)"
+    fi
+
+    # GEMINI_CLI_PATH 자동 치환
+    if [ -n "$GEMINI_PATH" ]; then
+        _sed_inplace "s|GEMINI_CLI_PATH=.*|GEMINI_CLI_PATH=$GEMINI_PATH|"
+        info "GEMINI_CLI_PATH → $GEMINI_PATH (자동 설정)"
+        # GEMINI_CLI_DEFAULT_TIMEOUT_SEC 이 미설정이면 기본값 주입
+        if grep -q "^GEMINI_CLI_DEFAULT_TIMEOUT_SEC=$" "$env_file" 2>/dev/null; then
+            _sed_inplace "s|^GEMINI_CLI_DEFAULT_TIMEOUT_SEC=$|GEMINI_CLI_DEFAULT_TIMEOUT_SEC=1800|"
+            info "GEMINI_CLI_DEFAULT_TIMEOUT_SEC → 1800 (기본값 자동 설정)"
+        fi
+    fi
+
+    # ENGINE= 자동 세팅
+    if grep -q "^ENGINE=" "$env_file" 2>/dev/null; then
+        _sed_inplace "s|^ENGINE=.*|ENGINE=$engine|"
+    else
+        echo "ENGINE=$engine" >> "$env_file"
+    fi
+    info "ENGINE → $engine (자동 설정)"
+
+    # ACTIVE_ENGINE= 자동 세팅 (ENGINE= 과 병기 — 런타임 참조 표준 변수)
+    if grep -q "^ACTIVE_ENGINE=" "$env_file" 2>/dev/null; then
+        _sed_inplace "s|^ACTIVE_ENGINE=.*|ACTIVE_ENGINE=$engine|"
+    else
+        echo "ACTIVE_ENGINE=$engine" >> "$env_file"
+    fi
+    info "ACTIVE_ENGINE → $engine (자동 설정)"
+}
 
 # =============================================================================
 # STEP 4: .env 파일 처리
@@ -351,59 +477,14 @@ else
     ENV_EXISTS=false
 fi
 
-# CLAUDE_CLI_PATH 자동 치환
-if [ -n "$CLAUDE_PATH" ]; then
-    if command -v sed &>/dev/null; then
-        # macOS sed는 -i '' 필요, GNU sed는 -i만으로 동작
-        if [ "$OS_NAME" = "macOS" ]; then
-            sed -i '' "s|CLAUDE_CLI_PATH=.*|CLAUDE_CLI_PATH=$CLAUDE_PATH|" "$ENV_FILE"
-        else
-            sed -i "s|CLAUDE_CLI_PATH=.*|CLAUDE_CLI_PATH=$CLAUDE_PATH|" "$ENV_FILE"
-        fi
-        info "CLAUDE_CLI_PATH → $CLAUDE_PATH (자동 설정)"
-    fi
-fi
+# ── 엔진 CLI 경로·ENGINE 변수 자동 기재 (setup_env 함수 사용) ─────────────────
+setup_env "$SELECTED_ENGINE" "$ENV_FILE" "$OS_NAME"
 
-# CODEX_CLI_PATH 자동 치환
-if [ -n "$CODEX_PATH" ]; then
-    if command -v sed &>/dev/null; then
-        if [ "$OS_NAME" = "macOS" ]; then
-            sed -i '' "s|CODEX_CLI_PATH=.*|CODEX_CLI_PATH=$CODEX_PATH|" "$ENV_FILE"
-        else
-            sed -i "s|CODEX_CLI_PATH=.*|CODEX_CLI_PATH=$CODEX_PATH|" "$ENV_FILE"
-        fi
-        info "CODEX_CLI_PATH → $CODEX_PATH (자동 설정)"
-    fi
-fi
+# ── 선택된 엔진 인증 상태 확인 (configure_engine 함수 사용) ────────────────────
+configure_engine "$SELECTED_ENGINE"
 
-# GEMINI_CLI_PATH 자동 치환 (핵심)
-if [ -n "$GEMINI_PATH" ]; then
-    if command -v sed &>/dev/null; then
-        if [ "$OS_NAME" = "macOS" ]; then
-            sed -i '' "s|GEMINI_CLI_PATH=.*|GEMINI_CLI_PATH=$GEMINI_PATH|" "$ENV_FILE"
-        else
-            sed -i "s|GEMINI_CLI_PATH=.*|GEMINI_CLI_PATH=$GEMINI_PATH|" "$ENV_FILE"
-        fi
-        info "GEMINI_CLI_PATH → $GEMINI_PATH (자동 설정)"
-    fi
-fi
-
-# ── ENGINE 변수 자동 세팅 ────────────────────────────────────────────────────────
-if [ -n "$SELECTED_ENGINE" ]; then
-    if grep -q "^ENGINE=" "$ENV_FILE" 2>/dev/null; then
-        if [ "$OS_NAME" = "macOS" ]; then
-            sed -i '' "s|^ENGINE=.*|ENGINE=$SELECTED_ENGINE|" "$ENV_FILE"
-        else
-            sed -i "s|^ENGINE=.*|ENGINE=$SELECTED_ENGINE|" "$ENV_FILE"
-        fi
-    else
-        echo "ENGINE=$SELECTED_ENGINE" >> "$ENV_FILE"
-    fi
-    info "ENGINE → $SELECTED_ENGINE (자동 설정)"
-fi
-
-# ── 인터랙티브 필수 키 수집 (신규 .env 파일인 경우) ─────────────────────────────
-if [ "$ENV_EXISTS" = false ]; then
+# ── 인터랙티브 필수 키 수집 (신규 .env 파일인 경우, --yes 아닐 때) ──────────────
+if [ "$ENV_EXISTS" = false ] && [ "$NON_INTERACTIVE" = false ]; then
     echo ""
     echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo -e "${BOLD}${CYAN}  🔑 Telegram 봇 필수 정보를 입력해주세요 (나중에 .env에서 수정 가능)${RESET}"
@@ -551,6 +632,8 @@ echo -e "       ${BOLD}bash scripts/start_all.sh${RESET}"
 echo ""
 [ -n "$GEMINI_PATH" ] && echo -e "  ${CYAN}Gemini CLI 인증 (미인증 시):${RESET} $GEMINI_PATH auth login"
 [ -n "$CODEX_PATH"  ] && echo -e "  ${CYAN}Codex CLI 인증 (미인증 시):${RESET}  codex login"
+echo ""
+echo -e "  ${CYAN}CI/자동화 환경:${RESET} bash scripts/setup.sh --yes  (프롬프트 없이 실행)"
 echo ""
 info "선택된 기본 엔진: ${BOLD}$SELECTED_ENGINE${RESET}"
 echo ""
