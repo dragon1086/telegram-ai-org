@@ -2,17 +2,23 @@
 # telegram-ai-org Dockerfile — 멀티스테이지 빌드
 #
 # 사용법:
-#   # 기본 빌드 (claude-code 엔진)
+#   # 기본 빌드 (BASE — 의존성만, 엔진 CLI 없음)
 #   docker build -t telegram-ai-org .
 #
-#   # Gemini SDK 포함 빌드
+#   # Claude Code 엔진 포함 빌드
+#   docker build --build-arg ENGINE=claude -t telegram-ai-org:claude .
+#
+#   # Codex 엔진 포함 빌드
+#   docker build --build-arg ENGINE=codex -t telegram-ai-org:codex .
+#
+#   # Gemini CLI 엔진 + SDK 포함 빌드
 #   docker build --build-arg ENGINE=gemini -t telegram-ai-org:gemini .
 #
 #   # 실행
 #   docker run --env-file .env telegram-ai-org
 # =============================================================================
 
-# ─── Stage 1: Builder ────────────────────────────────────────────────────────
+# ─── Stage 1: Builder — wheel 빌드 ───────────────────────────────────────────
 FROM python:3.11-slim AS builder
 
 WORKDIR /build
@@ -20,20 +26,65 @@ WORKDIR /build
 # 빌드 도구 설치
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# pip 업그레이드 + hatchling 설치
-RUN pip install --upgrade pip hatchling
+# pip 업그레이드 + PEP 517 빌드 도구 설치
+RUN pip install --upgrade pip build
 
-# 의존성 파일만 먼저 복사 (레이어 캐시 최적화)
-COPY pyproject.toml .
-COPY README.md .
+# 패키지 메타데이터 먼저 복사 (레이어 캐시 최적화)
+COPY pyproject.toml README.md ./
 
-# 엔진 선택 빌드 인수 (기본: 기본 의존성만, gemini 옵션 추가 가능)
+# 전체 소스 복사
+COPY core/ ./core/
+COPY tools/ ./tools/
+COPY skills/ ./skills/
+COPY bots/ ./bots/
+COPY telegram_ai_org/ ./telegram_ai_org/
+COPY cli.py main.py orchestration.yaml organizations.yaml workers.yaml ./
+
+# PEP 517 빌드 — dist/*.whl 생성
+RUN python -m build --wheel --outdir dist/
+
+
+# ─── Stage 2: Node.js CLI installer (엔진별 선택 설치) ───────────────────────
+FROM node:20-slim AS node-installer
+
+WORKDIR /npm-install
+
+# 엔진별 CLI 설치 (해당 엔진만 선택)
 ARG ENGINE=base
-# 기본 의존성 설치 (wheel 디렉토리에 미리 빌드)
-RUN pip wheel --no-cache-dir --wheel-dir /wheels \
+RUN if [ "$ENGINE" = "claude" ]; then \
+        npm install -g @anthropic-ai/claude-code --prefix /opt/cli; \
+    elif [ "$ENGINE" = "codex" ]; then \
+        npm install -g @openai/codex --prefix /opt/cli; \
+    elif [ "$ENGINE" = "gemini" ]; then \
+        npm install -g @google/gemini-cli --prefix /opt/cli; \
+    else \
+        mkdir -p /opt/cli/bin; \
+    fi
+
+
+# ─── Stage 3: Runtime — 경량 실행 이미지 ─────────────────────────────────────
+FROM python:3.11-slim AS runtime
+
+LABEL org.opencontainers.image.title="telegram-ai-org"
+LABEL org.opencontainers.image.description="AI organization on Telegram — multi-agent PM bot system"
+LABEL org.opencontainers.image.source="https://github.com/dragon1086/aimesh"
+LABEL org.opencontainers.image.version="0.1.0"
+
+# 런타임 시스템 패키지 (Node.js 런타임 — CLI 실행용)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nodejs \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ① 런타임 의존성 사전 설치 (빌드 캐시 최대화)
+#    pyproject.toml dependencies 목록과 동기화 유지
+ARG ENGINE=base
+RUN pip install --no-cache-dir \
     "python-telegram-bot>=20.0" \
     "pydantic>=2.0" \
     "aiosqlite>=0.19" \
@@ -51,81 +102,46 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels \
 
 # Gemini 엔진 선택 시 추가 SDK 설치
 RUN if [ "$ENGINE" = "gemini" ]; then \
-        pip wheel --no-cache-dir --wheel-dir /wheels "google-genai>=1.0"; \
+        pip install --no-cache-dir "google-genai>=1.0"; \
     fi
 
-# ─── Stage 2: Node.js installer (Gemini CLI / Claude Code CLI) ───────────────
-FROM node:20-slim AS node-installer
+# ② Builder 에서 빌드된 wheel 복사 후 패키지 단독 설치 (deps 중복 설치 방지)
+COPY --from=builder /build/dist/*.whl /tmp/
+RUN pip install --no-cache-dir --no-deps /tmp/*.whl && rm /tmp/*.whl
 
-WORKDIR /npm-install
+# ③ 런타임 설정 파일 복사 (/app 기준 상대 경로 로더 대응)
+COPY --from=builder /build/orchestration.yaml /app/orchestration.yaml
+COPY --from=builder /build/organizations.yaml /app/organizations.yaml
+COPY --from=builder /build/workers.yaml /app/workers.yaml
+COPY --from=builder /build/bots /app/bots
 
-ARG ENGINE=base
-
-# 엔진별 CLI 설치
-# claude-code: @anthropic-ai/claude-code
-# codex: @openai/codex
-# gemini: @google/gemini-cli
-RUN if [ "$ENGINE" = "claude" ]; then \
-        npm install -g @anthropic-ai/claude-code --prefix /opt/cli; \
-    elif [ "$ENGINE" = "codex" ]; then \
-        npm install -g @openai/codex --prefix /opt/cli; \
-    elif [ "$ENGINE" = "gemini" ]; then \
-        npm install -g @google/gemini-cli --prefix /opt/cli; \
-    fi
-
-# ─── Stage 3: Runtime ────────────────────────────────────────────────────────
-FROM python:3.11-slim AS runtime
-
-LABEL org.opencontainers.image.title="telegram-ai-org"
-LABEL org.opencontainers.image.description="AI organization on Telegram — multi-agent PM bot system"
-LABEL org.opencontainers.image.source="https://github.com/dragon1086/aimesh"
-LABEL org.opencontainers.image.version="0.1.0"
-
-# 런타임 시스템 의존성
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Node.js 런타임 (CLI 실행용)
-    nodejs \
-    # 기타 유틸
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# 애플리케이션 디렉토리
-WORKDIR /app
-
-# Builder에서 빌드된 wheels 복사 후 설치
-COPY --from=builder /wheels /wheels
-RUN pip install --no-cache-dir --no-index --find-links /wheels /wheels/*.whl \
-    && rm -rf /wheels
-
-# Node CLI 복사 (엔진별)
+# ④ Node CLI 복사 (엔진별)
 COPY --from=node-installer /opt/cli /opt/cli
 ENV PATH="/opt/cli/bin:$PATH"
 
-# 애플리케이션 소스 복사
-COPY core/ ./core/
-COPY tools/ ./tools/
-COPY skills/ ./skills/
-COPY bots/ ./bots/
-COPY main.py cli.py orchestration.yaml workers.yaml ./
-
-# 데이터 디렉토리 생성 및 권한 설정
+# ⑤ 데이터 디렉토리 생성 및 비루트 사용자 설정
 RUN mkdir -p /app/logs /app/data /app/reports /app/tasks \
     && useradd -r -u 1001 -g root -s /sbin/nologin aiorg \
     && chown -R aiorg:root /app
 USER aiorg
 
-# ─── 환경변수 기본값 (플레이스홀더) ───────────────────────────────────────────
-# 실제 값은 --env-file .env 또는 -e 플래그로 주입
+# ─── 환경변수 기본값 ──────────────────────────────────────────────────────────
+# 실제 값은 --env-file .env 또는 docker-compose env_file 로 주입
 ENV PM_BOT_TOKEN="" \
+    TELEGRAM_BOT_TOKEN="" \
     TELEGRAM_GROUP_CHAT_ID="" \
+    ANTHROPIC_API_KEY="" \
+    OPENAI_API_KEY="" \
+    GEMINI_API_KEY="" \
     CLAUDE_CODE_OAUTH_TOKEN="" \
     CLAUDE_CLI_PATH="/opt/cli/bin/claude" \
     CODEX_CLI_PATH="/opt/cli/bin/codex" \
     GEMINI_CLI_PATH="/opt/cli/bin/gemini" \
     GEMINI_CLI_DEFAULT_TIMEOUT_SEC="1800" \
+    GEMINI_CLI_MODEL="gemini-2.5-flash" \
     CLAUDE_DEFAULT_TIMEOUT_SEC="14400" \
     CODEX_DEFAULT_TIMEOUT_SEC="1800" \
+    ENGINE_TYPE="" \
     ENABLE_PM_ORCHESTRATOR="1" \
     ENABLE_DISCUSSION_PROTOCOL="1" \
     ENABLE_AUTO_DISPATCH="1" \
@@ -144,6 +160,6 @@ ENV PM_BOT_TOKEN="" \
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
     CMD test -f /tmp/telegram-ai-org-${PM_ORG_NAME:-global}.pid || exit 1
 
-# 기본 진입점: PM 봇 실행
-ENTRYPOINT ["python", "main.py"]
+# 기본 진입점: PyPI 패키지 CLI 또는 main.py 직접 실행
+ENTRYPOINT ["python", "-m", "telegram_ai_org"]
 CMD []
