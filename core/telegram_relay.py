@@ -3104,11 +3104,19 @@ class TelegramRelay:
             self._org_scheduler.start()
             logger.info(f"[{self.org_id}] OrgScheduler 시작됨")
 
-        # GoalTracker 활성 목표 재개 (재시작 복구)
+        # GoalTracker 활성 목표 재개 (재시작 복구) + 장기 목표 시딩
         if self._goal_tracker is not None:
             import asyncio as _asyncio
             _asyncio.create_task(self._resume_goals_on_startup())
             logger.info(f"[{self.org_id}] GoalTracker 활성 목표 재개 태스크 시작됨")
+            # 첫 기동 시 long_term_goals 시딩 (resume 완료 후 실행)
+            _asyncio.create_task(self._seed_long_term_goals_on_startup())
+            logger.info(f"[{self.org_id}] 장기 목표 시딩 태스크 시작됨")
+
+        # KNOWN_DEPTS 조직을 GroupChatHub에 등록 (회의/회고 전 조직 참여 구조)
+        if self._org_scheduler is not None and self._pm_orchestrator is not None:
+            self._register_org_bots_with_hub()
+            logger.info(f"[{self.org_id}] 조직 봇 GroupChatHub 등록 완료")
 
         # AutonomousLoop 시작 (ENABLE_GOAL_TRACKER=1일 때)
         if self._goal_tracker is not None:
@@ -3154,6 +3162,141 @@ class TelegramRelay:
                 )
         except Exception as e:
             logger.error(f"[{self.org_id}] GoalTracker 재개 실패: {e}")
+
+    async def _seed_long_term_goals_on_startup(self) -> None:
+        """첫 기동 시 orchestration.yaml의 long_term_goals를 GoalTracker에 등록.
+
+        활성 목표가 이미 있으면 시딩을 스킵한다 (재시작 중복 방지).
+        """
+        if self._goal_tracker is None:
+            return
+        import asyncio as _asyncio
+        import yaml as _yaml
+        from pathlib import Path as _Path
+        try:
+            # resume_goals 완료 대기 (10초)
+            await _asyncio.sleep(10)
+            existing = await self._goal_tracker.get_active_goals()
+            if existing:
+                logger.info(
+                    f"[{self.org_id}] 활성 목표 {len(existing)}개 존재 — 장기 목표 시딩 스킵"
+                )
+                return
+
+            yaml_path = _Path(__file__).parent.parent / "orchestration.yaml"
+            cfg = _yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+            goals = cfg.get("long_term_goals", [])
+            if not goals:
+                logger.info(f"[{self.org_id}] orchestration.yaml에 long_term_goals 없음 — 시딩 스킵")
+                return
+
+            seeded: list[str] = []
+            for goal_def in goals:
+                title = goal_def.get("title", "").strip()
+                description = goal_def.get("description", title).strip()
+                meta = goal_def.get("meta") or {}
+                if not title:
+                    continue
+                try:
+                    gid = await self._goal_tracker.start_goal(
+                        title=title,
+                        description=description,
+                        meta=meta,
+                        chat_id=self.allowed_chat_id,
+                    )
+                    seeded.append(gid)
+                    logger.info(f"[{self.org_id}] 장기 목표 등록: {gid} — {title[:60]}")
+                except Exception as e:
+                    logger.error(f"[{self.org_id}] 장기 목표 등록 실패 ({title[:40]}): {e}")
+
+            if seeded:
+                lines = ["🎯 **[GoalTracker] 장기 목표 등록 완료**"]
+                for gid, gdef in zip(seeded, goals):
+                    lines.append(f"  • {gdef.get('title', gid)} → `{gid}`")
+                lines.append("AutonomousLoop이 목표를 향해 자율 추진합니다.")
+                await self._pm_send_message(self.allowed_chat_id, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"[{self.org_id}] _seed_long_term_goals_on_startup 실패: {e}")
+
+    def _register_org_bots_with_hub(self) -> None:
+        """KNOWN_DEPTS 조직을 GroupChatHub에 speak callback으로 등록.
+
+        각 조직에 대해 ContextDB 태스크 기반 원격 speak 콜백을 생성하고
+        OrgScheduler.register_dept_bot_with_hub()를 통해 GroupChatHub에 등록한다.
+        이후 start_meeting() 호출 시 전 조직이 자동으로 채팅에 참여한다.
+        """
+        if self._org_scheduler is None or self._pm_orchestrator is None:
+            return
+        try:
+            from core.constants import KNOWN_DEPTS
+            from core.autonomous_loop import ORG_TASK_TYPE_MAP
+
+            for org_id, dept_name in KNOWN_DEPTS.items():
+                keywords = ORG_TASK_TYPE_MAP.get(org_id, [])
+
+                # 클로저로 org_id/dept_name 캡처
+                def _make_speak(oid: str, dname: str):
+                    async def speak(topic: str, context) -> str | None:
+                        return await self._remote_org_speak(oid, dname, topic)
+                    return speak
+
+                self._org_scheduler.register_dept_bot_with_hub(
+                    org_id=org_id,
+                    speak_callback=_make_speak(org_id, dept_name),
+                    domain_keywords=keywords,
+                )
+            logger.info(
+                f"[{self.org_id}] GroupChatHub 등록 완료: {len(KNOWN_DEPTS)}개 조직"
+            )
+        except Exception as e:
+            logger.error(f"[{self.org_id}] _register_org_bots_with_hub 실패: {e}")
+
+    async def _remote_org_speak(
+        self, org_id: str, dept_name: str, topic: str
+    ) -> str | None:
+        """원격 조직에 발언 요청 태스크를 DB에 생성하고 결과를 대기 반환.
+
+        GroupChatHub speak_callback 구현체.
+        TaskPoller를 통해 해당 org 봇이 태스크를 수신·처리하면 결과를 반환한다.
+
+        Returns:
+            조직 보고 문자열 or None (타임아웃/오류).
+        """
+        import asyncio as _asyncio
+        import uuid as _uuid
+
+        if self._pm_orchestrator is None:
+            return None
+
+        prompt = (
+            f"[회의/회고 발언 요청]\n"
+            f"주제: {topic}\n\n"
+            f"당신은 {dept_name} 담당입니다.\n"
+            f"현재 상태(완료/진행/이슈)를 100~300자로 간결하게 보고하세요.\n"
+            f"다음 기간 처리할 조치사항은 'ACTION: [내용]' 형식으로 포함하세요."
+        )
+        task_id = f"SPEAK-{org_id[:12]}-{_uuid.uuid4().hex[:6]}"
+        try:
+            db = self._pm_orchestrator._db
+            await db.create_pm_task(
+                task_id=task_id,
+                description=prompt,
+                assigned_dept=org_id,
+                chat_id=self.allowed_chat_id,
+            )
+
+            # 최대 40초 폴링 (5초 간격 × 8회)
+            for _ in range(8):
+                await _asyncio.sleep(5)
+                task = await db.get_pm_task(task_id)
+                if task and task.get("status") in ("done", "failed", "cancelled"):
+                    result = task.get("result") or ""
+                    return result.strip() or f"[{dept_name}] 응답 없음"
+
+            return f"[{dept_name}] 타임아웃 — 응답 미수신"
+        except Exception as e:
+            logger.error(f"[{self.org_id}] _remote_org_speak 오류 ({org_id}): {e}")
+            return None
 
     async def _store_pending_confirmation(self, action: str, task_ids: list, description: str = "") -> None:
         """pm_bot 제안 상태 저장 (5분 유효). 사용자 긍정 응답 시 _execute_pending_confirmation 실행."""
