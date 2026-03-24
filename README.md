@@ -408,7 +408,9 @@ docker compose logs -f aiorg-research-bot
 |------|------|------|
 | `claude` | `aiorg-pm`, `aiorg-product-bot`, `aiorg-design-bot` | `ENGINE_TYPE=claude-code`, `CLAUDE_CLI_PATH=/opt/cli/bin/claude` |
 | `codex` | `aiorg-engineering-bot`, `aiorg-ops-bot` | `ENGINE_TYPE=codex`, `CODEX_CLI_PATH=/opt/cli/bin/codex` |
-| `gemini` | `aiorg-growth-bot`, `aiorg-research-bot` | `ENGINE_TYPE=gemini-cli`, `GEMINI_CLI_PATH=/opt/cli/bin/gemini` |
+| `gemini` | `aiorg-growth-bot`, `aiorg-research-bot` | `ENGINE_TYPE=gemini-cli`, `GEMINI_CLI_PATH=/opt/cli/bin/gemini`, `GEMINI_CLI_MODEL=gemini-2.5-flash` |
+
+공통 볼륨 마운트: `./logs`, `./data`, `./reports`, `./tasks`, `./skills`(read-only — 스킬 파일 공유)
 
 ---
 

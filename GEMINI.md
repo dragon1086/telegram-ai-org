@@ -173,6 +173,29 @@ Gemini CLI가 배정된 조직과 그 이유:
 - **금지**: `gemini-2.0-flash` (2026-06-01 서비스 종료)
 - **Preview 주의**: `gemini-3.x` 계열은 프로덕션 사용 자제
 
+### [2026-03-25] Docker Compose 다중 엔진 실행 가이드
+
+서비스 구조: `x-bot-common`(공통 앵커) + 엔진 프로파일 3개 (`claude` / `codex` / `gemini`)
+
+```bash
+# 1. 환경변수 준비
+cp .env.example .env
+
+# 2. Gemini 계열(성장/리서치) 단독 실행
+docker compose --profile gemini up -d
+
+# 3. 전체 조직 동시 실행
+docker compose --profile claude --profile codex --profile gemini up -d
+
+# 4. 로그 확인
+docker compose ps
+docker compose logs -f aiorg-growth-bot
+docker compose logs -f aiorg-research-bot
+```
+
+볼륨 마운트: `./logs`, `./data`, `./reports`, `./tasks`, `./skills`(read-only)
+Gemini 자동 주입: `ENGINE_TYPE=gemini-cli`, `GEMINI_CLI_PATH=/opt/cli/bin/gemini`, `GEMINI_CLI_MODEL=gemini-2.5-flash`
+
 ### [2026-03-25] 로컬 패키지 설치 — pip install -e . 사용 가능 (setuptools 전환 완료)
 - **빌드 백엔드**: hatchling → setuptools+wheel 전환 완료
 - **로컬 설치**: `pip install -e .` 이제 정상 작동
