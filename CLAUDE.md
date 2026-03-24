@@ -36,7 +36,8 @@ source .venv/bin/activate
 CLAUDE_CLI_PATH=/Users/rocky/.local/bin/claude
 CODEX_CLI_PATH=/opt/homebrew/bin/codex
 GEMINI_CLI_PATH=/opt/homebrew/bin/gemini  # Gemini CLI (OAuth 기반, gemini auth login 필요)
-GEMINI_CLI_DEFAULT_TIMEOUT_SEC=1800       # 긴 리서치 태스크 대응
+GEMINI_CLI_DEFAULT_TIMEOUT_SEC=1800       # 긴 리서치 태스크 대응 (30분)
+GEMINI_CLI_MODEL=gemini-2.5-flash         # 기본 모델 (gemini-2.0-flash 사용 금지)
 ```
 
 ## 주요 명령어
@@ -93,6 +94,14 @@ bash scripts/start_all.sh
 - **이유**: 각 엔진(Claude Code / Codex / Gemini CLI)이 자신의 컨텍스트 파일만 읽음 → 한 파일만 수정하면 나머지 엔진에 정보 불일치 발생
 - **실행 방법**: 한 파일 수정 완료 → 바로 나머지 두 파일도 동일 내용 반영
 - **CLAUDE.md가 기준**: 가장 상세하게 유지. AGENTS.md와 GEMINI.md는 여기서 동기화
+
+### [2026-03-25] GitHub Actions CI/CD 운영 원칙
+- `.github/workflows/ci.yml` 은 Python 3.11 기준으로 `validate-config` 와 E2E 회귀(`tests/e2e/test_engine_compat_e2e.py`, `tests/e2e/test_pm_dispatch_e2e.py`)를 검증한다.
+- `.github/workflows/build-pypi.yml` 은 `python -m build` 와 `twine check dist/*` 로 배포 전 패키지 무결성을 확인한다.
+- `.github/workflows/build-docker.yml` 은 `docker buildx build --load` 로 push 없이 이미지 빌드만 단계적으로 검증한다.
+- GitHub Actions secret 이름은 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` 로 고정한다.
+- secret이 없는 fork PR 또는 외부 기여 상황에서는 live smoke step을 notice + skip 처리하고, offline-safe 테스트는 계속 실행한다.
+- `GEMINI_API_KEY` 는 CI 전용 secret이다. 로컬 Gemini CLI 운영은 계속 OAuth 기준으로 유지한다.
 
 ### [2026-03-21] ⚠️ 배포 행위는 운영실(aiorg_ops_bot) 전담 — 전체 조직 적용
 - **원칙**: 운영실을 제외한 **모든 specialist 조직**은 로컬 커밋까지만 수행. 아래 세 가지는 운영실(@aiorg_ops_bot)만 실행:
