@@ -246,6 +246,9 @@ class TelegramRelay:
                 on_task=self._execute_polled_task,
             )
 
+        # AutonomousLoop — GoalTracker 기반 자율 루프 (startup에서 시작)
+        self._autonomous_loop = None
+
         # OrgScheduler — pm_bot 내장 스케줄러 (회의·회고 자율 실행)
         self._org_scheduler = None
         self._group_chat_hub = None
@@ -266,12 +269,14 @@ class TelegramRelay:
             self._org_scheduler = OrgScheduler(
                 send_text=_sched_send,
                 group_chat_hub=self._group_chat_hub,
-                context_db=context_db,
+                # Phase 3: goal_tracker + pm_orchestrator + pm_chat_id 연결
+                goal_tracker=self._goal_tracker,
+                pm_orchestrator=self._pm_orchestrator,
+                pm_chat_id=self.allowed_chat_id,
             )
             self._schedule_store = UserScheduleStore()
             self._nl_parser = NLScheduleParser()
             self._org_scheduler.load_user_schedules(self._schedule_store)
-            # GoalTracker 주입은 _post_init에서 처리 (GoalTracker가 나중에 초기화되므로)
 
         # WarmSessionPool — 엔진 타입에 맞게 세션/러너 예열
         from core.session_manager import WarmSessionPool
@@ -3096,25 +3101,35 @@ class TelegramRelay:
             logger.info(f"[{self.org_id}] 봇 명령어 등록 태스크 시작됨")
 
         if self._org_scheduler is not None:
-            # GoalTracker 주입 — 회의 조치사항을 목표로 등록하기 위해
-            if self._goal_tracker is not None:
-                self._org_scheduler.set_goal_tracker(self._goal_tracker)
             self._org_scheduler.start()
             logger.info(f"[{self.org_id}] OrgScheduler 시작됨")
 
-        # GroupChatHub 참가자 등록 — PM 봇이 알려진 모든 부서 봇을 등록
-        # (회의/회고 시 전 조직이 채팅에 참여하는 구조)
-        if self._group_chat_hub is not None:
-            self._register_group_chat_participants()
-            self._group_chat_hub.start_background_processor()
-            logger.info(f"[{self.org_id}] GroupChatHub 참가자 등록 완료 "
-                        f"({len(self._group_chat_hub.participant_ids)}명)")
-
-        # GoalTracker 자율 루프 시작 — ENABLE_GOAL_TRACKER=1 시 활성 목표 없으면 기본 목표 등록
+        # GoalTracker 활성 목표 재개 (재시작 복구)
         if self._goal_tracker is not None:
             import asyncio as _asyncio
-            _asyncio.create_task(self._boot_goal_tracker())
-            logger.info(f"[{self.org_id}] GoalTracker 부트 태스크 시작됨")
+            _asyncio.create_task(self._resume_goals_on_startup())
+            logger.info(f"[{self.org_id}] GoalTracker 활성 목표 재개 태스크 시작됨")
+
+        # AutonomousLoop 시작 (ENABLE_GOAL_TRACKER=1일 때)
+        if self._goal_tracker is not None:
+            import asyncio as _asyncio
+            from core.autonomous_loop import AutonomousLoop, load_loop_config
+            _loop_cfg = load_loop_config()
+
+            async def _sched_send_for_loop(text: str) -> None:
+                await self._pm_send_message(self.allowed_chat_id, text)
+
+            self._autonomous_loop = AutonomousLoop(
+                goal_tracker=self._goal_tracker,
+                idle_sleep_sec=_loop_cfg["idle_sleep_sec"],
+                max_dispatch=_loop_cfg["max_dispatch"],
+                send_func=_sched_send_for_loop,
+            )
+            _asyncio.create_task(self._autonomous_loop.run(), name="autonomous-loop")
+            logger.info(
+                f"[{self.org_id}] AutonomousLoop 시작됨 "
+                f"(idle_sleep={_loop_cfg['idle_sleep_sec']}s)"
+            )
 
         # WarmSessionPool 예열 시작 (엔진별 분기)
         if self._warm_pool is not None:
@@ -3122,114 +3137,23 @@ class TelegramRelay:
             _asyncio.create_task(self._warm_pool.start())
             logger.info(f"[{self.org_id}] WarmSessionPool 예열 시작 (engine={self.engine})")
 
-    # ── GroupChatHub 참가자 등록 ───────────────────────────────────────────────
-
-    def _make_org_speak_callback(self, org_id: str, dept_name: str):
-        """특정 조직을 대표하는 GroupChatHub speak_callback 생성.
-
-        콜백은 ContextDB에서 해당 조직의 최근 태스크를 조회하여
-        상태 보고 문자열을 반환한다.  (cross-process 호출 없이 PM 프로세스 내에서 실행)
-        """
-        context_db = self.context_db
-
-        async def _speak(topic: str, ctx) -> str | None:
-            lines: list[str] = [f"[{dept_name}] 회의 참여 보고"]
-            if context_db is not None:
-                try:
-                    import aiosqlite as _sq
-                    async with _sq.connect(context_db.db_path) as _db:
-                        _db.row_factory = _sq.Row
-                        cur = await _db.execute(
-                            "SELECT id, status, description, result FROM pm_tasks "
-                            "WHERE assigned_dept=? AND created_at >= datetime('now','-2 days') "
-                            "ORDER BY created_at DESC LIMIT 5",
-                            (org_id,),
-                        )
-                        rows = await cur.fetchall()
-                    if rows:
-                        done = [r for r in rows if r["status"] == "done"]
-                        pending = [r for r in rows if r["status"] not in ("done", "failed", "cancelled")]
-                        failed = [r for r in rows if r["status"] == "failed"]
-                        lines.append(f"최근 2일 태스크: {len(rows)}건 (완료 {len(done)}, 진행중 {len(pending)}, 실패 {len(failed)})")
-                        if done:
-                            lines.append("✅ 완료: " + done[0]["description"][:60])
-                        if pending:
-                            lines.append("🔄 진행: " + pending[0]["description"][:60])
-                        if failed:
-                            lines.append("❌ 실패: " + failed[0]["description"][:60])
-                    else:
-                        lines.append("최근 2일 배정된 태스크 없음")
-                except Exception as e:
-                    logger.warning(f"[GroupChatHub] {org_id} 태스크 조회 실패: {e}")
-                    lines.append("(태스크 데이터 조회 불가)")
-            return "\n".join(lines)
-
-        return _speak
-
-    def _register_group_chat_participants(self) -> None:
-        """KNOWN_DEPTS의 모든 부서 봇을 GroupChatHub에 등록."""
-        if self._group_chat_hub is None:
-            return
-        for org_id, dept_name in KNOWN_DEPTS.items():
-            speak_cb = self._make_org_speak_callback(org_id, dept_name)
-            # 각 부서의 도메인 키워드는 DEPT_ROLES에서 유추
-            from core.constants import DEPT_ROLES
-            role_text = DEPT_ROLES.get(org_id, "")
-            keywords = [kw.strip() for kw in role_text.replace("/", ",").split(",") if kw.strip()][:5]
-            self._group_chat_hub.register_participant(
-                bot_id=org_id,
-                speak_callback=speak_cb,
-                domain_keywords=keywords,
-            )
-
-    # ── GoalTracker 자동 부트 ─────────────────────────────────────────────────
-
-    async def _boot_goal_tracker(self) -> None:
-        """봇 시작 시 GoalTracker에 장기 목표가 없으면 기본 목표를 등록한다.
-
-        ENABLE_GOAL_TRACKER=1 환경에서:
-        1. 현재 활성 목표가 있으면 → 그 목표의 루프 재개
-        2. 없으면 → OPENSOURCE_PLAN.md에서 읽어온 오픈소스화 목표 등록
-        """
-        if self._goal_tracker is None or self.context_db is None:
+    async def _resume_goals_on_startup(self) -> None:
+        """봇 재시작 시 DB의 활성 GoalTracker 목표를 루프 재개."""
+        if self._goal_tracker is None:
             return
         try:
-            active = await self._goal_tracker.get_active_goals(org_id=self.org_id)
-            if active:
-                # 기존 활성 목표가 있으면 루프 재개
-                for goal in active:
-                    gid = goal["id"]
-                    import asyncio as _asyncio
-                    _asyncio.create_task(
-                        self._goal_tracker._run_goal_background(gid),
-                        name=f"goal-loop-resume-{gid}",
-                    )
-                    logger.info(f"[GoalTracker] 기존 활성 목표 루프 재개: {gid} '{goal.get('title', '')}'")
-                return
-
-            # 새 장기 목표 등록 — 오픈소스화 마스터 플랜
-            default_description = (
-                "telegram-ai-org 오픈소스화 + 원클릭 풀셋팅 패키징 완성.\n\n"
-                "OKR:\n"
-                "- 원클릭 설치 스크립트(setup.sh) 완성\n"
-                "- claude-code/codex/gemini-cli 3엔진 호환 E2E 테스트 통과\n"
-                "- PyPI/Docker 배포 가능한 패키지 구조 완성\n"
-                "- README 오픈소스 버전 전면 개편\n"
-                "- GitHub Actions CI/CD 설정\n\n"
-                "상세 계획: docs/OPENSOURCE_PLAN.md 참조"
-            )
-            gid = await self._goal_tracker.start_goal(
-                org_id=self.org_id,
-                title="오픈소스화 스프린트 (7일)",
-                description=default_description,
-                meta={"sprint": "7d", "deadline": "2026-03-31"},
-                chat_id=self.allowed_chat_id,
-            )
-            logger.info(f"[GoalTracker] 기본 목표 등록 완료: {gid}")
+            # 짧게 대기 후 재개 (startup race condition 방지)
+            import asyncio as _asyncio
+            await _asyncio.sleep(5)
+            resumed = await self._goal_tracker.resume_active_goals()
+            if resumed:
+                logger.info(f"[{self.org_id}] GoalTracker 목표 {resumed}개 재개됨")
+                await self._pm_send_message(
+                    self.allowed_chat_id,
+                    f"♻️ [GoalTracker] 재시작 복구: 활성 목표 {resumed}개 루프 재개됨.",
+                )
         except Exception as e:
-            logger.error(f"[GoalTracker] _boot_goal_tracker 실패: {e}")
-
-    # ─────────────────────────────────────────────────────────────────────────
+            logger.error(f"[{self.org_id}] GoalTracker 재개 실패: {e}")
 
     async def _store_pending_confirmation(self, action: str, task_ids: list, description: str = "") -> None:
         """pm_bot 제안 상태 저장 (5분 유효). 사용자 긍정 응답 시 _execute_pending_confirmation 실행."""
