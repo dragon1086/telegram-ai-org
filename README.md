@@ -104,7 +104,7 @@ telegram-ai-org/
 ├── bots/                            # 봇별 YAML 정의 (성격, 역할, 엔진)
 │   ├── aiorg_pm_bot.yaml            #   PM — claude-code
 │   ├── aiorg_product_bot.yaml       #   기획실 — claude-code
-│   ├── aiorg_engineering_bot.yaml   #   개발실 — claude-code
+│   ├── aiorg_engineering_bot.yaml   #   개발실 — codex
 │   ├── aiorg_design_bot.yaml        #   디자인실 — claude-code
 │   ├── aiorg_growth_bot.yaml        #   성장실 — gemini-cli
 │   ├── aiorg_ops_bot.yaml           #   운영실 — codex
@@ -157,8 +157,8 @@ telegram-ai-org/
 
 | 엔진 | 적합 부서 | 주요 특징 | 필요 인증 |
 |------|-----------|-----------|-----------|
-| **claude-code** | PM / 기획실 / 개발실 / 디자인실 | 복잡한 멀티스텝 추론, 장문 컨텍스트 처리, 구조화된 문서 생성 | `claude auth login` (OAuth) |
-| **codex** | 운영실 | 경량 CLI 자동화, DevOps 스크립트 특화, 인프라 명령 실행 | `codex auth login` (OAuth) |
+| **claude-code** | PM / 기획실 / 디자인실 | 복잡한 멀티스텝 추론, 장문 컨텍스트 처리, 구조화된 문서 생성 | `claude auth login` (OAuth) |
+| **codex** | 개발실 / 운영실 | 경량 CLI 자동화, DevOps 스크립트 특화, 인프라 명령 실행 | `codex auth login` (OAuth) |
 | **gemini-cli** | 성장실 / 리서치실 | Google 검색 내장, 실시간 웹 데이터 조회, 대규모 컨텍스트 | `gemini auth login` (OAuth) |
 
 > **API 키 없이 사용 가능**: 3개 엔진 모두 OAuth 2.0 인증을 지원하므로 별도 API 키 없이 운용할 수 있습니다.
@@ -405,15 +405,15 @@ docker compose logs -f aiorg-research-bot
 
 | 봇 | 엔진 | 선택 이유 |
 |----|------|-----------|
-| PM / 기획실 / 개발실 / 디자인실 | **claude-code** | 복잡한 멀티스텝 추론, 긴 컨텍스트, 구조화된 문서 |
-| 운영실 | **codex** | 경량 CLI 특화, DevOps 스크립트 자동화 |
+| PM / 기획실 / 디자인실 | **claude-code** | 복잡한 멀티스텝 추론, 긴 컨텍스트, 구조화된 문서 |
+| 개발실 / 운영실 | **codex** | 경량 CLI 특화, DevOps 스크립트 자동화 |
 | 성장실 / 리서치실 | **gemini-cli** | Google 검색 내장, 실시간 시장 데이터 조회 |
 
 ---
 
 ### 1. Claude Code (기본 권장)
 
-PM봇·기획실·개발실·디자인실에서 사용. 복잡한 멀티스텝 추론과 장문 컨텍스트에 최적.
+PM봇·기획실·디자인실에서 사용. 복잡한 멀티스텝 추론과 장문 컨텍스트에 최적.
 
 **설치**
 
@@ -454,7 +454,7 @@ claude -p "hello world" --output-format text
 
 ### 2. Codex CLI
 
-운영실(aiorg_ops_bot)에서 사용. 경량 CLI 특화, DevOps 스크립트 및 인프라 자동화에 최적.
+개발실(aiorg_engineering_bot)·운영실(aiorg_ops_bot)에서 사용. 경량 CLI 특화, DevOps 스크립트 및 인프라 자동화에 최적.
 
 **설치**
 
@@ -636,7 +636,7 @@ strengths:
 |------|-------|------|------|
 | PM | aiorg_pm_bot | claude-code | 오케스트레이션/조율 |
 | 기획실 | aiorg_product_bot | claude-code | PRD/요구사항 분석 |
-| 개발실 | aiorg_engineering_bot | claude-code | 코드 구현/버그 수정 |
+| 개발실 | aiorg_engineering_bot | codex | 코드 구현/버그 수정 |
 | 디자인실 | aiorg_design_bot | claude-code | UI/UX 디자인 |
 | 성장실 | aiorg_growth_bot | gemini-cli | 마케팅/지표 분석 |
 | 운영실 | aiorg_ops_bot | codex | 배포/인프라 |
