@@ -88,6 +88,19 @@ bash scripts/start_all.sh
 
 > 세션 시작 시 반드시 확인. 실수가 발생할 때마다 여기에 추가한다.
 
+### [2026-03-25] ⚠️ context_db.py 수정 시 기존 DB 검증 필수 — 전 봇 크래시 방지
+
+**인시던트**: `executescript`에 `CREATE INDEX ON pm_goals(org_id)` 추가 → 기존 DB에 `org_id` 컬럼 없음 → `sqlite3.OperationalError` → 봇 전체 시작 실패 → watchdog 1분 재시작 루프.
+
+**규칙**:
+- `executescript` 블록에 migration으로 추가되는 컬럼의 인덱스를 넣지 말 것
+- 새 컬럼 인덱스는 해당 migration 함수 안에서만 생성
+- **`context_db.py` 수정 후 반드시 아래 검증 실행**:
+  ```bash
+  .venv/bin/python -c "import asyncio; from core.context_db import ContextDB; asyncio.run(ContextDB().initialize()); print('OK')"
+  ```
+- 상세: `skills/safe-modify/gotchas.md` Gotcha 8
+
 ### [2026-03-24] 3개 컨텍스트 파일 동시 수정 원칙 (전체 조직 공통)
 - **원칙**: CLAUDE.md / AGENTS.md / GEMINI.md 는 반드시 동시에 수정한다
 - **이유**: 각 엔진(Claude Code / Codex / Gemini CLI)이 자신의 컨텍스트 파일만 읽음 → 한 파일만 수정하면 나머지 엔진에 정보 불일치 발생

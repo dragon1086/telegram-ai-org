@@ -155,7 +155,7 @@ class ContextDB:
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_pm_goals_status ON pm_goals(status);
-                CREATE INDEX IF NOT EXISTS idx_pm_goals_org ON pm_goals(org_id);
+                -- idx_pm_goals_org은 _migrate_pm_goals_v2()에서 org_id 컬럼 추가 후 생성
 
                 CREATE TABLE IF NOT EXISTS conversation_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -118,3 +118,34 @@ return check_failure_legacy(scan_diff)
 - `override_algorithm: true` 조건은 **확장 금지** (더 많은 케이스에서 LLM이 알고리즘을 오버라이드 하게 만들면 안 됨)
 - confidence 임계값 변경 시 반드시 테스트 데이터셋으로 검증 후 결정
 - 변경 전 현재 판정 분포 통계를 먼저 확인
+
+---
+
+## Gotcha 8: DB 마이그레이션 순서 역전 — executescript에 migration 컬럼 의존 인덱스
+
+**상황**: `context_db.py`의 `executescript`(스키마 초기화)에 `CREATE INDEX ON pm_goals(org_id)` 추가.
+그런데 기존 DB의 `pm_goals` 테이블에는 `org_id` 컬럼이 없고, 이를 추가하는 `_migrate_pm_goals_v2()`는 `initialize()` 마지막에 실행됨.
+
+**증상**: `sqlite3.OperationalError: no such column: org_id` → 봇 전체 시작 실패 → watchdog가 1분마다 재시작 루프 → 전 조직 무응답.
+
+**근본 원인**: `executescript`는 migration 전에 실행되므로, migration으로 추가되는 컬럼을 참조하는 인덱스를 `executescript`에 넣으면 기존 DB에서 즉시 크래시.
+
+**해결**:
+- `executescript`에는 새 컬럼 참조 인덱스를 넣지 말 것
+- migration으로 추가되는 컬럼의 인덱스는 해당 migration 함수 안에서만 생성
+- **`context_db.py` 수정 후 필수 검증**: 기존 DB 파일이 있는 상태에서 `ContextDB().initialize()` 실행
+
+```bash
+# context_db.py 수정 시 반드시 실행
+.venv/bin/python -c "
+import asyncio
+from core.context_db import ContextDB
+asyncio.run(ContextDB().initialize())
+print('OK')
+"
+```
+
+**예방 규칙**:
+- `executescript` 블록 수정 시 → `CREATE INDEX`가 `CREATE TABLE`과 동일 컬럼 셋을 참조하는지 확인
+- 새 컬럼 추가는 항상 migration 함수에서만 (`ALTER TABLE ADD COLUMN`)
+- `initialize()` 변경 PR은 반드시 위 검증 명령어 실행 결과 첨부
