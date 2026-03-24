@@ -172,3 +172,205 @@ class TestOrchestrationConfig:
         for skill in required_skills:
             skill_path = skills_dir / skill
             assert skill_path.exists(), f"스킬 심볼릭 링크 누락: {skill}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 추가: 전체 조직 엔진 배정 검증
+# ---------------------------------------------------------------------------
+
+
+class TestEngineRoutingAllOrgs:
+    """organizations.yaml 전체 봇 엔진 배정 정합성 검증."""
+
+    def _load_org_engine_map(self) -> dict[str, str]:
+        import yaml
+        from pathlib import Path
+
+        config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
+        if not config_path.exists():
+            pytest.skip("organizations.yaml not found")
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+        return {
+            org["id"]: org.get("execution", {}).get("preferred_engine", "")
+            for org in config.get("organizations", [])
+        }
+
+    @pytest.mark.parametrize("org_id,expected_engine", [
+        ("aiorg_pm_bot", "claude-code"),
+        ("aiorg_engineering_bot", "claude-code"),
+        ("aiorg_design_bot", "claude-code"),
+        ("aiorg_product_bot", "claude-code"),
+        ("aiorg_ops_bot", "codex"),
+        ("aiorg_growth_bot", "gemini-cli"),
+        ("aiorg_research_bot", "gemini-cli"),
+    ])
+    def test_org_engine_assignment(self, org_id: str, expected_engine: str) -> None:
+        """각 조직이 organizations.yaml에서 올바른 엔진에 배정되어 있다."""
+        org_engine_map = self._load_org_engine_map()
+        assert org_id in org_engine_map, (
+            f"{org_id}: organizations.yaml에 등록되지 않음"
+        )
+        actual = org_engine_map[org_id]
+        assert actual == expected_engine, (
+            f"{org_id}: 예상 엔진={expected_engine}, 실제={actual}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 추가: BOT_ENGINE_MAP 완결성 검증
+# ---------------------------------------------------------------------------
+
+
+class TestBotEngineMapCompleteness:
+    """core.constants.BOT_ENGINE_MAP 완결성 및 유효성 검증."""
+
+    def test_bot_engine_map_contains_all_expected_bots(self) -> None:
+        """BOT_ENGINE_MAP에 6개 부서 봇이 모두 포함된다."""
+        from core.constants import BOT_ENGINE_MAP
+
+        expected_bots = {
+            "aiorg_engineering_bot",
+            "aiorg_design_bot",
+            "aiorg_growth_bot",
+            "aiorg_ops_bot",
+            "aiorg_product_bot",
+            "aiorg_research_bot",
+        }
+        for bot_id in expected_bots:
+            assert bot_id in BOT_ENGINE_MAP, (
+                f"{bot_id}: BOT_ENGINE_MAP에 누락됨"
+            )
+
+    def test_bot_engine_map_all_values_are_valid_engines(self) -> None:
+        """BOT_ENGINE_MAP의 모든 값이 유효한 엔진명이다."""
+        from core.constants import BOT_ENGINE_MAP
+
+        valid_engines = {"claude-code", "codex", "gemini-cli", "gemini"}
+        for bot_id, engine in BOT_ENGINE_MAP.items():
+            assert engine in valid_engines, (
+                f"{bot_id}: BOT_ENGINE_MAP 엔진값 '{engine}' 유효하지 않음"
+            )
+
+    def test_gemini_cli_bots_correctly_mapped(self) -> None:
+        """성장실·리서치실은 BOT_ENGINE_MAP에서 gemini-cli를 사용한다."""
+        from core.constants import BOT_ENGINE_MAP
+
+        gemini_bots = {"aiorg_growth_bot", "aiorg_research_bot"}
+        for bot_id in gemini_bots:
+            assert bot_id in BOT_ENGINE_MAP, f"{bot_id}: BOT_ENGINE_MAP 누락"
+            assert BOT_ENGINE_MAP[bot_id] == "gemini-cli", (
+                f"{bot_id}: gemini-cli 사용 필수 (현재: {BOT_ENGINE_MAP[bot_id]})"
+            )
+
+    def test_ops_bot_uses_codex_in_engine_map(self) -> None:
+        """운영실은 BOT_ENGINE_MAP에서 codex를 사용한다."""
+        from core.constants import BOT_ENGINE_MAP
+
+        assert "aiorg_ops_bot" in BOT_ENGINE_MAP, "aiorg_ops_bot: BOT_ENGINE_MAP 누락"
+        assert BOT_ENGINE_MAP["aiorg_ops_bot"] == "codex", (
+            f"운영실: codex 사용 필수 (현재: {BOT_ENGINE_MAP['aiorg_ops_bot']})"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 추가: 크로스팀 협업 엔진 전환 시나리오
+# ---------------------------------------------------------------------------
+
+
+class TestCrossTeamCollabEngineSwitch:
+    """크로스팀 협업 시 엔진 전환 및 RunnerFactory 다중 엔진 생성 검증."""
+
+    def test_engine_map_supports_multi_engine_dispatch(self) -> None:
+        """BOT_ENGINE_MAP은 복수 엔진 디스패치(claude-code + codex + gemini-cli)를 지원한다."""
+        from core.constants import BOT_ENGINE_MAP
+
+        engines_used = set(BOT_ENGINE_MAP.values())
+        assert len(engines_used) >= 2, (
+            f"다중 엔진 디스패치를 위해 2개 이상의 엔진 필요 (현재: {engines_used})"
+        )
+
+    def test_runner_factory_creates_claude_and_gemini_independently(self) -> None:
+        """RunnerFactory는 claude-code와 gemini-cli를 독립적으로 생성한다."""
+        from tools.base_runner import RunnerFactory, BaseRunner
+
+        pm_runner = RunnerFactory.create("claude-code")
+        research_runner = RunnerFactory.create("gemini-cli")
+
+        assert isinstance(pm_runner, BaseRunner)
+        assert isinstance(research_runner, BaseRunner)
+        assert type(pm_runner) != type(research_runner), (
+            "claude-code와 gemini-cli는 다른 타입의 러너여야 함"
+        )
+
+    def test_runner_factory_creates_claude_and_codex_independently(self) -> None:
+        """RunnerFactory는 claude-code와 codex를 독립적으로 생성한다."""
+        from tools.base_runner import RunnerFactory, BaseRunner
+
+        pm_runner = RunnerFactory.create("claude-code")
+        ops_runner = RunnerFactory.create("codex")
+
+        assert isinstance(pm_runner, BaseRunner)
+        assert isinstance(ops_runner, BaseRunner)
+        assert type(pm_runner) != type(ops_runner), (
+            "claude-code와 codex는 다른 타입의 러너여야 함"
+        )
+
+    def test_all_three_engines_creatable_simultaneously(self) -> None:
+        """RunnerFactory는 3엔진을 동시에 생성할 수 있다."""
+        from tools.base_runner import RunnerFactory, BaseRunner
+
+        engines = ["claude-code", "codex", "gemini-cli"]
+        runners = [RunnerFactory.create(e) for e in engines]
+
+        assert len(runners) == 3
+        for runner, engine in zip(runners, engines):
+            assert isinstance(runner, BaseRunner), (
+                f"{engine}: BaseRunner 인스턴스가 아님"
+            )
+
+    async def test_cross_team_mock_dispatch_flow(self) -> None:
+        """PM → 개발실(claude-code) → 리서치실(gemini-cli) 크로스팀 모의 흐름."""
+        from tools.base_runner import RunContext, BaseRunner
+
+        results: dict[str, str] = {}
+
+        class MockEngineRunner(BaseRunner):
+            def __init__(self, engine_name: str) -> None:
+                self._engine = engine_name
+                self._metrics: dict = {}
+
+            async def run(self, ctx: RunContext) -> str:
+                self._metrics = {"engine": self._engine, "chars": len(ctx.prompt)}
+                return f"[{self._engine}] {ctx.prompt[:20]}_완료"
+
+            def get_last_metrics(self) -> dict:
+                return self._metrics
+
+            def capabilities(self) -> set:
+                return {"streaming"}
+
+        # PM → 개발실 (claude-code) 디스패치
+        claude_runner = MockEngineRunner("claude-code")
+        dev_ctx = RunContext(prompt="API 버그 수정 요청", org_id="aiorg_engineering_bot")
+        results["engineering"] = await claude_runner.run(dev_ctx)
+        assert claude_runner.get_last_metrics()["engine"] == "claude-code"
+
+        # PM → 리서치실 (gemini-cli) 디스패치
+        gemini_runner = MockEngineRunner("gemini-cli")
+        research_ctx = RunContext(prompt="경쟁사 분석 요청", org_id="aiorg_research_bot")
+        results["research"] = await gemini_runner.run(research_ctx)
+        assert gemini_runner.get_last_metrics()["engine"] == "gemini-cli"
+
+        # PM → 운영실 (codex) 디스패치
+        codex_runner = MockEngineRunner("codex")
+        ops_ctx = RunContext(prompt="배포 자동화 요청", org_id="aiorg_ops_bot")
+        results["ops"] = await codex_runner.run(ops_ctx)
+        assert codex_runner.get_last_metrics()["engine"] == "codex"
+
+        # 크로스팀: 각 엔진이 서로 다른 결과를 반환한다
+        assert results["engineering"] != results["research"]
+        assert results["research"] != results["ops"]
+        assert "[claude-code]" in results["engineering"]
+        assert "[gemini-cli]" in results["research"]
+        assert "[codex]" in results["ops"]
