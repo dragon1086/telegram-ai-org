@@ -204,3 +204,39 @@ default_active_hours:
   timezone: "Asia/Seoul"
 legacy_exports:
   bots_dir: bots
+
+# ── GoalTracker 자율 루프 설정 ─────────────────────────────────────────────────
+# idle → evaluate → replan → dispatch → idle 루프 주기 설정.
+# ENABLE_GOAL_TRACKER=1 환경변수가 활성화된 경우에만 동작한다.
+goal_tracker:
+  enabled: true                  # ENABLE_GOAL_TRACKER env 우선 (이 값은 기본값)
+  loop_interval_sec: 300         # idle sleep 간격 (5분) — 평가 주기
+  max_iterations: 10             # 목표당 최대 반복 횟수
+  max_stagnation: 3              # 연속 진전 없음 판정 횟수 (이후 escalate)
+  poll_interval_sec: 30          # 서브태스크 완료 대기 폴링 간격
+  default_goals:                 # 봇 시작 시 활성 목표가 없으면 자동 등록할 기본 목표
+    - org_id: "aiorg_pm_bot"
+      title: "오픈소스화 스프린트 (7일)"
+      description: >
+        telegram-ai-org 오픈소스화 + 원클릭 풀셋팅 패키징 완성 (데드라인: 2026-03-31).
+        원클릭 설치, 3엔진 호환, 패키지 배포, README 개편, CI/CD 설정.
+      meta:
+        sprint: "7d"
+        deadline: "2026-03-31"
+
+# ── 회의/회고 전 조직 참여 설정 ─────────────────────────────────────────────────
+meeting_participation:
+  enabled: true
+  all_orgs_join: true            # 모든 등록된 조직이 회의에 자동 참여
+  action_items_to_goal_tracker: true  # 조치사항을 GoalTracker에 자동 등록
+  turn_timeout_sec: 45           # 각 봇 발언 타임아웃
+  meetings:
+    daily_retro:
+      cron: "30 23 * * *"        # 매일 23:30 KST
+      topic: "일일 회고 — 오늘 성과, 문제점, 내일 계획"
+    weekly_standup:
+      cron: "0 9 * * 1"          # 매주 월요일 09:00 KST
+      topic: "주간 스탠드업 — 이번 주 계획 및 지난 주 성과"
+    friday_retro:
+      cron: "0 18 * * 5"         # 매주 금요일 18:00 KST
+      topic: "주간 회고 — 잘한 점, 개선점, 다음 주 액션 아이템"
