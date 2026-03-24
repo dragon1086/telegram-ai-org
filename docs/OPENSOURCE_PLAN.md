@@ -33,8 +33,8 @@
 - [ ] E2E 회귀 테스트 스킬 생성
 
 ### Day 3-4 (2026-03-26~27): 패키징 & 테스트
-- [ ] 원클릭 설치 스크립트 개선 (`scripts/setup.sh` → 3엔진 자동 감지)
-- [ ] `.env.example` 완성 (모든 필수 키 문서화)
+- [x] 원클릭 설치 스크립트 개선 (`scripts/setup.sh` → 3엔진 자동 감지 + --version 검증 + .env 자동 주입)
+- [x] `.env.example` 완성 (GEMINI/CLAUDE/CODEX_CLI_PATH 및 모든 필수 키 문서화)
 - [ ] Docker Compose 지원 (선택 엔진별 프로파일)
 - [ ] E2E 테스트 스위트 구현
 - [ ] Gemini 이미지 생성 스킬 구현
