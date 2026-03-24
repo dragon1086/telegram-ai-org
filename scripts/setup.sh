@@ -80,10 +80,10 @@ CODEX_PATH=""
 GEMINI_PATH=""
 DETECTED_ENGINES=()
 
-# claude 감지
+# claude-code 감지
 if CLAUDE_PATH=$(which claude 2>/dev/null); then
-    ok "claude 감지됨: $CLAUDE_PATH"
-    DETECTED_ENGINES+=("claude")
+    ok "claude-code 감지됨: $CLAUDE_PATH"
+    DETECTED_ENGINES+=("claude-code")
 else
     warn "claude CLI 미감지 (설치: https://claude.ai/code)"
     CLAUDE_PATH=""
@@ -98,13 +98,22 @@ else
     CODEX_PATH=""
 fi
 
-# gemini 감지
-if GEMINI_PATH=$(which gemini 2>/dev/null); then
-    ok "gemini 감지됨: $GEMINI_PATH"
-    DETECTED_ENGINES+=("gemini")
+# gemini-cli 감지 — /opt/homebrew/bin/gemini 우선, 이후 PATH 탐색
+GEMINI_PATH=""
+for _g_candidate in "/opt/homebrew/bin/gemini" "$HOME/.local/bin/gemini" "$HOME/bin/gemini"; do
+    if [ -x "$_g_candidate" ]; then
+        GEMINI_PATH="$_g_candidate"
+        break
+    fi
+done
+if [ -z "$GEMINI_PATH" ]; then
+    GEMINI_PATH=$(which gemini 2>/dev/null) || true
+fi
+if [ -n "$GEMINI_PATH" ]; then
+    ok "gemini-cli 감지됨: $GEMINI_PATH"
+    DETECTED_ENGINES+=("gemini-cli")
 else
     warn "gemini CLI 미감지 (설치: https://github.com/google-gemini/gemini-cli)"
-    GEMINI_PATH=""
 fi
 
 # 하나도 없으면 경고 후 종료
@@ -118,6 +127,32 @@ if [ ${#DETECTED_ENGINES[@]} -eq 0 ]; then
 fi
 
 echo -e "\n감지된 엔진: ${BOLD}${GREEN}${DETECTED_ENGINES[*]}${RESET} (총 ${#DETECTED_ENGINES[@]}개)"
+
+# ── 엔진 선택 (복수 감지 시 사용자 선택 프롬프트) ─────────────────────────────
+SELECTED_ENGINE=""
+if [ ${#DETECTED_ENGINES[@]} -eq 1 ]; then
+    SELECTED_ENGINE="${DETECTED_ENGINES[0]}"
+    info "기본 엔진 자동 선택: $SELECTED_ENGINE"
+else
+    echo ""
+    echo -e "${BOLD}${YELLOW}복수의 엔진이 감지되었습니다. 기본 엔진을 선택해주세요:${RESET}"
+    for _i in "${!DETECTED_ENGINES[@]}"; do
+        echo "  $((_i+1)). ${DETECTED_ENGINES[$_i]}"
+    done
+    echo ""
+    while true; do
+        read -rp "  선택 [1-${#DETECTED_ENGINES[@]}] (기본값: 1, claude-code 권장): " _eng_choice
+        _eng_choice="${_eng_choice:-1}"
+        if [[ "$_eng_choice" =~ ^[0-9]+$ ]] && \
+           [ "$_eng_choice" -ge 1 ] && \
+           [ "$_eng_choice" -le "${#DETECTED_ENGINES[@]}" ]; then
+            SELECTED_ENGINE="${DETECTED_ENGINES[$((_eng_choice-1))]}"
+            break
+        fi
+        warn "올바른 번호를 입력해주세요 (1-${#DETECTED_ENGINES[@]})"
+    done
+    ok "선택된 기본 엔진: $SELECTED_ENGINE"
+fi
 
 # =============================================================================
 # STEP 2: Python 버전 확인
@@ -244,6 +279,39 @@ install_deps() {
 
 install_deps
 
+# ── 엔진별 추가 패키지 설치 ─────────────────────────────────────────────────────
+echo ""
+info "엔진별 추가 패키지 확인 중 (선택된 엔진: $SELECTED_ENGINE)..."
+case "$SELECTED_ENGINE" in
+    claude-code)
+        # claude-code: anthropic SDK (이미 pyproject.toml 의존성에 포함)
+        if "$VENV_PYTHON" -c "import anthropic" 2>/dev/null; then
+            ok "anthropic SDK 이미 설치됨 (claude-code)"
+        else
+            info "anthropic SDK 설치 중..."
+            "$VENV_PYTHON" -m pip install anthropic --quiet && ok "anthropic 설치 완료"
+        fi
+        ;;
+    codex)
+        # codex: openai 패키지 (scoring/API 호출용)
+        if "$VENV_PYTHON" -c "import openai" 2>/dev/null; then
+            ok "openai 이미 설치됨 (codex)"
+        else
+            info "codex용 openai 패키지 설치 중..."
+            "$VENV_PYTHON" -m pip install openai --quiet && ok "openai 설치 완료"
+        fi
+        ;;
+    gemini-cli)
+        # gemini-cli: google-generativeai (scoring/REST API 호출용)
+        if "$VENV_PYTHON" -c "import google.generativeai" 2>/dev/null; then
+            ok "google-generativeai 이미 설치됨 (gemini-cli)"
+        else
+            info "gemini-cli용 google-generativeai 패키지 설치 중..."
+            "$VENV_PYTHON" -m pip install google-generativeai --quiet && ok "google-generativeai 설치 완료"
+        fi
+        ;;
+esac
+
 # ── Node/npm 존재 여부 확인 (codex 설치 시 필요) ───────────────────────────────
 if [ -n "$CODEX_PATH" ]; then
     if command -v node &>/dev/null && command -v npm &>/dev/null; then
@@ -317,6 +385,56 @@ if [ -n "$GEMINI_PATH" ]; then
         fi
         info "GEMINI_CLI_PATH → $GEMINI_PATH (자동 설정)"
     fi
+fi
+
+# ── ENGINE 변수 자동 세팅 ────────────────────────────────────────────────────────
+if [ -n "$SELECTED_ENGINE" ]; then
+    if grep -q "^ENGINE=" "$ENV_FILE" 2>/dev/null; then
+        if [ "$OS_NAME" = "macOS" ]; then
+            sed -i '' "s|^ENGINE=.*|ENGINE=$SELECTED_ENGINE|" "$ENV_FILE"
+        else
+            sed -i "s|^ENGINE=.*|ENGINE=$SELECTED_ENGINE|" "$ENV_FILE"
+        fi
+    else
+        echo "ENGINE=$SELECTED_ENGINE" >> "$ENV_FILE"
+    fi
+    info "ENGINE → $SELECTED_ENGINE (자동 설정)"
+fi
+
+# ── 인터랙티브 필수 키 수집 (신규 .env 파일인 경우) ─────────────────────────────
+if [ "$ENV_EXISTS" = false ]; then
+    echo ""
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo -e "${BOLD}${CYAN}  🔑 Telegram 봇 필수 정보를 입력해주세요 (나중에 .env에서 수정 가능)${RESET}"
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo ""
+
+    # PM_BOT_TOKEN
+    read -rp "  PM_BOT_TOKEN (@BotFather에서 발급, 스킵: Enter): " _pm_token
+    if [ -n "$_pm_token" ]; then
+        if [ "$OS_NAME" = "macOS" ]; then
+            sed -i '' "s|^PM_BOT_TOKEN=.*|PM_BOT_TOKEN=$_pm_token|" "$ENV_FILE"
+        else
+            sed -i "s|^PM_BOT_TOKEN=.*|PM_BOT_TOKEN=$_pm_token|" "$ENV_FILE"
+        fi
+        ok "PM_BOT_TOKEN 설정 완료"
+    else
+        warn "PM_BOT_TOKEN 미입력 — .env 파일에서 직접 입력하세요"
+    fi
+
+    # TELEGRAM_GROUP_CHAT_ID
+    read -rp "  TELEGRAM_GROUP_CHAT_ID (그룹 chat_id, 예: -100xxxxxxxxxx, 스킵: Enter): " _chat_id
+    if [ -n "$_chat_id" ]; then
+        if [ "$OS_NAME" = "macOS" ]; then
+            sed -i '' "s|^TELEGRAM_GROUP_CHAT_ID=.*|TELEGRAM_GROUP_CHAT_ID=$_chat_id|" "$ENV_FILE"
+        else
+            sed -i "s|^TELEGRAM_GROUP_CHAT_ID=.*|TELEGRAM_GROUP_CHAT_ID=$_chat_id|" "$ENV_FILE"
+        fi
+        ok "TELEGRAM_GROUP_CHAT_ID 설정 완료"
+    else
+        warn "TELEGRAM_GROUP_CHAT_ID 미입력 — .env 파일에서 직접 입력하세요"
+    fi
+    echo ""
 fi
 
 # API 키 입력 안내 메시지
@@ -430,6 +548,8 @@ echo ""
 echo "  3. 모든 봇 시작:"
 echo -e "       ${BOLD}bash scripts/start_all.sh${RESET}"
 echo ""
-[ -n "$GEMINI_PATH" ] && echo -e "  ${CYAN}Gemini CLI 인증 (미인증 시):${RESET} gemini auth login"
+[ -n "$GEMINI_PATH" ] && echo -e "  ${CYAN}Gemini CLI 인증 (미인증 시):${RESET} $GEMINI_PATH auth login"
 [ -n "$CODEX_PATH"  ] && echo -e "  ${CYAN}Codex CLI 인증 (미인증 시):${RESET}  codex login"
+echo ""
+info "선택된 기본 엔진: ${BOLD}$SELECTED_ENGINE${RESET}"
 echo ""
