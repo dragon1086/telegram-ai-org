@@ -2,13 +2,21 @@
 
 이 파일은 Claude Code가 이 저장소에서 작업할 때 자동으로 읽는 프로젝트 지침이다.
 
+> **3개 컨텍스트 파일 동기화 원칙**: CLAUDE.md / AGENTS.md / GEMINI.md 는 항상 동시에 수정한다.
+> 이 파일을 수정하면 반드시 AGENTS.md와 GEMINI.md도 같은 내용으로 업데이트한다.
+
 ## 프로젝트 개요
 
 `telegram-ai-org` — Telegram 그룹 채팅방을 AI 조직의 오피스로 쓰는 멀티봇 오케스트레이션 시스템.
 
-- PM 봇이 `workers.yaml`을 읽어 태스크를 적합한 워커 봇에 자율 배분
+- PM 봇이 태스크를 적합한 워커 봇에 자율 배분
 - 봇마다 성격·기억·캐릭터 진화, 팀워크/칭찬 시스템, 자연어 스케줄 등록 지원
-- 실행 엔진: `claude-code` / `codex` 중 봇별 설정
+- 실행 엔진: `claude-code` / `codex` / `gemini-cli` 중 봇별 설정 (bots/*.yaml 참조)
+
+## 오픈소스화 목표 (2026-03-24 기준 최우선 과제)
+
+> **미션**: telegram-ai-org 오픈소스화 + 원클릭 풀셋팅 서비스 패키징 (7일 내 완료)
+> 상세 계획: `docs/OPENSOURCE_PLAN.md` 참조
 
 ## 환경 설정
 
@@ -22,6 +30,14 @@ source .venv/bin/activate
 ```
 
 `.env` 파일에 `PM_BOT_TOKEN`, `COKAC_BOT_TOKEN` 등 봇 토큰 필수.
+
+### CLI 경로 설정 (.env)
+```bash
+CLAUDE_CLI_PATH=/Users/rocky/.local/bin/claude
+CODEX_CLI_PATH=/opt/homebrew/bin/codex
+GEMINI_CLI_PATH=/opt/homebrew/bin/gemini  # Gemini CLI (OAuth 기반, gemini auth login 필요)
+GEMINI_CLI_DEFAULT_TIMEOUT_SEC=1800       # 긴 리서치 태스크 대응
+```
 
 ## 주요 명령어
 
@@ -58,9 +74,25 @@ bash scripts/start_all.sh
 | `bots/` | 봇 YAML 정의 |
 | `tests/` | pytest 회귀 커버리지 |
 
+## 주요 명령어 (추가)
+
+```bash
+# E2E 회귀 테스트 전체 실행
+./.venv/bin/pytest tests/e2e/ -q
+
+# 오케스트레이션 설정 검증
+./.venv/bin/python tools/orchestration_cli.py validate-config
+```
+
 ## 운영 주의사항 (누적)
 
 > 세션 시작 시 반드시 확인. 실수가 발생할 때마다 여기에 추가한다.
+
+### [2026-03-24] 3개 컨텍스트 파일 동시 수정 원칙 (전체 조직 공통)
+- **원칙**: CLAUDE.md / AGENTS.md / GEMINI.md 는 반드시 동시에 수정한다
+- **이유**: 각 엔진(Claude Code / Codex / Gemini CLI)이 자신의 컨텍스트 파일만 읽음 → 한 파일만 수정하면 나머지 엔진에 정보 불일치 발생
+- **실행 방법**: 한 파일 수정 완료 → 바로 나머지 두 파일도 동일 내용 반영
+- **CLAUDE.md가 기준**: 가장 상세하게 유지. AGENTS.md와 GEMINI.md는 여기서 동기화
 
 ### [2026-03-21] ⚠️ 배포 행위는 운영실(aiorg_ops_bot) 전담 — 전체 조직 적용
 - **원칙**: 운영실을 제외한 **모든 specialist 조직**은 로컬 커밋까지만 수행. 아래 세 가지는 운영실(@aiorg_ops_bot)만 실행:
