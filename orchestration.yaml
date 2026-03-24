@@ -219,3 +219,27 @@ goal_tracker:
   max_iterations: 10         # 목표당 최대 반복 횟수
   max_stagnation: 3          # 연속 진전 없으면 escalate
   poll_interval_sec: 30      # 서브태스크 완료 대기 폴링 주기 (초)
+
+# ── 장기 목표 (PM 첫 기동 시 GoalTracker에 자동 등록) ──────────────────────────
+# start_goal()로 DB에 저장 → AutonomousLoop이 자율 추진
+long_term_goals:
+  - title: "오픈소스화 — 원클릭 풀셋팅 패키징"
+    description: >
+      telegram-ai-org를 오픈소스로 공개하고 일반인이 원클릭으로 풀셋팅 후 체험할 수 있는
+      서비스로 패키징한다. 3엔진(claude-code/codex/gemini-cli) 호환 보장, 원클릭 설치 스크립트,
+      Docker Compose 지원, E2E 테스트 완비, README 오픈소스 버전 전면 개편,
+      GitHub Actions CI/CD 설정, v1.0.0 릴리스.
+      세부 계획: docs/OPENSOURCE_PLAN.md 참조.
+    meta:
+      sprint: "7일 (2026-03-24~31)"
+      priority: "highest"
+      type: "project"
+      plan_doc: "docs/OPENSOURCE_PLAN.md"
+  - title: "GoalTracker 자율 운영 인프라 완성"
+    description: >
+      GoalTracker 기반 idle→evaluate→replan→dispatch 루프로 전 조직이 자율적으로
+      목표를 향해 분업하는 구조를 완성한다. 일일회고/주간회의 시 전 조직이 채팅에 참여하여
+      보고·조치사항을 자율 처리하고, 조치사항은 GoalTracker에 자동 등록된다.
+    meta:
+      priority: "high"
+      type: "infrastructure"
