@@ -82,25 +82,27 @@ CODEX_PATH=""
 GEMINI_PATH=""
 DETECTED_ENGINES=()
 
-# claude-code 감지
+# claude-code 감지 — which로 경로 확인 후 --version으로 실행 가능 여부 검증
 if CLAUDE_PATH=$(which claude 2>/dev/null); then
-    ok "claude-code 감지됨: $CLAUDE_PATH"
+    _claude_ver=$(claude --version 2>/dev/null | head -1 || echo "버전 확인 불가")
+    ok "claude-code 감지됨: $CLAUDE_PATH  ($_claude_ver)"
     DETECTED_ENGINES+=("claude-code")
 else
     warn "claude CLI 미감지 (설치: https://claude.ai/code)"
     CLAUDE_PATH=""
 fi
 
-# codex 감지
+# codex 감지 — which로 경로 확인 후 --version으로 실행 가능 여부 검증
 if CODEX_PATH=$(which codex 2>/dev/null); then
-    ok "codex 감지됨:  $CODEX_PATH"
+    _codex_ver=$(codex --version 2>/dev/null | head -1 || echo "버전 확인 불가")
+    ok "codex 감지됨:  $CODEX_PATH  ($_codex_ver)"
     DETECTED_ENGINES+=("codex")
 else
     warn "codex CLI 미감지 (설치: npm install -g @openai/codex)"
     CODEX_PATH=""
 fi
 
-# gemini-cli 감지 — /opt/homebrew/bin/gemini 우선, 이후 PATH 탐색
+# gemini-cli 감지 — /opt/homebrew/bin/gemini 우선, 이후 PATH 탐색 후 --version 검증
 GEMINI_PATH=""
 for _g_candidate in "/opt/homebrew/bin/gemini" "$HOME/.local/bin/gemini" "$HOME/bin/gemini"; do
     if [ -x "$_g_candidate" ]; then
@@ -112,7 +114,8 @@ if [ -z "$GEMINI_PATH" ]; then
     GEMINI_PATH=$(which gemini 2>/dev/null) || true
 fi
 if [ -n "$GEMINI_PATH" ]; then
-    ok "gemini-cli 감지됨: $GEMINI_PATH"
+    _gemini_ver=$("$GEMINI_PATH" --version 2>/dev/null | head -1 || echo "버전 확인 불가")
+    ok "gemini-cli 감지됨: $GEMINI_PATH  ($_gemini_ver)"
     DETECTED_ENGINES+=("gemini-cli")
 else
     warn "gemini CLI 미감지. 설치 방법:"
