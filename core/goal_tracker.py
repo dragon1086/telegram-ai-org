@@ -90,8 +90,19 @@ class GoalTracker:
         self._goal_counter += 1
         return f"G-{self._org_id}-{self._goal_counter:03d}"
 
-    async def set_goal(self, description: str, chat_id: int) -> dict:
-        """새 목표 설정 및 DB 저장."""
+    async def set_goal(self, description: str, chat_id: int,
+                       org_id: str | None = None,
+                       title: str = "",
+                       meta: dict | None = None) -> dict:
+        """새 목표 설정 및 DB 저장 (내부/레거시 API).
+
+        Args:
+            description: 목표 전체 설명
+            chat_id: 알림 수신 채팅 ID
+            org_id: 목표 소유 조직 (기본값: self._org_id)
+            title: 짧은 제목
+            meta: 임의 메타데이터
+        """
         await self._init_counter()
         goal_id = self._next_goal_id()
         goal = await self._db.create_goal(
@@ -100,9 +111,85 @@ class GoalTracker:
             created_by=self._org_id,
             chat_id=chat_id,
             max_iterations=self._max_iterations,
+            org_id=org_id or self._org_id,
+            title=title or description[:80],
+            meta_json=meta or {},
         )
         logger.info(f"[GoalTracker] 목표 설정: {goal_id} — {description[:80]}")
         return goal
+
+    async def start_goal(
+        self,
+        org_id: str,
+        title: str,
+        description: str,
+        meta: dict | None = None,
+        chat_id: int | None = None,
+    ) -> str:
+        """장기 목표를 DB에 저장하고 자율 루프를 백그라운드에서 시작.
+
+        idle → evaluate → replan → dispatch → idle 루프가 asyncio 태스크로 실행된다.
+
+        Args:
+            org_id: 목표를 소유한 조직 ID (예: "pm", "aiorg_pm_bot")
+            title: 짧은 목표 제목 (예: "오픈소스화 스프린트")
+            description: 상세 목표 설명
+            meta: 임의 메타데이터 (예: {"sprint": "7d"})
+            chat_id: 알림 채팅 ID. None이면 0 (run_loop에서 DB 값 우선 사용).
+
+        Returns:
+            goal_id (예: "G-pm-001")
+        """
+        effective_chat_id = chat_id or 0
+        goal = await self.set_goal(
+            description=description,
+            chat_id=effective_chat_id,
+            org_id=org_id,
+            title=title,
+            meta=meta,
+        )
+        goal_id = goal["id"]
+        logger.info(f"[GoalTracker] start_goal: {goal_id} '{title}' — 루프 시작")
+
+        # 비동기 루프를 백그라운드 태스크로 실행 (호출자 블록 없음)
+        asyncio.create_task(
+            self._run_goal_background(goal_id),
+            name=f"goal-loop-{goal_id}",
+        )
+        return goal_id
+
+    async def _run_goal_background(self, goal_id: str) -> None:
+        """start_goal()이 시작하는 백그라운드 루프 래퍼."""
+        try:
+            status = await self.run_loop(goal_id)
+            logger.info(
+                f"[GoalTracker] {goal_id} 루프 종료 — "
+                f"achieved={status.achieved}, progress={status.progress_summary[:60]}"
+            )
+        except Exception as e:
+            logger.error(f"[GoalTracker] {goal_id} 루프 예외: {e}")
+
+    # ── 조회/상태 편의 API ─────────────────────────────────────────────────
+
+    async def get_active_goals(self, org_id: str | None = None) -> list[dict]:
+        """활성 목표 목록 조회.
+
+        Args:
+            org_id: 특정 조직으로 필터링. None이면 전체 반환.
+        """
+        return await self._db.get_active_goals(org_id=org_id)
+
+    async def update_goal_status(self, goal_id: str, status: str) -> dict | None:
+        """목표 상태 업데이트 편의 메서드.
+
+        Args:
+            goal_id: 목표 ID
+            status: 새 상태 ('active'|'achieved'|'cancelled'|'stagnated'|
+                             'max_iterations_reached')
+        """
+        result = await self._db.update_goal(goal_id, status=status)
+        logger.info(f"[GoalTracker] update_goal_status: {goal_id} → {status}")
+        return result
 
     def cancel_goal(self, goal_id: str) -> None:
         """특정 목표의 루프를 취소."""

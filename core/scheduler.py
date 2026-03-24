@@ -44,8 +44,13 @@ class OrgScheduler:
         self._claim_manager = claim_manager
         self._context_db = context_db
         self._group_chat_hub = group_chat_hub  # GroupChatHub | None
+        self._goal_tracker = None   # GoalTracker | None — set_goal_tracker()로 주입
         self.scheduler = AsyncIOScheduler(timezone=KST)
         self._register_jobs()
+
+    def set_goal_tracker(self, goal_tracker) -> None:
+        """GoalTracker 주입 — 회의 조치사항을 목표로 등록하기 위해 사용."""
+        self._goal_tracker = goal_tracker
 
     # ── 잡 등록 ──────────────────────────────────────────────────────────────
 
@@ -148,6 +153,15 @@ class OrgScheduler:
         """매일 23:30 KST — 저녁 회고."""
         logger.info("[OrgScheduler] daily_retro 시작")
         try:
+            # GroupChatHub 연동: 전 조직이 채팅에 참여하는 일일 회고
+            if self._group_chat_hub is not None:
+                logger.info("[OrgScheduler] GroupChatHub를 통한 멀티봇 일일 회고 실행")
+                await self._group_chat_hub.start_meeting(
+                    topic="일일 회고 — 오늘 성과, 문제점, 내일 계획 공유",
+                    participants=self._group_chat_hub.participant_ids,
+                )
+                # 회의 후 조치사항을 GoalTracker에 등록
+                await self._register_retro_action_items("daily_retro")
             from scripts.daily_retro import main as _retro_main
             await _retro_main()
             tasks = []  # Phase 3에서 참조 — 여기서 초기화
@@ -316,6 +330,73 @@ class OrgScheduler:
         except Exception as e:
             logger.error(f"[OrgScheduler] friday_retro 실패: {e}")
             await self._safe_send(f"⚠️ [스케줄러] 주간 회고 중 오류 발생: {e}")
+
+    # ── 회의 브로드캐스트 & 조치사항 등록 ────────────────────────────────────────
+
+    async def broadcast_meeting_start(self, meeting_type: str) -> None:
+        """회의 시작을 전 조직에 브로드캐스트하고 GroupChatHub meeting을 실행한다.
+
+        Args:
+            meeting_type: "daily_retro" | "weekly_standup" | "friday_retro"
+        """
+        topic_map = {
+            "daily_retro": "일일 회고 — 오늘 성과, 문제점, 내일 계획",
+            "weekly_standup": "주간 스탠드업 — 이번 주 계획 및 지난 주 성과",
+            "friday_retro": "주간 회고 — 잘한 점, 개선점, 다음 주 액션 아이템",
+        }
+        topic = topic_map.get(meeting_type, meeting_type)
+        await self._safe_send(f"📣 [{meeting_type}] 회의 시작 — 전 조직 참여 요청")
+        if self._group_chat_hub is not None and self._group_chat_hub.participant_ids:
+            await self._group_chat_hub.start_meeting(
+                topic=topic,
+                participants=self._group_chat_hub.participant_ids,
+            )
+        await self._register_retro_action_items(meeting_type)
+
+    async def _register_retro_action_items(self, meeting_type: str) -> None:
+        """회의 후 조치사항(실패/미완료 태스크)을 GoalTracker에 자동 등록한다.
+
+        - context_db에서 최근 2일 failed/pending 태스크를 부서별로 집계
+        - GoalTracker.start_goal()로 개선 목표를 생성
+        - 완료 후 PM 채널에 요약 전송
+        """
+        if self._goal_tracker is None or self._context_db is None:
+            return
+        try:
+            import aiosqlite as _sq
+            async with _sq.connect(self._context_db.db_path) as _db:
+                _db.row_factory = _sq.Row
+                cur = await _db.execute(
+                    "SELECT assigned_dept, COUNT(*) as cnt FROM pm_tasks "
+                    "WHERE status IN ('failed','pending') "
+                    "AND created_at >= datetime('now','-2 days') "
+                    "GROUP BY assigned_dept ORDER BY cnt DESC LIMIT 5"
+                )
+                dept_rows = await cur.fetchall()
+
+            if not dept_rows:
+                return
+
+            summary_lines = ["📋 *회의 후 자동 조치사항 등록*"]
+            for row in dept_rows:
+                dept = row["assigned_dept"] or "unknown"
+                cnt = row["cnt"]
+                desc = (
+                    f"{meeting_type} 후 조치 — {dept} 부서 미완료/실패 태스크 {cnt}건 해결.\n"
+                    f"실패 원인 분석 후 재시도 또는 대안 방안 제시."
+                )
+                gid = await self._goal_tracker.start_goal(
+                    org_id=self._goal_tracker._org_id,
+                    title=f"[{meeting_type}] {dept} 조치사항",
+                    description=desc,
+                    meta={"source": meeting_type, "dept": dept, "task_count": cnt},
+                )
+                summary_lines.append(f"  • {dept}: {cnt}건 → 목표 {gid} 등록")
+
+            await self._safe_send("\n".join(summary_lines))
+            logger.info(f"[OrgScheduler] {meeting_type} 조치사항 GoalTracker 등록 완료: {len(dept_rows)}건")
+        except Exception as e:
+            logger.warning(f"[OrgScheduler] 조치사항 GoalTracker 등록 실패 (무시): {e}")
 
     # ── 사용자 정의 스케줄 ────────────────────────────────────────────────
 
