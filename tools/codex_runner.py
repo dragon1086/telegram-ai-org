@@ -403,11 +403,15 @@ class CodexRunner(BaseRunner):
                 return f"❌ Codex 타임아웃 ({timeout_sec}초)"
 
         try:
+            # Codex CLI는 ~/.codex/auth.json OAuth를 사용하므로
+            # .env에서 로드된 stale OPENAI_API_KEY가 간섭하지 않도록 제거
+            clean_env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=resolved_workdir,
+                env=clean_env,
             )
             if progress_callback is None:
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
