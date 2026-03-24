@@ -1,6 +1,7 @@
 ---
 name: harness-audit
 description: "Use to audit the overall health of the AI organization harness — bot status, skill inventory, dependencies, and doc freshness. Triggers: 'harness audit', '하네스 감사', 'system audit', 'reliability check', 'health check', weekly or when system issues are suspected"
+allowed-tools: Bash, Read, Glob, Grep
 ---
 
 # Harness Audit (하네스 감사)

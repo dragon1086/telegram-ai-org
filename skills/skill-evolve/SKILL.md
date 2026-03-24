@@ -2,6 +2,7 @@
 name: skill-evolve
 description: "스킬 자동 진화 — lesson_memory + eval.json 기반 품질 측정 및 개선 제안. Triggers: '스킬 진화', 'skill evolution', 'evolve skills', '패턴 분석', 'lesson analysis', 'skill improve'"
 disable-model-invocation: true
+allowed-tools: Bash, Read, Write, Glob, Grep
 ---
 
 # Skill Evolution (스킬 진화)

@@ -1,6 +1,7 @@
 ---
 name: loop-checkpoint
 description: "Use during long-running autonomous loops to save progress state so execution can resume after interruption. Triggers: 'checkpoint', 'loop checkpoint', '체크포인트', 'save state', 'resume', automatically every 30 minutes during ralph/ultrawork loops"
+allowed-tools: Read, Write
 ---
 
 # Loop Checkpoint (루프 체크포인트)
