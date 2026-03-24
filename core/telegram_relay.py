@@ -3554,9 +3554,10 @@ class TelegramRelay:
 
             # ── Hang watchdog coroutine ──
             _exec_task: asyncio.Task | None = None
+            engine_label = team_config.engine or "claude-code"
 
             async def _hang_watchdog() -> None:
-                """Claude 프로세스 무활동 감지 → 실행 태스크 취소."""
+                """엔진 프로세스 무활동 감지 → 실행 태스크 취소."""
                 while True:
                     await asyncio.sleep(HANG_DETECT_INTERVAL_SEC)
                     elapsed = time.monotonic() - _last_activity[0]
@@ -3564,7 +3565,7 @@ class TelegramRelay:
                         logger.warning(
                             f"[{self.org_id}] HANG 감지: 태스크 {task_id} — "
                             f"{elapsed:.0f}초 무활동 (임계값={HANG_DETECT_TIMEOUT_SEC}s). "
-                            f"Claude 프로세스 강제 종료."
+                            f"{engine_label} 프로세스 강제 종료."
                         )
                         if _exec_task and not _exec_task.done():
                             _exec_task.cancel()
@@ -3587,7 +3588,7 @@ class TelegramRelay:
                     f"TaskPoller가 재시도합니다."
                 )
                 raise RuntimeError(
-                    f"Claude process hang detected for task {task_id} "
+                    f"{engine_label} process hang detected for task {task_id} "
                     f"(no activity for {HANG_DETECT_TIMEOUT_SEC}s)"
                 )
             finally:
