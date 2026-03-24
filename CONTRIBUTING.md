@@ -13,6 +13,8 @@ telegram-ai-org에 기여해 주셔서 감사합니다!
 - [PR 규칙](#pr-규칙)
 - [코드 스타일](#코드-스타일)
 - [테스트 작성](#테스트-작성)
+- [스킬 추가 방법](#스킬-추가-방법)
+- [3개 컨텍스트 파일 동기화 원칙](#3개-컨텍스트-파일-동기화-원칙)
 - [이슈 등록](#이슈-등록)
 - [이슈 템플릿](#이슈-템플릿)
 - [커밋 메시지 규칙](#커밋-메시지-규칙)
@@ -344,6 +346,100 @@ async def test_runner_calls_cli(mocker):
 # 품질 게이트 (머지 전 권장)
 ./.venv/bin/ruff check . && ./.venv/bin/pytest -q
 ```
+
+---
+
+## 스킬 추가 방법
+
+스킬은 `skills/<skill-name>/` 디렉토리에 마크다운 파일로 정의합니다.
+별도 코드 변경 없이 파일 추가만으로 새 스킬을 등록할 수 있습니다.
+
+### 스킬 디렉토리 구조
+
+```
+skills/
+└── my-new-skill/
+    ├── skill.md        # 스킬 정의 (필수)
+    └── README.md       # 스킬 사용 가이드 (선택)
+```
+
+### 스킬 정의 형식 (`skill.md`)
+
+```markdown
+# /my-new-skill
+
+## 목적
+이 스킬이 해결하는 문제를 한 문장으로.
+
+## 트리거
+- 'trigger keyword 1'
+- 'trigger keyword 2'
+
+## 절차
+1. 첫 번째 단계 설명
+2. 두 번째 단계 설명
+3. 결과 검증
+
+## 산출물
+- 산출물 1: 설명
+- 산출물 2: 설명
+
+## 주의사항
+- 알려진 제약이나 주의점
+```
+
+### 스킬 등록 절차
+
+```bash
+# 1. 스킬 디렉토리 생성 및 정의 파일 작성
+mkdir -p skills/my-new-skill
+# skill.md 작성
+
+# 2. 테스트 실행으로 기존 스킬 영향 없는지 확인
+./.venv/bin/pytest -q
+
+# 3. 안전한 봇 재기동 요청 (봇 재기동 시 자동 인식)
+bash scripts/request_restart.sh --reason "신규 스킬 my-new-skill 추가"
+```
+
+### 현재 등록된 스킬
+
+| 스킬 | 파일 위치 | 용도 |
+|------|-----------|------|
+| `/quality-gate` | `skills/quality-gate/` | 코드 품질 검사 (ruff + pytest) |
+| `/e2e-regression` | `skills/e2e-regression/` | 전체 E2E 회귀 테스트 |
+| `/gemini-image-gen` | `skills/gemini-image-gen/` | Gemini OAuth 이미지 생성 |
+| `/bot-triage` | `skills/bot-triage/` | 봇 장애 진단 및 자동 복구 |
+| `/safe-modify` | `skills/safe-modify/` | 고위험 코드 안전 수정 방법론 |
+| `/engineering-review` | `skills/engineering-review/` | 코드 리뷰 절차 |
+
+---
+
+## 3개 컨텍스트 파일 동기화 원칙
+
+이 프로젝트는 Claude Code / Codex / Gemini CLI 3개 엔진을 지원합니다.
+각 엔진은 자신의 컨텍스트 파일만 읽기 때문에 다음 3개 파일은 **항상 동시에 수정**해야 합니다:
+
+```
+CLAUDE.md   (가장 상세한 기준 문서 — Claude Code 전용)
+AGENTS.md   (Codex CLI용, CLAUDE.md와 동기화)
+GEMINI.md   (Gemini CLI용, CLAUDE.md와 동기화)
+```
+
+### 동기화 트리거 (이 작업 시 3파일 동시 수정 필수)
+
+```
+수정 대상                  동시 업데이트 필수
+─────────────────────────  ──────────────────────────────
+orchestration.yaml         CLAUDE.md + AGENTS.md + GEMINI.md
+CLAUDE.md                  AGENTS.md + GEMINI.md
+새 엔진 추가               tools/러너 + orchestration.yaml + 3개 컨텍스트 파일
+bots/*.yaml 구조 변경      CLAUDE.md + AGENTS.md + GEMINI.md
+새 스킬 추가 (전체 봇 공통) CLAUDE.md + AGENTS.md + GEMINI.md
+```
+
+> **규칙**: CLAUDE.md가 기준 문서 — 가장 상세하게 작성하고 나머지 두 파일은 해당 엔진에 맞게 축약합니다.
+> 한 파일을 수정하면 나머지 두 파일도 같은 내용으로 즉시 업데이트합니다.
 
 ---
 
