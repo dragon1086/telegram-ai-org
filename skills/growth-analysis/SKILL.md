@@ -1,6 +1,7 @@
 ---
 name: growth-analysis
 description: "Use when analyzing growth metrics, user retention, or conversion funnels. Produces data-driven recommendations. Triggers: 'growth analysis', '성장분석', 'metrics analysis', '지표분석', 'growth', 'retention', 'conversion'"
+allowed-tools: Read, Glob, Grep, WebSearch
 ---
 
 # Growth Analysis (성장분석 스킬)

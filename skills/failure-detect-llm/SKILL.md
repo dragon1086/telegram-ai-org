@@ -8,6 +8,7 @@ fallback: algorithm
 rate_limit:
   per_run_id: 1
   per_hour: 50
+allowed-tools: Read, Glob, Grep
 ---
 
 # failure-detect-llm

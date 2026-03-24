@@ -1,6 +1,7 @@
 ---
 name: autonomous-skill-proxy
 description: "Use when a coding agent running autonomously (--dangerously-skip-permissions) encounters an interactive skill that requires user input and would block execution. Triggers: '자율모드', 'autonomous mode', 'skip interactive', 'non-interactive skill', when AUTONOMOUS_MODE=true is set"
+allowed-tools: Read
 ---
 
 # Autonomous Skill Proxy (자율 스킬 프록시)

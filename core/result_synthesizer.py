@@ -54,31 +54,27 @@ _SYNTHESIS_PROMPT = (
     "FOLLOW_UP: DEPT:aiorg_xxx_bot|TASK:description (one per line, or 'none')\n"
     "ARTIFACTS: /absolute/path/to/file.png (one per line, or 'none')\n"
     "REPORT:\n"
-    "[structured final report — follow the 5-section format below]\n"
+    "[structured final report — follow the 3-section format below]\n"
     "END_REPORT\n\n"
     "JUDGMENT values:\n"
     "- SUFFICIENT: all departments delivered what was needed\n"
     "- INSUFFICIENT: key deliverables missing or incomplete\n"
     "- CONFLICTING: departments contradict each other\n"
     "- NEEDS_INTEGRATION: results are good but need to be combined into one coherent output\n\n"
-    "## REPORT: 5-section format (strictly follow — no exceptions):\n\n"
+    "## REPORT: 3-section format (strictly follow — no exceptions):\n\n"
     "  ## 결론\n"
-    "  [REQUIRED. ONE sentence max 50 chars. Directly answer the user's request + PM recommendation.\n"
+    "  [REQUIRED. ONE sentence max 60 chars. Directly answer the user's request.\n"
+    "   Include PM judgment/recommendation in this single sentence.\n"
     "   Example: '이번 스프린트 70% 달성, 배포 자동화 구축을 최우선 권고.'\n"
     "   DO NOT start with background. DO NOT start with department name.]\n\n"
-    "  ## 핵심 발견사항\n"
+    "  ## 핵심 내용\n"
     "  [REQUIRED. 3~5 bullet points. Topic-based grouping (NOT department-based).\n"
     "   If 2+ departments mention the same finding, merge into ONE bullet.\n"
-    "   Include concrete numbers/results. Each bullet = one distinct topic.]\n\n"
-    "  ## 위험·이슈 (있을 때만)\n"
-    "  [CONDITIONAL. Include risks, unresolved conflicts, incomplete items.\n"
-    "   OMIT this section entirely if nothing to report.]\n\n"
-    "  ## PM 결정 및 권고\n"
-    "  [REQUIRED. PM's explicit judgment + prioritized recommendations.\n"
-    "   Use P1/P2/P3 priority labels. At least 1 concrete recommendation.\n"
-    "   This is the PM's own voice — do NOT just summarize departments.]\n\n"
+    "   Include concrete numbers/results. Each bullet = one distinct topic.\n"
+    "   Include risks, unresolved items, or PM recommendations as bullets if applicable.\n"
+    "   Use **bold** for key terms. Use tables where useful.]\n\n"
     "  ## 다음 조치 (있을 때만)\n"
-    "  [CONDITIONAL. List only concrete follow-up tasks with owner/timeline.\n"
+    "  [CONDITIONAL. Concrete follow-up tasks with owner/timeline.\n"
     "   OMIT this section entirely if no tasks remain.]\n\n"
     "## REPORT content rules (CRITICAL — violating these degrades report quality):\n"
     "- NEVER copy department outputs verbatim. Synthesize, reframe from PM perspective.\n"
@@ -349,23 +345,55 @@ def _parse_follow_up_line(line: str, follow_ups: list[dict]) -> None:
         follow_ups.append({"dept": dept, "description": task})
 
 
-def _result_excerpt(result: str, limit: int = 2200) -> str:
+def _result_excerpt(result: str, limit: int = 3000) -> str:
+    """부서 결과를 LLM 컨텍스트용으로 자름. 합성 품질을 위해 충분한 길이 확보."""
     text = (result or "(결과 없음)").strip()
     if len(text) <= limit:
         return text
-    head = text[:1400].rstrip()
-    tail = text[-600:].lstrip()
+    head = text[:2000].rstrip()
+    tail = text[-800:].lstrip()
     return f"{head}\n\n[중간 내용 생략]\n\n{tail}"
 
 
 def _build_fallback_public_report(lines: list[str], missing: list[str] | None = None) -> str:
-    header = "현재까지 확인된 핵심 결과를 먼저 정리합니다."
+    """LLM fallback 시 최소 구조화 보고서 생성.
+
+    3섹션 표준 포맷(결론/핵심 내용/다음 조치)을 준수한다.
+    LLM 없이 생성되므로 부서별 내용은 취합되지 않고 나열되지만,
+    사용자에게 노출되는 구조는 표준과 일치하게 유지한다.
+
+    Args:
+        lines: 부서별 결과 문자열 목록 (각 항목이 핵심 내용 bullet로 사용됨)
+        missing: 결과가 누락된 부서명 목록 (있을 때만 '다음 조치' 섹션 생성)
+
+    Returns:
+        3섹션 마크다운 보고서 문자열
+    """
+    # ## 결론 — 1문장 현황 설명
     if missing:
-        header = (
-            "아직 일부 조직 결과가 빠져 있어서 최종 결론을 확정하긴 이릅니다. "
-            "다만 현재까지 확인된 내용은 아래와 같습니다."
+        conclusion = (
+            f"일부 조직({', '.join(missing)}) 결과 미수신 — 현재까지 확인된 내용을 정리합니다."
         )
+    else:
+        conclusion = "모든 조직의 결과가 수신되었습니다. 아래 핵심 내용을 확인하세요."
+
+    # ## 핵심 내용 — 부서별 결과 나열 (LLM 없으므로 MECE 클러스터링 불가)
     details = "\n\n".join(line for line in lines)
+
+    parts = [
+        "## 결론",
+        conclusion,
+        "",
+        "## 핵심 내용",
+        details,
+    ]
+
+    # ## 다음 조치 — 누락 부서 있을 때만 추가
     if missing:
-        details += f"\n- 추가 확인 필요: {', '.join(missing)}"
-    return f"{header}\n\n{details}".strip()
+        parts += [
+            "",
+            "## 다음 조치",
+            f"- 누락 조직 결과 대기: {', '.join(missing)}",
+        ]
+
+    return "\n".join(parts).strip()

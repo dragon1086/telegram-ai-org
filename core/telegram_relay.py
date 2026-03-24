@@ -79,7 +79,7 @@ TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
 USE_NL_CLASSIFIER = True  # 2-tier NLClassifier 활성화 플래그 (False 시 기존 키워드 로직 사용)
 ARTIFACT_MARKER_RE = re.compile(r"\[ARTIFACT:([^\]]+)\]")
-PM_CHAT_REPLY_TIMEOUT_SEC = int(os.environ.get("PM_CHAT_REPLY_TIMEOUT_SEC", "120"))
+PM_CHAT_REPLY_TIMEOUT_SEC = int(os.environ.get("PM_CHAT_REPLY_TIMEOUT_SEC", "300"))
 
 # /setup 마법사 ConversationHandler 상태
 SETUP_MENU, SETUP_AWAIT_TOKEN, SETUP_AWAIT_ENGINE, SETUP_AWAIT_IDENTITY = range(4)
@@ -3262,6 +3262,8 @@ class TelegramRelay:
                     # 모든 서브태스크가 terminal(done/failed/cancelled)이고
                     # parent가 아직 미완료인 parent 조회.
                     # 기존: t.status = 'done' 만 봤으나, 전부 failed인 케이스는 누락됨 → 수정.
+                    # needs_review: CONFLICTING 합성 후 parent가 needs_review로 전환됨.
+                    # 이 상태를 제외하지 않으면 30초마다 재합성 → 무한루프 발생 (2026-03-24 수정).
                     cursor = await _db.execute("""
                         SELECT DISTINCT t.parent_id FROM pm_tasks t
                         WHERE t.parent_id IS NOT NULL
@@ -3269,7 +3271,7 @@ class TelegramRelay:
                         AND EXISTS (
                             SELECT 1 FROM pm_tasks p
                             WHERE p.id = t.parent_id
-                              AND p.status NOT IN ('done', 'failed', 'cancelled')
+                              AND p.status NOT IN ('done', 'failed', 'cancelled', 'needs_review')
                         )
                         AND NOT EXISTS (
                             SELECT 1 FROM pm_tasks sibling
@@ -3492,8 +3494,13 @@ class TelegramRelay:
         # 진행 콜백: Claude Code 스트리밍 출력을 텔레그램으로 중계
         last_progress_time = [0.0]  # mutable for closure
         progress_interval = self._progress_interval(delegated=True)
+        # ── Hang watchdog: 활동 추적 ──
+        HANG_DETECT_TIMEOUT_SEC = 600  # 10분 무활동 = hang 판정
+        HANG_DETECT_INTERVAL_SEC = 60  # 1분마다 체크
+        _last_activity = [time.monotonic()]  # mutable for closure
 
         async def on_progress(line: str) -> None:
+            _last_activity[0] = time.monotonic()  # 활동 기록 (watchdog용)
             if not self._show_progress(delegated=True):
                 return
             now = time.time()
@@ -3545,14 +3552,48 @@ class TelegramRelay:
             except Exception as _se:
                 logger.debug(f"[{self.org_id}] 스킬 로딩 실패 (무시): {_se}")
 
-            response = await self._execute_with_team_config(
-                task=description,
-                system_prompt=system_prompt,
-                team_config=team_config,
-                progress_callback=on_progress,
-                workdir=task_info.get("metadata", {}).get("workdir"),
-                route_kind="delegated_execution",
-            )
+            # ── Hang watchdog coroutine ──
+            _exec_task: asyncio.Task | None = None
+            engine_label = team_config.engine or "claude-code"
+
+            async def _hang_watchdog() -> None:
+                """엔진 프로세스 무활동 감지 → 실행 태스크 취소."""
+                while True:
+                    await asyncio.sleep(HANG_DETECT_INTERVAL_SEC)
+                    elapsed = time.monotonic() - _last_activity[0]
+                    if elapsed > HANG_DETECT_TIMEOUT_SEC:
+                        logger.warning(
+                            f"[{self.org_id}] HANG 감지: 태스크 {task_id} — "
+                            f"{elapsed:.0f}초 무활동 (임계값={HANG_DETECT_TIMEOUT_SEC}s). "
+                            f"{engine_label} 프로세스 강제 종료."
+                        )
+                        if _exec_task and not _exec_task.done():
+                            _exec_task.cancel()
+                        return
+
+            watchdog_task = asyncio.create_task(_hang_watchdog())
+            try:
+                _exec_task = asyncio.current_task()
+                response = await self._execute_with_team_config(
+                    task=description,
+                    system_prompt=system_prompt,
+                    team_config=team_config,
+                    progress_callback=on_progress,
+                    workdir=task_info.get("metadata", {}).get("workdir"),
+                    route_kind="delegated_execution",
+                )
+            except asyncio.CancelledError:
+                logger.error(
+                    f"[{self.org_id}] 태스크 {task_id} hang으로 인해 강제 취소됨. "
+                    f"TaskPoller가 재시도합니다."
+                )
+                raise RuntimeError(
+                    f"{engine_label} process hang detected for task {task_id} "
+                    f"(no activity for {HANG_DETECT_TIMEOUT_SEC}s)"
+                )
+            finally:
+                if not watchdog_task.done():
+                    watchdog_task.cancel()
             upload_candidates = extract_local_artifact_paths(response or "")
             self._append_runbook(
                 run_id,

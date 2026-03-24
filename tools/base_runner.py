@@ -147,7 +147,7 @@ class RunnerFactory:
         """Create a runner for the given engine.
 
         Args:
-            engine: Engine name ('claude-code', 'codex', 'gemini')
+            engine: Engine name ('claude-code', 'codex', 'gemini', 'gemini-cli')
             **kwargs: Passed to runner constructor
 
         Returns:
@@ -165,12 +165,15 @@ class RunnerFactory:
         elif engine == "gemini":
             from tools.gemini_runner import GeminiRunner
             return GeminiRunner(**kwargs)
+        elif engine == "gemini-cli":
+            from tools.gemini_cli_runner import GeminiCLIRunner
+            return GeminiCLIRunner(**kwargs)
         elif engine in cls._registry:
             return cls._registry[engine](**kwargs)
         else:
             raise ValueError(
                 f"Unknown engine: {engine!r}. "
-                f"Valid engines: 'claude-code', 'codex', 'gemini'"
+                f"Valid engines: 'claude-code', 'codex', 'gemini', 'gemini-cli'"
             )
 
     @classmethod

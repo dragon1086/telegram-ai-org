@@ -77,7 +77,7 @@ def _extract_json_from_response(text: str) -> dict:
     if text.startswith("{"):
         return json.loads(text)
     # 2) ```json ... ``` 코드블록
-    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    m = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
     if m:
         return json.loads(m.group(1))
     # 3) 텍스트 안에 섞인 JSON 객체

@@ -139,7 +139,11 @@ def markdown_to_html(text: str) -> str:
     # (?!\w) : 뒤가 단어 문자가 아님
     text = re.sub(r"(?<!\w)_([^_\n]+?)_(?!\w)", r"<i>\1</i>", text)
     # 링크: [text](url)
-    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
+    # URL 내에 괄호가 포함된 경우(예: Wikipedia 링크)도 처리하기 위해
+    # 단순 [^)]+ 대신 균형잡힌 괄호 허용 패턴 사용:
+    # - [^()]+  : 괄호 없는 문자들
+    # - \([^)]*\) : 한 단계 중첩된 괄호 (예: /wiki/Python_(language))
+    text = re.sub(r"\[([^\]]+)\]\(([^()]+(?:\([^)]*\)[^()]*)*)\)", r'<a href="\2">\1</a>', text)
     # 취소선: ~~text~~
     text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
 
@@ -180,7 +184,8 @@ def split_message(text: str, max_len: int) -> list[str]:
     if len(body) <= max_len:
         return [body]
 
-    effective_len = max_len
+    # 중간 청크에 _CONTINUATION 문자열이 붙으므로 유효 길이를 그만큼 줄임
+    effective_len = max_len - len(_CONTINUATION)
 
     def _find_breakpoint(chunk: str, limit: int) -> int:
         lower_bound = max(1, int(limit * 0.55))
@@ -199,7 +204,7 @@ def split_message(text: str, max_len: int) -> list[str]:
         if not piece:
             piece = remaining[:effective_len].rstrip()
             cut = len(piece)
-        chunks.append(piece)
+        chunks.append(piece + _CONTINUATION)  # 중간 청크: 이어짐 표시 추가
         remaining = remaining[cut:].lstrip()
     if remaining:
         chunks.append(remaining)

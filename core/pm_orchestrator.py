@@ -279,7 +279,7 @@ class PMOrchestrator:
             '- "local_execution": the PM should handle it like a single coding agent.\n'
             '- "delegate": coordinate one or more specialist organizations.\n\n'
             "Choose direct_reply for simple questions, confirmations, status checks, and lightweight explanations.\n"
-            "Choose local_execution for focused tasks that do not need cross-team coordination.\n"
+            "Choose local_execution ONLY for simple single-step tasks that a PM can do alone (e.g. rename a file, quick config change). If the task involves code changes, system improvements, analysis, or multiple steps, choose delegate.\n"
             "Choose delegate only when multi-discipline collaboration, explicit planning/brainstorming, or longer multi-step execution is needed.\n\n"
             "Department hints:\n"
             f"{dept_lines}\n\n"
@@ -347,6 +347,18 @@ class PMOrchestrator:
                 route = "delegate"
             if lane == "single_org_execution" and route == "direct_reply":
                 route = "delegate"
+
+            # local_execution이지만 실제로는 여러 부서 협업이 필요한 경우 delegate로 강제 전환
+            if route == "local_execution" and (
+                lane == "multi_org_execution"
+                or len(dept_hints) >= 2
+                or data.get("complexity") == "high"
+            ):
+                route = "delegate"
+                logger.info(
+                    f"[PM] local_execution → delegate 강제 전환 "
+                    f"(lane={lane}, depts={len(dept_hints)}, complexity={data.get('complexity')})"
+                )
 
             complexity = data.get("complexity", "medium")
             if complexity not in {"low", "medium", "high"}:
@@ -636,6 +648,19 @@ class PMOrchestrator:
                 route="delegate",
                 complexity=complexity,
                 rationale="복수 조직 협업 또는 다단계 실행이 필요해 보여 조직 오케스트레이션으로 보냅니다.",
+                dept_hints=dept_hints,
+                confidence=0.75,
+            )
+
+        # 코딩 요청이면 PM 직접 처리 대신 engineering에 위임
+        if self._has_coding_request(text):
+            if "aiorg_engineering_bot" not in dept_hints:
+                dept_hints = ["aiorg_engineering_bot"] + dept_hints
+            return RequestPlan(
+                lane="single_org_execution",
+                route="delegate",
+                complexity="medium",
+                rationale="코딩 요청이라 전문 조직에 위임합니다.",
                 dept_hints=dept_hints,
                 confidence=0.75,
             )
@@ -1091,6 +1116,8 @@ class PMOrchestrator:
             task_ids.append(await self._next_task_id())
         for i, st in enumerate(subtasks):
             deps = [task_ids[int(d)] for d in st.depends_on if d.isdigit() and int(d) < len(task_ids)]
+            # 부모 태스크가 deps에 포함되면 제거 — 부모 완료는 _synthesize_and_act가 관리
+            deps = [d for d in deps if d != parent_task_id]
             await self._graph.add_task(task_ids[i], depends_on=deps)
         logger.debug(f"[PM] 의존성 사전 등록 완료: {len(task_ids)}개 태스크")
 
@@ -1183,6 +1210,13 @@ class PMOrchestrator:
                 except Exception as _e:
                     logger.warning(f"[PM] 태스크 {tid} 알림 전송 실패 (태스크는 assigned 상태): {_e}")
                 logger.info(f"[PM] 태스크 발송: {tid} → {dept}")
+
+        # 4. 부모 태스크 상태를 running으로 전환
+        # PM이 하위 태스크 결과를 수집·합성 대기 중임을 의미.
+        # 완료는 _synthesize_and_act가 all_done 시점에 처리한다.
+        if parent_task and parent_task.get("status") != "running":
+            await self._db.update_pm_task_status(parent_task_id, "running")
+            logger.info(f"[PM] 부모 태스크 {parent_task_id} → running (하위 {len(task_ids)}개 디스패치 완료)")
 
         return task_ids
 
@@ -1678,10 +1712,13 @@ class PMOrchestrator:
             if st.get("result")
         )
         report_text = synthesis.unified_report or full_results or synthesis.summary
+        # 합성 LLM 성공 시 이미 구조화된 보고서 → full_context 불필요 (이중 재작성 방지).
+        # 합성 fallback(keyword) 시에만 full_results를 context로 전달해 재구조화.
+        _synthesis_succeeded = bool(synthesis.unified_report)
         user_friendly_report = await ensure_user_friendly_output(
             report_text,
             original_request=original_request,
-            full_context=full_results,
+            full_context="" if _synthesis_succeeded else full_results,
             decision_client=self._decision_client,
         )
         artifact_path = self._write_unified_report_artifact(
@@ -1845,9 +1882,13 @@ class PMOrchestrator:
             )
         else:  # NEEDS_INTEGRATION
             report = user_friendly_report
+            _artifact_suffix = (
+                f"\n\n---\n📎 첨부: {', '.join(f'`{Path(p).name}`' for p in _all_artifact_paths if p)}"
+                if _all_artifact_paths else ""
+            )
             await self._send(
                 chat_id,
-                f"📋 결과 통합 보고서:\n\n{report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
+                f"{report}{_artifact_suffix}\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
             )
             if run_id:
                 try:

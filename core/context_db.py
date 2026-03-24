@@ -242,6 +242,18 @@ class ContextDB:
                 "updated_at": row[5],
             }
 
+    async def delete_context(self, slot_id: str) -> None:
+        """컨텍스트 슬롯 삭제."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM context_slots WHERE id = ?", (slot_id,))
+            await db.commit()
+
+    async def delete_project_contexts(self, project_id: str) -> None:
+        """프로젝트의 모든 컨텍스트 슬롯 삭제."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM context_slots WHERE project_id = ?", (project_id,))
+            await db.commit()
+
     async def list_project_contexts(self, project_id: str) -> list[dict]:
         """프로젝트의 모든 컨텍스트 슬롯 조회."""
         async with aiosqlite.connect(self.db_path) as db:
@@ -593,6 +605,10 @@ class ContextDB:
                             (task["id"],),
                         )
                         blocking_row = await dep_cursor.fetchone()
+                        # 부모 태스크가 dep에 잘못 등록된 경우 무시
+                        # (부모 완료는 _synthesize_and_act가 관리)
+                        if blocking_row and blocking_row[0] == task.get("parent_id"):
+                            blocking_row = None
                         deps_ready = blocking_row is None
                     if deps_ready:
                         result.append(task)
@@ -789,6 +805,8 @@ class ContextDB:
 
     # ── Stale Task Recovery ────────────────────────────────────────────────
 
+    RECOVER_MAX_AGE_SECONDS = 86400  # 복구 대상 최대 나이: 24시간
+
     async def recover_stale_dept_tasks(
         self,
         dept_id: str,
@@ -802,8 +820,8 @@ class ContextDB:
 
         안전장치:
         - 24시간 이상 된 태스크는 복구하지 않음 (좀비 방지)
-        - 부모가 failed인 태스크는 복구하지 않음 (orphan 방지)
-          단, 부모가 cancelled인 경우는 복구 허용 (부서 태스크 계속 실행)
+        - 부모가 failed인 태스크는 복구하지 않음 (고아 방지)
+          ※ 부모가 cancelled여도 자식 부서 태스크는 계속 실행 (Orphan Guard 정책)
 
         Returns: 복구된 태스크 수.
         """
@@ -825,8 +843,7 @@ class ContextDB:
             for row in rows:
                 task_id = row["id"]
                 metadata = json.loads(row["metadata"] or "{}")
-                # ── Orphan Guard: 부모가 failed이면 복구 스킵
-                #    (cancelled는 제외 — 부서 태스크는 계속 실행되어야 함) ──
+                # 부모가 failed면 복구하지 않음 (cancelled는 제외: 부서 태스크는 계속 실행)
                 parent_id = row["parent_id"]
                 if parent_id:
                     pcur = await db.execute(

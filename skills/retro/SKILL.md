@@ -1,6 +1,7 @@
 ---
 name: retro
 description: "Use after completing a sprint, project, or major milestone to run a structured retrospective. Collects Start/Stop/Continue and 5-Whys from all bots. Triggers: '회고', 'retro', 'retrospective', 'post-mortem', after sprint end or project completion"
+allowed-tools: Read, Write, Glob
 ---
 
 # Retro (회고 스킬)

@@ -1,6 +1,7 @@
 ---
 name: bot-triage
 description: "Use when a bot is unresponsive, crashed, or behaving abnormally. Runs diagnostic checks (process, logs, API), attempts auto-recovery, and generates an incident report. Triggers: '봇 장애', 'bot down', 'bot triage', '응답 없음', 'bot crash', 'triage', when any bot stops responding"
+allowed-tools: Bash, Read, Glob, Grep
 ---
 
 # Bot Triage (봇 장애 진단 런북)

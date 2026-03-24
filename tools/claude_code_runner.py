@@ -560,7 +560,12 @@ class ClaudeCodeRunner:
                                 logger.warning(f"progress_callback 오류: {cb_err}")
 
                 elif etype == "result":
-                    if event.get("subtype") == "success":
+                    subtype = event.get("subtype", "")
+                    if subtype == "error":
+                        err_msg = event.get("error", event.get("result", "unknown error"))
+                        logger.error(f"[stream_json] result error: {str(err_msg)[:300]}")
+                        final_result = f"ERROR: {err_msg}"
+                    if subtype == "success":
                         final_result = event.get("result", "")
                         self._last_run_metrics = self._extract_usage_metrics(event)
                         # session_id 저장 (다음 실행 시 --resume으로 재사용)
