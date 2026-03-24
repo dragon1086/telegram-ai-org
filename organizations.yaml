@@ -6,6 +6,8 @@ common_skills:
 - quality-gate
 - error-gotcha
 - bot-triage
+- e2e-regression    # E2E 회귀 테스트 — 모든 봇이 트리거 가능
+- gemini-image-gen  # Gemini 이미지 생성 — 필요 시 모든 봇 활용 가능
 organizations:
 - id: aiorg_design_bot
   enabled: true
@@ -76,8 +78,9 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
+    # claude-code: 복잡한 코드 아키텍처, 멀티스텝 디버깅, 테스트 작성에 최적
     preferred_engine: claude-code
-    fallback_engine: claude-code
+    fallback_engine: codex
     team_profile: engineering_delivery
     verification_profile: specialist_default
     phase_policy: default
@@ -121,7 +124,8 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    preferred_engine: claude-code
+    # gemini-cli: Google 검색 내장 → 최신 시장 데이터 실시간 조회, 대규모 컨텍스트 처리
+    preferred_engine: gemini-cli
     fallback_engine: claude-code
     team_profile: growth_strategy
     verification_profile: specialist_default
@@ -167,7 +171,8 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    preferred_engine: claude-code
+    # codex: 경량 CLI 특화, DevOps 스크립트·인프라 자동화에 최적. 복잡한 추론 불필요
+    preferred_engine: codex
     fallback_engine: claude-code
     team_profile: ops_delivery
     verification_profile: specialist_default
@@ -301,7 +306,8 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    preferred_engine: claude-code
+    # gemini-cli: 실시간 웹 검색 내장 → 경쟁사·시장 최신 데이터 즉시 조회, 멀티소스 비교에 최적
+    preferred_engine: gemini-cli
     fallback_engine: claude-code
     team_profile: research_strategy
     verification_profile: specialist_default
