@@ -3,7 +3,22 @@ name = "telegram-ai-org"
 version = "0.1.0"
 description = "AI organization on Telegram — PM bot coordinates AI teams with shared context"
 readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "telegram-ai-org contributors" },
+]
 requires-python = ">=3.11"
+keywords = ["telegram", "ai", "multi-agent", "llm", "bot", "orchestration"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "python-telegram-bot>=20.0",
     "pydantic>=2.0",
@@ -22,7 +37,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# 엔진별 선택적 의존성
+# claude-code 엔진: claude CLI는 npm으로 별도 설치 (pip 의존성 없음)
+#   설치: npm install -g @anthropic-ai/claude-code
+claude = []
+# codex 엔진: codex CLI는 npm으로 별도 설치 (pip 의존성 없음)
+#   설치: npm install -g @openai/codex
+codex = []
+# gemini-cli 엔진: python SDK + CLI 별도 설치
+#   CLI 설치: npm install -g @google/gemini-cli  또는 brew install gemini-cli
 gemini = [
+    "google-genai>=1.0",
+]
+# 전체 엔진 (gemini SDK 포함)
+all = [
     "google-genai>=1.0",
 ]
 dev = [
@@ -30,19 +58,40 @@ dev = [
     "pytest-asyncio>=0.21",
     "pytest-mock>=3.0",
     "ruff>=0.1",
+    "google-genai>=1.0",
 ]
+
+[project.scripts]
+# PM 봇 실행 (메인 진입점) — cli.py:pm() 이 main.py 를 runpy로 실행
+aiorg-pm = "cli:pm"
+# 워커 봇 실행: aiorg-worker --name <worker_name>
+aiorg-worker = "core.run_worker:main"
+# 오케스트레이션 CLI
+aiorg-cli = "tools.orchestration_cli:main"
+
+[project.urls]
+Homepage = "https://github.com/dragon1086/aimesh"
+Repository = "https://github.com/dragon1086/aimesh"
+Issues = "https://github.com/dragon1086/aimesh/issues"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["bots", "core", "tools"]
+# 패키지 디렉토리 목록 (cli.py, main.py 는 루트에 위치하므로 별도 include)
+packages = ["core", "tools", "skills"]
+include = ["cli.py", "main.py", "orchestration.yaml", "workers.yaml", "bots/*.yaml"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 pythonpath = ["."]
+testpaths = ["tests"]
