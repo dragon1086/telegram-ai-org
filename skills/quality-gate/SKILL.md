@@ -5,6 +5,7 @@ hooks:
   PostToolUse:
     - matcher: "Write"
       hook: "bash skills/quality-gate/scripts/lint-only.sh"
+allowed-tools: Bash, Read, Glob
 ---
 
 # Quality Gate (품질 게이트)

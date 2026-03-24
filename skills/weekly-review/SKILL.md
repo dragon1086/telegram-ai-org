@@ -1,6 +1,7 @@
 ---
 name: weekly-review
 description: "Use every Friday or when a weekly progress summary is needed. Collects status from all department bots and generates a weekly report. Triggers: '주간회의', 'weekly review', 'weekly meeting', '주간보고', 'weekly', every Friday at 17:00 KST"
+allowed-tools: Read, Write, Glob
 ---
 
 # Weekly Review (주간회의 스킬)

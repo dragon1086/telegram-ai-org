@@ -1,6 +1,7 @@
 ---
 name: engineering-review
 description: "Use when the engineering bot needs to review code changes before merging. Runs lint, tests, and a structured checklist. Triggers: 'code review', '코드리뷰', 'review code', 'code check', 'PR review', before merging any code change"
+allowed-tools: Bash, Read, Glob, Grep
 ---
 
 # Engineering Review (코드리뷰 스킬)
