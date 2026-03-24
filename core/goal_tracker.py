@@ -370,8 +370,11 @@ class GoalTracker:
         logger.info(f"[GoalTracker] 재계획: {goal_id} → {len(task_ids)}개 태스크 재배분")
         return task_ids
 
-    async def run_loop(self, goal_id: str) -> GoalStatus:
+    async def run_loop(self, goal_id: str, is_resume: bool = False) -> GoalStatus:
         """목표 달성까지 반복하는 메인 루프.
+
+        Args:
+            is_resume: True이면 봇 재시작 후 재개 — "목표 설정 완료" 메시지 생략.
 
         Returns:
             최종 GoalStatus (achieved=True or 최대 반복/정체/취소 도달).
@@ -387,19 +390,20 @@ class GoalTracker:
         self._cancel_events[goal_id] = asyncio.Event()
 
         try:
-            return await self._run_loop_inner(goal_id, chat_id)
+            return await self._run_loop_inner(goal_id, chat_id, is_resume=is_resume)
         finally:
             # 취소 이벤트 정리
             self._cancel_events.pop(goal_id, None)
 
-    async def _run_loop_inner(self, goal_id: str, chat_id: int) -> GoalStatus:
+    async def _run_loop_inner(self, goal_id: str, chat_id: int, is_resume: bool = False) -> GoalStatus:
         goal = await self._db.get_goal(goal_id)
         if not goal:
             return GoalStatus(achieved=False, progress_summary="목표 없음",
                               remaining_work="", confidence=0.0)
 
-        await self._send(chat_id,
-            f"🎯 목표 설정 완료: {goal['description'][:200]}\n"
+        if not is_resume:
+            await self._send(chat_id,
+                f"🎯 목표 설정 완료: {goal['description'][:200]}\n"
             f"최대 {self._max_iterations}회 반복으로 목표 달성을 추진합니다.")
 
         # 첫 분해·배분

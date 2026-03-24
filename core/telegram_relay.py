@@ -3198,12 +3198,12 @@ class TelegramRelay:
         try:
             active = await self._goal_tracker.get_active_goals(org_id=self.org_id)
             if active:
-                # 기존 활성 목표가 있으면 루프 재개
+                # 기존 활성 목표가 있으면 루프 재개 (is_resume=True → "목표 설정 완료" 메시지 생략)
                 for goal in active:
                     gid = goal["id"]
                     import asyncio as _asyncio
                     _asyncio.create_task(
-                        self._goal_tracker._run_goal_background(gid),
+                        self._goal_tracker.run_loop(gid, is_resume=True),
                         name=f"goal-loop-resume-{gid}",
                     )
                     logger.info(f"[GoalTracker] 기존 활성 목표 루프 재개: {gid} '{goal.get('title', '')}'")
