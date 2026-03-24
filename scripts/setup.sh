@@ -352,6 +352,10 @@ fi
 mkdir -p ~/.ai-org/workspace
 info "컨텍스트 DB 디렉토리 준비: ~/.ai-org/"
 
+# 프로젝트 로컬 디렉토리 생성 (logs/, data/, reports/)
+mkdir -p logs data reports
+info "프로젝트 디렉토리 준비: logs/, data/, reports/"
+
 # =============================================================================
 # [함수] configure_engine — 선택된 엔진의 인증 상태 확인 및 안내
 # =============================================================================
@@ -494,17 +498,19 @@ if [ "$ENV_EXISTS" = false ] && [ "$NON_INTERACTIVE" = false ]; then
     echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo ""
 
-    # PM_BOT_TOKEN
-    read -rp "  PM_BOT_TOKEN (@BotFather에서 발급, 스킵: Enter): " _pm_token
+    # PM_BOT_TOKEN + TELEGRAM_BOT_TOKEN (동일 토큰 — 두 변수 동시 설정)
+    read -rp "  PM 봇 토큰 (@BotFather에서 발급, 스킵: Enter): " _pm_token
     if [ -n "$_pm_token" ]; then
         if [ "$OS_NAME" = "macOS" ]; then
             sed -i '' "s|^PM_BOT_TOKEN=.*|PM_BOT_TOKEN=$_pm_token|" "$ENV_FILE"
+            sed -i '' "s|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=$_pm_token|" "$ENV_FILE"
         else
             sed -i "s|^PM_BOT_TOKEN=.*|PM_BOT_TOKEN=$_pm_token|" "$ENV_FILE"
+            sed -i "s|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=$_pm_token|" "$ENV_FILE"
         fi
-        ok "PM_BOT_TOKEN 설정 완료"
+        ok "PM_BOT_TOKEN / TELEGRAM_BOT_TOKEN 설정 완료"
     else
-        warn "PM_BOT_TOKEN 미입력 — .env 파일에서 직접 입력하세요"
+        warn "PM 봇 토큰 미입력 — .env 파일에서 PM_BOT_TOKEN / TELEGRAM_BOT_TOKEN 직접 입력하세요"
     fi
 
     # TELEGRAM_GROUP_CHAT_ID
