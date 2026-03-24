@@ -3262,6 +3262,8 @@ class TelegramRelay:
                     # 모든 서브태스크가 terminal(done/failed/cancelled)이고
                     # parent가 아직 미완료인 parent 조회.
                     # 기존: t.status = 'done' 만 봤으나, 전부 failed인 케이스는 누락됨 → 수정.
+                    # needs_review: CONFLICTING 합성 후 parent가 needs_review로 전환됨.
+                    # 이 상태를 제외하지 않으면 30초마다 재합성 → 무한루프 발생 (2026-03-24 수정).
                     cursor = await _db.execute("""
                         SELECT DISTINCT t.parent_id FROM pm_tasks t
                         WHERE t.parent_id IS NOT NULL
@@ -3269,7 +3271,7 @@ class TelegramRelay:
                         AND EXISTS (
                             SELECT 1 FROM pm_tasks p
                             WHERE p.id = t.parent_id
-                              AND p.status NOT IN ('done', 'failed', 'cancelled')
+                              AND p.status NOT IN ('done', 'failed', 'cancelled', 'needs_review')
                         )
                         AND NOT EXISTS (
                             SELECT 1 FROM pm_tasks sibling
