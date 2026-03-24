@@ -38,13 +38,16 @@
 ## 빠른 시작
 
 ```bash
-# 1. 의존성 설치
-./scripts/setup.sh
+# 1. 원클릭 설치 (엔진 자동 감지 + 의존성 + .env 생성 + 검증)
+bash scripts/setup.sh
 
-# 2. 설치 마법사 실행 (PM 봇 + 워커 봇 대화형 설정)
+# 2. .env 파일에 Telegram 봇 토큰 입력
+nano .env
+
+# 3. 설치 마법사 실행 (PM 봇 + 워커 봇 대화형 설정)
 ./.venv/bin/python scripts/setup_wizard.py
 
-# 3. 모든 봇 시작
+# 4. 모든 봇 시작
 bash scripts/start_all.sh
 ```
 
@@ -54,6 +57,75 @@ bash scripts/start_all.sh
 ./.venv/bin/pytest -q
 ./.venv/bin/pytest tests/test_pm_orchestrator.py -q
 ```
+
+## setup.sh 설치 가이드
+
+### 사전 조건
+
+| 항목 | 요구사항 |
+|------|----------|
+| Python | 3.10 이상 (3.11+ 권장) |
+| AI 엔진 | claude / codex / gemini 중 **최소 1개** 설치 |
+| OS | macOS / Linux |
+
+**AI 엔진 설치 방법:**
+- **claude-code**: [claude.ai/code](https://claude.ai/code) → `claude` 명령어 설치
+- **codex**: `npm install -g @openai/codex` → `codex login`으로 인증
+- **gemini-cli**: [gemini-cli 설치](https://github.com/google-gemini/gemini-cli) → `gemini auth login`으로 인증
+
+### 실행 명령
+
+```bash
+# 기본 실행 (전체 5단계 자동 수행)
+bash scripts/setup.sh
+
+# 옵션
+bash scripts/setup.sh --skip-verify   # 검증 단계 건너뜀 (빠른 재설치)
+bash scripts/setup.sh --no-venv       # 가상환경 생성 건너뜀 (이미 있는 경우)
+```
+
+### 실행 단계 및 출력 예시
+
+```
+▶ Step 1/5: AI 엔진 자동 감지
+✅ codex 감지됨:  /opt/homebrew/bin/codex
+✅ gemini 감지됨: /opt/homebrew/bin/gemini
+⚠️  claude CLI 미감지 (설치: https://claude.ai/code)
+감지된 엔진: codex gemini (총 2개)
+
+▶ Step 2/5: Python 환경 확인
+✅ Python 3.12.12 (python3.12) — 요구사항 충족
+✅ 가상환경 이미 존재: .venv/
+
+▶ Step 3/5: Python 의존성 설치
+✅ 의존성 설치 완료 (pip deps-only)
+
+▶ Step 4/5: 환경 변수 파일 설정
+✅ .env 파일 생성 완료
+ℹ️  GEMINI_CLI_PATH → /opt/homebrew/bin/gemini (자동 설정)
+ℹ️  CODEX_CLI_PATH  → /opt/homebrew/bin/codex  (자동 설정)
+
+▶ Step 5/5: 초기화 검증
+✅ import anthropic        ✅ import pydantic
+✅ import python-telegram-bot  ✅ import loguru
+...
+검증 완료: 10/10 항목 통과 — 모두 정상
+```
+
+### 자동 처리 항목
+
+- **엔진 경로 자동 설정**: 감지된 엔진 경로가 `.env`에 자동 기입 (`CLAUDE_CLI_PATH`, `CODEX_CLI_PATH`, `GEMINI_CLI_PATH`)
+- **Python 버전 탐색**: `python3.13 → 3.12 → 3.11 → 3.10` 순으로 3.10+ 버전 자동 선택 (macOS 시스템 python 3.9 자동 우회)
+- **.env 보호**: `.env`가 이미 있으면 덮어쓰지 않고 경로 값만 업데이트
+
+### 문제 해결
+
+| 증상 | 해결 방법 |
+|------|-----------|
+| `AI 엔진이 하나도 감지되지 않았습니다` | 위 엔진 중 하나 이상 설치 후 재실행 |
+| `Python 3.10 이상을 찾을 수 없습니다` | `brew install python@3.11` (macOS) |
+| `import anthropic 실패` | `.venv/bin/pip install anthropic` 수동 실행 |
+| Gemini 인증 오류 | `gemini auth login` 실행 후 재시도 |
 
 ## 주요 봇 명령어
 
