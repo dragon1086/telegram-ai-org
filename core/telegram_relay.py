@@ -11,7 +11,6 @@ import hashlib
 import os
 import re
 import time
-from datetime import UTC, datetime, timedelta
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -3192,6 +3191,9 @@ class TelegramRelay:
         2. 없으면 → OPENSOURCE_PLAN.md에서 읽어온 오픈소스화 목표 등록
         """
         if self._goal_tracker is None or self.context_db is None:
+            return
+        # 목표 등록은 PM 봇 전용 — 다른 봇에서 중복 등록 방지
+        if self.org_id != "aiorg_pm_bot":
             return
         try:
             active = await self._goal_tracker.get_active_goals(org_id=self.org_id)
