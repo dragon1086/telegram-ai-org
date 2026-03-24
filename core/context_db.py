@@ -148,14 +148,10 @@ class ContextDB:
                     chat_id INTEGER,
                     created_by TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    org_id TEXT DEFAULT 'pm',
-                    title TEXT DEFAULT '',
-                    meta_json TEXT DEFAULT '{}'
+                    updated_at TEXT NOT NULL
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_pm_goals_status ON pm_goals(status);
-                CREATE INDEX IF NOT EXISTS idx_pm_goals_org ON pm_goals(org_id);
 
                 CREATE TABLE IF NOT EXISTS conversation_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -194,33 +190,8 @@ class ContextDB:
                 );
             """)
             await db.commit()
-        # 기존 DB에 새 컬럼 추가 — Migration 001
-        await self._migrate_pm_goals_v2()
-
-    async def _migrate_pm_goals_v2(self) -> None:
-        """pm_goals 테이블에 org_id, title, meta_json 컬럼 추가 (Migration 001).
-
-        SQLite ALTER TABLE ADD COLUMN은 이미 존재하는 컬럼이면 OperationalError를
-        발생시키므로, 각 컬럼을 개별 try/except로 처리한다.
-        """
-        migrations = [
-            "ALTER TABLE pm_goals ADD COLUMN org_id TEXT DEFAULT 'pm'",
-            "ALTER TABLE pm_goals ADD COLUMN title TEXT DEFAULT ''",
-            "ALTER TABLE pm_goals ADD COLUMN meta_json TEXT DEFAULT '{}'",
-        ]
-        async with aiosqlite.connect(self.db_path) as db:
-            for sql in migrations:
-                try:
-                    await db.execute(sql)
-                except Exception:
-                    pass  # 이미 컬럼 존재 — 무시
-            try:
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_pm_goals_org ON pm_goals(org_id)"
-                )
-            except Exception:
-                pass
-            await db.commit()
+        # Migration 001: title, meta_json 컬럼 추가 (idempotent)
+        await self._migrate_goals_schema()
 
     async def create_project(self, project_id: str, name: str, description: str = "") -> None:
         """프로젝트 생성."""
@@ -1028,49 +999,63 @@ class ContextDB:
 
     # ── Goal CRUD ──────────────────────────────────────────────────────────
 
+    async def _migrate_goals_schema(self) -> None:
+        """pm_goals 테이블에 title, meta_json 컬럼 추가 (idempotent).
+
+        Migration 001: 기존 테이블이 있을 때 ALTER TABLE로 컬럼 추가.
+        SQLite는 ADD COLUMN이 이미 존재하면 오류이므로 try/except로 처리.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            for col_sql in [
+                "ALTER TABLE pm_goals ADD COLUMN title TEXT DEFAULT ''",
+                "ALTER TABLE pm_goals ADD COLUMN meta_json TEXT DEFAULT '{}'",
+            ]:
+                try:
+                    await db.execute(col_sql)
+                except Exception:
+                    pass  # 이미 존재하는 컬럼 — 무시
+            for idx_sql in [
+                "CREATE INDEX IF NOT EXISTS idx_pm_goals_org ON pm_goals(created_by)",
+                "CREATE INDEX IF NOT EXISTS idx_pm_goals_active ON pm_goals(created_by, status)",
+            ]:
+                try:
+                    await db.execute(idx_sql)
+                except Exception:
+                    pass
+            await db.commit()
+
     async def create_goal(self, goal_id: str, description: str,
                           created_by: str, chat_id: int,
                           max_iterations: int = 10,
-                          org_id: str = "pm",
                           title: str = "",
-                          meta_json: dict | None = None) -> dict:
+                          meta_json: str = "{}") -> dict:
         """PM 목표 생성.
 
         Args:
-            goal_id: 고유 ID (e.g. "G-pm-001")
-            description: 목표 설명
-            created_by: 생성자 org_id
-            chat_id: 알림을 보낼 텔레그램 chat_id
-            max_iterations: 최대 반복 횟수
-            org_id: 목표를 소유한 조직 (기본값 "pm")
-            title: 짧은 제목 (GoalTracker.start_goal에서 사용)
-            meta_json: 임의 메타데이터 딕셔너리
+            goal_id: 고유 목표 ID (예: G-pm-001).
+            description: 목표 상세 설명.
+            created_by: 생성 org_id.
+            chat_id: Telegram 채팅방 ID.
+            max_iterations: 최대 반복 횟수.
+            title: 목표 제목 (short label).
+            meta_json: 메타데이터 JSON 문자열 (sprint, due_date 등).
         """
         now = _utcnow_iso()
-        meta_str = json.dumps(meta_json or {})
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """INSERT INTO pm_goals
-                   (id, description, status, milestones, iteration, max_iterations,
-                    stagnation_count, chat_id, created_by, created_at, updated_at,
-                    org_id, title, meta_json)
-                   VALUES (?, ?, 'active', '[]', 0, ?, 0, ?, ?, ?, ?, ?, ?, ?)""",
-                (goal_id, description, max_iterations, chat_id, created_by, now, now,
-                 org_id, title, meta_str),
+                   (id, title, description, status, milestones, iteration, max_iterations,
+                    stagnation_count, chat_id, created_by, meta_json, created_at, updated_at)
+                   VALUES (?, ?, ?, 'active', '[]', 0, ?, 0, ?, ?, ?, ?, ?)""",
+                (goal_id, title, description, max_iterations, chat_id, created_by,
+                 meta_json, now, now),
             )
             await db.commit()
-        return {"id": goal_id, "description": description, "status": "active",
-                "milestones": [], "iteration": 0, "max_iterations": max_iterations,
-                "stagnation_count": 0, "chat_id": chat_id,
-                "created_by": created_by, "created_at": now, "updated_at": now,
-                "org_id": org_id, "title": title, "meta_json": meta_json or {}}
-
-    @staticmethod
-    def _parse_goal_row(d: dict) -> dict:
-        """pm_goals Row → dict 변환 (JSON 필드 역직렬화)."""
-        d["milestones"] = json.loads(d.get("milestones") or "[]")
-        d["meta_json"] = json.loads(d.get("meta_json") or "{}")
-        return d
+        return {"id": goal_id, "title": title, "description": description,
+                "status": "active", "milestones": [], "iteration": 0,
+                "max_iterations": max_iterations, "stagnation_count": 0,
+                "chat_id": chat_id, "created_by": created_by,
+                "meta_json": meta_json, "created_at": now, "updated_at": now}
 
     async def get_goal(self, goal_id: str) -> dict | None:
         """PM 목표 조회."""
@@ -1080,19 +1065,21 @@ class ContextDB:
             row = await cursor.fetchone()
             if not row:
                 return None
-            return self._parse_goal_row(dict(row))
+            d = dict(row)
+            d["milestones"] = json.loads(d["milestones"])
+            return d
 
     async def get_active_goals(self, org_id: str | None = None) -> list[dict]:
         """활성 목표 목록.
 
         Args:
-            org_id: 특정 조직으로 필터링. None이면 전체 반환.
+            org_id: 필터링할 조직 ID (created_by 컬럼). None이면 전체 반환.
         """
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            if org_id is not None:
+            if org_id:
                 cursor = await db.execute(
-                    "SELECT * FROM pm_goals WHERE status='active' AND org_id=? ORDER BY created_at",
+                    "SELECT * FROM pm_goals WHERE status='active' AND created_by=? ORDER BY created_at",
                     (org_id,),
                 )
             else:
@@ -1100,7 +1087,12 @@ class ContextDB:
                     "SELECT * FROM pm_goals WHERE status='active' ORDER BY created_at"
                 )
             rows = await cursor.fetchall()
-            return [self._parse_goal_row(dict(r)) for r in rows]
+            result = []
+            for r in rows:
+                d = dict(r)
+                d["milestones"] = json.loads(d.get("milestones") or "[]")
+                result.append(d)
+            return result
 
     async def _query_max_goal_counter(self, org_id: str) -> int:
         """기존 goal ID에서 최대 카운터 값을 추출. restart-safe ID 생성용."""
@@ -1120,11 +1112,7 @@ class ContextDB:
                 return 0
 
     async def update_goal(self, goal_id: str, **kwargs) -> dict | None:
-        """PM 목표 업데이트.
-
-        지원 필드: milestones, status, iteration, stagnation_count, last_progress,
-                   org_id, title, meta_json.
-        """
+        """PM 목표 업데이트. milestones, status, iteration, stagnation_count, last_progress 지원."""
         now = _utcnow_iso()
 
         # 각 컬럼을 명시적으로 처리 (SQL injection 방지)
@@ -1146,15 +1134,6 @@ class ContextDB:
         if "last_progress" in kwargs:
             set_parts.append("last_progress=?")
             values.append(kwargs["last_progress"])
-        if "org_id" in kwargs:
-            set_parts.append("org_id=?")
-            values.append(kwargs["org_id"])
-        if "title" in kwargs:
-            set_parts.append("title=?")
-            values.append(kwargs["title"])
-        if "meta_json" in kwargs:
-            set_parts.append("meta_json=?")
-            values.append(json.dumps(kwargs["meta_json"]))
 
         if not set_parts:
             return await self.get_goal(goal_id)

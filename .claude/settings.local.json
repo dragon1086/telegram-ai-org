@@ -53,7 +53,18 @@
       "Bash(kill 75607 42369)",
       "Bash(for cmd:*)",
       "Bash(do command:*)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(.venv/bin/pytest tests/test_gemini_cli_runner.py -v)",
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/pytest tests/test_gemini_cli_runner.py -v)",
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/pytest -q)",
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/pytest tests/ -q)",
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/pytest /Users/rocky/telegram-ai-org/.worktrees/gemini-cli-runner/tests/test_gemini_cli_runner.py -q 2>&1)",
+      "Bash(bash scripts/restart_bots.sh 2>&1)",
+      "Bash(bash scripts/start_all.sh)",
+      "Bash(bash scripts/restart_bots.sh)",
+      "WebSearch",
+      "Bash(claude --version)",
+      "Bash(bun --version)"
     ]
   },
   "hooks": {

@@ -30,6 +30,9 @@ class OrgScheduler:
         claim_manager=None,
         context_db=None,
         group_chat_hub=None,
+        goal_tracker=None,
+        pm_orchestrator=None,
+        pm_chat_id: int = 0,
     ) -> None:
         """
         Args:
@@ -38,19 +41,20 @@ class OrgScheduler:
             claim_manager: ClaimManager 인스턴스. 제공 시 매시간 파일 정리 잡 등록.
             context_db: ContextDB 인스턴스. 미제공 시 weekly_bot_business_retro에서 자동 생성.
             group_chat_hub: GroupChatHub 인스턴스. 제공 시 주간회의·회고를 그룹 허브로 실행.
+            goal_tracker: GoalTracker 인스턴스. 회의 조치사항을 목표로 등록할 때 사용.
+            pm_orchestrator: PMOrchestrator 인스턴스. broadcast_meeting_start 전달에 사용.
+            pm_chat_id: PM 채팅방 ID. 회의 결과 요약 전송 대상.
         """
         self._send_text = send_text
         self._execute_callback = execute_callback
         self._claim_manager = claim_manager
         self._context_db = context_db
         self._group_chat_hub = group_chat_hub  # GroupChatHub | None
-        self._goal_tracker = None   # GoalTracker | None — set_goal_tracker()로 주입
+        self._goal_tracker = goal_tracker       # GoalTracker | None
+        self._pm_orchestrator = pm_orchestrator # PMOrchestrator | None
+        self._pm_chat_id = pm_chat_id
         self.scheduler = AsyncIOScheduler(timezone=KST)
         self._register_jobs()
-
-    def set_goal_tracker(self, goal_tracker) -> None:
-        """GoalTracker 주입 — 회의 조치사항을 목표로 등록하기 위해 사용."""
-        self._goal_tracker = goal_tracker
 
     # ── 잡 등록 ──────────────────────────────────────────────────────────────
 
@@ -139,6 +143,257 @@ class OrgScheduler:
 
     # ── 잡 구현 ──────────────────────────────────────────────────────────────
 
+    # ── 전 조직 브로드캐스트 회의 ─────────────────────────────────────────────
+
+    async def broadcast_meeting_start(
+        self,
+        meeting_type: str,
+        topic: str,
+        collect_timeout_sec: float = 120.0,
+    ) -> list[dict]:
+        """전 조직에 회의 참여 메시지를 브로드캐스트하고 응답을 수집.
+
+        동작:
+        1. PMOrchestrator.dispatch()를 통해 각 KNOWN_DEPTS 조직에 "회의 참여" 태스크 배분.
+        2. 각 조직 봇이 TaskPoller로 태스크 수신 → 상태 보고 실행 → ContextDB에 결과 저장.
+        3. collect_timeout_sec 동안 결과를 수집하여 반환.
+        4. 수집된 조치사항을 GoalTracker.start_goal()로 등록.
+
+        GroupChatHub에 참가자가 있으면 TurnManager 방식으로도 병행 실행.
+
+        Args:
+            meeting_type: "daily_retro" | "weekly_standup" | "friday_retro".
+            topic: 회의 주제 설명.
+            collect_timeout_sec: 응답 수집 최대 대기 시간(초).
+
+        Returns:
+            [{org_id, dept_name, report, action_items}] 형태의 응답 목록.
+        """
+        from core.constants import KNOWN_DEPTS
+
+        logger.info(f"[OrgScheduler] broadcast_meeting_start: type={meeting_type}")
+
+        # ── Step 1: GroupChatHub 참가자가 있으면 TurnManager로 실행 ──────────
+        if self._group_chat_hub is not None and self._group_chat_hub.participant_ids:
+            logger.info(
+                f"[OrgScheduler] GroupChatHub 참가자 {len(self._group_chat_hub.participant_ids)}명 "
+                f"→ start_meeting 실행"
+            )
+            await self._group_chat_hub.start_meeting(topic=topic)
+
+        # ── Step 2: PMOrchestrator로 각 조직에 회의 참여 태스크 배분 ──────────
+        responses: list[dict] = []
+        if self._pm_orchestrator is None:
+            logger.warning("[OrgScheduler] pm_orchestrator 미연결 — 직접 태스크 배분 불가")
+            await self._safe_send(
+                f"📢 [{meeting_type}] 전 조직 참여 요청 (자동 배분 미연결)\n"
+                f"주제: {topic}\n"
+                f"각 조직은 상태 보고 및 조치사항을 채팅에 공유해주세요."
+            )
+            return responses
+
+        # 회의 참여 태스크 생성
+        meeting_prompt = (
+            f"[{meeting_type.upper()}] {topic}\n\n"
+            f"담당 조직의 현재 상태를 아래 형식으로 보고해주세요:\n\n"
+            f"## 완료 항목\n- (이번 기간 완료된 주요 작업)\n\n"
+            f"## 진행 중\n- (현재 진행 중인 작업)\n\n"
+            f"## 조치사항 (Action Items)\n- (다음 기간 반드시 처리할 항목, 각 줄 ACTION: 으로 시작)\n\n"
+            f"간결하게 작성하세요 (최대 500자)."
+        )
+
+        try:
+            from core.pm_orchestrator import SubTask
+            subtasks = [
+                SubTask(
+                    assigned_dept=org_id,
+                    description=meeting_prompt,
+                    expected_output=f"{dept_name} 상태 보고 및 조치사항",
+                    rationale=f"{meeting_type} 회의 참여",
+                    priority="medium",
+                    depends_on=[],
+                )
+                for org_id, dept_name in KNOWN_DEPTS.items()
+            ]
+
+            # 부모 태스크 임시 생성
+            import uuid as _uuid
+            parent_task_id = f"MEETING-{meeting_type}-{_uuid.uuid4().hex[:8]}"
+            await self._pm_orchestrator._db.create_pm_task(
+                task_id=parent_task_id,
+                description=f"[{meeting_type}] {topic}",
+                assigned_dept="pm",
+                chat_id=self._pm_chat_id,
+            )
+
+            task_ids = await self._pm_orchestrator.dispatch(
+                parent_task_id=parent_task_id,
+                subtasks=subtasks,
+                chat_id=self._pm_chat_id,
+            )
+            logger.info(f"[OrgScheduler] 회의 태스크 배분 완료: {len(task_ids)}개")
+
+            # ── Step 3: 결과 수집 (타임아웃 대기) ──────────────────────────
+            responses = await self._collect_meeting_responses(
+                parent_task_id=parent_task_id,
+                task_ids=task_ids,
+                timeout_sec=collect_timeout_sec,
+            )
+
+        except Exception as e:
+            logger.error(f"[OrgScheduler] broadcast_meeting_start 배분 실패: {e}")
+            await self._safe_send(f"⚠️ [회의 브로드캐스트] 오류: {e}")
+
+        # ── Step 4: 조치사항 → GoalTracker 등록 ──────────────────────────────
+        if self._goal_tracker is not None and responses:
+            await self._register_action_items(responses, meeting_type)
+
+        return responses
+
+    async def _collect_meeting_responses(
+        self,
+        parent_task_id: str,
+        task_ids: list[str],
+        timeout_sec: float = 120.0,
+    ) -> list[dict]:
+        """배분된 태스크 결과를 ContextDB에서 수집."""
+        if not task_ids or self._pm_orchestrator is None:
+            return []
+
+        db = self._pm_orchestrator._db
+        terminal = {"done", "failed", "cancelled"}
+        poll_interval = 5.0
+        waited = 0.0
+        results: list[dict] = []
+
+        while waited < timeout_sec:
+            await asyncio.sleep(poll_interval)
+            waited += poll_interval
+
+            all_done = True
+            results = []
+            for tid in task_ids:
+                task = await db.get_pm_task(tid)
+                if not task:
+                    all_done = False
+                    continue
+                if task.get("status") not in terminal:
+                    all_done = False
+                else:
+                    results.append({
+                        "org_id": task.get("assigned_dept", ""),
+                        "report": task.get("result", ""),
+                        "status": task.get("status", ""),
+                    })
+
+            if all_done:
+                break
+
+        logger.info(f"[OrgScheduler] 회의 응답 수집: {len(results)}개 / {len(task_ids)}개 배분")
+        return results
+
+    async def _register_action_items(
+        self,
+        responses: list[dict],
+        meeting_type: str,
+    ) -> None:
+        """회의 응답에서 조치사항(ACTION:으로 시작하는 줄)을 추출해 GoalTracker에 등록."""
+        if self._goal_tracker is None:
+            return
+
+        from core.constants import KNOWN_DEPTS
+        registered = 0
+
+        for resp in responses:
+            org_id = resp.get("org_id", "")
+            report = resp.get("report", "")
+            if not report:
+                continue
+
+            # "ACTION:" 패턴 추출
+            action_lines = [
+                line.strip().lstrip("- •").strip()
+                for line in report.splitlines()
+                if line.strip().upper().startswith("ACTION:")
+            ]
+            for action in action_lines:
+                # "ACTION:" 접두어 제거
+                description = action.split(":", 1)[-1].strip()
+                if len(description) < 5:
+                    continue
+                try:
+                    dept_name = KNOWN_DEPTS.get(org_id, org_id)
+                    goal_id = await self._goal_tracker.start_goal(
+                        title=f"[{meeting_type}] {dept_name} 조치사항",
+                        description=description,
+                        meta={
+                            "source": meeting_type,
+                            "org_id": org_id,
+                            "auto_registered": True,
+                        },
+                        chat_id=self._pm_chat_id,
+                    )
+                    logger.info(f"[OrgScheduler] 조치사항 GoalTracker 등록: {goal_id} — {description[:60]}")
+                    registered += 1
+                except Exception as e:
+                    logger.warning(f"[OrgScheduler] 조치사항 등록 실패 ({org_id}): {e}")
+
+        if registered:
+            await self._safe_send(
+                f"📌 [{meeting_type}] 조치사항 {registered}개를 GoalTracker에 자동 등록했습니다."
+            )
+
+    async def _post_meeting_summary(
+        self,
+        responses: list[dict],
+        meeting_type: str,
+        topic: str,
+    ) -> None:
+        """회의 종료 후 수집된 응답 요약을 PM 채널에 전송."""
+        if not responses:
+            await self._safe_send(
+                f"📋 [{meeting_type}] 회의 완료. 응답 수집 결과 없음 (타임아웃 또는 오류)."
+            )
+            return
+
+        from core.constants import KNOWN_DEPTS
+        lines = [f"## {meeting_type.upper()} 종합 보고"]
+        for resp in responses:
+            org_id = resp.get("org_id", "?")
+            dept_name = KNOWN_DEPTS.get(org_id, org_id)
+            report = resp.get("report", "(응답 없음)")
+            lines.append(f"\n### {dept_name}")
+            lines.append(report[:400])
+
+        summary = "\n".join(lines)
+        await self._safe_send(summary)
+
+    def register_dept_bot_with_hub(
+        self,
+        org_id: str,
+        speak_callback,
+        domain_keywords: list[str] | None = None,
+    ) -> None:
+        """부서 봇을 GroupChatHub에 참가자로 등록.
+
+        workers.yaml 기반 봇이 시작될 때 이 메서드를 호출하면
+        회의/회고 시 자동으로 발언 기회를 얻는다.
+
+        Args:
+            org_id: 봇 조직 ID (예: "aiorg_engineering_bot").
+            speak_callback: async (topic, context) -> str | None 형태의 콜백.
+            domain_keywords: 이 봇의 전문 영역 키워드.
+        """
+        if self._group_chat_hub is None:
+            logger.warning(f"[OrgScheduler] GroupChatHub 미연결 — {org_id} 등록 불가")
+            return
+        self._group_chat_hub.register_participant(
+            bot_id=org_id,
+            speak_callback=speak_callback,
+            domain_keywords=domain_keywords,
+        )
+        logger.info(f"[OrgScheduler] {org_id} GroupChatHub 등록 완료")
+
     async def morning_standup(self) -> None:
         """매일 09:00 KST — 아침 목표 회의."""
         logger.info("[OrgScheduler] morning_standup 시작")
@@ -153,15 +408,16 @@ class OrgScheduler:
         """매일 23:30 KST — 저녁 회고."""
         logger.info("[OrgScheduler] daily_retro 시작")
         try:
-            # GroupChatHub 연동: 전 조직이 채팅에 참여하는 일일 회고
-            if self._group_chat_hub is not None:
-                logger.info("[OrgScheduler] GroupChatHub를 통한 멀티봇 일일 회고 실행")
-                await self._group_chat_hub.start_meeting(
-                    topic="일일 회고 — 오늘 성과, 문제점, 내일 계획 공유",
-                    participants=self._group_chat_hub.participant_ids,
-                )
-                # 회의 후 조치사항을 GoalTracker에 등록
-                await self._register_retro_action_items("daily_retro")
+            # Phase 3: 전 조직 브로드캐스트 — 상태 보고 + 조치사항 수집
+            topic = "일일 회고 — 오늘의 완료 항목, 진행 중인 작업, 내일 조치사항 공유"
+            responses = await self.broadcast_meeting_start(
+                meeting_type="daily_retro",
+                topic=topic,
+                collect_timeout_sec=90.0,
+            )
+            if responses:
+                await self._post_meeting_summary(responses, "daily_retro", topic)
+
             from scripts.daily_retro import main as _retro_main
             await _retro_main()
             tasks = []  # Phase 3에서 참조 — 여기서 초기화
@@ -215,11 +471,20 @@ class OrgScheduler:
         """매주 월요일 09:00 KST — 주간 회의."""
         logger.info("[OrgScheduler] weekly_standup 시작")
         try:
-            # GroupChatHub 연동: 그룹방에서 멀티봇 자율 참가 회의 실행
-            if self._group_chat_hub is not None:
+            # Phase 3: 전 조직 브로드캐스트 — 주간 계획 + 조치사항 수집
+            topic = "주간 스탠드업 — 이번 주 계획 및 지난 주 성과 공유"
+            responses = await self.broadcast_meeting_start(
+                meeting_type="weekly_standup",
+                topic=topic,
+                collect_timeout_sec=120.0,
+            )
+            if responses:
+                await self._post_meeting_summary(responses, "weekly_standup", topic)
+            # GroupChatHub 연동: 그룹방에서 멀티봇 자율 참가 회의 실행 (참가자 있을 때만)
+            if self._group_chat_hub is not None and self._group_chat_hub.participant_ids:
                 logger.info("[OrgScheduler] GroupChatHub를 통한 멀티봇 주간 스탠드업 실행")
                 await self._group_chat_hub.start_meeting(
-                    topic="주간 스탠드업 — 이번 주 계획 및 지난 주 성과 공유",
+                    topic=topic,
                     participants=self._group_chat_hub.participant_ids,
                 )
             from scripts.weekly_standup import main as _weekly_main
@@ -260,11 +525,20 @@ class OrgScheduler:
         """매주 금요일 18:00 KST — 주간 회고."""
         logger.info("[OrgScheduler] friday_retro 시작")
         try:
-            # GroupChatHub 연동: 그룹방에서 멀티봇 자율 참가 회고 실행
-            if self._group_chat_hub is not None:
+            # Phase 3: 전 조직 브로드캐스트 — 주간 회고 + 조치사항 수집
+            topic = "주간 회고 — 이번 주 잘한 점, 개선점, 다음 주 액션 아이템"
+            responses = await self.broadcast_meeting_start(
+                meeting_type="friday_retro",
+                topic=topic,
+                collect_timeout_sec=120.0,
+            )
+            if responses:
+                await self._post_meeting_summary(responses, "friday_retro", topic)
+            # GroupChatHub 연동: 그룹방에서 멀티봇 자율 참가 회고 실행 (참가자 있을 때만)
+            if self._group_chat_hub is not None and self._group_chat_hub.participant_ids:
                 logger.info("[OrgScheduler] GroupChatHub를 통한 멀티봇 주간 회고 실행")
                 await self._group_chat_hub.start_meeting(
-                    topic="주간 회고 — 이번 주 잘한 점, 개선점, 다음 주 액션 아이템",
+                    topic=topic,
                     participants=self._group_chat_hub.participant_ids,
                 )
             from scripts.daily_retro import (
@@ -330,73 +604,6 @@ class OrgScheduler:
         except Exception as e:
             logger.error(f"[OrgScheduler] friday_retro 실패: {e}")
             await self._safe_send(f"⚠️ [스케줄러] 주간 회고 중 오류 발생: {e}")
-
-    # ── 회의 브로드캐스트 & 조치사항 등록 ────────────────────────────────────────
-
-    async def broadcast_meeting_start(self, meeting_type: str) -> None:
-        """회의 시작을 전 조직에 브로드캐스트하고 GroupChatHub meeting을 실행한다.
-
-        Args:
-            meeting_type: "daily_retro" | "weekly_standup" | "friday_retro"
-        """
-        topic_map = {
-            "daily_retro": "일일 회고 — 오늘 성과, 문제점, 내일 계획",
-            "weekly_standup": "주간 스탠드업 — 이번 주 계획 및 지난 주 성과",
-            "friday_retro": "주간 회고 — 잘한 점, 개선점, 다음 주 액션 아이템",
-        }
-        topic = topic_map.get(meeting_type, meeting_type)
-        await self._safe_send(f"📣 [{meeting_type}] 회의 시작 — 전 조직 참여 요청")
-        if self._group_chat_hub is not None and self._group_chat_hub.participant_ids:
-            await self._group_chat_hub.start_meeting(
-                topic=topic,
-                participants=self._group_chat_hub.participant_ids,
-            )
-        await self._register_retro_action_items(meeting_type)
-
-    async def _register_retro_action_items(self, meeting_type: str) -> None:
-        """회의 후 조치사항(실패/미완료 태스크)을 GoalTracker에 자동 등록한다.
-
-        - context_db에서 최근 2일 failed/pending 태스크를 부서별로 집계
-        - GoalTracker.start_goal()로 개선 목표를 생성
-        - 완료 후 PM 채널에 요약 전송
-        """
-        if self._goal_tracker is None or self._context_db is None:
-            return
-        try:
-            import aiosqlite as _sq
-            async with _sq.connect(self._context_db.db_path) as _db:
-                _db.row_factory = _sq.Row
-                cur = await _db.execute(
-                    "SELECT assigned_dept, COUNT(*) as cnt FROM pm_tasks "
-                    "WHERE status IN ('failed','pending') "
-                    "AND created_at >= datetime('now','-2 days') "
-                    "GROUP BY assigned_dept ORDER BY cnt DESC LIMIT 5"
-                )
-                dept_rows = await cur.fetchall()
-
-            if not dept_rows:
-                return
-
-            summary_lines = ["📋 *회의 후 자동 조치사항 등록*"]
-            for row in dept_rows:
-                dept = row["assigned_dept"] or "unknown"
-                cnt = row["cnt"]
-                desc = (
-                    f"{meeting_type} 후 조치 — {dept} 부서 미완료/실패 태스크 {cnt}건 해결.\n"
-                    f"실패 원인 분석 후 재시도 또는 대안 방안 제시."
-                )
-                gid = await self._goal_tracker.start_goal(
-                    org_id=self._goal_tracker._org_id,
-                    title=f"[{meeting_type}] {dept} 조치사항",
-                    description=desc,
-                    meta={"source": meeting_type, "dept": dept, "task_count": cnt},
-                )
-                summary_lines.append(f"  • {dept}: {cnt}건 → 목표 {gid} 등록")
-
-            await self._safe_send("\n".join(summary_lines))
-            logger.info(f"[OrgScheduler] {meeting_type} 조치사항 GoalTracker 등록 완료: {len(dept_rows)}건")
-        except Exception as e:
-            logger.warning(f"[OrgScheduler] 조치사항 GoalTracker 등록 실패 (무시): {e}")
 
     # ── 사용자 정의 스케줄 ────────────────────────────────────────────────
 
