@@ -64,6 +64,7 @@ logs/
 data/
 reports/
 tasks/
+.ai-org/
 *.db
 *.db-shm
 *.db-wal
@@ -91,5 +92,4 @@ migrations/
 *.yaml.orig
 improvement_thresholds.yaml
 agent_hints.yaml
-organizations.yaml
 PM봇_로그분석_보고서_*.md

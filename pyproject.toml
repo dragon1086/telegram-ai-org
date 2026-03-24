@@ -1,3 +1,12 @@
+# =============================================================================
+# pyproject.toml — PEP 517/518 빌드 시스템 + 패키지 메타데이터 (PEP 621)
+#
+# 현대 표준: pyproject.toml [project] 테이블이 primary source of truth
+# 레거시 호환: setup.cfg [metadata]/[options] 병행 제공 (pip < 21.3, 구형 CI)
+# 빌드 명령: python -m build --wheel --sdist
+# 로컬 개발 설치: pip install -e .[dev]
+# =============================================================================
+
 [project]
 name = "telegram-ai-org"
 version = "0.1.0"
@@ -12,7 +21,7 @@ keywords = ["telegram", "ai", "multi-agent", "llm", "bot", "orchestration"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    # License classifier removed — SPDX expression `license = "MIT"` is used instead (PEP 639)
+    # License classifier deprecated by PEP 639 — SPDX expression in `license = "MIT"` 사용
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -37,19 +46,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# 엔진별 선택적 의존성
-# claude-code 엔진: claude CLI는 npm으로 별도 설치 (pip 의존성 없음)
-#   설치: npm install -g @anthropic-ai/claude-code
+# claude-code 엔진: npm install -g @anthropic-ai/claude-code
 claude = []
-# codex 엔진: codex CLI는 npm으로 별도 설치 (pip 의존성 없음)
-#   설치: npm install -g @openai/codex
+# codex 엔진: npm install -g @openai/codex
 codex = []
-# gemini-cli 엔진: python SDK + CLI 별도 설치
-#   CLI 설치: npm install -g @google/gemini-cli  또는 brew install gemini-cli
+# gemini-cli 엔진: npm install -g @google/gemini-cli
 gemini = [
     "google-genai>=1.0",
 ]
-# 전체 엔진 (gemini SDK 포함)
 all = [
     "google-genai>=1.0",
 ]
@@ -63,6 +67,8 @@ dev = [
     "pytest-asyncio>=0.21",
     "pytest-mock>=3.0",
     "ruff>=0.1",
+    "flake8>=7.0",
+    "mypy>=1.10",
     "black>=23.0",
     "build>=1.0",
     "twine>=5.0",
@@ -70,9 +76,9 @@ dev = [
 ]
 
 [project.scripts]
-# PyPI 공식 진입점 (패키지 이름과 동일)
+# PyPI 공식 진입점
 telegram-ai-org = "telegram_ai_org.__main__:main"
-# PM 봇 실행 (단축 별칭) — cli.py:pm() 이 main.py 를 runpy로 실행
+# PM 봇 실행 단축 별칭
 aiorg-pm = "cli:pm"
 # 워커 봇 실행: aiorg-worker --name <worker_name>
 aiorg-worker = "core.run_worker:main"
@@ -85,7 +91,7 @@ Repository = "https://github.com/dragon1086/aimesh"
 Issues = "https://github.com/dragon1086/aimesh/issues"
 
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
@@ -112,3 +118,13 @@ ignore = ["E501"]
 asyncio_mode = "auto"
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["cli.py", "main.py", "simulation_mode.py", "core", "telegram_ai_org", "tools"]
+exclude = ["tests", ".venv", ".worktrees", "build", "dist"]
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_ignores = true
+show_error_codes = true
+pretty = true
