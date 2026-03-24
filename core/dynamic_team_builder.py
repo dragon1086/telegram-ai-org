@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -52,19 +53,38 @@ Available agent names: executor, debugger, architect, analyst, scientist, writer
 document-specialist, code-reviewer, security-reviewer, quality-reviewer,
 test-engineer, verifier, qa-tester, planner, explore, designer, build-fixer, critic.
 
-Respond ONLY with valid JSON in this exact format:
-{
-  "agents": [{"name": "executor", "count": 2}, {"name": "analyst", "count": 1}],
-  "execution_mode": "structured_team",
-  "engine": "claude-code",
-  "reasoning": "brief reason"
-}
+CRITICAL: You MUST respond with ONLY a single JSON object. No markdown, no explanation, no prose.
+Do NOT execute or answer the task — only decide the team composition.
+
+Output format (nothing else):
+{"agents": [{"name": "executor", "count": 2}, {"name": "analyst", "count": 1}], "execution_mode": "structured_team", "engine": "claude-code", "reasoning": "brief reason"}
 
 Rules:
 - Use at most 3 distinct agent types.
 - Each count must be 1, 2, or 3.
 - agent names must be from the available list above.
+- NEVER answer or summarize the task. ONLY output JSON.
 """
+
+
+def _extract_json_from_response(text: str) -> dict:
+    """LLM 응답에서 JSON 객체를 추출한다.
+
+    순수 JSON, ```json 코드블록, 텍스트 속 {...} 모두 처리.
+    """
+    text = text.strip()
+    # 1) 순수 JSON
+    if text.startswith("{"):
+        return json.loads(text)
+    # 2) ```json ... ``` 코드블록
+    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if m:
+        return json.loads(m.group(1))
+    # 3) 텍스트 안에 섞인 JSON 객체
+    m = re.search(r"\{[^{}]*\"agents\"[^{}]*\[.*?\].*?\}", text, re.DOTALL)
+    if m:
+        return json.loads(m.group(0))
+    raise ValueError(f"No JSON found in LLM response: {text[:200]}")
 
 
 def _build_team_format(agents_spec: list[dict]) -> str:
@@ -184,7 +204,8 @@ class DynamicTeamBuilder:
                     task_context,
                     system_prompt=_TEAM_SYSTEM_PROMPT,
                 )
-            data = json.loads(content)
+            logger.debug("LLM team build raw response (first 500 chars): {}", content[:500])
+            data = _extract_json_from_response(content)
             return self._parse_llm_response(
                 data,
                 preferred_agents=preferred_agents,
