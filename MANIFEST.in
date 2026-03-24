@@ -8,7 +8,10 @@ include CLAUDE.md
 include AGENTS.md
 include GEMINI.md
 include orchestration.yaml
+include organizations.yaml
 include workers.yaml
+include agent_hints.yaml
+include improvement_thresholds.yaml
 include .env.example
 include LICENSE
 

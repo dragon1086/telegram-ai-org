@@ -90,6 +90,5 @@ simulation_mode.py
 migrations/
 *.yaml.bak
 *.yaml.orig
-improvement_thresholds.yaml
-agent_hints.yaml
 PM봇_로그분석_보고서_*.md
+# agent_hints.yaml, improvement_thresholds.yaml 은 런타임 필수 — 제외하지 않음
