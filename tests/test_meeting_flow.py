@@ -206,8 +206,18 @@ class TestMeetingActionItems:
         # GoalTracker에 목표가 등록됐는지 확인
         active_goals = await tracker.get_active_goals(org_id="pm")
         assert len(active_goals) >= 1
-        # 생성된 목표의 메타데이터 확인
-        action_goals = [g for g in active_goals if g.get("meta_json", {}).get("source") == "daily_retro"]
+        # 생성된 목표의 메타데이터 확인 (meta_json은 문자열로 저장됨)
+        import json as _json
+        def _get_meta(g):
+            raw = g.get("meta_json", "{}")
+            if isinstance(raw, str):
+                try:
+                    return _json.loads(raw)
+                except Exception:
+                    return {}
+            return raw or {}
+
+        action_goals = [g for g in active_goals if _get_meta(g).get("source") == "daily_retro"]
         assert len(action_goals) >= 1
 
     @pytest.mark.asyncio
@@ -238,3 +248,82 @@ class TestSchedulerGoalTrackerInjection:
     def test_goal_tracker_initially_none(self, scheduler):
         """OrgScheduler 초기화 시 goal_tracker는 None이다."""
         assert scheduler._goal_tracker is None
+
+
+# ── broadcast_meeting_start + _register_action_items 직접 테스트 ──────────────
+
+
+class TestBroadcastMeetingStart:
+    """OrgScheduler.broadcast_meeting_start() — pm_orchestrator 미연결 시 동작."""
+
+    @pytest.mark.asyncio
+    async def test_broadcast_without_orchestrator_sends_message(self, send_fn):
+        """pm_orchestrator 없으면 수동 브로드캐스트 안내 메시지 전송."""
+        sched = OrgScheduler(send_text=send_fn)
+        responses = await sched.broadcast_meeting_start(
+            meeting_type="daily_retro",
+            topic="오늘 회고",
+            collect_timeout_sec=0.5,
+        )
+        assert isinstance(responses, list)
+        send_fn.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_register_action_items_with_goal_tracker(self, send_fn):
+        """ACTION: 라인이 있으면 GoalTracker.start_goal() 호출된다."""
+        mock_tracker = AsyncMock()
+        mock_tracker.start_goal = AsyncMock(return_value="G-pm-999")
+
+        sched = OrgScheduler(
+            send_text=send_fn,
+            goal_tracker=mock_tracker,
+            pm_chat_id=0,
+        )
+        responses = [
+            {
+                "org_id": "aiorg_engineering_bot",
+                "report": "## 완료\n- API 구현\n\nACTION: E2E 테스트 추가\nACTION: 문서 업데이트",
+                "status": "done",
+            }
+        ]
+        await sched._register_action_items(responses, "daily_retro")
+        assert mock_tracker.start_goal.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_register_action_items_no_actions(self, send_fn):
+        """ACTION: 없는 보고에서는 start_goal 미호출."""
+        mock_tracker = AsyncMock()
+        mock_tracker.start_goal = AsyncMock(return_value="G-pm-001")
+
+        sched = OrgScheduler(
+            send_text=send_fn,
+            goal_tracker=mock_tracker,
+            pm_chat_id=0,
+        )
+        responses = [
+            {
+                "org_id": "aiorg_product_bot",
+                "report": "## 완료\n- PRD 작성\n## 진행 중\n- 스펙 검토",
+                "status": "done",
+            }
+        ]
+        await sched._register_action_items(responses, "weekly_standup")
+        mock_tracker.start_goal.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_register_dept_bot_with_hub(self, send_fn):
+        """register_dept_bot_with_hub()가 GroupChatHub에 참가자를 등록한다."""
+        from core.group_chat_hub import GroupChatHub
+
+        hub = GroupChatHub(send_to_group=send_fn)
+        sched = OrgScheduler(
+            send_text=send_fn,
+            group_chat_hub=hub,
+        )
+        callback = AsyncMock(return_value="테스트 응답")
+        sched.register_dept_bot_with_hub(
+            org_id="aiorg_engineering_bot",
+            speak_callback=callback,
+            domain_keywords=["코드", "버그"],
+        )
+        assert "aiorg_engineering_bot" in hub.participant_ids
