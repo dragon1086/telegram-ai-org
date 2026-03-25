@@ -20,4 +20,5 @@ def test_validate_config_includes_ops_validation(capsys) -> None:
     assert "validation" in payload
     assert "cron_jobs" in payload["validation"]
     assert "collab_targets" in payload["validation"]
+    assert "auto_restart" in payload["validation"]
     assert payload["validation"]["config_path"].endswith("config/ops_rollout.yaml")

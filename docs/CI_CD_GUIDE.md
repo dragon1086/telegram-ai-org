@@ -1,84 +1,162 @@
 # CI/CD Guide
 
-## 개요
+## 워크플로 전체 구성
 
-이번 구성은 PR 검증 1종과 `main` 머지 후 배포 2종으로 단순화했다.
+이 프로젝트는 GitHub Actions 워크플로를 **6개**로 운영한다.
+PR 검증(`ci.yml`) → main 배포(`cd-main.yml`) → 버전 릴리즈(`release.yml`) 세 계층으로 분리한다.
 
-| 워크플로우 | 트리거 | 역할 |
+| 파일 | 트리거 | 역할 |
 |---|---|---|
-| `ci-e2e.yml` | `pull_request` to `main`, `workflow_dispatch` | 설정 검증 + `tests/e2e/` 실행 |
-| `publish-pypi.yml` | `push` to `main`, `workflow_dispatch` | 검증 후 PyPI 패키지 빌드/배포 |
-| `docker-publish.yml` | `push` to `main`, `workflow_dispatch` | 검증 후 Docker Hub 이미지 빌드/푸시 |
-
-운영 원칙:
-
-- 배포 전 항상 테스트: `publish-pypi.yml`, `docker-publish.yml` 모두 `verify` job을 선행한다.
-- 인프라 변경은 단계적으로: 배포 job은 검증이 끝난 뒤에만 실행되도록 `needs` 로 직렬화한다.
-- PR 머지 차단: `ci-e2e.yml` 의 `e2e-tests` job을 branch protection required status check로 등록한다.
-- PyPI 배포 정책: `main` 머지마다 배포를 시도하되 `twine upload --skip-existing` 로 이미 배포된 동일 버전은 건너뛴다.
+| `ci.yml` | PR to `main`, `workflow_dispatch` | lint → unit-test → docker-build 검증 → E2E 순서 |
+| `cd-main.yml` | `push` to `main`, `workflow_dispatch` | 검증 후 Docker Hub `latest` 이미지 푸시 |
+| `release.yml` | `v*` 태그 push, `workflow_dispatch` | Docker Hub 버전 태그 푸시 + GitHub Release 생성 |
+| `ci-lint.yml` | PR, `push` to `main`, `workflow_dispatch` | Ruff 린트만 단독 실행 (빠른 피드백) |
+| `ci-e2e.yml` | PR to `main`, `workflow_dispatch` | E2E 단독 실행 (설정 검증 포함, 커버리지 90%+) |
+| `docker-publish.yml` | `push` to `main`, `workflow_dispatch` | Docker Hub 빌드/푸시 (레거시, `cd-main.yml`로 대체 권장) |
+| `publish-pypi.yml` | `push` to `main`, `workflow_dispatch` | PyPI 패키지 빌드/배포 |
 
 ---
 
-## GitHub Secrets
+## 공통 환경 변수
 
-등록 위치:
+모든 워크플로에 아래 값이 동일하게 정의되어 있다.
 
-1. GitHub 저장소로 이동한다.
-2. `Settings` → `Secrets and variables` → `Actions` 를 연다.
-3. `New repository secret` 으로 아래 값을 추가한다.
+| 변수 | 값 | 설명 |
+|---|---|---|
+| `PYTHON_VERSION` | `"3.11"` | Python 버전 고정 |
+| `DOCKER_IMAGE` | `telegram-ai-org` | Docker Hub 이미지 이름 (username 제외) |
+| `PYTHONUTF8` | `"1"` | UTF-8 강제 |
+| `PIP_DISABLE_PIP_VERSION_CHECK` | `"1"` | pip 버전 경고 억제 |
+| `CLAUDE_CLI_PATH` | `claude` | Claude CLI 경로 (E2E용) |
+| `CODEX_CLI_PATH` | `codex` | Codex CLI 경로 (E2E용) |
+| `GEMINI_CLI_PATH` | `gemini` | Gemini CLI 경로 (E2E용) |
 
-| Secret | 사용 워크플로우 | 발급 방법 | 비고 |
-|---|---|---|---|
-| `PYPI_TOKEN` | `publish-pypi.yml` | [PyPI](https://pypi.org/) 로그인 → Account settings → `API tokens` → 신규 토큰 발급 | `twine upload` 에서 `__token__` 계정으로 사용 |
-| `DOCKERHUB_USERNAME` | `docker-publish.yml` | [Docker Hub](https://hub.docker.com/) 계정 사용자명 확인 | 이미지 이름 prefix로 사용 |
-| `DOCKERHUB_TOKEN` | `docker-publish.yml` | Docker Hub → Account Settings → `Personal access tokens` → 신규 토큰 발급 | 비밀번호 대신 로그인용 토큰 사용 |
+Docker Hub 전체 이미지 태그 형식:
 
-권장 사항:
-
-- PyPI 토큰은 프로젝트별 scoped token으로 발급한다.
-- Docker Hub 토큰은 write 권한이 필요한 저장소로만 범위를 최소화한다.
-- Secret 이름은 워크플로우와 동일하게 대소문자까지 정확히 등록한다.
-
----
-
-## Workflow 상세
-
-### `ci-e2e.yml`
-
-1. PR이 `main` 대상으로 열리거나 갱신될 때 자동 실행된다.
-2. Python 3.11 환경을 준비하고 `.[dev]` 의존성을 설치한다.
-3. `python tools/orchestration_cli.py validate-config` 로 오케스트레이션 설정을 검증한다.
-4. `python -m pytest tests/e2e/ -q --tb=short` 를 실행한다.
-5. 실패 시 `e2e-tests` status check가 실패 상태로 남아 PR 머지를 차단할 수 있다.
-
-### `publish-pypi.yml`
-
-1. `main` 브랜치에 머지되면 자동 실행된다.
-2. `verify` job에서 설정 검증과 E2E 테스트를 먼저 실행한다.
-3. `publish` job에서 `python -m build` 와 `python -m twine check dist/*` 를 수행한다.
-4. `PYPI_TOKEN` 을 사용해 `python -m twine upload --skip-existing dist/*` 로 업로드한다.
-
-### `docker-publish.yml`
-
-1. `main` 브랜치에 머지되면 자동 실행된다.
-2. `verify` job에서 설정 검증과 E2E 테스트를 먼저 실행한다.
-3. `docker/build-push-action` 으로 이미지를 빌드한다.
-4. Docker Hub 에 `${DOCKERHUB_USERNAME}/telegram-ai-org:latest` 와 `${DOCKERHUB_USERNAME}/telegram-ai-org:${GITHUB_SHA}` 두 태그로 푸시한다.
-
----
-
-## 로컬 검증 절차
-
-### 공통 검증
-
-```bash
-./.venv/bin/python -m pip install --upgrade pip
-./.venv/bin/python -m pip install -e ".[dev]"
-./.venv/bin/python tools/orchestration_cli.py validate-config
-./.venv/bin/python -m pytest tests/e2e/ -q --tb=short
+```
+${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
+${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:<version>
+${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:<git-sha>
 ```
 
-### YAML 문법 검증
+---
+
+## GitHub Secrets 등록
+
+등록 위치: **GitHub 저장소 → Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret 이름 | 사용 워크플로 | 발급 방법 | 비고 |
+|---|---|---|---|
+| `DOCKERHUB_USERNAME` | `ci.yml`, `cd-main.yml`, `release.yml`, `docker-publish.yml` | Docker Hub 계정 사용자명 | 이미지 prefix로 사용 |
+| `DOCKERHUB_TOKEN` | `ci.yml`, `cd-main.yml`, `release.yml`, `docker-publish.yml` | Docker Hub → Account Settings → Personal access tokens → 신규 발급 | 비밀번호 대신 사용 (write 권한 필요) |
+| `PYPI_TOKEN` | `publish-pypi.yml` | PyPI → Account settings → API tokens → 신규 발급 | 프로젝트 scoped token 권장 |
+
+> **보안 권장사항**
+> - Docker Hub 토큰은 해당 repository 단일 write 권한으로 최소화 발급
+> - PyPI 토큰은 `telegram-ai-org` 프로젝트 scoped token으로 발급
+> - Secret 이름은 대소문자 구분 — 워크플로 파일과 정확히 일치해야 함
+
+---
+
+## 워크플로 상세
+
+### `ci.yml` — PR CI (lint → unit-test → docker-build → e2e)
+
+PR이 `main` 대상으로 열리거나 업데이트될 때 실행된다.
+
+```
+lint ──────────────┐
+                    ├──→ docker-build (푸시 없음)
+unit-test ─────────┘
+                    ├──→ e2e (tests/e2e/ 대상, 커버리지 90%+)
+```
+
+- **lint**: `python -m ruff check telegram_ai_org` + `ruff format --check`
+- **unit-test**: `pytest tests/ --ignore=tests/e2e --ignore=tests/integration`
+- **docker-build**: `docker/build-push-action` with `push: false` (빌드 검증만)
+- **e2e**: `pytest tests/e2e/` + `orchestration_cli.py validate-config`
+
+Branch protection에 `lint`, `unit-test`, `e2e` job을 required status check로 등록 권장.
+
+### `cd-main.yml` — main 브랜치 배포
+
+`main` 머지 후 자동 실행. `verify` job이 먼저 E2E를 재검증한 뒤 Docker Hub에 푸시한다.
+
+푸시 태그:
+- `<username>/telegram-ai-org:latest`
+- `<username>/telegram-ai-org:<git-sha>` (롤백 추적용)
+
+### `release.yml` — 버전 릴리즈
+
+`v*` 형식 태그 푸시 시 실행 (예: `git tag v1.0.0 && git push origin v1.0.0`).
+
+1. **docker-release**: 버전 태그 + `latest` 동시 푸시
+2. **github-release**: `CHANGELOG.md` 최상단 섹션 또는 git log로 릴리즈 노트 생성 → GitHub Release 자동 생성
+
+릴리즈 제목 = 태그명 (예: `v1.0.0`).
+`-rc`, `-beta`, `-alpha` 포함 태그는 prerelease로 자동 표시.
+
+---
+
+## 로컬 CI 재현 방법
+
+### 1. Lint
+
+```bash
+# ruff 설치 (없는 경우)
+./.venv/bin/python -m pip install ruff
+
+# lint 실행
+./.venv/bin/python -m ruff check telegram_ai_org
+
+# format 체크
+./.venv/bin/python -m ruff format --check telegram_ai_org
+```
+
+### 2. Unit Tests
+
+```bash
+# 의존성 설치
+./.venv/bin/python -m pip install -e ".[dev]"
+
+# 단위 테스트 실행 (e2e, integration 제외)
+./.venv/bin/python -m pytest tests/ \
+  --ignore=tests/e2e \
+  --ignore=tests/integration \
+  -q --tb=short
+```
+
+### 3. E2E Tests
+
+```bash
+# 설정 검증 먼저
+./.venv/bin/python tools/orchestration_cli.py validate-config
+
+# E2E 전체 실행
+./.venv/bin/python -m pytest tests/e2e/ \
+  -q --tb=short \
+  --cov=tools.gemini_cli_runner \
+  --cov=tools.codex_runner \
+  --cov=tools.base_runner \
+  --cov=tools.claude_subprocess_runner \
+  --cov-fail-under=90 \
+  --cov-report=term-missing
+```
+
+### 4. Docker Build 검증
+
+```bash
+# 기본 이미지 빌드 (push 없음)
+docker build -t telegram-ai-org:local .
+
+# Claude 엔진 포함 빌드
+docker build --build-arg ENGINE=claude -t telegram-ai-org:claude .
+
+# Buildx 로컬 테스트
+docker buildx build --load -t telegram-ai-org:local .
+```
+
+### 5. YAML 문법 검증
 
 ```bash
 ./.venv/bin/python - <<'PY'
@@ -87,21 +165,32 @@ import yaml
 
 for path in sorted(Path(".github/workflows").glob("*.yml")):
     yaml.safe_load(path.read_text())
-    print(f"OK {path}")
+    print(f"OK  {path}")
 PY
 ```
 
-### 패키지 빌드 검증
+---
+
+## 릴리즈 절차
 
 ```bash
-./.venv/bin/python -m build
-./.venv/bin/python -m twine check dist/*
+# 1. 버전 태그 생성
+git tag v1.0.0
+
+# 2. 태그 푸시 → release.yml 자동 트리거
+git push origin v1.0.0
+
+# 3. GitHub Actions에서 자동 처리:
+#    - Docker Hub: dragon1086/telegram-ai-org:v1.0.0 + :latest 푸시
+#    - GitHub Releases: CHANGELOG + Docker pull 안내 포함 릴리즈 노트 생성
 ```
 
 ---
 
 ## 운영 메모
 
-- GitHub branch protection 에 `e2e-tests` 를 required status check 로 등록한다.
-- PyPI 배포는 `main` 머지 직후 자동 시도되므로, 버전 변경이 포함된 PR만 merge 하는 운영 규칙을 권장한다.
-- Docker 이미지는 항상 `latest` 와 커밋 SHA 두 태그를 함께 남겨 롤백 추적성을 확보한다.
+- Branch protection: `lint`, `unit-test`, `e2e` (ci.yml) 을 required status check로 등록
+- Docker 이미지는 항상 `latest` + commit SHA 두 태그를 함께 남겨 롤백 추적성 확보
+- PyPI 배포는 버전 변경이 포함된 PR만 merge하는 운영 규칙 권장
+- `release.yml`의 GitHub Release 생성 Action: `softprops/action-gh-release@v2`
+  (`actions/create-release`는 archived — 이를 대체하는 현행 표준)

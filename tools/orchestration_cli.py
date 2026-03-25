@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import json
 import os
+import platform
 import sys
 from pathlib import Path
 from typing import Any
@@ -92,6 +93,10 @@ def _calc_status(failures: int, warnings: int) -> str:
     return "ok"
 
 
+def _expand_user_path(path_value: str) -> Path:
+    return Path(path_value).expanduser()
+
+
 def _build_ops_validation(cfg) -> dict[str, Any]:
     ops_cfg = _load_yaml(OPS_ROLLOUT_CONFIG_PATH)
     if not ops_cfg:
@@ -116,6 +121,7 @@ def _build_ops_validation(cfg) -> dict[str, Any]:
             schedule_valid = False
         script_path = PROJECT_ROOT / job.get("script", "")
         log_path = PROJECT_ROOT / job.get("log_path", "")
+        script_args = job.get("script_args", [])
         if not schedule_valid or not script_path.exists() or not log_path.parent.exists():
             failures += 1
         cron_jobs.append({
@@ -126,6 +132,7 @@ def _build_ops_validation(cfg) -> dict[str, Any]:
             "script_exists": script_path.exists(),
             "log_parent_exists": log_path.parent.exists(),
             "script": str(script_path.relative_to(PROJECT_ROOT)) if script_path.exists() else job.get("script", ""),
+            "script_args": script_args,
             "log_path": str(log_path.relative_to(PROJECT_ROOT)),
         })
 
@@ -168,12 +175,66 @@ def _build_ops_validation(cfg) -> dict[str, Any]:
     if progress_guide is None:
         warnings += 1
 
+    auto_restart_cfg = ops_cfg.get("auto_restart", {})
+    auto_restart: dict[str, Any] = {
+        "enabled": bool(auto_restart_cfg.get("enabled", False)),
+        "platform": platform.system().lower(),
+        "daemon_installer": "",
+        "request_script": "",
+        "watchdog_script": "",
+        "watchdog_pid_file": "",
+        "watchdog_log": "",
+        "install_target_exists": False,
+        "watchdog_running": False,
+    }
+    if auto_restart_cfg:
+        daemon_installer = PROJECT_ROOT / auto_restart_cfg.get("daemon_installer", "")
+        request_script = PROJECT_ROOT / auto_restart_cfg.get("request_script", "")
+        watchdog_script = PROJECT_ROOT / auto_restart_cfg.get("watchdog_script", "")
+        watchdog_pid_file = _expand_user_path(auto_restart_cfg.get("watchdog_pid_file", ""))
+        watchdog_log = _expand_user_path(auto_restart_cfg.get("watchdog_log", ""))
+        if auto_restart["platform"] == "darwin":
+            install_target = _expand_user_path(auto_restart_cfg.get("launch_agent", ""))
+        else:
+            install_target = _expand_user_path(auto_restart_cfg.get("systemd_unit", ""))
+
+        pid = None
+        try:
+            pid = int(watchdog_pid_file.read_text(encoding="utf-8").strip())
+        except Exception:
+            pid = None
+
+        watchdog_running = False
+        if pid is not None:
+            try:
+                os.kill(pid, 0)
+                watchdog_running = True
+            except OSError:
+                watchdog_running = False
+
+        auto_restart.update({
+            "daemon_installer": str(daemon_installer.relative_to(PROJECT_ROOT)) if daemon_installer.exists() else auto_restart_cfg.get("daemon_installer", ""),
+            "request_script": str(request_script.relative_to(PROJECT_ROOT)) if request_script.exists() else auto_restart_cfg.get("request_script", ""),
+            "watchdog_script": str(watchdog_script.relative_to(PROJECT_ROOT)) if watchdog_script.exists() else auto_restart_cfg.get("watchdog_script", ""),
+            "watchdog_pid_file": str(watchdog_pid_file),
+            "watchdog_log": str(watchdog_log),
+            "install_target": str(install_target),
+            "install_target_exists": install_target.exists(),
+            "watchdog_running": watchdog_running,
+        })
+
+        if not (daemon_installer.exists() and request_script.exists() and watchdog_script.exists()):
+            failures += 1
+        if not install_target.exists() or not watchdog_running:
+            warnings += 1
+
     return {
         "config_path": str(OPS_ROLLOUT_CONFIG_PATH),
         "status": _calc_status(failures, warnings),
         "cron_jobs": cron_jobs,
         "collab_targets": collab_targets,
         "required_env": required_env,
+        "auto_restart": auto_restart,
         "runbook": {
             "state_root": str(state_root.relative_to(PROJECT_ROOT)),
             "docs_root": str(docs_root.relative_to(PROJECT_ROOT)),
