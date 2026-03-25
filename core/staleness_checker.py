@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -137,9 +137,8 @@ class StalenessChecker:
                 hb_ts = _parse_ts(heartbeat_raw)
                 if hb_ts and hb_ts < heartbeat_grace_cutoff:
                     elapsed_hb = int((now - hb_ts).total_seconds())
-                    created_raw = st.get("created_at", "")
-                    created_ts = _parse_ts(created_raw)
-                    if created_ts and created_ts < timeout_cutoff:
+                    # heartbeat 기준으로 타임아웃 판단 (created_at 기준 제거 — 장시간 작업 오탐 방지)
+                    if hb_ts < timeout_cutoff:
                         logger.warning(
                             f"[StalenessChecker] TIMEOUT running→failed: {tid} "
                             f"(dept={dept}, heartbeat {elapsed_hb}s ago)"
