@@ -81,7 +81,19 @@
       "Bash(ps -p 12114 12108 12096 -o pid,etime,stat)",
       "Bash(bash scripts/request_restart.sh --reason \"task timeout fix 반영 \\(TASK_EXEC_TOTAL_TIMEOUT_SEC\\)\")",
       "Bash(.venv/bin/python -c \"import ast; ast.parse\\(open\\('core/task_poller.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
-      "Bash(.venv/bin/python -c \"import ast; ast.parse\\(open\\(''core/goal_tracker.py''\\).read\\(\\)\\); print\\(''OK''\\)\")"
+      "Bash(.venv/bin/python -c \"import ast; ast.parse\\(open\\(''core/goal_tracker.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(sed -n '3183,3235p' core/telegram_relay.py)",
+      "Bash(sed -n '4620,4640p' core/telegram_relay.py)",
+      "Bash(tmux list-sessions:*)",
+      "Bash(pkill -f .worktrees/bot-runtime/main.py)",
+      "Bash(pkill -f .worktrees/bot-runtime/scripts/bot_watchdog.py)",
+      "Bash(kill -9 33970 33960 33921 33895 33856 33829 33816 33978)",
+      "Bash(pkill -f python.*main.py)",
+      "Bash(bash /Users/rocky/telegram-ai-org/scripts/start_all.sh)",
+      "Bash(timeout 10 /opt/homebrew/bin/gemini --version 2>&1)",
+      "Bash(bash /Users/rocky/telegram-ai-org/scripts/request_restart.sh --reason \"COLLAB 무한루프 수정 완료 \\(collab_dispatcher dedup + T-546/547 done 처리\\)\" 2>&1)",
+      "Bash(bash scripts/request_restart.sh --reason \"context_db: cancelled 태스크 취소 시 pm_task_dependencies 자동 정리 — ORDER-GUARD 데드락 방지\")",
+      "Bash(.venv/bin/ruff check:*)"
     ]
   },
   "hooks": {

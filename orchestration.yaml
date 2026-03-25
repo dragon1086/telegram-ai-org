@@ -512,8 +512,8 @@ meeting_end_hooks:
   # ── 주간회의 종료 훅 (매주 금요일 18:30 KST = 09:30 UTC) ─────────────────
   weekly_meeting_end:
     enabled: true
-    # 18:30 KST (UTC 09:30) 금요일 — weekly_meeting_multibot.py 종료 후
-    cron: "30 9 * * 5"
+    # 09:13 KST (UTC 00:13) 월요일 — weekly_meeting_multibot.py 종료 후 fallback hook
+    cron: "13 0 * * 1"
     entrypoint: "core.state_machine.on_meeting_end"
     args:
       meeting_type: "weekly_meeting"

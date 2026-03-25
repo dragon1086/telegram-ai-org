@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Awaitable, Callable, Optional
 
@@ -44,7 +44,7 @@ class MeetingEvent:
     chat_id: int
     message_text: str
     sender_org: str                        # 메시지 발신 봇 org_id
-    triggered_at: datetime = field(default_factory=datetime.utcnow)
+    triggered_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     action_items: list[ActionItem] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
 
