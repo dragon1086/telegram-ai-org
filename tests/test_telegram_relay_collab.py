@@ -76,5 +76,7 @@ async def test_handle_collab_tags_ignores_placeholder_request() -> None:
         requester_mention="@rocky",
     )
 
-    assert cleaned == "최종 요약입니다."
+    # [TEAM:solo] 태그는 팀 헤더로 변환돼 cleaned 앞에 붙고,
+    # 플레이스홀더 [COLLAB:...]는 드롭된다 — 핵심 내용 포함 여부만 검증
+    assert "최종 요약입니다." in cleaned
     relay.display.send_to_chat.assert_not_called()

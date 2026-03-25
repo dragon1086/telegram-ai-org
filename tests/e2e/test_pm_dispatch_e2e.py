@@ -6,6 +6,8 @@ system-overview.html Layer 2: PM 오케스트레이션 검증.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 
@@ -1090,9 +1092,6 @@ class TestConstantsLoaderFallbacks:
 #   - 개발실      : ai_org_engineering_test_bot  (bot_id: 8645105804)
 # 전용 TEST_ 환경변수를 사용해 프로덕션 변수와 충돌 방지.
 
-
-import os
-from unittest.mock import AsyncMock, MagicMock
 
 # 테스트 봇 토큰 상수 (프로덕션 env 변수와 완전 분리)
 _TEST_PM_TOKEN = "7341804021:AAGsQpqS_CEUlQrzVoOi9SYdzokob7dEoSM"

@@ -1,11 +1,6 @@
 ---
 name: pm-progress-tracker
-description: >
-  PM이 사용자로부터 목표를 받으면 목표 문서화 → 이터레이션 루프 → 품질 검증 → 완료 처리 흐름을
-  체계적으로 관리하는 스킬. memory/pm_progress_guide.md 템플릿 기반으로 상태를 추적하고,
-  미완료 항목은 다음 이터레이션에서 재처리한다.
-  Triggers: 'pm progress', '진척관리', '진척률', '태스크 현황', 'project status',
-  '이터레이션', 'iter 돌기', '완료 처리', '목표 추적', when a user assigns a large goal
+description: "목표 문서화 → 이터레이션 루프 → 품질 검증 → 완료 처리 흐름을 체계적으로 관리하는 스킬. Triggers: 'pm progress', '진척관리', '진척률', '태스크 현황', 'project status', '이터레이션', 'iter 돌기', when a user assigns a large goal"
 allowed-tools: Read, Write, Edit, Bash
 ---
 

@@ -27,10 +27,9 @@ async def test_auto_upload_uses_configured_target(tmp_path, monkeypatch):
 
     uploads: list[tuple[str, int, str, str]] = []
 
-    monkeypatch.setattr(
-        "core.telegram_relay.resolve_delivery_target",
-        lambda org_id: type("T", (), {"token": "cfg-token", "chat_id": 123, "org_id": org_id})(),
-    )
+    _fake_target = lambda org_id: type("T", (), {"token": "cfg-token", "chat_id": 123, "org_id": org_id})()  # noqa: E731
+    monkeypatch.setattr("core.telegram_relay.resolve_delivery_target", _fake_target)
+    monkeypatch.setattr("core.telegram_delivery.resolve_delivery_target", _fake_target)
 
     async def _fake_upload(token: str, chat_id: int, file_path: str, caption: str = "") -> bool:
         uploads.append((token, chat_id, file_path, caption))
@@ -91,10 +90,9 @@ async def test_pm_send_message_auto_uploads_artifact(tmp_path, monkeypatch):
 
     uploads: list[tuple[str, int, str]] = []
 
-    monkeypatch.setattr(
-        "core.telegram_relay.resolve_delivery_target",
-        lambda org_id: type("T", (), {"token": "cfg-token", "chat_id": 100, "org_id": org_id})(),
-    )
+    _fake_target = lambda org_id: type("T", (), {"token": "cfg-token", "chat_id": 100, "org_id": org_id})()  # noqa: E731
+    monkeypatch.setattr("core.telegram_relay.resolve_delivery_target", _fake_target)
+    monkeypatch.setattr("core.telegram_delivery.resolve_delivery_target", _fake_target)
 
     async def _fake_upload(token: str, chat_id: int, file_path: str, caption: str = "") -> bool:
         uploads.append((token, chat_id, file_path))

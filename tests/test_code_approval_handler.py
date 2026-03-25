@@ -71,6 +71,18 @@ def _enqueue(store: CodeImprovementApprovalStore) -> str:
     return store.enqueue(dataclasses.asdict(_make_code_signal()))
 
 
+async def _await_background_tasks() -> None:
+    """현재 테스트 태스크를 제외한 백그라운드 태스크만 수거한다."""
+    await asyncio.sleep(0.05)
+    current = asyncio.current_task()
+    tasks = [
+        task for task in asyncio.all_tasks()
+        if task is not current and not task.done()
+    ]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 # ---------------------------------------------------------------------------
 # approve 핸들러 — approval_id 없을 때 pending 목록 반환
 # ---------------------------------------------------------------------------
@@ -149,14 +161,10 @@ class TestApproveHandlerSuccess:
 
         with (
             patch(PATCH_STORE, return_value=store),
-            patch("core.self_code_improver.SelfCodeImprover.fix", return_value=mock_result),
+            patch("core.self_code_improver.SelfCodeImprover.fix", new=AsyncMock(return_value=mock_result)),
         ):
             await relay._handle_approve_code_fix(approval_id, update, ctx)
-            # 백그라운드 태스크 완료 대기
-            await asyncio.sleep(0.05)
-            tasks = [t for t in asyncio.all_tasks() if not t.done()]
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+            await _await_background_tasks()
 
         ack_text = update.message.reply_text.await_args.args[0]
         assert "승인 완료" in ack_text
@@ -178,13 +186,10 @@ class TestApproveHandlerSuccess:
 
         with (
             patch(PATCH_STORE, return_value=store),
-            patch("core.self_code_improver.SelfCodeImprover.fix", return_value=mock_result),
+            patch("core.self_code_improver.SelfCodeImprover.fix", new=AsyncMock(return_value=mock_result)),
         ):
             await relay._handle_approve_code_fix(approval_id, update, ctx)
-            await asyncio.sleep(0.05)
-            tasks = [t for t in asyncio.all_tasks() if not t.done()]
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+            await _await_background_tasks()
 
         # 최소한 approved로 전환됐는지 확인 (executed는 fix 성공 후)
         final_status = store.get_status(approval_id)
@@ -207,13 +212,10 @@ class TestApproveHandlerSuccess:
 
         with (
             patch(PATCH_STORE, return_value=store),
-            patch("core.self_code_improver.SelfCodeImprover.fix", return_value=mock_result),
+            patch("core.self_code_improver.SelfCodeImprover.fix", new=AsyncMock(return_value=mock_result)),
         ):
             await relay._handle_approve_code_fix(approval_id, update, ctx)
-            await asyncio.sleep(0.1)
-            tasks = [t for t in asyncio.all_tasks() if not t.done()]
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+            await _await_background_tasks()
 
         # 백그라운드 결과 보고 — send_message 호출 확인
         assert ctx.bot.send_message.called
@@ -239,13 +241,10 @@ class TestApproveHandlerSuccess:
 
         with (
             patch(PATCH_STORE, return_value=store),
-            patch("core.self_code_improver.SelfCodeImprover.fix", return_value=mock_result),
+            patch("core.self_code_improver.SelfCodeImprover.fix", new=AsyncMock(return_value=mock_result)),
         ):
             await relay._handle_approve_code_fix(approval_id, update, ctx)
-            await asyncio.sleep(0.1)
-            tasks = [t for t in asyncio.all_tasks() if not t.done()]
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+            await _await_background_tasks()
 
         assert store.get_status(approval_id) == "executed"
 

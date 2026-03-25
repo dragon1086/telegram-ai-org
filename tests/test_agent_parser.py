@@ -11,9 +11,7 @@
 """
 from __future__ import annotations
 
-import json
 import re
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -22,7 +20,6 @@ import pytest
 from tools.agent_parser import (
     AgentInfo,
     _infer_department,
-    _lookup_agent,
     _parse_frontmatter,
     group_by_department,
     load_all_agents,
@@ -31,7 +28,6 @@ from tools.agent_parser import (
     render_org_chart_telegram,
     render_team_header,
 )
-
 
 # ── 픽스처 ──────────────────────────────────────────────────────────────────
 

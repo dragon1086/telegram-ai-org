@@ -39,8 +39,12 @@ def test_scheduler_jobs_registered(scheduler: OrgScheduler) -> None:
     assert "arch_advisor_monthly" in job_ids
     assert "routing_optimizer_daily" in job_ids
     assert "self_improve_pipeline_daily" in job_ids
-    # claim_manager=None 이므로 claim_cleanup 제외 → 12개
-    assert len(job_ids) == 12
+    # 신규 자동화 잡 (weekly_meeting_automation, weekly_audit_report, monthly_audit_automation)
+    assert "weekly_meeting_automation" in job_ids
+    assert "weekly_audit_report" in job_ids
+    assert "monthly_audit_automation" in job_ids
+    # claim_manager=None 이므로 claim_cleanup 제외 → 15개
+    assert len(job_ids) == 15
 
 
 # ── 잡 실행 크래시 테스트 ─────────────────────────────────────────────────────
