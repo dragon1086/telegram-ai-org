@@ -11,61 +11,55 @@ import hashlib
 import os
 import re
 import time
-from datetime import UTC, datetime, timedelta
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from loguru import logger
-from telegram import Update
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
-    ConversationHandler,
     ContextTypes,
+    ConversationHandler,
     MessageHandler,
     filters,
 )
 
-from core.message_bus import MessageBus, Event, EventType
-from core.session_manager import SessionManager
-from core.memory_manager import MemoryManager
-from core.pm_identity import PMIdentity
+from core.artifact_indexer import index_task_artifact
+from core.artifact_pipeline import prepare_upload_bundle
+from core.attachment_analysis import AttachmentAnalyzer
+from core.attachment_manager import AttachmentBundle, AttachmentContext
+from core.builtin_surfaces import recommend_builtin_surfaces
 from core.claim_manager import ClaimManager
-from core.confidence_scorer import ConfidenceScorer
-from core.session_store import SessionStore
-from core.global_context import GlobalContext
 from core.collab_request import (
-    is_collab_request, make_collab_request_v2, make_collab_claim,
-    make_collab_done, parse_collab_request, is_placeholder_collab,
+    is_collab_request,
+    is_placeholder_collab,
+    make_collab_claim,
+    make_collab_done,
+    make_collab_request_v2,
+    parse_collab_request,
 )
+from core.confidence_scorer import ConfidenceScorer
+from core.discussion import ENABLE_DISCUSSION_PROTOCOL
+from core.discussion_parser import is_discussion_message, parse_discussion_tags
+from core.dispatch_engine import ENABLE_AUTO_DISPATCH
 from core.display_limiter import DisplayLimiter
-from core.nl_classifier import NLClassifier, Intent
-from core.pm_router import PMRouter
-from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR, KNOWN_DEPTS
+from core.global_context import GlobalContext
+from core.goal_tracker import ENABLE_GOAL_TRACKER
+from core.memory_manager import MemoryManager
+from core.message_bus import Event, EventType, MessageBus
+from core.message_envelope import EnvelopeManager, MessageEnvelope
+from core.nl_classifier import Intent, NLClassifier
 from core.orchestration_config import load_orchestration_config
 from core.orchestration_runbook import OrchestrationRunbook
-from core.attachment_manager import AttachmentContext, AttachmentBundle
-from core.attachment_analysis import AttachmentAnalyzer
-from core.artifact_pipeline import prepare_upload_bundle
-from core.artifact_indexer import index_task_artifact
-from core.builtin_surfaces import recommend_builtin_surfaces
-from core.telegram_delivery import resolve_delivery_target
-from core.telegram_user_guardrail import (
-    ensure_user_friendly_output,
-    extract_local_artifact_paths,
-)
-from core.session_registry import SessionRegistry
-from core.message_envelope import MessageEnvelope, EnvelopeManager
 from core.p2p_messenger import P2PMessenger
-from core.discussion_parser import is_discussion_message, parse_discussion_tags
-from core.discussion import ENABLE_DISCUSSION_PROTOCOL
-from core.dispatch_engine import ENABLE_AUTO_DISPATCH
-from core.verification import ENABLE_CROSS_VERIFICATION
-from core.goal_tracker import ENABLE_GOAL_TRACKER
-from core.task_poller import TaskPoller
-from core.telegram_formatting import split_message, markdown_to_html, format_for_telegram, escape_html
+from core.pm_identity import PMIdentity
+from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR, KNOWN_DEPTS
+from core.pm_router import PMRouter
+from core.session_manager import SessionManager
+from core.session_registry import SessionRegistry
+from core.session_store import SessionStore
 from core.setup_registration import (
     default_identity_for_org,
     parse_setup_identity,
@@ -74,6 +68,19 @@ from core.setup_registration import (
     upsert_org_in_canonical_config,
     upsert_runtime_env_var,
 )
+from core.task_poller import TaskPoller
+from core.telegram_delivery import resolve_delivery_target
+from core.telegram_formatting import (
+    escape_html,
+    format_for_telegram,
+    markdown_to_html,
+    split_message,
+)
+from core.telegram_user_guardrail import (
+    ensure_user_friendly_output,
+    extract_local_artifact_paths,
+)
+from core.verification import ENABLE_CROSS_VERIFICATION
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
@@ -179,8 +186,8 @@ class TelegramRelay:
         # P2P 봇 간 직접 통신
         self._p2p = P2PMessenger(bus=self.bus)
         if self._is_pm_org and context_db is not None:
-            from core.task_graph import TaskGraph
             from core.pm_orchestrator import PMOrchestrator
+            from core.task_graph import TaskGraph
             self._pm_orchestrator = PMOrchestrator(
                 context_db=context_db,
                 task_graph=TaskGraph(context_db),
@@ -255,10 +262,10 @@ class TelegramRelay:
         self._schedule_store = None
         self._nl_parser = None
         if self._is_pm_org:
+            from core.group_chat_hub import GroupChatHub
+            from core.nl_schedule_parser import NLScheduleParser
             from core.scheduler import OrgScheduler
             from core.user_schedule_store import UserScheduleStore
-            from core.nl_schedule_parser import NLScheduleParser
-            from core.group_chat_hub import GroupChatHub
 
             async def _sched_send(text: str) -> None:
                 await self._pm_send_message(self.allowed_chat_id, text)
@@ -319,7 +326,7 @@ class TelegramRelay:
 
     def _make_runner(self):
         """engine 설정에 따라 적합한 runner를 반환한다."""
-        from tools.base_runner import RunnerFactory, RunContext  # noqa: F401
+        from tools.base_runner import RunContext, RunnerFactory  # noqa: F401
         return RunnerFactory.create(self.engine)
 
     @staticmethod
@@ -1103,7 +1110,9 @@ class TelegramRelay:
         workdir: str | None = None,
         route_kind: str = "local_execution",
     ) -> str:
-        from tools.base_runner import RunContext  # 함수 전체에서 사용 — 조건부 분기에 넣으면 UnboundLocalError
+        from tools.base_runner import (
+            RunContext,  # 함수 전체에서 사용 — 조건부 분기에 넣으면 UnboundLocalError
+        )
 
         backend = self._resolve_execution_backend(route_kind, team_config, task)
         tmux_available = self.session_manager.status().get("tmux", False)
@@ -1391,8 +1400,8 @@ class TelegramRelay:
         self, result: str, token: str, chat_id: int
     ) -> None:
         """Cross-org artifact upload — calls upload_file directly, bypasses resolve_delivery_target."""
-        from core.telegram_user_guardrail import extract_local_artifact_paths
         from core.artifact_pipeline import prepare_upload_bundle
+        from core.telegram_user_guardrail import extract_local_artifact_paths
         from tools.telegram_uploader import upload_file
         for raw in extract_local_artifact_paths(result):
             for p in prepare_upload_bundle(raw):
@@ -3126,6 +3135,7 @@ class TelegramRelay:
         # AutonomousLoop 시작 (ENABLE_GOAL_TRACKER=1일 때)
         if self._goal_tracker is not None:
             import asyncio as _asyncio
+
             from core.autonomous_loop import AutonomousLoop, load_loop_config
             _loop_cfg = load_loop_config()
 
@@ -3176,8 +3186,9 @@ class TelegramRelay:
         if self._goal_tracker is None:
             return
         import asyncio as _asyncio
-        import yaml as _yaml
         from pathlib import Path as _Path
+
+        import yaml as _yaml
         try:
             # resume_goals 완료 대기 (10초)
             await _asyncio.sleep(10)
@@ -3241,8 +3252,8 @@ class TelegramRelay:
         if self._org_scheduler is None or self._pm_orchestrator is None:
             return
         try:
-            from core.constants import KNOWN_DEPTS
             from core.autonomous_loop import ORG_TASK_TYPE_MAP
+            from core.constants import KNOWN_DEPTS
 
             for org_id, dept_name in KNOWN_DEPTS.items():
                 keywords = ORG_TASK_TYPE_MAP.get(org_id, [])
@@ -3702,10 +3713,12 @@ class TelegramRelay:
         # 진행 콜백: Claude Code 스트리밍 출력을 텔레그램으로 중계
         last_progress_time = [0.0]  # mutable for closure
         progress_interval = self._progress_interval(delegated=True)
-        # ── Hang watchdog: 활동 추적 ──
+        # ── Hang watchdog: 활동 추적 + 절대 타임아웃 ──
         HANG_DETECT_TIMEOUT_SEC = 600  # 10분 무활동 = hang 판정
         HANG_DETECT_INTERVAL_SEC = 60  # 1분마다 체크
+        TASK_EXEC_TOTAL_TIMEOUT_SEC = int(os.environ.get("TASK_EXEC_TOTAL_TIMEOUT_SEC", "1800"))  # 절대 상한 30분
         _last_activity = [time.monotonic()]  # mutable for closure
+        _task_start_time = time.monotonic()  # 절대 타임아웃 기준점
 
         async def on_progress(line: str) -> None:
             _last_activity[0] = time.monotonic()  # 활동 기록 (watchdog용)
@@ -3765,15 +3778,25 @@ class TelegramRelay:
             engine_label = team_config.engine or "claude-code"
 
             async def _hang_watchdog() -> None:
-                """엔진 프로세스 무활동 감지 → 실행 태스크 취소."""
+                """엔진 프로세스 무활동 감지 + 절대 타임아웃 → 실행 태스크 취소."""
                 while True:
                     await asyncio.sleep(HANG_DETECT_INTERVAL_SEC)
-                    elapsed = time.monotonic() - _last_activity[0]
-                    if elapsed > HANG_DETECT_TIMEOUT_SEC:
+                    elapsed_idle = time.monotonic() - _last_activity[0]
+                    elapsed_total = time.monotonic() - _task_start_time
+                    if elapsed_idle > HANG_DETECT_TIMEOUT_SEC:
                         logger.warning(
                             f"[{self.org_id}] HANG 감지: 태스크 {task_id} — "
-                            f"{elapsed:.0f}초 무활동 (임계값={HANG_DETECT_TIMEOUT_SEC}s). "
+                            f"{elapsed_idle:.0f}초 무활동 (임계값={HANG_DETECT_TIMEOUT_SEC}s). "
                             f"{engine_label} 프로세스 강제 종료."
+                        )
+                        if _exec_task and not _exec_task.done():
+                            _exec_task.cancel()
+                        return
+                    if elapsed_total > TASK_EXEC_TOTAL_TIMEOUT_SEC:
+                        logger.warning(
+                            f"[{self.org_id}] TOTAL TIMEOUT: 태스크 {task_id} — "
+                            f"총 {elapsed_total:.0f}초 초과 (한도={TASK_EXEC_TOTAL_TIMEOUT_SEC}s). "
+                            f"활동 여부 무관 강제 종료."
                         )
                         if _exec_task and not _exec_task.done():
                             _exec_task.cancel()
@@ -3875,6 +3898,7 @@ class TelegramRelay:
             await self.context_db.update_pm_task_status(task_id, "failed", result=str(e))
             # Performance DB 업데이트 (실패)
             import asyncio as _asyncio
+
             from core.pm_orchestrator import _record_bot_perf as _rbp
             _asyncio.create_task(_rbp(self.context_db, task_id, success=False))
             # Post-task debrief: 실패 교훈 자동 기록
@@ -4039,8 +4063,8 @@ class TelegramRelay:
         self, text: str, update, context
     ) -> None:
         """/ 명령어 처리 — 특정 봇 태그(/org@aiorg_pm_bot)도 지원."""
-        import re as _re
         import os as _os
+        import re as _re
         cmd_full = text.strip().split()[0].lower()
         cmd = _re.sub(r'@\S+', '', cmd_full)  # /org@bot → /org
         cmd = cmd.replace("_", "-")
@@ -4567,6 +4591,7 @@ class TelegramRelay:
 async def _set_org_bot_commands(token: str, *, kind: str = "specialist") -> None:
     """새로 등록된 조직봇에 전용 명령어 세트를 자동으로 등록한다."""
     from telegram import Bot as _TGBot
+
     from core.bot_commands import get_bot_commands
     try:
         bot = _TGBot(token=token)
@@ -4581,6 +4606,7 @@ async def register_all_bot_commands() -> None:
     """bots/*.yaml 의 모든 봇에 setMyCommands 를 호출해 명령어 목록을 최신화한다."""
     import yaml as _yaml
     from telegram import Bot as _TGBot
+
     from core.bot_commands import get_bot_commands
 
     bots_dir = Path(__file__).parent.parent / "bots"
