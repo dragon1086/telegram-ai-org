@@ -1,3 +1,7 @@
+<!-- TODO: SPDX-License-Identifier: Apache-2.0 -->
+<!-- Rocky의 라이선스 결정(Apache-2.0 채택) 확정 시 위 주석을 활성화하고 아래 MIT 안내를 제거하세요. -->
+<!-- 현재 적용 라이선스: MIT — 리포지터리 루트 LICENSE 파일 참조 -->
+
 # CONTRIBUTING.md — telegram-ai-org 기여 가이드
 
 telegram-ai-org에 기여해 주셔서 감사합니다!
