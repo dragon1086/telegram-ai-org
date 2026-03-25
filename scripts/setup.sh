@@ -421,21 +421,32 @@ setup_env() {
         fi
     }
 
+    # _set_or_append: 키가 있으면 sed 치환, 없으면 파일 끝에 추가
+    _set_or_append() {
+        local key="$1"
+        local value="$2"
+        if grep -q "^${key}=" "$env_file" 2>/dev/null; then
+            _sed_inplace "s|^${key}=.*|${key}=${value}|"
+        else
+            echo "${key}=${value}" >> "$env_file"
+        fi
+    }
+
     # CLAUDE_CLI_PATH 자동 치환
     if [ -n "$CLAUDE_PATH" ]; then
-        _sed_inplace "s|CLAUDE_CLI_PATH=.*|CLAUDE_CLI_PATH=$CLAUDE_PATH|"
+        _set_or_append "CLAUDE_CLI_PATH" "$CLAUDE_PATH"
         info "CLAUDE_CLI_PATH → $CLAUDE_PATH (자동 설정)"
     fi
 
     # CODEX_CLI_PATH 자동 치환
     if [ -n "$CODEX_PATH" ]; then
-        _sed_inplace "s|CODEX_CLI_PATH=.*|CODEX_CLI_PATH=$CODEX_PATH|"
+        _set_or_append "CODEX_CLI_PATH" "$CODEX_PATH"
         info "CODEX_CLI_PATH → $CODEX_PATH (자동 설정)"
     fi
 
     # GEMINI_CLI_PATH 자동 치환
     if [ -n "$GEMINI_PATH" ]; then
-        _sed_inplace "s|GEMINI_CLI_PATH=.*|GEMINI_CLI_PATH=$GEMINI_PATH|"
+        _set_or_append "GEMINI_CLI_PATH" "$GEMINI_PATH"
         info "GEMINI_CLI_PATH → $GEMINI_PATH (자동 설정)"
         # GEMINI_CLI_DEFAULT_TIMEOUT_SEC 이 미설정이면 기본값 주입
         if grep -q "^GEMINI_CLI_DEFAULT_TIMEOUT_SEC=$" "$env_file" 2>/dev/null; then
@@ -459,6 +470,14 @@ setup_env() {
         echo "ACTIVE_ENGINE=$engine" >> "$env_file"
     fi
     info "ACTIVE_ENGINE → $engine (자동 설정)"
+
+    # DEFAULT_ENGINE= 자동 세팅 (런타임 기본 엔진 참조 표준 변수)
+    if grep -q "^DEFAULT_ENGINE=" "$env_file" 2>/dev/null; then
+        _sed_inplace "s|^DEFAULT_ENGINE=.*|DEFAULT_ENGINE=$engine|"
+    else
+        echo "DEFAULT_ENGINE=$engine" >> "$env_file"
+    fi
+    info "DEFAULT_ENGINE → $engine (자동 설정)"
 }
 
 # =============================================================================
@@ -620,6 +639,13 @@ else
         echo -e "${YELLOW}${BOLD}  위 ❌ 항목을 확인하고 재설치 후 다시 실행하세요.${RESET}"
         echo -e "${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     fi
+fi
+
+# =============================================================================
+# macOS 권한 자동 설정 (quarantine 제거 + TCC 등록 시도)
+# =============================================================================
+if [ "$OS_NAME" = "macOS" ]; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/setup_macos_permissions.sh" || true
 fi
 
 # =============================================================================
