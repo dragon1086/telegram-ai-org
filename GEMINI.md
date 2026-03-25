@@ -142,6 +142,17 @@ Gemini CLI가 배정된 조직과 그 이유:
 
 **자율 iter 체인**: 세션 시작 시 pm_progress_guide.md 읽기 → IN_PROGRESS 목표 확인 → TODO 서브태스크 배분 → COLLAB 태그로 타부서 위임.
 
+### [2026-03-25] E2E 자율 루프 운영 원칙 (전체 조직 공통)
+
+**구현 완료** — `goal_tracker/goal_tracker_client.py`, `goal_tracker/multibot_meeting_handler.py`, `run_e2e_loop.py`, `tests/e2e/test_autonomous_loop_e2e.py` (37개 테스트 통과)
+
+- **트리거**: 일일회고(`일일회고`/`daily retro`) · 주간회의(`주간회의`/`weekly meeting`) 채팅 메시지
+- **GoalTracker 등록 규칙**: `[ ]` 체크박스 아이템 자동 파싱 → `GoalTrackerClient.register_report()`
+- **멀티봇 순서**: 개발실 → 운영실 → 디자인실 → 기획실 → 성장실 → 리서치실 (3초 인터벌)
+- **중복 방지**: `{meeting_type}_{date}` 기준 당일 재처리 방지
+- **루프 상태**: `IDLE → EVALUATE → REPLAN → DISPATCH → IDLE`
+- **상세 가이드**: `docs/AUTONOMOUS_LOOP.md`
+
 ### [2026-03-25] PM 진척관리 스킬 & 이터레이션 루프 (전체 조직 공통)
 - **스킬 위치**: `skills/pm-progress-tracker/skill.md`
 - **목표 문서**: `memory/pm_progress_guide.md` (세션 시작 시 반드시 읽을 것)
