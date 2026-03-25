@@ -82,6 +82,13 @@ from core.telegram_user_guardrail import (
 )
 from core.verification import ENABLE_CROSS_VERIFICATION
 
+from core.telegram_sender import (  # Phase 1a 리팩토링 — 전송 모듈 분리
+    ENABLE_REFACTORED_SENDER,
+    auto_upload as _sender_auto_upload,
+    send_chunked_message as _sender_send_chunked,
+    upload_artifacts_to as _sender_upload_artifacts_to,
+)
+
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
 USE_NL_CLASSIFIER = True  # 2-tier NLClassifier 활성화 플래그 (False 시 기존 키워드 로직 사용)
@@ -302,24 +309,36 @@ class TelegramRelay:
         """PMOrchestrator용 텔레그램 메시지 발송 콜백.
 
         4000자 초과 메시지는 split_message로 분할 전송.
+        Phase 1a: ENABLE_REFACTORED_SENDER=1 시 telegram_sender 모듈 위임.
         """
         if self.app and self.app.bot:
-            raw = ARTIFACT_MARKER_RE.sub("", text).strip() or "첨부 파일을 전송합니다."
-            env = MessageEnvelope.wrap(content=raw, sender_bot=self.org_id, intent="DIRECT_REPLY")
-            visible_text = env.to_display()
-            sent = None
-            first = True
-            for chunk in split_message(visible_text, 3800):  # HTML 태그 팽창 여유 (~4096 한도)
-                sent = await self.display.send_to_chat(
-                    self.app.bot,
-                    chat_id,
-                    chunk,
-                    reply_to_message_id=reply_to_message_id if first else None,
+            if ENABLE_REFACTORED_SENDER:
+                sent = await _sender_send_chunked(
+                    bot=self.app.bot,
+                    display=self.display,
+                    chat_id=chat_id,
+                    text=text,
+                    org_id=self.org_id,
+                    context_db=self.context_db,
+                    reply_to_message_id=reply_to_message_id,
                 )
-                first = False
-            if sent is not None and self.context_db is not None:
-                mgr = EnvelopeManager(self.context_db)
-                await mgr.save(sent.message_id, env)
+            else:
+                raw = ARTIFACT_MARKER_RE.sub("", text).strip() or "첨부 파일을 전송합니다."
+                env = MessageEnvelope.wrap(content=raw, sender_bot=self.org_id, intent="DIRECT_REPLY")
+                visible_text = env.to_display()
+                sent = None
+                first = True
+                for chunk in split_message(visible_text, 3800):
+                    sent = await self.display.send_to_chat(
+                        self.app.bot,
+                        chat_id,
+                        chunk,
+                        reply_to_message_id=reply_to_message_id if first else None,
+                    )
+                    first = False
+                if sent is not None and self.context_db is not None:
+                    mgr = EnvelopeManager(self.context_db)
+                    await mgr.save(sent.message_id, env)
             await self._auto_upload(text, self.token, chat_id)
             return sent
         return None
@@ -1339,7 +1358,19 @@ class TelegramRelay:
         return stripped
 
     async def _auto_upload(self, response: str, token: str, chat_id: int) -> None:
-        """응답 내 생성 파일 경로를 감지해 현재 조직의 설정된 채팅방으로 업로드."""
+        """응답 내 생성 파일 경로를 감지해 현재 조직의 설정된 채팅방으로 업로드.
+        Phase 1a: ENABLE_REFACTORED_SENDER=1 시 telegram_sender.auto_upload 위임.
+        """
+        if ENABLE_REFACTORED_SENDER:
+            await _sender_auto_upload(
+                response=response,
+                token=token,
+                chat_id=chat_id,
+                org_id=self.org_id,
+                uploaded_artifacts=self._uploaded_artifacts,
+            )
+            return
+        # --- 레거시 구현 (ENABLE_REFACTORED_SENDER=0) ---
         from tools.telegram_uploader import upload_file
 
         target = resolve_delivery_target(self.org_id)
@@ -1399,7 +1430,19 @@ class TelegramRelay:
     async def _upload_artifacts_to(
         self, result: str, token: str, chat_id: int
     ) -> None:
-        """Cross-org artifact upload — calls upload_file directly, bypasses resolve_delivery_target."""
+        """Cross-org artifact upload — calls upload_file directly, bypasses resolve_delivery_target.
+        Phase 1a: ENABLE_REFACTORED_SENDER=1 시 telegram_sender.upload_artifacts_to 위임.
+        """
+        if ENABLE_REFACTORED_SENDER:
+            await _sender_upload_artifacts_to(
+                result=result,
+                token=token,
+                chat_id=chat_id,
+                org_id=self.org_id,
+                uploaded_artifacts=self._uploaded_artifacts,
+            )
+            return
+        # --- 레거시 구현 ---
         from core.artifact_pipeline import prepare_upload_bundle
         from core.telegram_user_guardrail import extract_local_artifact_paths
         from tools.telegram_uploader import upload_file
