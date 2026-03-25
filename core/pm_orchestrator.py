@@ -2014,6 +2014,13 @@ class PMOrchestrator:
             await self._db.update_pm_task_status(
                 parent_task_id, "needs_review", result=synthesis.summary,
             )
+            # Goal도 needs_review로 업데이트 → SynthesisPoller 무한루프 방지
+            if parent_task_id.startswith("G-"):
+                try:
+                    await self._db.update_goal(parent_task_id, status="needs_review")
+                    logger.info(f"[PM] Goal {parent_task_id} → needs_review (conflicting)")
+                except Exception as _ge:
+                    logger.warning(f"[PM] Goal 상태 업데이트 실패 {parent_task_id}: {_ge}")
         else:  # NEEDS_INTEGRATION
             report = user_friendly_report
             _artifact_suffix = (
