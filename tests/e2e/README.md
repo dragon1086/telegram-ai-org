@@ -1,6 +1,6 @@
 # E2E 테스트 — 실행 방법 및 커버리지 요약
 
-> 마지막 업데이트: 2026-03-25 | 태스크 T-459
+> 마지막 업데이트: 2026-03-25 | 태스크 T-459 (288 passed, 0 failed)
 
 ---
 
@@ -20,8 +20,8 @@
 
 | 파일 | 역할 | 테스트 수 |
 |---|---|---|
-| `test_engine_compat_e2e.py` | 3엔진 러너 인터페이스·mock dispatch | 160개 |
-| `test_pm_dispatch_e2e.py` | PM 오케스트레이션·BOT_ENGINE_MAP 검증 | 75개 |
+| `test_engine_compat_e2e.py` | 3엔진 러너 인터페이스·mock dispatch | 161개 |
+| `test_pm_dispatch_e2e.py` | PM 오케스트레이션·BOT_ENGINE_MAP 검증 | 84개 |
 | `test_engine_fallback_e2e.py` | 3엔진 폴백·에러 처리·통합 레벨 실행 | 43개 |
 | `conftest.py` | 공통 픽스처·헬퍼 | — |
 | `fixtures/` | mock 응답 데이터 파일 | 3개 |
@@ -132,10 +132,10 @@ pytest tests/e2e/ -q --timeout=300
 
 | 레벨 | 파일 | 수량 |
 |---|---|---|
-| 단위 (mock) | test_engine_compat_e2e.py + test_engine_fallback_e2e.py | 252개+ |
-| PM 라우팅 (mock) | test_pm_dispatch_e2e.py | 85개+ |
+| 단위 (mock) | test_engine_compat_e2e.py + test_engine_fallback_e2e.py | 204개 |
+| PM 라우팅 (mock) | test_pm_dispatch_e2e.py | 84개 |
 | 통합 (실제 CLI) | test_engine_fallback_e2e.py | 6개 (CLI 없으면 자동 스킵) |
-| **합계** | | **278개** |
+| **합계** | | **288개** |
 
 ---
 
