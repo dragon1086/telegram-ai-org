@@ -1275,12 +1275,34 @@ class TelegramRelay:
         requester_mention: str = "",
         reply_to_message_id: int | None = None,
     ) -> str:
-        """응답의 [TEAM:], [COLLAB:] 태그를 정리하고 협업 요청을 발송한다."""
+        """응답의 [TEAM:], [COLLAB:] 태그를 정리하고 협업 요청을 발송한다.
+
+        [TEAM:...] 태그는 제거 전에 사용자에게 보이는 팀 구성 헤더로 변환한다.
+        """
         if not response:
             return response
         import re as _re
 
+        # [TEAM:...] → 사용자 가시 팀 헤더로 변환 후 제거
+        team_header = ""
+        team_match = _re.search(r"\[TEAM:([^\]]+)\]", response)
+        if team_match:
+            raw_agents = team_match.group(1)
+            agent_ids = [a.strip() for a in raw_agents.split(",") if a.strip()]
+            try:
+                from tools.agent_parser import render_team_header as _render_team
+                _header = _render_team(agent_ids)
+                if _header:
+                    team_header = _header + "\n\n"
+            except Exception:
+                # fallback: 마크다운 형식 (format_for_telegram → HTML 변환됨)
+                team_header = f"🏗️ **팀 구성**: {', '.join(agent_ids)}\n\n"
+
         cleaned = _re.sub(r"\[TEAM:[^\]]+\]", "", response).strip()
+
+        # 팀 헤더를 응답 앞에 삽입 (이미 🏗️ 섹션이 있으면 중복 방지)
+        if team_header and "🏗️" not in cleaned:
+            cleaned = team_header + cleaned
         for match in _re.findall(r"\[COLLAB:([^\]]+)\]", cleaned):
             parts = match.split("|맥락:", 1)
             collab_task = parts[0].strip()
@@ -2853,6 +2875,27 @@ class TelegramRelay:
             logger.error(f"/restart 실패: {exc}")
             await update.message.reply_text(f"❌ 재시작 실패: {escape_html(str(exc))}", parse_mode="HTML")
 
+    async def on_command_engine(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/engine — 현재 봇별 엔진 확인. PM봇 전용."""
+        if update.message is None:
+            return
+        if not self._is_pm_org:
+            return
+
+        import yaml as _yaml
+        project_dir = Path(__file__).parent.parent
+        bots_dir = project_dir / "bots"
+        lines = ["⚙️ <b>현재 엔진 현황</b>"]
+        for yaml_path in sorted(bots_dir.glob("*.yaml")):
+            try:
+                data = _yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+                engine = data.get("engine", "—")
+                name = data.get("name", yaml_path.stem)
+                lines.append(f"• <b>{escape_html(name)}</b>: {escape_html(str(engine))}")
+            except Exception:
+                lines.append(f"• {escape_html(yaml_path.stem)}: 읽기 실패")
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
     async def on_command_set_engine(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """/set_engine <engine> — bots/*.yaml 엔진 변경 후 재시작. PM봇 전용."""
         if update.message is None:
@@ -3652,6 +3695,7 @@ class TelegramRelay:
         self.app.add_handler(CommandHandler("reset", self.on_command_reset))
         self.app.add_handler(CommandHandler("stop_tasks", self.on_command_stop_tasks))
         self.app.add_handler(CommandHandler("restart", self.on_command_restart))
+        self.app.add_handler(CommandHandler("engine", self.on_command_engine))
         self.app.add_handler(CommandHandler("set_engine", self.on_command_set_engine))
         # 사용자 정의 스케줄 커맨드 (pm_org 전용)
         if self._is_pm_org:
@@ -3977,6 +4021,29 @@ class TelegramRelay:
         except Exception as e:
             logger.error(f"[{self.org_id}] PM_TASK {task_id} 실행 실패: {e}")
             await self.context_db.update_pm_task_status(task_id, "failed", result=str(e))
+            # 의존 태스크 cascade 취소 + Rocky에게 블록 현황 보고
+            try:
+                blocked_ids = await self.context_db.get_tasks_depending_on(task_id)
+                if blocked_ids:
+                    for _dep_id in blocked_ids:
+                        await self.context_db.update_pm_task_status(
+                            _dep_id, "cancelled",
+                            result=f"{task_id} 실패로 인한 자동 취소",
+                        )
+                    logger.warning(
+                        f"[{self.org_id}] {task_id} 실패 → 의존 태스크 {len(blocked_ids)}건 자동 취소: "
+                        f"{blocked_ids}"
+                    )
+                    if self.app and self.app.bot:
+                        _blocked_list = "\n".join(f"  • {i}" for i in blocked_ids)
+                        await self.display.send_to_chat(
+                            self.app.bot,
+                            self.allowed_chat_id,
+                            f"⚠️ [{dept_name}] 태스크 {task_id} 실패로 다음 태스크가 자동 취소됩니다:\n"
+                            f"{_blocked_list}\n\n원인: {str(e)[:200]}",
+                        )
+            except Exception as _cascade_err:
+                logger.warning(f"[{self.org_id}] cascade 취소 실패: {_cascade_err}")
             # Performance DB 업데이트 (실패)
             import asyncio as _asyncio
 
@@ -4139,6 +4206,82 @@ class TelegramRelay:
         # 산출물 메타데이터 인덱싱 (비동기, 실패 시 스킵)
         if response:
             asyncio.ensure_future(index_task_artifact(run_id or "", self.org_id, response))
+
+    async def _handle_approve_code_fix(
+        self, approval_id: str, update, ctx
+    ) -> None:
+        """/approve_code_fix 핸들러 — 코드 자동 수정 승인."""
+        from core.code_improvement_approval_store import CodeImprovementApprovalStore
+
+        store = CodeImprovementApprovalStore()
+
+        if not approval_id:
+            pending = store.list_pending()
+            if not pending:
+                await update.message.reply_text("대기 중인 코드 수정 요청이 없습니다.")
+            else:
+                lines = ["대기 중인 코드 수정 요청:"]
+                for item in pending:
+                    lines.append(f"  ID: {item['approval_id']} — {item['signal'].get('target', '?')}")
+                    lines.append(f"  → /approve_code_fix {item['approval_id']}")
+                await update.message.reply_text("\n".join(lines))
+            return
+
+        approved = store.approve(approval_id)
+        if not approved:
+            await update.message.reply_text(f"ID '{approval_id}'를 찾을 수 없거나 이미 처리됐습니다.")
+            return
+
+        chat_id = update.effective_chat.id
+        await update.message.reply_text(f"✅ 승인 완료 — ID: {approval_id}\n코드 수정을 백그라운드에서 시작합니다.")
+
+        async def _run_fix() -> None:
+            from core.self_code_improver import SelfCodeImprover
+
+            items = [i for i in store._load() if i["approval_id"] == approval_id]
+            signal = items[0]["signal"] if items else {}
+            improver = SelfCodeImprover()
+            try:
+                result = await improver.fix(signal)
+                if result.success:
+                    store.mark_executed(approval_id)
+                    await ctx.bot.send_message(
+                        chat_id,
+                        f"✅ 코드 수정 완료 — ID: {approval_id}\n"
+                        f"브랜치: {result.branch}\n커밋: {result.commit_hash}",
+                    )
+                else:
+                    await ctx.bot.send_message(
+                        chat_id,
+                        f"⚠️ 코드 수정 실패 — ID: {approval_id}\n"
+                        f"오류: {getattr(result, 'error_message', '알 수 없는 오류')}",
+                    )
+            except Exception as exc:
+                logger.warning(f"[approve_code_fix] fix 실패: {exc}")
+
+        asyncio.ensure_future(_run_fix())
+
+    async def _handle_reject_code_fix(
+        self, approval_id: str, update, ctx
+    ) -> None:
+        """/reject_code_fix 핸들러 — 코드 자동 수정 거절."""
+        from core.code_improvement_approval_store import CodeImprovementApprovalStore
+
+        store = CodeImprovementApprovalStore()
+
+        if not approval_id:
+            await update.message.reply_text(
+                "사용법: /reject_code_fix <approval_id>\n"
+                "대기 중인 코드 수정 요청 ID를 지정해주세요."
+            )
+            return
+
+        rejected = store.reject(approval_id)
+        if not rejected:
+            await update.message.reply_text(f"ID '{approval_id}'를 찾을 수 없거나 이미 처리됐습니다.")
+            return
+
+        await update.message.reply_text(f"❌ 거절됨 — ID: {approval_id}\n코드 수정 요청이 취소됐습니다.")
 
     async def _handle_command(
         self, text: str, update, context
@@ -4340,24 +4483,95 @@ class TelegramRelay:
                 await update.message.reply_text(f"❌ 조직 등록 실패: {_e}")
             return
 
-        # /agents — 에이전트 목록
+        # /agents [dept|collapsed|full] — 에이전트 조직도
         if cmd == "/agents":
-            from pathlib import Path as _Path
-            agents_dir = _Path.home() / ".claude" / "agents"
-            agents = sorted(agents_dir.glob("*.md"))
-            by_cat: dict = {}
-            for a in agents:
-                cat = a.stem.split("-")[0]
-                by_cat.setdefault(cat, []).append(a.stem.split("-", 1)[-1])
-            msg = f"🤖 <b>에이전트 {len(agents)}개</b>\n\n"
-            for cat, names in sorted(by_cat.items()):
-                preview = ", ".join(names[:4])
-                suffix = f" +{len(names)-4}" if len(names) > 4 else ""
-                msg += f"<b>{cat}</b> ({len(names)}): {preview}{suffix}\n"
-            await update.message.reply_text(msg[:4000], parse_mode="HTML")
+            try:
+                from tools.agent_parser import (
+                    group_by_department as _group_by_dept,
+                )
+                from tools.agent_parser import (
+                    load_all_agents as _load_agents,
+                )
+                from tools.agent_parser import (
+                    render_org_chart_telegram as _render_org,
+                )
+                _arg = arg.strip().lower() if arg else ""
+                _collapsed = _arg in ("collapsed", "compact", "접힘")
+                _show_role = _arg in ("full", "detail", "자세히")
+                _dept_filter = _arg if _arg not in ("collapsed", "compact", "접힘", "full", "detail", "자세히") else ""
+
+                _agents = _load_agents()
+                _groups = _group_by_dept(_agents)
+
+                if _dept_filter:
+                    _groups = {k: v for k, v in _groups.items() if k == _dept_filter}
+                    if not _groups:
+                        await update.message.reply_text(
+                            f"❌ 부서 <code>{_dept_filter}</code>를 찾을 수 없습니다.\n"
+                            f"사용 가능한 부서: {', '.join(list(_group_by_dept(_load_agents()).keys())[:10])}",
+                            parse_mode="HTML",
+                        )
+                        return
+
+                # 부서 수 기준으로 여러 메시지 분할 (4096자 제한)
+                _MAX_LEN = 3900
+                _lines: list[str] = []
+                _total = sum(len(v) for v in _groups.items())
+                _header = (
+                    f"🤖 <b>에이전트 조직도</b>  <i>({len(_agents)}개 · {len(_groups)}개 부서)</i>\n"
+                    f"<i>사용법: /agents [부서명|collapsed|full]</i>\n"
+                )
+
+                # 부서별 청크로 분할 전송
+                from tools.agent_parser import DEPARTMENT_LABELS as _DEPT_LABELS
+                _chunk = _header + "\n"
+                _sent_header = False
+                for _dept, _dept_agents in _groups.items():
+                    _label = _DEPT_LABELS.get(_dept, _dept)
+                    _active = sum(1 for a in _dept_agents if a.is_active)
+                    _inactive = len(_dept_agents) - _active
+                    _status = f" <i>({_inactive}개 비활성)</i>" if _inactive > 0 else ""
+                    _dept_lines = [f"<b>{_label}</b> ({len(_dept_agents)}){_status}"]
+
+                    if not _collapsed:
+                        _MAX_SHOW = 8
+                        for _a in _dept_agents[:_MAX_SHOW]:
+                            _badge = "🟢" if _a.is_active else "⚪"
+                            _emoji_p = f"{_a.emoji} " if _a.emoji else ""
+                            _role_s = f"  <i>{_a.role[:55]}…</i>" if _show_role and _a.role else ""
+                            _dept_lines.append(f"  {_badge} {_emoji_p}<code>{_a.id}</code>{_role_s}")
+                        if len(_dept_agents) > _MAX_SHOW:
+                            _dept_lines.append(f"  <i>…외 {len(_dept_agents) - _MAX_SHOW}개</i>")
+                    _dept_lines.append("")
+                    _dept_block = "\n".join(_dept_lines)
+
+                    if len(_chunk) + len(_dept_block) > _MAX_LEN:
+                        await update.message.reply_text(_chunk.strip(), parse_mode="HTML")
+                        _chunk = _dept_block
+                    else:
+                        _chunk += _dept_block
+
+                if _chunk.strip():
+                    await update.message.reply_text(_chunk.strip(), parse_mode="HTML")
+
+            except Exception as _e:
+                logger.warning(f"/agents 렌더링 실패, fallback: {_e}")
+                from pathlib import Path as _Path
+                _agents_dir = _Path.home() / ".claude" / "agents"
+                _files = sorted(_agents_dir.glob("*.md"))
+                _by_cat: dict = {}
+                for _a in _files:
+                    _cat = _a.stem.split("-")[0]
+                    _by_cat.setdefault(_cat, []).append(_a.stem)
+                _msg = f"🤖 <b>에이전트 {len(_files)}개</b>\n\n"
+                for _cat, _names in sorted(_by_cat.items()):
+                    _preview = ", ".join(n.split("-", 1)[-1] for n in _names[:4])
+                    _suffix = f" +{len(_names)-4}" if len(_names) > 4 else ""
+                    _msg += f"<b>{_cat}</b> ({len(_names)}): {_preview}{_suffix}\n"
+                await update.message.reply_text(_msg[:4000], parse_mode="HTML")
             return
 
-        # /team — 현재 전략
+        # /team — 현재 전략 + 에이전트 조직도 요약 (collapsed)
         if cmd == "/team":
             from tools.team_strategy import detect_strategy
             s = detect_strategy()
@@ -4366,10 +4580,28 @@ class TelegramRelay:
                 "native": "native --agents",
                 "solo": "단독 실행",
             }
-            await update.message.reply_text(
-                f"⚙️ 현재 팀 전략: <b>{desc.get(s, s)}</b>",
-                parse_mode="HTML",
-            )
+            strategy_line = f"⚙️ 현재 팀 전략: <b>{desc.get(s, s)}</b>\n"
+
+            # 에이전트 조직도 요약 (collapsed)
+            try:
+                from tools.agent_parser import (
+                    group_by_department as _group_by_dept,
+                )
+                from tools.agent_parser import (
+                    load_all_agents as _load_agents,
+                )
+                from tools.agent_parser import (
+                    render_org_chart_telegram as _render_org,
+                )
+                _agents = _load_agents()
+                _groups = _group_by_dept(_agents)
+                _org_html = _render_org(_groups, collapsed=True)
+                team_msg = strategy_line + "\n" + _org_html + "\n\n<i>/agents [부서명|collapsed|full] 으로 상세 조회</i>"
+            except Exception as _e:
+                logger.debug(f"/team 조직도 로드 실패: {_e}")
+                team_msg = strategy_line
+
+            await update.message.reply_text(team_msg[:4000], parse_mode="HTML")
             return
 
         # /sessions [org_id] — 세션 현황
