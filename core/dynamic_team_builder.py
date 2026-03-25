@@ -260,7 +260,7 @@ class DynamicTeamBuilder:
                     count = 1
                 persona = self._catalog.get_persona(name)
                 if persona is None:
-                    from core.agent_catalog import AgentPersona, DEFAULT_MODEL
+                    from core.agent_catalog import DEFAULT_MODEL, AgentPersona
                     persona = AgentPersona(name=name, description=f"{name} agent", model=DEFAULT_MODEL)
                 for _ in range(count):
                     personas.append(persona)

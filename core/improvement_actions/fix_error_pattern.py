@@ -9,8 +9,8 @@ from pathlib import Path
 
 from loguru import logger
 
-from core.improvement_actions.base import ActionResult, BaseAction
 from core.health_report_parser import ImprovementItem
+from core.improvement_actions.base import ActionResult, BaseAction
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 

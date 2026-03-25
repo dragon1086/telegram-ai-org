@@ -19,7 +19,6 @@ import json
 import os
 import shutil
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -31,7 +30,6 @@ from tools.base_runner import (
     RunnerFactory,
     RunnerTimeoutError,
 )
-
 
 # ---------------------------------------------------------------------------
 # 헬퍼: CLI 가용성 확인
@@ -67,6 +65,7 @@ class TestGeminiCLIFallbackUnit:
     def test_gemini_cli_runner_init_reads_env_vars(self) -> None:
         """GeminiCLIRunner는 GEMINI_CLI_PATH / GEMINI_CLI_DEFAULT_TIMEOUT_SEC 를 읽는다."""
         import importlib
+
         import tools.gemini_cli_runner as mod
 
         with patch.dict(os.environ, {
@@ -249,6 +248,7 @@ class TestCodexFallbackUnit:
     def test_codex_runner_init_reads_env_cli_path(self) -> None:
         """CodexRunner는 CODEX_CLI_PATH 환경변수를 읽는다."""
         import importlib
+
         import tools.codex_runner as mod
 
         with patch.dict(os.environ, {"CODEX_CLI_PATH": "/custom/codex"}):
@@ -478,6 +478,7 @@ class TestClaudeCodeFallbackUnit:
     def test_claude_code_fallback_to_subprocess_when_sdk_missing(self) -> None:
         """claude-agent SDK 없으면 ClaudeSubprocessRunner로 폴백한다."""
         import sys
+
         from tools.claude_subprocess_runner import ClaudeSubprocessRunner
 
         original = sys.modules.get("tools.claude_agent_runner", ...)
@@ -743,7 +744,6 @@ class TestE2EEnvironmentSetup:
     def test_pyproject_toml_has_e2e_markers(self) -> None:
         """pyproject.toml [tool.pytest.ini_options]에 e2e/integration 마커가 정의되어 있다."""
         import tomllib
-        from pathlib import Path
 
         toml_path = Path(__file__).parent.parent.parent / "pyproject.toml"
         if not toml_path.exists():
@@ -773,7 +773,6 @@ class TestE2EEnvironmentSetup:
     def test_requirements_test_or_dev_has_pytest_asyncio(self) -> None:
         """pytest-asyncio가 dev 의존성 또는 requirements-test.txt에 포함된다."""
         import tomllib
-        from pathlib import Path
 
         root = Path(__file__).parent.parent.parent
         toml_path = root / "pyproject.toml"
@@ -792,7 +791,6 @@ class TestE2EEnvironmentSetup:
     @pytest.mark.unit
     def test_conftest_has_engine_availability_fixtures(self) -> None:
         """conftest.py에 gemini_cli_available, codex_available 픽스처가 있다."""
-        from pathlib import Path
 
         conftest = Path(__file__).parent / "conftest.py"
         content = conftest.read_text()
@@ -803,7 +801,6 @@ class TestE2EEnvironmentSetup:
     @pytest.mark.unit
     def test_e2e_fixtures_directory_has_mock_data(self) -> None:
         """tests/e2e/fixtures/ 디렉토리에 mock 응답 파일이 있다."""
-        from pathlib import Path
 
         fixtures_dir = Path(__file__).parent / "fixtures"
         assert fixtures_dir.exists(), "fixtures/ 디렉토리 없음"

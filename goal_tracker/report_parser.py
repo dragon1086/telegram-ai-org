@@ -19,9 +19,8 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from goal_tracker.action_parser import ActionItem, ActionParser, ORG_NAME_MAP
+from goal_tracker.action_parser import ORG_NAME_MAP, ActionItem, ActionParser
 from goal_tracker.meeting_handler import MeetingType
-
 
 # ── 보고 유형별 섹션 헤더 ─────────────────────────────────────────────────────
 

@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-import sqlite3
-import uuid
 
 DB_PATH = Path(__file__).parent.parent / ".ai-org" / "lesson_memory.db"
 
@@ -178,13 +178,17 @@ class LessonMemory:
         if not lessons:
             return ""
         parts = ["## 관련 과거 교훈"]
-        for l in lessons:
-            if l.outcome == "success":
-                parts.append(f"- [성공/{l.category}] {l.what_went_wrong} → 팁: {l.how_to_prevent}")
+        for lesson in lessons:
+            if lesson.outcome == "success":
+                parts.append(
+                    f"- [성공/{lesson.category}] {lesson.what_went_wrong} → 팁: {lesson.how_to_prevent}"
+                )
             else:
-                parts.append(f"- [실패/{l.category}] {l.what_went_wrong} → 방지: {l.how_to_prevent}")
+                parts.append(
+                    f"- [실패/{lesson.category}] {lesson.what_went_wrong} → 방지: {lesson.how_to_prevent}"
+                )
         # 적용 횟수 일괄 증가
-        self._sync_increment_applied_batch([l.id for l in lessons])
+        self._sync_increment_applied_batch([lesson.id for lesson in lessons])
         return "\n".join(parts)
 
     def _sync_increment_applied_batch(self, lesson_ids: list[str]) -> None:

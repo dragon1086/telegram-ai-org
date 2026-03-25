@@ -14,8 +14,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from core.agent_persona_memory import AgentPersonaMemory
 from core.collaboration_tracker import CollaborationTracker
-from core.shoutout_system import ShoutoutSystem
 from core.pm_orchestrator import PMOrchestrator
+from core.shoutout_system import ShoutoutSystem
 from tools.base_runner import RunContext
 
 

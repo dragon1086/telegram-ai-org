@@ -11,11 +11,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.context_db import ContextDB
-from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
+from core.context_db import ContextDB
 from core.memory_manager import MemoryManager
 from core.pm_orchestrator import PMOrchestrator
+from core.task_graph import TaskGraph
 
 
 @pytest.fixture
@@ -166,7 +166,7 @@ async def test_debate_synthesis_routing(orch_setup):
     synthesize_mock.reset_mock()
 
     # synthesize()는 SynthesisResult를 반환해야 하므로 적절한 mock 설정
-    from core.result_synthesizer import SynthesisResult, SynthesisJudgment
+    from core.result_synthesizer import SynthesisJudgment, SynthesisResult
     synthesize_mock.return_value = SynthesisResult(
         judgment=SynthesisJudgment.SUFFICIENT,
         summary="테스트 요약",

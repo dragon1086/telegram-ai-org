@@ -10,14 +10,14 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
 import sys
 import time
-import urllib.request
 import urllib.parse
-import json
+import urllib.request
 from pathlib import Path
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
@@ -214,7 +214,7 @@ class BotWatchdog:
             )
         else:
             # 특정 봇만 재시작
-            from scripts.bot_manager import stop_bot, start_bot
+            from scripts.bot_manager import start_bot, stop_bot
             orgs = {o["id"]: o for o in get_expected_orgs()}
             if target in orgs:
                 stop_bot(target)

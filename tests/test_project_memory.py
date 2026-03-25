@@ -175,7 +175,7 @@ class TestPruning:
                 "relevance_score": 1.0,
                 "duplicate_count": 1,
             })
-        removed = memory.prune(max_tasks=5)
+        memory.prune(max_tasks=5)
         assert memory.total_tasks == 5
 
     def test_score_calculation(self):

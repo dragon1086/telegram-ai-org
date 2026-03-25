@@ -301,8 +301,6 @@ async def run_scenario(
 # ── 보고서 생성 ────────────────────────────────────────────────────────────────
 def write_report(results: list[ScenarioResult]) -> Path:
     now   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    today = datetime.now().strftime("%Y-%m-%d")
-
     total  = len(results)
     passed = sum(1 for r in results if r.passed)
 

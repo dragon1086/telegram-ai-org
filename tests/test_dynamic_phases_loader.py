@@ -9,7 +9,6 @@ _FALLBACK_DEPTS / _DEFAULT_PHASES 하드코딩 제거 후 동작 검증.
 from __future__ import annotations
 
 import sys
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -18,11 +17,9 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.constants import (
-    load_known_depts,
     load_default_phases,
-    load_bot_engines,
+    load_known_depts,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 

@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.eval_runner import EvalRunner, EvalResult, PASS_THRESHOLD
+from core.eval_runner import EvalResult, EvalRunner
 
 
 class TestEvalRunner:

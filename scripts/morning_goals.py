@@ -113,8 +113,9 @@ async def _send_telegram(text: str) -> None:
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from core.telegram_formatting import markdown_to_html
         from telegram import Bot
+
+        from core.telegram_formatting import markdown_to_html
         bot = Bot(token=BOT_TOKEN)
         await bot.send_message(
             chat_id=GROUP_CHAT_ID,
@@ -133,14 +134,14 @@ async def _register_goals_to_tracker(goals_text: str, today_str: str) -> None:
     """생성된 목표 3개를 GoalTracker에 등록 → daily_goal_pipeline step_2 트리거."""
     sys.path.insert(0, str(PROJECT_ROOT))
     try:
+
         from core.goal_tracker import GoalTracker
-        import sqlite3
 
         db_path = PROJECT_ROOT / "ai_org.db"
         tracker = GoalTracker(db_path=str(db_path), org_id="aiorg_pm_bot")
 
         # 목표 텍스트를 줄 단위로 파싱 (형식: "N. 목표내용")
-        lines = [l.strip() for l in goals_text.splitlines() if l.strip()]
+        lines = [line.strip() for line in goals_text.splitlines() if line.strip()]
         for line in lines:
             # "1. 목표내용" 형식에서 내용만 추출
             content = line.lstrip("0123456789. ").strip()

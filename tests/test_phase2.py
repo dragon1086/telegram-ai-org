@@ -5,8 +5,6 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-
-
 # ── LessonMemory 테스트 ───────────────────────────────────────────────────
 
 def test_lesson_memory_record_and_retrieve():
@@ -61,7 +59,7 @@ def test_lesson_memory_mark_resolved():
 
 def test_retro_memory_save_and_report():
     """일일 회고 저장 + 주간 리포트 생성."""
-    from core.retro_memory import RetroMemory, RetroEntry
+    from core.retro_memory import RetroEntry, RetroMemory
     with tempfile.TemporaryDirectory() as tmpdir:
         rm = RetroMemory(db_path=Path(tmpdir) / "retro.db")
 
@@ -91,7 +89,7 @@ def test_retro_memory_save_and_report():
 
 def test_retro_memory_week_entries():
     """주간 엔트리 조회."""
-    from core.retro_memory import RetroMemory, RetroEntry
+    from core.retro_memory import RetroEntry, RetroMemory
     with tempfile.TemporaryDirectory() as tmpdir:
         rm = RetroMemory(db_path=Path(tmpdir) / "retro.db")
         today = date.today()

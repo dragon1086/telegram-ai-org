@@ -2,7 +2,7 @@ schema_version: 2
 organization_ref: aiorg_pm_bot
 username: aiorg_pm_bot
 org_id: aiorg_pm_bot
-token_env: PM_BOT_TOKEN
+token_env: GLOBAL_PM_BOT_TOKEN
 chat_id: -5203707291
 engine: claude-code
 dept_name: PM

@@ -61,8 +61,9 @@ async def test_search_memories_empty_corpus(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_search_memories_includes_conversation_entries(tmp_path, monkeypatch):
     """BM25 검색이 _context_db conversation_messages도 포함하는지"""
-    import core.memory_manager as mm_module
     from unittest.mock import AsyncMock
+
+    import core.memory_manager as mm_module
     monkeypatch.setattr(mm_module, "MEMORY_DIR", tmp_path / "memory")
 
     mm = MemoryManager(scope="test_scope")

@@ -1,10 +1,9 @@
 """텔레그램 첨부 입력을 LLM 친화적인 컨텍스트로 정리한다."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 import mimetypes
+from dataclasses import dataclass
 from pathlib import Path
-
 
 _TEXT_PREVIEW_SUFFIXES = {
     ".md", ".txt", ".json", ".yaml", ".yml", ".csv", ".tsv",

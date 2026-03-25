@@ -124,6 +124,7 @@ class EnvelopeManager:
     async def save(self, message_id: int, envelope: MessageEnvelope) -> None:
         """봉투를 DB에 저장."""
         import json
+
         import aiosqlite
         wire = envelope.to_wire()
         metadata_json = json.dumps(wire.get("metadata", {}), ensure_ascii=False)
@@ -139,6 +140,7 @@ class EnvelopeManager:
     async def load(self, message_id: int) -> "MessageEnvelope | None":
         """DB에서 봉투 조회. 없으면 None."""
         import json
+
         import aiosqlite
         async with aiosqlite.connect(self._db.db_path) as db:
             async with db.execute(

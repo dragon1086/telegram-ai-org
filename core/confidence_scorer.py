@@ -10,9 +10,9 @@ import re
 
 from loguru import logger
 
-from core.pm_identity import PMIdentity
 from core.keywords import GREETING_KW
 from core.pm_decision import PMDecisionClient
+from core.pm_identity import PMIdentity
 
 DEFAULT_CONFIDENCE_THRESHOLD = 6
 

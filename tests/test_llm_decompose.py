@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.pm_orchestrator import PMOrchestrator, KNOWN_DEPTS
+from core.pm_orchestrator import KNOWN_DEPTS, PMOrchestrator
 
 
 class _FakeDecisionClient:

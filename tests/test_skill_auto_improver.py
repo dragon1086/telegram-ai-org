@@ -1,10 +1,11 @@
 """SkillAutoImprover 테스트."""
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from unittest.mock import patch
 
 
 def test_generate_variants_returns_list():

@@ -51,12 +51,12 @@ def _load_env_file(path: Path) -> None:
 for _env_path in (Path.home() / ".ai-org" / "config.yaml", PROJECT_ROOT / ".env"):
     _load_env_file(_env_path)
 
-from core.message_bus import MessageBus
-from core.session_manager import SessionManager
-from core.memory_manager import MemoryManager
-from core.telegram_relay import TelegramRelay
-from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR
-from core.orchestration_config import load_orchestration_config
+from core.memory_manager import MemoryManager  # noqa: E402
+from core.message_bus import MessageBus  # noqa: E402
+from core.orchestration_config import load_orchestration_config  # noqa: E402
+from core.pm_orchestrator import ENABLE_PM_ORCHESTRATOR  # noqa: E402
+from core.session_manager import SessionManager  # noqa: E402
+from core.telegram_relay import TelegramRelay  # noqa: E402
 
 
 def _resolve_runtime_binding(org_id: str) -> tuple[str, int, str]:
@@ -84,13 +84,15 @@ def _resolve_runtime_binding(org_id: str) -> tuple[str, int, str]:
 if __name__ == "__main__":
     # ── CLI 인수 파싱 ──────────────────────────────────────────────────────
     import argparse
+    import fcntl
+    import sys
+
     _parser = argparse.ArgumentParser()
     _parser.add_argument("--org", default=None)
     _args, _ = _parser.parse_known_args()
     if _args.org:
         os.environ["PM_ORG_NAME"] = _args.org
     # ── PID lock (중복 실행 방지) ─────────────────────────────────────────
-    import fcntl
     _pid_file = Path(f"/tmp/telegram-ai-org-{os.environ.get('PM_ORG_NAME', 'global')}.pid")
     _lock_fh = open(_pid_file, "w")
     try:
@@ -100,7 +102,7 @@ if __name__ == "__main__":
     except IOError:
         existing = _pid_file.read_text().strip() if _pid_file.exists() else "?"
         print(f"[ABORT] 이미 실행 중인 인스턴스 있음 (PID {existing}). 종료.", flush=True)
-        import sys; sys.exit(1)
+        sys.exit(1)
     # ─────────────────────────────────────────────────────────────────────
 
     org_id = os.environ.get("PM_ORG_NAME", "global")
@@ -118,7 +120,7 @@ if __name__ == "__main__":
     # PM 오케스트레이터 모드: ContextDB 초기화
     context_db = None
     if ENABLE_PM_ORCHESTRATOR:
-        import asyncio as _aio
+        import asyncio as _aio  # noqa: I001
         from core.context_db import ContextDB
         context_db = ContextDB()
         _aio.run(context_db.initialize())

@@ -4,12 +4,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.discussion_parser import (
-    parse_discussion_tags,
     is_discussion_message,
+    parse_discussion_tags,
     strip_discussion_tags,
 )
 

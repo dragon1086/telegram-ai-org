@@ -124,10 +124,10 @@ class TestGeminiCLISpecific:
 
     def test_gemini_cli_default_model_is_correct(self) -> None:
         """기본 모델이 gemini-2.5-flash (deprecated 아님)."""
-        from tools.gemini_runner import GeminiRunner
-
         # GeminiRunner의 기본 모델 확인 (gemini-2.0-flash 사용 금지)
         import inspect
+
+        from tools.gemini_runner import GeminiRunner
         source = inspect.getsource(GeminiRunner.run)
         assert "gemini-2.0-flash" not in source, (
             "gemini-2.0-flash는 2026-06-01 서비스 종료 예정 — gemini-2.5-flash 사용"
@@ -139,8 +139,9 @@ class TestBotEngineAssignment:
 
     def test_engine_assignments_valid(self) -> None:
         """모든 봇의 엔진이 유효한 값으로 설정되어 있는지 확인."""
-        import yaml
         from pathlib import Path
+
+        import yaml
 
         config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
         if not config_path.exists():
@@ -166,8 +167,9 @@ class TestBotEngineAssignment:
 
     def test_research_and_growth_use_gemini(self) -> None:
         """리서치실과 성장실은 gemini-cli 엔진을 사용해야 한다."""
-        import yaml
         from pathlib import Path
+
+        import yaml
 
         config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
         if not config_path.exists():
@@ -188,8 +190,9 @@ class TestBotEngineAssignment:
 
     def test_ops_uses_codex(self) -> None:
         """운영실은 codex 엔진을 사용해야 한다."""
-        import yaml
         from pathlib import Path
+
+        import yaml
 
         config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
         if not config_path.exists():
@@ -746,8 +749,8 @@ class TestClaudeSubprocessRunnerDispatch:
 
     async def test_run_raises_runner_error_on_error_prefix(self) -> None:
         """내부 runner가 '❌'으로 시작하는 문자열을 반환하면 RunnerError를 발생시킨다."""
-        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
         from tools.base_runner import RunnerError
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
 
         runner = ClaudeSubprocessRunner()
         runner._runner = MagicMock()
@@ -759,8 +762,8 @@ class TestClaudeSubprocessRunnerDispatch:
 
     async def test_run_wraps_exception_as_runner_error(self) -> None:
         """내부 runner가 예외를 발생시키면 RunnerError로 래핑한다."""
-        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
         from tools.base_runner import RunnerError
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
 
         runner = ClaudeSubprocessRunner()
         runner._runner = MagicMock()
@@ -1297,7 +1300,7 @@ class TestCodexRunnerUtilityFunctions:
 
     def test_effective_timeout_with_two_agents_uses_complex_timeout(self) -> None:
         """2개 이상 에이전트가 있으면 COMPLEX_TASK_TIMEOUT 이상의 타임아웃을 반환한다."""
-        from tools.codex_runner import CodexRunner, COMPLEX_TASK_TIMEOUT
+        from tools.codex_runner import COMPLEX_TASK_TIMEOUT, CodexRunner
 
         runner = CodexRunner()
         timeout = runner._effective_timeout(["agent1", "agent2"])
@@ -1330,7 +1333,6 @@ class TestCodexRunnerUtilityFunctions:
         assert "repo" not in names
         assert "repository" not in names
         # 프로젝트 이름 포함 여부 확인
-        all_names = " ".join(names)
         assert len(names) > 0
 
     def test_extract_repo_names_deduplicates(self) -> None:
@@ -1345,7 +1347,6 @@ class TestCodexRunnerUtilityFunctions:
 
     def test_iter_search_roots_with_env_var(self, tmp_path, monkeypatch) -> None:
         """CODEX_REPO_SEARCH_ROOTS 환경변수가 설정되면 해당 경로를 반환한다."""
-        import os
         from tools.codex_runner import CodexRunner
 
         monkeypatch.setenv("CODEX_REPO_SEARCH_ROOTS", str(tmp_path))
@@ -1356,6 +1357,7 @@ class TestCodexRunnerUtilityFunctions:
     def test_iter_search_roots_default_is_list(self) -> None:
         """환경변수 없이 기본 경로 목록을 반환한다."""
         import os
+
         from tools.codex_runner import CodexRunner
 
         runner = CodexRunner()
@@ -1371,8 +1373,8 @@ class TestCodexRunnerUtilityFunctions:
 
     def test_find_repo_root_found_with_git_dir(self, tmp_path) -> None:
         """.git 디렉토리가 있는 경로에서 리포지토리 루트를 찾는다."""
+
         from tools.codex_runner import CodexRunner
-        from pathlib import Path
 
         git_dir = tmp_path / ".git"
         git_dir.mkdir()
@@ -1433,8 +1435,9 @@ class TestCodexRunnerUtilityFunctions:
 
     async def test_run_with_shell_session_manager_timeout(self) -> None:
         """shell_session_manager 경로에서 TimeoutError 발생 시 에러 문자열을 반환한다."""
-        from tools.codex_runner import CodexRunner
         import asyncio
+
+        from tools.codex_runner import CodexRunner
 
         mock_shell_mgr = MagicMock()
         mock_shell_mgr.run_shell_command = AsyncMock(
@@ -1454,8 +1457,8 @@ class TestCodexRunnerUtilityFunctions:
 
     async def test_run_ctx_wraps_unexpected_exception_as_runner_error(self) -> None:
         """RunContext 경로에서 _run()이 예외를 raise하면 RunnerError로 래핑된다."""
-        from tools.codex_runner import CodexRunner
         from tools.base_runner import RunnerError
+        from tools.codex_runner import CodexRunner
 
         runner = CodexRunner()
 
@@ -1491,8 +1494,9 @@ class TestCodexRunnerUtilityFunctions:
 
     def test_select_agent_prompts_no_agent_dirs_returns_empty(self) -> None:
         """AGENT_DIRS가 비어 있으면(존재하지 않으면) 빈 문자열을 반환한다."""
-        from tools.codex_runner import _select_agent_prompts
         from pathlib import Path
+
+        from tools.codex_runner import _select_agent_prompts
 
         with patch("tools.codex_runner.AGENT_DIRS", [Path("/nonexistent/dir/abc123")]):
             result = _select_agent_prompts("implement feature")
@@ -1500,8 +1504,9 @@ class TestCodexRunnerUtilityFunctions:
 
     def test_select_agent_prompts_with_agent_names_no_dirs(self) -> None:
         """AGENT_DIRS 없을 때 agent_names 지정해도 빈 문자열을 반환한다."""
-        from tools.codex_runner import _select_agent_prompts
         from pathlib import Path
+
+        from tools.codex_runner import _select_agent_prompts
 
         with patch("tools.codex_runner.AGENT_DIRS", [Path("/nonexistent/dir/xyz")]):
             result = _select_agent_prompts("test", agent_names=["executor"])
@@ -1977,8 +1982,9 @@ class TestCodexRunnerRemainingCoverage:
         self, tmp_path
     ) -> None:
         """recommend_agents_llm_sync가 예외 발생 시 키워드 매칭으로 폴백한다."""
-        from tools.codex_runner import _select_agent_prompts
         from unittest.mock import patch
+
+        from tools.codex_runner import _select_agent_prompts
 
         # AGENT_DIRS에 실제 존재하는 tmp_path 사용 → agent_names=None, dirs exist
         with patch("tools.codex_runner.AGENT_DIRS", [tmp_path]):
@@ -1994,8 +2000,9 @@ class TestCodexRunnerRemainingCoverage:
         self, tmp_path
     ) -> None:
         """키워드 매칭 후 에이전트 파일이 있으면 내용이 포함된 문자열을 반환한다."""
-        from tools.codex_runner import _select_agent_prompts
         from unittest.mock import patch
+
+        from tools.codex_runner import _select_agent_prompts
 
         # executor.md 파일 생성
         agent_file = tmp_path / "executor.md"
@@ -2016,8 +2023,9 @@ class TestCodexRunnerRemainingCoverage:
         self, tmp_path
     ) -> None:
         """키워드 매칭도 실패하면 selected_names가 빈 배열 → 빈 문자열 반환."""
-        from tools.codex_runner import _select_agent_prompts
         from unittest.mock import patch
+
+        from tools.codex_runner import _select_agent_prompts
 
         with patch("tools.codex_runner.AGENT_DIRS", [tmp_path]):
             with patch(
@@ -2035,8 +2043,9 @@ class TestCodexRunnerRemainingCoverage:
         self, tmp_path
     ) -> None:
         """실제 .git 폴더가 있는 경우 _resolve_workdir가 해당 경로를 반환한다."""
-        from tools.codex_runner import CodexRunner
         from unittest.mock import patch
+
+        from tools.codex_runner import CodexRunner
 
         # .git 디렉토리가 있는 리포 구조 생성
         repo_dir = tmp_path / "myproject"
@@ -2057,9 +2066,10 @@ class TestCodexRunnerRemainingCoverage:
         self, tmp_path
     ) -> None:
         """search roots에 .git이 있는 디렉토리가 있으면 해당 경로를 반환한다."""
-        from tools.codex_runner import CodexRunner
         from pathlib import Path
         from unittest.mock import patch
+
+        from tools.codex_runner import CodexRunner
 
         # repo 구조 생성: tmp_path/myrepo/.git
         repo_dir = tmp_path / "myrepo"
@@ -2082,9 +2092,9 @@ class TestCodexRunnerRemainingCoverage:
         self, tmp_path
     ) -> None:
         """glob 결과 중 파일(디렉토리 아님)은 건너뛴다 (line 307: not is_dir → continue)."""
-        from tools.codex_runner import CodexRunner
-        from pathlib import Path
         from unittest.mock import patch
+
+        from tools.codex_runner import CodexRunner
 
         # myrepo라는 이름의 파일(디렉토리 아님) 생성
         fake_file = tmp_path / "myrepo"

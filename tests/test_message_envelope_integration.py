@@ -9,8 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pytest
 import pytest_asyncio
 
-from core.message_envelope import MessageEnvelope, EnvelopeManager
-
+from core.message_envelope import EnvelopeManager, MessageEnvelope
 
 # ---------------------------------------------------------------------------
 # wrap → display 라운드트립

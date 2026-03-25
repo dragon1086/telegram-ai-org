@@ -11,7 +11,7 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -92,7 +92,7 @@ def _get_log_tail(log_path: Path, lines: int = 5) -> list[str]:
             return []
         with open(log_path) as f:
             all_lines = f.readlines()
-        return [l.rstrip() for l in all_lines[-lines:]]
+        return [line.rstrip() for line in all_lines[-lines:]]
     except Exception:
         return []
 

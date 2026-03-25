@@ -15,7 +15,6 @@ from core.message_bus import MessageBus
 from core.p2p_messenger import P2PMessage, P2PMessenger
 from core.shoutout_system import ShoutoutSystem
 
-
 # ---------------------------------------------------------------------------
 # TC-D1: P2PMessenger.send() → 핸들러 수신 검증
 # ---------------------------------------------------------------------------

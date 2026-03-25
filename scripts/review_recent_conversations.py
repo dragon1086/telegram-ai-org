@@ -8,17 +8,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from datetime import datetime, timedelta
-from pathlib import Path
 import re
 import sys
+from datetime import datetime, timedelta
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.telegram_delivery import resolve_delivery_target
 from core.pm_decision import PMDecisionClient
+from core.telegram_delivery import resolve_delivery_target
 from tools.telegram_uploader import upload_file
-
 
 LOG_DIR = Path.home() / ".ai-org"
 DEFAULT_OUTPUT_DIR = Path(".omx/reviews")

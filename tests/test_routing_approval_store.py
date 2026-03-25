@@ -1,7 +1,9 @@
 """RoutingApprovalStore 테스트."""
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.routing_approval_store import RoutingApprovalStore

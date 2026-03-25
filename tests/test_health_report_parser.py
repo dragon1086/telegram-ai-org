@@ -12,16 +12,14 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.health_report_parser import HealthReportParser, ImprovementItem
-
 
 # ------------------------------------------------------------------
 # 테스트용 가짜 CodeHealthReport

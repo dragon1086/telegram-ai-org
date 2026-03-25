@@ -65,7 +65,7 @@ def run_eval(verbose: bool = True, failures_only: bool = False) -> float:
 
     if verbose:
         if not failures_only:
-            print(f"\n=== 라우팅 정확도 평가 ===")
+            print("\n=== 라우팅 정확도 평가 ===")
             print(f"총 케이스: {total}")
             print(f"정답: {correct}  오답: {total - correct}")
             print(f"정확도: {accuracy:.1%}  ({accuracy:.4f})")

@@ -21,12 +21,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from core.llm_failure_detector import LLMFailureDetector, LLMVerdict
-
 
 # ---------------------------------------------------------------------------
 # 헬퍼 — 테스트용 ScanDiff 유사 객체

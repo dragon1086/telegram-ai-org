@@ -13,14 +13,13 @@ GoalTrackerDispatcher는 상태머신의 REPLAN→DISPATCH 전이 시 실행된�
 """
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
 from loguru import logger
 
 from goal_tracker.router import DeptRouter
-from goal_tracker.state_machine import GoalTrackerStateMachine, GoalTrackerState
+from goal_tracker.state_machine import GoalTrackerState, GoalTrackerStateMachine
 
 
 @dataclass

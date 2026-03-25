@@ -12,9 +12,9 @@ health_report_parser가 이를 에러 패턴으로 탐지 → fix_error_pattern 
 """
 from __future__ import annotations
 
+import pathlib
 import re
 import sys
-import pathlib
 import tempfile
 from pathlib import Path
 

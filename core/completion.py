@@ -8,7 +8,6 @@ from loguru import logger
 
 from core.task_manager import Task, TaskManager, TaskStatus
 
-
 ACK_TIMEOUT_SECONDS = 120  # 2분 내 응답 없으면 타임아웃
 
 

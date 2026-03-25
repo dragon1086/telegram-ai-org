@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from core.keywords import GREETING_KW, ACTION_KW
+from core.keywords import ACTION_KW, GREETING_KW
 
 
 class Intent(Enum):

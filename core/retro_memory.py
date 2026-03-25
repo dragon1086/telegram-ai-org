@@ -1,11 +1,11 @@
 """주간 회고 메모리 — 성공률 추적 + 패턴 리포트."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
 import sqlite3
 from collections import Counter
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from core.lesson_memory import LessonMemory
 
@@ -93,8 +93,8 @@ class RetroMemory:
         try:
             failures = LessonMemory().get_recent_failures(days=14)
             top_lessons = [
-                f"{l.category}: {l.what_went_wrong[:80]}"
-                for l in failures[:5]
+                f"{lesson.category}: {lesson.what_went_wrong[:80]}"
+                for lesson in failures[:5]
             ]
         except Exception:
             top_lessons = []
@@ -113,7 +113,9 @@ class RetroMemory:
         try:
             failures_for_actions = LessonMemory().get_recent_failures(days=14)
             if failures_for_actions:
-                category_counts = Counter(l.category for l in failures_for_actions)
+                category_counts = Counter(
+                    lesson.category for lesson in failures_for_actions
+                )
                 top_categories = [cat for cat, _ in category_counts.most_common(3)]
                 category_actions = {
                     "timeout": "타임아웃 임계값 검토 및 재시도 로직 강화",

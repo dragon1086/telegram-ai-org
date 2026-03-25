@@ -4,9 +4,13 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 from loguru import logger
+
+if TYPE_CHECKING:
+    from core.pm_identity import PMIdentity
 
 
 def _resolve_env(value: str) -> str:
@@ -167,7 +171,7 @@ class OrgRegistry:
         identity_path.write_text(content, encoding="utf-8")
         logger.info(f"조직 등록 완료: {org_id} → {identity_path}")
 
-    def get_identity(self, org_id: str) -> "PMIdentity":
+    def get_identity(self, org_id: str) -> PMIdentity:
         """org_id의 PMIdentity 반환."""
         from core.pm_identity import PMIdentity
         identity = PMIdentity(org_id)

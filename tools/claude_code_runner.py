@@ -11,8 +11,8 @@ from pathlib import Path
 
 from loguru import logger
 
-from core.session_store import SessionStore
 from core.global_context import GlobalContext
+from core.session_store import SessionStore
 
 FILE_PATTERN = re.compile(r"(?:저장[됨했]|생성[됨했]|작성[됨했]):?\s*([~/\w\-\.]+\.\w+)")
 
@@ -507,7 +507,6 @@ class ClaudeCodeRunner:
                         tool_input = block.get("input", {})
                         tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
 
-                        emoji = TOOL_EMOJI.get(tool_name, "⚙️")
                         if tool_name == "Bash":
                             snippet = str(tool_input.get("command", ""))[:60]
                             msg_text = f"🔧 Bash: `{snippet}`"

@@ -15,7 +15,7 @@ import asyncio
 import os
 import re
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -182,8 +182,9 @@ def _save_goal_snapshot(goals: list[dict]) -> None:
 async def send_telegram(text: str) -> None:
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
-        from core.telegram_formatting import markdown_to_html
         from telegram import Bot
+
+        from core.telegram_formatting import markdown_to_html
         bot = Bot(token=BOT_TOKEN)
         async with bot:
             await bot.send_message(

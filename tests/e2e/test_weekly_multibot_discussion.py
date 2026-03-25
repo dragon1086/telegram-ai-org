@@ -20,7 +20,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from core.group_chat_hub import GroupChatHub, GroupMessage
 
-
 # ── 봇별 speak callback 팩토리 ──────────────────────────────────────────────
 
 BOT_CONFIGS = [
@@ -137,8 +136,8 @@ class TestWeeklyMultibotMeeting:
             if "완료" in m:
                 closing_idx = i
 
-        assert last_bot_idx is not None, f"마지막 봇 발언 없음"
-        assert closing_idx is not None, f"종료 메시지 없음"
+        assert last_bot_idx is not None, "마지막 봇 발언 없음"
+        assert closing_idx is not None, "종료 메시지 없음"
         assert closing_idx > last_bot_idx, (
             f"종료 메시지({closing_idx})가 마지막 봇 발언({last_bot_idx}) 이전"
         )
@@ -248,7 +247,8 @@ class TestWeeklyMultibotDiscussionDispatch:
     @pytest.mark.asyncio
     async def test_discussion_dispatch_creates_subtasks_for_all_participants(self):
         """discussion_dispatch가 각 참여 봇에 대해 서브태스크를 생성하는지 확인."""
-        from unittest.mock import MagicMock, AsyncMock, patch
+        from unittest.mock import MagicMock, patch
+
         from core.pm_orchestrator import PMOrchestrator
 
         db = MagicMock()
@@ -320,7 +320,8 @@ class TestWeeklyMultibotDiscussionDispatch:
     @pytest.mark.asyncio
     async def test_discussion_dispatch_sends_telegram_notifications(self):
         """discussion_dispatch가 각 봇에 Telegram 알림을 보내는지 확인."""
-        from unittest.mock import MagicMock, AsyncMock, patch
+        from unittest.mock import MagicMock, patch
+
         from core.pm_orchestrator import PMOrchestrator
 
         db = MagicMock()

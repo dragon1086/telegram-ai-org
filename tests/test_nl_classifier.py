@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.nl_classifier import NLClassifier, Intent
+from core.nl_classifier import Intent, NLClassifier
 
 
 @pytest.fixture

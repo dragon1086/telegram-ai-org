@@ -5,14 +5,14 @@ Feature flag: ENABLE_AUTO_DISPATCH (환경변수, 기본 off)
 from __future__ import annotations
 
 import os
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 from loguru import logger
 
-from core.context_db import ContextDB
-from core.task_graph import TaskGraph
-from core.pm_orchestrator import KNOWN_DEPTS
 from core.collab_dispatcher import CollabDispatcher
+from core.context_db import ContextDB
+from core.pm_orchestrator import KNOWN_DEPTS
+from core.task_graph import TaskGraph
 
 ENABLE_AUTO_DISPATCH = os.environ.get("ENABLE_AUTO_DISPATCH", "0") == "1"
 

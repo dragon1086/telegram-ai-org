@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-
 EXEC_MODE_MAP = {"1": "omc_team", "2": "agent_teams", "3": "auto"}
 EXEC_MODE_LABEL = {
     "omc_team": "omc /team",

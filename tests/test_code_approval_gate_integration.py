@@ -11,13 +11,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.improvement_bus import ImprovementBus, ImprovementSignal, SignalKind
 from core.code_improvement_approval_store import CodeImprovementApprovalStore
-
+from core.improvement_bus import ImprovementBus, ImprovementSignal, SignalKind
 
 # ---------------------------------------------------------------------------
 # 헬퍼

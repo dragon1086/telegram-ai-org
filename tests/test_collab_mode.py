@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.pm_orchestrator import PMOrchestrator
 
-
 # ── 공통 픽스처 ────────────────────────────────────────────────────────────────
 
 @pytest.fixture

@@ -1,5 +1,6 @@
 """_handle_improve_status 메서드 존재 테스트."""
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 

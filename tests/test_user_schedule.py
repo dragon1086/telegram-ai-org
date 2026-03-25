@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import sqlite3
+from unittest.mock import AsyncMock
 
 import pytest
 
-
 # ── NLScheduleParser 테스트 ───────────────────────────────────────────────
-
 from core.nl_schedule_parser import NLScheduleParser, ParseError
+from core.scheduler import OrgScheduler
+from core.user_schedule_store import UserSchedule, UserScheduleStore
 
 
 def test_nl_parser_daily_9am():
@@ -80,11 +81,6 @@ def test_nl_parser_with_minute():
     assert result["cron_expr"] == "30 9 * * *"
 
 
-# ── UserScheduleStore 테스트 ──────────────────────────────────────────────
-
-from core.user_schedule_store import UserScheduleStore, UserSchedule
-
-
 @pytest.fixture
 def store(tmp_path):
     db_path = tmp_path / "test_schedules.db"
@@ -147,12 +143,6 @@ def test_schedule_store_wal(store):
     with sqlite3.connect(store.db_path) as conn:
         mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
     assert mode == "wal"
-
-
-# ── OrgScheduler 동적 job 테스트 ──────────────────────────────────────────
-
-from unittest.mock import AsyncMock
-from core.scheduler import OrgScheduler
 
 
 @pytest.fixture

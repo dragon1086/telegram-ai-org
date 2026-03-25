@@ -5,19 +5,18 @@ import asyncio
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.context_db import ContextDB
-from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
+from core.context_db import ContextDB
+from core.goal_tracker import GoalStatus, GoalTracker
 from core.memory_manager import MemoryManager
 from core.pm_orchestrator import PMOrchestrator
-from core.goal_tracker import GoalTracker, GoalStatus
-
+from core.task_graph import TaskGraph
 
 # ── 픽스처 ─────────────────────────────────────────────────────────────────────
 
@@ -144,7 +143,7 @@ class TestAutonomousLoopStateMachine:
         tracker._orch.dispatch = mock_dispatch
         tracker.evaluate_progress = mock_evaluate
 
-        status = await tracker.run_loop(gid)
+        await tracker.run_loop(gid)
         final = await db.get_goal(gid)
         assert final["status"] == "stagnated"
 
@@ -159,7 +158,7 @@ class TestAutonomousLoopStateMachine:
             return []
 
         tracker._orch.dispatch = mock_dispatch
-        status = await tracker.run_loop(gid)
+        await tracker.run_loop(gid)
 
         final = await db.get_goal(gid)
         assert final["status"] in ("cancelled", "achieved", "max_iterations_reached")

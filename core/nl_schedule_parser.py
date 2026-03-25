@@ -137,11 +137,9 @@ class NLScheduleParser:
         weekly = re.search(r"매주", t)
         if weekly:
             day_num = None
-            matched_day_str = None
             for kw, num in _DAYS_KR.items():
                 if kw in t:
                     day_num = num
-                    matched_day_str = kw
                     break
             if day_num is not None:
                 hour, minute = _parse_hour(t)
@@ -196,4 +194,3 @@ class NLScheduleParser:
         result = re.sub(r"\s+", " ", result).strip()
         result = result.strip("해줘줘요.!? ")
         return result or text.strip()
-

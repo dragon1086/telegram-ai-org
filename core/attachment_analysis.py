@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import shlex
 import subprocess
+from pathlib import Path
 
 from core.attachment_manager import AttachmentContext
 

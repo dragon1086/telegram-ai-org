@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import itertools
 import json
+import sqlite3
+import uuid
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import sqlite3
-import uuid
 
 DB_PATH = Path(__file__).parent.parent / ".ai-org" / "collaboration.db"
 

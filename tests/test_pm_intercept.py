@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 import re
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -84,6 +84,7 @@ class TestFeatureFlag:
             os.environ.pop("ENABLE_PM_ORCHESTRATOR", None)
             # 모듈 재로드
             import importlib
+
             import core.pm_orchestrator as mod
             importlib.reload(mod)
             assert mod.ENABLE_PM_ORCHESTRATOR is False
@@ -92,6 +93,7 @@ class TestFeatureFlag:
         """ENABLE_PM_ORCHESTRATOR=1 → True."""
         with patch.dict(os.environ, {"ENABLE_PM_ORCHESTRATOR": "1"}):
             import importlib
+
             import core.pm_orchestrator as mod
             importlib.reload(mod)
             assert mod.ENABLE_PM_ORCHESTRATOR is True
@@ -100,6 +102,7 @@ class TestFeatureFlag:
         """ENABLE_PM_ORCHESTRATOR=0 → False."""
         with patch.dict(os.environ, {"ENABLE_PM_ORCHESTRATOR": "0"}):
             import importlib
+
             import core.pm_orchestrator as mod
             importlib.reload(mod)
             assert mod.ENABLE_PM_ORCHESTRATOR is False
@@ -287,8 +290,8 @@ class TestDeptBotIgnoreUserTraffic:
 class TestAttachmentGrouping:
     @pytest.mark.asyncio
     async def test_attachment_group_flushes_once(self):
-        from core.telegram_relay import TelegramRelay
         from core.attachment_manager import AttachmentContext
+        from core.telegram_relay import TelegramRelay
 
         relay = TelegramRelay(
             token="fake",

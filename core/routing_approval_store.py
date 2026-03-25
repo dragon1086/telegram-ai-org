@@ -1,5 +1,6 @@
 """대기 중인 RoutingProposal 저장소."""
 from __future__ import annotations
+
 import json
 from pathlib import Path
 

@@ -29,8 +29,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from loguru import logger
-from core.self_improve_monitor import SelfImproveMonitor
+from loguru import logger  # noqa: E402
+
+from core.self_improve_monitor import SelfImproveMonitor  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -88,8 +89,8 @@ def run_pipeline(dry_run: bool = False) -> int:
     pipeline_error = ""
     try:
         logger.info("[Pipeline] Step 2: FeedbackLoopRunner 실행")
-        from core.feedback_loop_runner import FeedbackLoopRunner
         from core.code_health import CodeHealthMonitor
+        from core.feedback_loop_runner import FeedbackLoopRunner
 
         code_monitor = CodeHealthMonitor()
         health_report = code_monitor.scan()
@@ -160,11 +161,12 @@ def run_pipeline(dry_run: bool = False) -> int:
 
 def _record_error(monitor: SelfImproveMonitor, run_id: str, error_msg: str) -> None:
     """파이프라인 오류 발생 시 최소 이력 기록."""
-    from core.self_improve_monitor import ScanSnapshot, ScanDiff, SCHEMA_VERSION
     from datetime import datetime, timezone
+
+    from core.self_improve_monitor import SCHEMA_VERSION, ScanDiff, ScanSnapshot
     now = datetime.now(timezone.utc).isoformat()
 
-    empty_snap = ScanSnapshot(
+    _empty_snap = ScanSnapshot(
         schema_version=SCHEMA_VERSION,
         snapshot_type="baseline",
         run_id=run_id,
@@ -201,8 +203,9 @@ def _record_clean(
     dry_run: bool,
 ) -> None:
     """이슈 0건 — clean run 이력 기록."""
-    from core.self_improve_monitor import ScanDiff, SCHEMA_VERSION
     from datetime import datetime, timezone
+
+    from core.self_improve_monitor import SCHEMA_VERSION, ScanDiff
     now = datetime.now(timezone.utc).isoformat()
 
     diff = ScanDiff(

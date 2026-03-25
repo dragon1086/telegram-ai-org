@@ -12,7 +12,6 @@ from loguru import logger
 
 from tools.base_runner import BaseRunner, RunContext, RunnerError
 
-
 CODEX_CLI = os.environ.get("CODEX_CLI_PATH", "codex")
 DEFAULT_TIMEOUT = int(os.environ.get("CODEX_DEFAULT_TIMEOUT_SEC", "1800"))
 COMPLEX_TASK_TIMEOUT = int(os.environ.get("CODEX_COMPLEX_TIMEOUT_SEC", "14400"))

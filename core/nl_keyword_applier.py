@@ -1,5 +1,6 @@
 """nl_classifier.py에 키워드를 안전하게 추가."""
 from __future__ import annotations
+
 import re
 from pathlib import Path
 

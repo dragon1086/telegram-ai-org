@@ -561,8 +561,6 @@ def write_report(results: list[ScenarioResult]) -> None:
 
     total  = len(results)
     passed = sum(1 for r in results if r.passed)
-    failed = total - passed
-
     p0 = [r for r in results if r.priority == "P0"]
     p1 = [r for r in results if r.priority == "P1"]
     p2 = [r for r in results if r.priority == "P2"]

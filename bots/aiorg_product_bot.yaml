@@ -2,7 +2,7 @@ schema_version: 2
 organization_ref: aiorg_product_bot
 username: aiorg_product_bot
 org_id: aiorg_product_bot
-token_env: BOT_TOKEN_AIORG_PRODUCT_BOT
+token_env: PLANNING_BOT_TOKEN
 chat_id: -5203707291
 engine: claude-code
 dept_name: 기획실

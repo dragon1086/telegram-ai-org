@@ -20,7 +20,7 @@ ROOT = Path(__file__).parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 DB_PATH = os.environ.get("DB_PATH", str(Path.home() / ".ai-org" / "context.db"))
 BOT_ID = os.environ.get("BOT_ID", "unknown")

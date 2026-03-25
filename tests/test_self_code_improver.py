@@ -1,11 +1,14 @@
 """SelfCodeImprover 테스트."""
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from unittest.mock import patch
-from core.self_code_improver import SelfCodeImprover, FixResult
+
+from core.self_code_improver import FixResult, SelfCodeImprover
 
 
 def test_fix_result_dataclass():

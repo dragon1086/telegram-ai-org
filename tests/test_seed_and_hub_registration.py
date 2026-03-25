@@ -8,26 +8,24 @@
 """
 from __future__ import annotations
 
-import asyncio
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.context_db import ContextDB
-from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
-from core.memory_manager import MemoryManager
-from core.pm_orchestrator import PMOrchestrator
+from core.context_db import ContextDB
 from core.goal_tracker import GoalTracker
 from core.group_chat_hub import GroupChatHub
+from core.memory_manager import MemoryManager
+from core.pm_orchestrator import PMOrchestrator
 from core.scheduler import OrgScheduler
-
+from core.task_graph import TaskGraph
 
 # ── 공통 픽스처 ────────────────────────────────────────────────────────────────
 
@@ -209,8 +207,8 @@ class TestGroupChatHubAllOrgsRegistered:
 
     def test_register_all_known_depts(self, scheduler, hub):
         """KNOWN_DEPTS 전원이 GroupChatHub에 등록된다."""
-        from core.constants import KNOWN_DEPTS
         from core.autonomous_loop import ORG_TASK_TYPE_MAP
+        from core.constants import KNOWN_DEPTS
 
         for org_id, dept_name in KNOWN_DEPTS.items():
             keywords = ORG_TASK_TYPE_MAP.get(org_id, [])

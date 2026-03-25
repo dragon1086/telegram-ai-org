@@ -6,6 +6,7 @@ Rocky가 직접 터미널에서 실행하면 인증 코드 입력 후 .e2e_sessi
 import asyncio
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 from telethon import TelegramClient
 

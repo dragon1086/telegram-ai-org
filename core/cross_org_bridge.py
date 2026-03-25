@@ -7,7 +7,7 @@ from loguru import logger
 
 from core.message_envelope import MessageEnvelope
 from core.message_schema import OrgMessage
-from core.org_registry import OrgRegistry, Organization
+from core.org_registry import Organization, OrgRegistry
 from core.telegram_formatting import markdown_to_html
 
 

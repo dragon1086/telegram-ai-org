@@ -14,7 +14,7 @@ from enum import Enum
 
 from loguru import logger
 
-from core.telegram_formatting import format_for_telegram, markdown_to_html, split_message
+from core.telegram_formatting import format_for_telegram, split_message
 
 
 class MessagePriority(Enum):

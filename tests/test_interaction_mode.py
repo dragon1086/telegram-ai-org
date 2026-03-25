@@ -6,11 +6,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from core.pm_orchestrator import PMOrchestrator, RequestPlan
+import pytest
 
+from core.pm_orchestrator import PMOrchestrator, RequestPlan
 
 # ── _classify_interaction_mode 단위 테스트 ────────────────────────────────────
 

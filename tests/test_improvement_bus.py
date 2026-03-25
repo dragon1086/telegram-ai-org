@@ -8,8 +8,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.improvement_bus import ImprovementBus, ImprovementSignal, SignalKind
@@ -55,7 +53,7 @@ class TestImprovementBus:
             ImprovementSignal(kind=SignalKind.ROUTE_MISS, priority=6, target="c", evidence={}, suggested_action=""),
         ]
         # collect_signals returns sorted by priority desc
-        collected = bus.collect_signals()
+        bus.collect_signals()
         # We can only test internal sorting via run
         report = bus.run(signals)
         assert report.signal_count == 3

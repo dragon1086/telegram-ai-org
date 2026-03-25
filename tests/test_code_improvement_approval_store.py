@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -15,7 +14,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.code_improvement_approval_store import CodeImprovementApprovalStore
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -61,7 +59,7 @@ class TestEnqueue:
         assert len(store.list_pending()) == 2
 
     def test_enqueue_persists_signal_dict(self, store):
-        aid = store.enqueue(SAMPLE_SIGNAL)
+        store.enqueue(SAMPLE_SIGNAL)
         item = store.list_pending()[0]
         assert item["signal"] == SAMPLE_SIGNAL
 
@@ -171,7 +169,7 @@ class TestExpire:
         assert len(store.list_pending()) == 1
 
     def test_list_expired_returns_expired_items(self, store):
-        aid = store.enqueue(SAMPLE_SIGNAL)
+        store.enqueue(SAMPLE_SIGNAL)
         items = json.loads(store._path.read_text(encoding="utf-8"))
         items[0]["queued_at"] = "2020-01-01T00:00:00+00:00"
         store._path.write_text(json.dumps(items), encoding="utf-8")

@@ -97,8 +97,8 @@ def test_main_yaml_config_parsing(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_pm_bot_counts_passed():
     """_execute_with_dynamic_team에서 counts가 run_structured_team에 전달되는지 확인."""
-    from core.dynamic_team_builder import TeamConfig, ExecutionMode
     from core.agent_catalog import AgentPersona
+    from core.dynamic_team_builder import ExecutionMode, TeamConfig
 
     # TeamConfig에 executor x2 + analyst x1 설정
     personas = [

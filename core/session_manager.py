@@ -14,7 +14,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from loguru import logger
-from tools.base_runner import RunnerFactory, BaseRunner
+
+from tools.base_runner import BaseRunner, RunnerFactory
 
 SESSION_PREFIX = "aiorg"
 OUTPUT_TIMEOUT = 120  # 응답 대기 최대 초
@@ -315,7 +316,9 @@ class SessionManager:
         """TUI 아티팩트 제거 + 실제 응답만 추출."""
         # before에 없는 새 라인만 추출
         before_set = set(before_pane.splitlines())
-        new_lines = [l for l in current_pane.splitlines() if l not in before_set]
+        new_lines = [
+            line for line in current_pane.splitlines() if line not in before_set
+        ]
         text = "\n".join(new_lines)
 
         # ANSI 이스케이프 코드 제거
@@ -483,7 +486,7 @@ class SessionManager:
 
         # 4. 새 세션 + 메모리 컨텍스트 주입
         context = memory_mgr.build_context()
-        name = self.ensure_session(team_id)
+        _ = self.ensure_session(team_id)
 
         # Build performance context for psychology injection
         perf_ctx: str | None = None

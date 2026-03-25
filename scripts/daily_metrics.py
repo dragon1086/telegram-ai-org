@@ -11,7 +11,6 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-
 # ── 환경 설정 ─────────────────────────────────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -160,8 +159,9 @@ async def send_telegram(text: str) -> None:
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from core.telegram_formatting import markdown_to_html
         from telegram import Bot
+
+        from core.telegram_formatting import markdown_to_html
         bot = Bot(token=BOT_TOKEN)
         async with bot:
             await bot.send_message(

@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 
-from core.pm_orchestrator import PMOrchestrator
 from core.agent_persona_memory import AgentStats
+from core.pm_orchestrator import PMOrchestrator
 
 
 def _make_orchestrator() -> PMOrchestrator:

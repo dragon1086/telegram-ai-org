@@ -1,0 +1,93 @@
+name: cd-main
+
+# main 브랜치에 머지(push)될 때 Docker Hub에 latest 이미지 푸시
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: cd-main-${{ github.ref }}
+  cancel-in-progress: false   # 배포 job은 중단하지 않음
+
+permissions:
+  contents: read
+
+# ── 공통 환경 변수 ─────────────────────────────────────────────────────────
+env:
+  PYTHON_VERSION: "3.11"
+  DOCKER_IMAGE: telegram-ai-org
+  PYTHONUTF8: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  CLAUDE_CLI_PATH: claude
+  CODEX_CLI_PATH: codex
+  GEMINI_CLI_PATH: gemini
+
+jobs:
+  # ── Job 1: 배포 전 검증 ────────────────────────────────────────────────
+  verify:
+    name: Pre-deploy verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Validate orchestration config
+        run: python tools/orchestration_cli.py validate-config
+
+      - name: Run E2E suite
+        run: python -m pytest tests/e2e/ -q --tb=short
+
+  # ── Job 2: Docker Hub — latest 태그 이미지 빌드 및 푸시 ────────────────
+  build-and-push:
+    name: Build and push Docker image (latest)
+    runs-on: ubuntu-latest
+    needs: [verify]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image digest summary
+        run: |
+          echo "## Docker Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA tag**: \`${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY

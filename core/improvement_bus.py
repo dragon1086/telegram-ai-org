@@ -254,6 +254,7 @@ class ImprovementBus:
         # priority >= 8이고 code 타겟이면 승인 게이트로 전달
         if signal.priority >= 8 and signal.target.startswith("code:"):
             import dataclasses
+
             from core.code_improvement_approval_store import CodeImprovementApprovalStore
 
             store = CodeImprovementApprovalStore()

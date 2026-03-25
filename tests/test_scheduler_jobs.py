@@ -5,10 +5,10 @@ ST-11 추가 (2026-03-25):
 - 핸들러 실행 smoke test (stub 출력 확인)
 """
 from __future__ import annotations
+
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
-import asyncio
+from unittest.mock import AsyncMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

@@ -4,11 +4,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from simulation_mode import _keyword_fallback
-
 
 WORKERS = [
     {"name": "cokac", "engine": "claude-code", "description": "코딩, 구현, 리팩토링 전문"},

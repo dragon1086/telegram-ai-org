@@ -6,8 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.telegram_formatting import escape_html, markdown_to_html, format_for_telegram
-
+from core.telegram_formatting import escape_html, format_for_telegram, markdown_to_html
 
 # ── escape_html ────────────────────────────────────────────────────────────
 
@@ -511,9 +510,7 @@ def test_bold_multiline_no_crossline_match() -> None:
 def test_escape_html_engine_name_with_angle_brackets() -> None:
     """/set_engine 사용법 안내 텍스트: <engine> 리터럴이 이스케이프되어야 한다."""
     from core.telegram_formatting import escape_html
-    usage = "사용법: /set_engine &lt;engine&gt;\n예: /set_engine claude-code"
     # 이미 이스케이프된 &lt;&gt; 는 이중 이스케이프되지 않아야 한다
-    result = escape_html(usage)
     # &lt; → &amp;lt; 가 되는 이중 이스케이프가 발생하면 안 됨
     # 위 문자열은 이미 HTML 이스케이프된 리터럴이므로 escape_html을 추가로 호출하면 이중 이스케이프됨
     # 실제 코드에서는 이미 이스케이프된 문자열에 escape_html을 쓰지 않도록 설계되어야 함
