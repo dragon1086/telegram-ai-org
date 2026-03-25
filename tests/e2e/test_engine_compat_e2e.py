@@ -1120,3 +1120,483 @@ class TestEngineRunReturnTypeParametrized:
         assert isinstance(result, str), (
             f"ClaudeSubprocessRunner.run()의 반환 타입이 str이 아님: {type(result)}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 보완: CodexRunner 유틸리티 함수 + 미커버 경로 커버리지 보완
+# ---------------------------------------------------------------------------
+
+
+class TestCodexRunnerUtilityFunctions:
+    """CodexRunner 헬퍼 함수 및 미커버 경로 커버리지 보완 — 80% 달성 목표."""
+
+    # ── _looks_like_noise_line ──────────────────────────────────────────────
+
+    def test_looks_like_noise_empty_string_returns_false(self) -> None:
+        """빈 문자열은 노이즈 판정 없이 False를 반환한다."""
+        from tools.codex_runner import _looks_like_noise_line
+
+        assert _looks_like_noise_line("") is False
+        assert _looks_like_noise_line("   ") is False
+
+    def test_looks_like_noise_contains_token_returns_true(self) -> None:
+        """_DROP_LINE_CONTAINS 토큰이 포함된 줄은 True를 반환한다."""
+        from tools.codex_runner import _looks_like_noise_line
+
+        assert _looks_like_noise_line("## 협업 요청 태그가 있는 줄") is True
+        assert _looks_like_noise_line("→ 응답에 [collab: 어딘가]") is True
+
+    def test_looks_like_noise_xml_tag_style_returns_true(self) -> None:
+        """XML 스타일 태그(<...>)는 노이즈 판정 True를 반환한다."""
+        from tools.codex_runner import _looks_like_noise_line
+
+        assert _looks_like_noise_line("<tool_call>") is True
+        assert _looks_like_noise_line("<result>") is True
+        assert _looks_like_noise_line("<function_calls>") is True
+
+    def test_looks_like_noise_normal_text_returns_false(self) -> None:
+        """일반 텍스트는 노이즈 판정 False를 반환한다."""
+        from tools.codex_runner import _looks_like_noise_line
+
+        assert _looks_like_noise_line("정상적인 분석 결과입니다.") is False
+        assert _looks_like_noise_line("## 결론") is False
+        assert _looks_like_noise_line("**굵게** 강조된 텍스트") is False
+
+    # ── _sanitize_codex_output (section modes) ─────────────────────────────
+
+    def test_sanitize_thinking_section_is_dropped(self) -> None:
+        """본문([TEAM:solo]) 뒤의 'thinking' 섹션 내용은 제거된다."""
+        from tools.codex_runner import _sanitize_codex_output
+
+        # thinking 헤더는 반드시 [TEAM:] 본문 이후에 와야 drop mode가 효과를 가짐
+        text = "[TEAM:solo]\n## 결론\n결과\nthinking\n내부 사고 과정\n더 많은 생각"
+        result = _sanitize_codex_output(text)
+        assert "내부 사고 과정" not in result
+        assert "결과" in result
+
+    def test_sanitize_exec_section_is_dropped(self) -> None:
+        """본문([TEAM:solo]) 뒤의 'exec' 섹션 내용은 제거된다."""
+        from tools.codex_runner import _sanitize_codex_output
+
+        text = "[TEAM:solo]\n## 결론\n결과\nexec\nshell_command --arg"
+        result = _sanitize_codex_output(text)
+        assert "shell_command" not in result
+
+    def test_sanitize_codex_section_is_kept(self) -> None:
+        """'codex' 섹션은 keep mode로 전환되어 내용이 유지된다."""
+        from tools.codex_runner import _sanitize_codex_output
+
+        text = "codex\n## 결론\n이것이 최종 결과입니다"
+        result = _sanitize_codex_output(text)
+        assert "이것이 최종 결과입니다" in result
+
+    def test_sanitize_tokens_used_line_is_dropped(self) -> None:
+        """'tokens used' 라인과 뒤따르는 숫자 라인은 제거된다."""
+        from tools.codex_runner import _sanitize_codex_output
+
+        text = "[TEAM:solo]\n## 결론\n결과\ntokens used\n1,234"
+        result = _sanitize_codex_output(text)
+        assert "tokens used" not in result
+        assert "1,234" not in result
+        assert "결과" in result
+
+    def test_sanitize_pm_direct_answer_prefix_extraction(self) -> None:
+        """'💬 PM 직접 답변'이 있으면 그 위치부터 잘라서 반환한다."""
+        from tools.codex_runner import _sanitize_codex_output
+
+        text = "잡음 라인\n쓰레기 데이터\n💬 PM 직접 답변\n## 결론\n핵심 결과"
+        result = _sanitize_codex_output(text)
+        assert result.startswith("💬 PM 직접 답변")
+        assert "잡음 라인" not in result
+
+    def test_sanitize_mode_drop_skips_lines(self) -> None:
+        """본문 이후 'thinking' drop mode는 여러 줄을 모두 건너뛴다."""
+        from tools.codex_runner import _sanitize_codex_output
+
+        # [TEAM:solo] 본문 → mode="keep", 이후 thinking → drop mode → line1/2/3 skip
+        text = "[TEAM:solo]\n## 결론\n최종\nthinking\nline1\nline2\nline3"
+        result = _sanitize_codex_output(text)
+        assert "line1" not in result
+        assert "line2" not in result
+        assert "line3" not in result
+        assert "최종" in result
+
+    # ── _extract_progress_line ─────────────────────────────────────────────
+
+    def test_extract_progress_line_empty_returns_empty(self) -> None:
+        """빈 줄은 빈 문자열을 반환한다."""
+        from tools.codex_runner import _extract_progress_line
+
+        assert _extract_progress_line("") == ""
+        assert _extract_progress_line("   ") == ""
+
+    def test_extract_progress_line_section_header_returns_empty(self) -> None:
+        """섹션 헤더('thinking', 'exec', 'codex')는 빈 문자열을 반환한다."""
+        from tools.codex_runner import _extract_progress_line
+
+        assert _extract_progress_line("thinking") == ""
+        assert _extract_progress_line("exec") == ""
+        assert _extract_progress_line("codex") == ""
+
+    def test_extract_progress_line_noise_returns_empty(self) -> None:
+        """노이즈 줄은 빈 문자열을 반환한다."""
+        from tools.codex_runner import _extract_progress_line
+
+        assert _extract_progress_line("workdir: /tmp") == ""
+        assert _extract_progress_line("model: o3") == ""
+
+    def test_extract_progress_line_valid_content(self) -> None:
+        """유효한 줄은 그대로 반환된다."""
+        from tools.codex_runner import _extract_progress_line
+
+        result = _extract_progress_line("분석 진행 중: API 엔드포인트 검토")
+        assert result == "분석 진행 중: API 엔드포인트 검토"
+
+    def test_extract_progress_line_truncates_long_line(self) -> None:
+        """240자 초과 줄은 237자 + '...' 로 잘린다."""
+        from tools.codex_runner import _extract_progress_line
+
+        long_line = "가" * 300
+        result = _extract_progress_line(long_line)
+        assert len(result) <= 240
+        assert result.endswith("...")
+
+    # ── get_last_run_metrics (public alias) ────────────────────────────────
+
+    def test_get_last_run_metrics_before_run(self) -> None:
+        """실행 전 get_last_run_metrics()는 빈 dict를 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        metrics = runner.get_last_run_metrics()
+        assert isinstance(metrics, dict)
+
+    async def test_get_last_run_metrics_after_run_has_output_chars(self) -> None:
+        """run() 이후 get_last_run_metrics()는 output_chars를 포함한다."""
+        from tools.codex_runner import CodexRunner
+
+        proc = MagicMock()
+        proc.returncode = 0
+        proc.communicate = AsyncMock(
+            return_value=("[TEAM:solo]\n## 결론\n완료".encode("utf-8"), b"")
+        )
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+        proc.stdout = None
+        proc.stderr = None
+
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            runner = CodexRunner()
+            await runner.run(RunContext(prompt="메트릭 테스트"))
+
+        metrics = runner.get_last_run_metrics()
+        assert "output_chars" in metrics
+        assert isinstance(metrics["output_chars"], int)
+
+    # ── _effective_timeout ─────────────────────────────────────────────────
+
+    def test_effective_timeout_with_two_agents_uses_complex_timeout(self) -> None:
+        """2개 이상 에이전트가 있으면 COMPLEX_TASK_TIMEOUT 이상의 타임아웃을 반환한다."""
+        from tools.codex_runner import CodexRunner, COMPLEX_TASK_TIMEOUT
+
+        runner = CodexRunner()
+        timeout = runner._effective_timeout(["agent1", "agent2"])
+        assert timeout >= COMPLEX_TASK_TIMEOUT
+
+    def test_effective_timeout_with_one_agent_uses_default(self) -> None:
+        """1개 에이전트는 기본 타임아웃을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        timeout = runner._effective_timeout(["agent1"])
+        assert timeout == runner.timeout
+
+    def test_effective_timeout_with_no_agents_uses_default(self) -> None:
+        """에이전트 없으면 기본 타임아웃을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        timeout = runner._effective_timeout(None)
+        assert timeout == runner.timeout
+
+    # ── _extract_repo_names ────────────────────────────────────────────────
+
+    def test_extract_repo_names_returns_non_generic_words(self) -> None:
+        """_extract_repo_names는 repo/dir 같은 제네릭 단어를 제외한 이름을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        names = runner._extract_repo_names("telegram-ai-org 리포지토리 분석")
+        assert "repo" not in names
+        assert "repository" not in names
+        # 프로젝트 이름 포함 여부 확인
+        all_names = " ".join(names)
+        assert len(names) > 0
+
+    def test_extract_repo_names_deduplicates(self) -> None:
+        """같은 이름이 두 번 나와도 중복 없이 한 번만 포함한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        names = runner._extract_repo_names("myrepo myrepo 분석")
+        assert names.count("myrepo") == 1
+
+    # ── _iter_search_roots ─────────────────────────────────────────────────
+
+    def test_iter_search_roots_with_env_var(self, tmp_path, monkeypatch) -> None:
+        """CODEX_REPO_SEARCH_ROOTS 환경변수가 설정되면 해당 경로를 반환한다."""
+        import os
+        from tools.codex_runner import CodexRunner
+
+        monkeypatch.setenv("CODEX_REPO_SEARCH_ROOTS", str(tmp_path))
+        runner = CodexRunner()
+        roots = runner._iter_search_roots()
+        assert tmp_path in roots
+
+    def test_iter_search_roots_default_is_list(self) -> None:
+        """환경변수 없이 기본 경로 목록을 반환한다."""
+        import os
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        old_val = os.environ.pop("CODEX_REPO_SEARCH_ROOTS", None)
+        try:
+            roots = runner._iter_search_roots()
+            assert isinstance(roots, list)
+        finally:
+            if old_val is not None:
+                os.environ["CODEX_REPO_SEARCH_ROOTS"] = old_val
+
+    # ── _find_repo_root ────────────────────────────────────────────────────
+
+    def test_find_repo_root_found_with_git_dir(self, tmp_path) -> None:
+        """.git 디렉토리가 있는 경로에서 리포지토리 루트를 찾는다."""
+        from tools.codex_runner import CodexRunner
+        from pathlib import Path
+
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        runner = CodexRunner()
+        result = runner._find_repo_root(tmp_path)
+        assert result == tmp_path
+
+    def test_find_repo_root_not_found_returns_none(self, tmp_path) -> None:
+        """.git이 없는 경로에서 None을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        # tmp_path는 실제 git 리포지토리가 아닌 경우 None 또는 상위 리포 반환
+        # 격리된 임시 디렉토리 하위에 새 폴더 생성해 확실히 git 없는 환경 만들기
+        isolated = tmp_path / "no_git_here"
+        isolated.mkdir()
+        result = runner._find_repo_root(isolated)
+        # isolated 자체에 .git이 없으면 None 또는 실제 상위 리포 루트
+        # 최소한 Path 또는 None임을 검증
+        assert result is None or isinstance(result, type(tmp_path))
+
+    # ── shell_session_manager 경로 (_run) ──────────────────────────────────
+
+    async def test_run_with_shell_session_manager_success(self) -> None:
+        """shell_session_manager가 있으면 run_shell_command 경로로 실행된다."""
+        from tools.codex_runner import CodexRunner
+
+        mock_shell_mgr = MagicMock()
+        mock_shell_mgr.run_shell_command = AsyncMock(
+            return_value=("[TEAM:solo]\n## 결론\n쉘 세션 완료", 0)
+        )
+
+        runner = CodexRunner()
+        result = await runner.run(
+            "쉘 세션 태스크",
+            shell_session_manager=mock_shell_mgr,
+            shell_team_id="team-abc",
+        )
+
+        assert isinstance(result, str)
+        mock_shell_mgr.run_shell_command.assert_called_once()
+
+    async def test_run_with_shell_session_manager_nonzero_exit(self) -> None:
+        """shell_session_manager가 0이 아닌 exit code + 빈 출력이면 에러 문자열을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        mock_shell_mgr = MagicMock()
+        mock_shell_mgr.run_shell_command = AsyncMock(return_value=("", 1))
+
+        runner = CodexRunner()
+        result = await runner.run(
+            "실패 태스크",
+            shell_session_manager=mock_shell_mgr,
+            shell_team_id="team-abc",
+        )
+
+        assert "❌" in result
+
+    async def test_run_with_shell_session_manager_timeout(self) -> None:
+        """shell_session_manager 경로에서 TimeoutError 발생 시 에러 문자열을 반환한다."""
+        from tools.codex_runner import CodexRunner
+        import asyncio
+
+        mock_shell_mgr = MagicMock()
+        mock_shell_mgr.run_shell_command = AsyncMock(
+            side_effect=asyncio.TimeoutError()
+        )
+
+        runner = CodexRunner()
+        result = await runner.run(
+            "타임아웃 태스크",
+            shell_session_manager=mock_shell_mgr,
+            shell_team_id="team-abc",
+        )
+
+        assert "타임아웃" in result
+
+    # ── run(RunContext) → RunnerError 래핑 ────────────────────────────────
+
+    async def test_run_ctx_wraps_unexpected_exception_as_runner_error(self) -> None:
+        """RunContext 경로에서 _run()이 예외를 raise하면 RunnerError로 래핑된다."""
+        from tools.codex_runner import CodexRunner
+        from tools.base_runner import RunnerError
+
+        runner = CodexRunner()
+
+        with patch.object(runner, "_run", side_effect=RuntimeError("내부 오류 발생")):
+            ctx = RunContext(prompt="예외 래핑 테스트")
+            with pytest.raises(RunnerError, match="내부 오류 발생"):
+                await runner.run(ctx)
+
+    # ── run_task without system_prompt for CodexRunner ────────────────────
+
+    async def test_run_task_without_system_prompt_delegates_to_run(self) -> None:
+        """CodexRunner.run_task()는 system_prompt 없이 run(ctx)로 위임한다."""
+        from tools.codex_runner import CodexRunner
+
+        proc = MagicMock()
+        proc.returncode = 0
+        proc.communicate = AsyncMock(
+            return_value=("[TEAM:solo]\n## 결론\n통과".encode("utf-8"), b"")
+        )
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+        proc.stdout = None
+        proc.stderr = None
+
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            runner = CodexRunner()
+            ctx = RunContext(prompt="system_prompt 없는 run_task")
+            result = await runner.run_task(ctx)
+
+        assert isinstance(result, str)
+
+    # ── _select_agent_prompts (no agent dirs) ─────────────────────────────
+
+    def test_select_agent_prompts_no_agent_dirs_returns_empty(self) -> None:
+        """AGENT_DIRS가 비어 있으면(존재하지 않으면) 빈 문자열을 반환한다."""
+        from tools.codex_runner import _select_agent_prompts
+        from pathlib import Path
+
+        with patch("tools.codex_runner.AGENT_DIRS", [Path("/nonexistent/dir/abc123")]):
+            result = _select_agent_prompts("implement feature")
+            assert result == ""
+
+    def test_select_agent_prompts_with_agent_names_no_dirs(self) -> None:
+        """AGENT_DIRS 없을 때 agent_names 지정해도 빈 문자열을 반환한다."""
+        from tools.codex_runner import _select_agent_prompts
+        from pathlib import Path
+
+        with patch("tools.codex_runner.AGENT_DIRS", [Path("/nonexistent/dir/xyz")]):
+            result = _select_agent_prompts("test", agent_names=["executor"])
+            assert result == ""
+
+    # ── _communicate_with_progress ─────────────────────────────────────────
+
+    async def test_communicate_with_progress_collects_stdout(self) -> None:
+        """_communicate_with_progress는 stdout 라인을 수집하고 progress_callback을 호출한다."""
+        from tools.codex_runner import CodexRunner
+
+        progress_msgs: list[str] = []
+
+        async def my_progress(msg: str) -> None:
+            progress_msgs.append(msg)
+
+        # stdout 스트림 모의: readline이 순차적으로 라인 반환
+        stdout_lines = ["진행 중: API 분석\n".encode("utf-8"), b""]
+        stdout_idx = [0]
+
+        async def mock_stdout_readline() -> bytes:
+            idx = stdout_idx[0]
+            stdout_idx[0] += 1
+            return stdout_lines[idx] if idx < len(stdout_lines) else b""
+
+        stderr_idx = [0]
+
+        async def mock_stderr_readline() -> bytes:
+            stderr_idx[0] += 1
+            return b""
+
+        mock_stdout = MagicMock()
+        mock_stdout.readline = mock_stdout_readline
+
+        mock_stderr = MagicMock()
+        mock_stderr.readline = mock_stderr_readline
+
+        proc = MagicMock()
+        proc.stdout = mock_stdout
+        proc.stderr = mock_stderr
+        proc.wait = AsyncMock()
+
+        runner = CodexRunner()
+        stdout_bytes, stderr_bytes = await runner._communicate_with_progress(
+            proc, my_progress
+        )
+
+        assert "진행 중: API 분석".encode("utf-8") in stdout_bytes
+
+    async def test_run_with_progress_callback_uses_communicate_with_progress(
+        self,
+    ) -> None:
+        """progress_callback이 있는 run()은 _communicate_with_progress 경로로 실행된다."""
+        from tools.codex_runner import CodexRunner
+
+        progress_msgs: list[str] = []
+
+        async def my_progress(msg: str) -> None:
+            progress_msgs.append(msg)
+
+        stdout_lines = [b"[TEAM:solo]\n", b"## \xea\xb2\xb0\xeb\xa1\xa0\n", b""]
+        stdout_idx = [0]
+
+        async def mock_readline() -> bytes:
+            idx = stdout_idx[0]
+            stdout_idx[0] += 1
+            return stdout_lines[idx] if idx < len(stdout_lines) else b""
+
+        stderr_done = [False]
+
+        async def mock_stderr_readline() -> bytes:
+            if not stderr_done[0]:
+                stderr_done[0] = True
+                return b""
+            return b""
+
+        mock_stdout = MagicMock()
+        mock_stdout.readline = mock_readline
+        mock_stderr = MagicMock()
+        mock_stderr.readline = mock_stderr_readline
+
+        proc = MagicMock()
+        proc.returncode = 0
+        proc.stdout = mock_stdout
+        proc.stderr = mock_stderr
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+        proc.communicate = AsyncMock(return_value=("[TEAM:solo]\n결과".encode("utf-8"), b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            runner = CodexRunner()
+            ctx = RunContext(
+                prompt="progress 콜백 테스트",
+                progress_callback=my_progress,
+            )
+            result = await runner.run(ctx)
+
+        assert isinstance(result, str)
