@@ -595,6 +595,39 @@ class TelegramRelay:
             pass
         return f"@{org_id}"
 
+    # Bug ①: re.split(r"\W+") 는 한국어를 단어 문자로 취급하여 조사를 분리하지 못함.
+    # "개발실에" → {"개발실에"} 로 처리되어 "개발실" 키워드 매칭 실패.
+    # 수정 후: 한국어 후행 조사를 제거한 토큰과 원본 토큰을 모두 반환하여 매칭 안정성 향상.
+    _KR_PARTICLE_RE = re.compile(
+        r"(?:으로부터|에게서|에서도|에서는|에서만|에서라도|에서조차|에게도|에게는|에게만"
+        r"|으로서|으로써|이라고|이라면|이라는|이라도|이라|라고|라면|라는|라도"
+        r"|이지만|지만|이면서|이나마|나마|이야말로|이야"
+        r"|까지도|까지|부터도|부터|마저|조차|뿐"
+        r"|에서|에게|으로|에도|에는|에만|로도|로는|로만"
+        r"|이며|이나|이면|이도|이는|이만"
+        r"|에|이|가|을|를|은|는|의|와|과|로|도|만)$",
+        re.UNICODE,
+    )
+
+    @classmethod
+    def _tokenize_for_matching(cls, text: str) -> set[str]:
+        r"""텍스트에서 키워드 집합을 추출한다.
+
+        \W+ 분리 후 한국어 후행 조사를 제거한 토큰도 함께 포함하여
+        "개발실에" -> {"개발실에", "개발실"} 형태로 매칭 범위를 확장한다.
+        """
+        words: set[str] = set()
+        for w in re.split(r"\W+", text.lower()):
+            if not w:
+                continue
+            if len(w) >= 2:
+                words.add(w)
+            # 한국어 조사 제거 후 추가 (수정 전 동작: 조사 미분리로 매칭 실패 → 수정 후: 조사 제거)
+            stripped = cls._KR_PARTICLE_RE.sub("", w)
+            if stripped and len(stripped) >= 2 and stripped != w:
+                words.add(stripped)
+        return words
+
     def _user_mention(self, user) -> str:
         if user is None:
             return ""
@@ -623,7 +656,8 @@ class TelegramRelay:
 
     def _infer_collab_target_mentions(self, task: str, *, exclude_org_id: str | None = None) -> list[str]:
         cfg = load_orchestration_config()
-        words = {w for w in re.split(r"\W+", task.lower()) if len(w) >= 2}
+        # Bug ① 수정: re.split(r"\W+") → _tokenize_for_matching() (한국어 조사 제거 포함)
+        words = self._tokenize_for_matching(task)
         scored: list[tuple[int, str]] = []
         for org in cfg.list_specialist_orgs():
             if exclude_org_id and org.id == exclude_org_id:
@@ -648,7 +682,8 @@ class TelegramRelay:
             추론된 org_id 문자열 (예: "cokac"), 신뢰도 부족 시 None.
         """
         cfg = load_orchestration_config()
-        words = {w for w in re.split(r"\W+", task.lower()) if len(w) >= 2}
+        # Bug ① 수정: re.split(r"\W+") → _tokenize_for_matching() (한국어 조사 제거 포함)
+        words = self._tokenize_for_matching(task)
         scored: list[tuple[int, str]] = []
         for org in cfg.list_specialist_orgs():
             if org.id == self.org_id:
@@ -1329,6 +1364,7 @@ class TelegramRelay:
                 continue
             target_org = await self._infer_collab_target_org(collab_task)
             if target_org is not None and self._pm_orchestrator is not None:
+                # 경로 A: PM 오케스트레이터 경유 (PM 봇 전용, 태스크 그래프 관리)
                 try:
                     parent_id = await self._pm_orchestrator._next_task_id()
                     await self._pm_orchestrator.collab_dispatch(
@@ -1341,7 +1377,51 @@ class TelegramRelay:
                     )
                 except Exception as _e:
                     logger.warning(f"collab PM dispatch 실패: {_e}")
+            elif target_org is not None and self.context_db is not None:
+                # Bug ③ 수정: 부서 봇(_pm_orchestrator=None)은 ContextDB에 직접 태스크를 생성하여
+                # 위임 루프를 완성한다. 기존 채팅 메시지 폴백은 위임 추적이 불가능했음.
+                # 수정 후: TaskPoller가 target_org에서 태스크를 감지·실행하며 결과가 ContextDB에 기록됨.
+                import uuid as _uuid
+                _task_id = f"T-{self.org_id}-collab-{_uuid.uuid4().hex[:8]}"
+                try:
+                    await self.context_db.create_pm_task(
+                        task_id=_task_id,
+                        description=collab_task[:500],
+                        assigned_dept=target_org,
+                        created_by=self.org_id,
+                        metadata={
+                            "context": collab_ctx,
+                            "collab_source": self.org_id,
+                            "chat_id": chat_id,
+                        },
+                    )
+                    logger.info(f"[collab] 부서봇 ContextDB 경로 태스크 생성: {_task_id} → {target_org}")
+                except Exception as _e:
+                    logger.warning(f"[collab] 부서봇 ContextDB task 생성 실패, 채팅 폴백: {_e}")
+                    # ContextDB 실패 시 채팅 메시지로 폴백
+                    target_mentions = self._infer_collab_target_mentions(
+                        collab_task, exclude_org_id=self.org_id
+                    )
+                    collab_msg = make_collab_request_v2(
+                        collab_task,
+                        self.org_id,
+                        context=collab_ctx,
+                        requester_mention=requester_mention,
+                        from_org_mention="",
+                        target_mentions=target_mentions,
+                    )
+                    try:
+                        if bot is not None:
+                            await self.display.send_to_chat(
+                                bot,
+                                chat_id,
+                                collab_msg,
+                                reply_to_message_id=reply_to_message_id,
+                            )
+                    except Exception as _e2:
+                        logger.warning(f"협업 요청 채팅 폴백 발송 실패: {_e2}")
             else:
+                # 경로 C: target_org 추론 실패 또는 context_db 없음 → 채팅 메시지 브로드캐스트
                 target_mentions = self._infer_collab_target_mentions(
                     collab_task, exclude_org_id=self.org_id
                 )
@@ -3857,7 +3937,7 @@ class TelegramRelay:
         last_progress_time = [0.0]  # mutable for closure
         progress_interval = self._progress_interval(delegated=True)
         # ── Hang watchdog: 활동 추적 + 절대 타임아웃 ──
-        HANG_DETECT_TIMEOUT_SEC = 600  # 10분 무활동 = hang 판정
+        HANG_DETECT_TIMEOUT_SEC = int(os.environ.get("HANG_DETECT_TIMEOUT_SEC", "900"))  # 기본 15분 무활동 = hang 판정
         HANG_DETECT_INTERVAL_SEC = 60  # 1분마다 체크
         TASK_EXEC_TOTAL_TIMEOUT_SEC = int(os.environ.get("TASK_EXEC_TOTAL_TIMEOUT_SEC", "1800"))  # 절대 상한 30분
         _last_activity = [time.monotonic()]  # mutable for closure
