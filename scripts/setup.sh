@@ -1221,6 +1221,30 @@ else
 fi
 
 # =============================================================================
+# STEP 6: agency-agents 설치 (~/.claude/agents/)
+# =============================================================================
+step "Step 6/6: agency-agents 커뮤니티 에이전트 설치"
+
+CLAUDE_AGENTS_DIR="$HOME/.claude/agents"
+EXISTING_AGENTS=0
+if [ -d "$CLAUDE_AGENTS_DIR" ]; then
+    EXISTING_AGENTS=$(ls "$CLAUDE_AGENTS_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+fi
+
+if [ "$EXISTING_AGENTS" -ge 50 ]; then
+    ok "~/.claude/agents/ 에 에이전트 ${EXISTING_AGENTS}개 이미 설치됨 — 건너뜀"
+else
+    info "agency-agents 다운로드 중... (https://github.com/msitarzewski/agency-agents)"
+    if bash "$SCRIPT_DIR/install_agents.sh" claude-code 2>/dev/null; then
+        NEW_COUNT=$(ls "$CLAUDE_AGENTS_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+        ok "agency-agents 설치 완료 → ~/.claude/agents/ 에 ${NEW_COUNT}개 에이전트"
+    else
+        warn "agency-agents 자동 설치 실패 (git 필요). 수동 설치:"
+        echo "  bash scripts/install_agents.sh claude-code"
+    fi
+fi
+
+# =============================================================================
 # 완료 메시지 + 엔진 요약표
 # =============================================================================
 
