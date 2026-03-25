@@ -249,6 +249,62 @@ def save_markdown(content: str) -> Path:
     return out_path
 
 
+# ── GoalTracker 조치사항 자동 등록 ────────────────────────────────────────
+
+async def _register_retro_actions(md_content: str) -> None:
+    """일일회고 마크다운에서 조치사항을 파싱하여 GoalTracker에 자동 등록.
+
+    ENABLE_GOAL_TRACKER=1 환경변수가 설정된 경우에만 실행한다.
+    """
+    import os
+    import sys
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+    try:
+        from goal_tracker.auto_register import auto_register_from_report
+        from goal_tracker.loop_runner import run_meeting_cycle
+
+        # 조치사항 파싱 및 등록 (goal_tracker 없으면 파싱 결과만 반환)
+        register_result = await auto_register_from_report(
+            report_text=md_content,
+            report_type="daily_retro",
+            org_id="aiorg_pm_bot",
+        )
+
+        print(
+            f"[retro] GoalTracker 파싱 완료 — "
+            f"조치사항 {register_result.action_items_found}개 추출"
+        )
+
+        if register_result.action_items_found == 0:
+            print("[retro] 등록할 조치사항 없음 — 자율 루프 생략")
+            return
+
+        # 자율 루프 사이클 실행 (idle→evaluate→replan→dispatch)
+        loop_result = await run_meeting_cycle(
+            meeting_type="daily_retro",
+            registered_ids=register_result.registered_ids or [
+                # GoalTracker 없이 파싱만 된 경우: action_items로 가상 ID 생성
+                f"G-daily-{i:03d}"
+                for i in range(register_result.action_items_found)
+            ],
+        )
+
+        print(
+            f"[retro] 자율 루프 완료 — "
+            f"states={loop_result.states_visited}, "
+            f"dispatched={loop_result.dispatched_count}개"
+        )
+
+        if loop_result.error:
+            print(f"[retro] 자율 루프 경고: {loop_result.error}")
+
+    except ImportError as e:
+        print(f"[retro] GoalTracker 모듈 없음 — 등록 생략 ({e})")
+    except Exception as e:
+        print(f"[retro] GoalTracker 등록 실패 (비치명적): {e}")
+
+
 # ── 메인 ──────────────────────────────────────────────────────────────────
 
 async def main() -> None:
@@ -271,6 +327,9 @@ async def main() -> None:
     else:
         print("[retro] PM_BOT_TOKEN 없음 — Telegram 전송 건너뜀")
         print(tg_msg)
+
+    # GoalTracker 조치사항 자동 등록 및 자율 루프 실행
+    await _register_retro_actions(md_content)
 
     print(f"[retro] 완료 — {datetime.now(UTC).isoformat()}")
 

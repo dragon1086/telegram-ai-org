@@ -12,6 +12,7 @@ from loguru import logger
 from core.context_db import ContextDB
 from core.task_graph import TaskGraph
 from core.pm_orchestrator import KNOWN_DEPTS
+from core.collab_dispatcher import CollabDispatcher
 
 ENABLE_AUTO_DISPATCH = os.environ.get("ENABLE_AUTO_DISPATCH", "0") == "1"
 
@@ -32,11 +33,16 @@ class DispatchEngine:
         task_graph: TaskGraph,
         telegram_send_func: Callable[[int, str], Awaitable[None]],
         stall_minutes: int = DEFAULT_STALL_MINUTES,
+        collab_dispatcher: CollabDispatcher | None = None,
     ):
         self._db = context_db
         self._graph = task_graph
         self._send = telegram_send_func
         self._stall_minutes = stall_minutes
+        # ST-11: COLLAB 위임 디스패처 (None이면 기존 라우팅만 사용)
+        self._collab_dispatcher = collab_dispatcher or CollabDispatcher(
+            send_func=telegram_send_func
+        )
 
     async def on_task_complete(self, task_id: str, result: str,
                                chat_id: int) -> list[str]:
@@ -72,6 +78,23 @@ class DispatchEngine:
                 f"[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정"
                 f"{_type_line}{_fc_line}\n{task['description'][:300]}"
             )
+
+            # ST-11: task_type이 COLLAB이면 CollabDispatcher로 부서 분기 전달
+            if _task_type.upper() == "COLLAB":
+                collab_targets = await self._collab_dispatcher.dispatch(
+                    task_id=tid,
+                    task_text=task["description"],
+                    source_dept=dept,
+                    context=task_meta.get("context", ""),
+                )
+                if collab_targets:
+                    logger.info(
+                        f"[AutoDispatch] {tid} COLLAB 분기 전달 완료 → {collab_targets}"
+                    )
+                    await self._db.update_pm_task_status(tid, "assigned")
+                    dispatched.append(tid)
+                    continue  # 일반 발송 생략
+
             await self._send(chat_id, msg)
             await self._db.update_pm_task_status(tid, "assigned")
             dispatched.append(tid)

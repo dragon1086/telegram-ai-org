@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """Canonical orchestration CLI.
 
 This CLI is the stable control surface for config validation and legacy asset export.
@@ -14,11 +15,18 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from apscheduler.triggers.cron import CronTrigger
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+OPS_ROLLOUT_CONFIG_PATH = PROJECT_ROOT / "config" / "ops_rollout.yaml"
+PROGRESS_GUIDE_PATHS = [
+    Path.home() / ".claude" / "projects" / "-Users-rocky-telegram-ai-org" / "memory" / "pm_progress_guide.md",
+    PROJECT_ROOT / "memory" / "pm_progress_guide.md",
+]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from core.collab_dispatcher import _DEPT_CHAT_ID_ENV
 from core.memory_manager import MemoryManager
 from core.orchestration_config import load_orchestration_config
 from core.orchestration_runbook import OrchestrationRunbook
@@ -63,15 +71,134 @@ def _write_yaml(path: Path, data: dict[str, Any]) -> None:
     )
 
 
+def _load_yaml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def _find_progress_guide() -> Path | None:
+    for path in PROGRESS_GUIDE_PATHS:
+        if path.exists():
+            return path
+    return None
+
+
+def _calc_status(failures: int, warnings: int) -> str:
+    if failures:
+        return "fail"
+    if warnings:
+        return "warn"
+    return "ok"
+
+
+def _build_ops_validation(cfg) -> dict[str, Any]:
+    ops_cfg = _load_yaml(OPS_ROLLOUT_CONFIG_PATH)
+    if not ops_cfg:
+        return {
+            "config_path": str(OPS_ROLLOUT_CONFIG_PATH),
+            "status": "warn",
+            "warnings": ["ops_rollout.yaml not found"],
+            "cron_jobs": [],
+            "collab_targets": [],
+            "required_env": [],
+            "runbook": {},
+        }
+
+    failures = 0
+    warnings = 0
+    cron_jobs: list[dict[str, Any]] = []
+    for job in ops_cfg.get("cron_jobs", []):
+        schedule_valid = True
+        try:
+            CronTrigger.from_crontab(job["schedule"], timezone=job.get("timezone", "UTC"))
+        except Exception:
+            schedule_valid = False
+        script_path = PROJECT_ROOT / job.get("script", "")
+        log_path = PROJECT_ROOT / job.get("log_path", "")
+        if not schedule_valid or not script_path.exists() or not log_path.parent.exists():
+            failures += 1
+        cron_jobs.append({
+            "id": job.get("id", ""),
+            "schedule": job.get("schedule", ""),
+            "timezone": job.get("timezone", "UTC"),
+            "schedule_valid": schedule_valid,
+            "script_exists": script_path.exists(),
+            "log_parent_exists": log_path.parent.exists(),
+            "script": str(script_path.relative_to(PROJECT_ROOT)) if script_path.exists() else job.get("script", ""),
+            "log_path": str(log_path.relative_to(PROJECT_ROOT)),
+        })
+
+    collab_targets: list[dict[str, Any]] = []
+    for item in ops_cfg.get("collab_targets", []):
+        dept_id = item.get("dept_id", "")
+        env_key = item.get("chat_id_env", "")
+        org_exists = cfg.get_org(dept_id) is not None
+        mapping_matches = _DEPT_CHAT_ID_ENV.get(dept_id) == env_key
+        env_present = bool(os.environ.get(env_key, ""))
+        if not org_exists or not mapping_matches:
+            failures += 1
+        elif not env_present:
+            warnings += 1
+        collab_targets.append({
+            "dept_id": dept_id,
+            "org_exists": org_exists,
+            "mapping_matches": mapping_matches,
+            "chat_id_env": env_key,
+            "env_present": env_present,
+        })
+
+    required_env: list[dict[str, Any]] = []
+    for env_name in ops_cfg.get("required_env", []):
+        present = bool(os.environ.get(env_name, ""))
+        if not present:
+            warnings += 1
+        required_env.append({"name": env_name, "present": present})
+
+    runbook = OrchestrationRunbook(PROJECT_ROOT)
+    progress_guide = _find_progress_guide()
+    state_root = runbook.state_root
+    docs_root = runbook.docs_root
+    active_run_count = len([p for p in state_root.iterdir() if p.is_dir()]) if state_root.exists() else 0
+    latest_audit = max(
+        (PROJECT_ROOT / "docs" / "audits").glob("*.md"),
+        key=lambda path: path.stat().st_mtime,
+        default=None,
+    )
+    if progress_guide is None:
+        warnings += 1
+
+    return {
+        "config_path": str(OPS_ROLLOUT_CONFIG_PATH),
+        "status": _calc_status(failures, warnings),
+        "cron_jobs": cron_jobs,
+        "collab_targets": collab_targets,
+        "required_env": required_env,
+        "runbook": {
+            "state_root": str(state_root.relative_to(PROJECT_ROOT)),
+            "docs_root": str(docs_root.relative_to(PROJECT_ROOT)),
+            "active_run_count": active_run_count,
+            "progress_guide_found": progress_guide is not None,
+            "progress_guide_path": str(progress_guide) if progress_guide else "",
+            "latest_audit": str(latest_audit.relative_to(PROJECT_ROOT)) if latest_audit else "",
+        },
+    }
+
+
 def cmd_validate_config(_args: argparse.Namespace) -> int:
     cfg = load_orchestration_config(force_reload=True)
+    ops_validation = _build_ops_validation(cfg)
     summary = {
         "organizations": [org.id for org in cfg.list_orgs()],
         "team_profiles": sorted(cfg.team_profiles.keys()),
         "verification_profiles": sorted(cfg.verification_profiles.keys()),
         "phase_policies": sorted(cfg.phase_policies.keys()),
+        "status": ops_validation["status"],
+        "validation": ops_validation,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
+    if getattr(_args, "strict", False) and ops_validation["status"] != "ok":
+        return 1
     return 0
 
 
@@ -221,6 +348,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     validate = sub.add_parser("validate-config")
+    validate.add_argument("--strict", action="store_true")
     validate.set_defaults(func=cmd_validate_config)
 
     export_bots = sub.add_parser("export-legacy-bots")

@@ -481,3 +481,48 @@ daily_goal_pipeline:
     message: >
       ⚠️ daily_goal_pipeline 실패 — 단계: {failed_step} / 오류: {error_message}
       수동으로 목표를 검토하고 pm_progress_guide.md 를 업데이트하세요.
+
+# ── 회의 종료 GoalTracker 자동 등록 훅 ─────────────────────────────────────────
+# 일일회고/주간회의 종료 시점에 on_meeting_end()를 호출하여
+# 채팅 로그 → 조치사항 추출 → GoalTracker 자동 등록 파이프라인을 실행한다.
+#
+# 진입점: core.state_machine.on_meeting_end(meeting_type, chat_log)
+# 파이프라인: parse → extract → register (tools.meeting_loop_pipeline.MeetingLoopPipeline)
+# 상태 전이: idle → evaluate → replan → dispatch → idle
+meeting_end_hooks:
+
+  # ── 일일회고 종료 훅 (매일 23:30 KST = 14:30 UTC) ─────────────────────────
+  daily_retro_end:
+    enabled: true
+    # 23:30 KST (UTC 14:30) — scripts/daily_retro.py 실행 후 10분 후
+    cron: "30 14 * * *"
+    entrypoint: "core.state_machine.on_meeting_end"
+    args:
+      meeting_type: "daily_retro"
+      # chat_log: scripts/daily_retro.py 가 생성한 보고 텍스트 (런타임 주입)
+    description: >
+      일일회고(daily_retro.py) 종료 후 채팅 로그를 파싱하여
+      조치사항을 GoalTracker에 자동 등록.
+      idle→evaluate→replan→dispatch 상태 전이 실행.
+    on_failure:
+      notify_pm: true
+      action: "log_and_continue"
+      message: "⚠️ 일일회고 GoalTracker 자동 등록 실패 — 수동 확인 필요"
+
+  # ── 주간회의 종료 훅 (매주 금요일 18:30 KST = 09:30 UTC) ─────────────────
+  weekly_meeting_end:
+    enabled: true
+    # 18:30 KST (UTC 09:30) 금요일 — weekly_meeting_multibot.py 종료 후
+    cron: "30 9 * * 5"
+    entrypoint: "core.state_machine.on_meeting_end"
+    args:
+      meeting_type: "weekly_meeting"
+      # chat_log: scripts/weekly_meeting_multibot.py 가 생성한 보고 텍스트 (런타임 주입)
+    description: >
+      주간회의(weekly_meeting_multibot.py) 종료 후 채팅 로그를 파싱하여
+      조치사항을 GoalTracker에 자동 등록.
+      idle→evaluate→replan→dispatch 상태 전이 실행.
+    on_failure:
+      notify_pm: true
+      action: "log_and_continue"
+      message: "⚠️ 주간회의 GoalTracker 자동 등록 실패 — 수동 확인 필요"

@@ -99,10 +99,17 @@ def mock_runner():
     return MockRunner(response="테스트 응답")
 ```
 
-### 3b. E2E 테스트 커버리지 목표
+### 3b. E2E 테스트 커버리지 목표 ✅ 완료 (2026-03-25)
 - Layer 1-3: 100% 커버
-- Layer 4 (엔진): 스모크 테스트 100%
+- Layer 4 (엔진): 스모크 테스트 100% **달성**
 - Layer 5 (회사 시스템): 80% 커버
+
+**E2E 테스트 완비 현황** (2026-03-25 기준):
+- `tests/e2e/test_engine_compat_e2e.py` — 3엔진 호환성 (mock dispatch, 에러 핸들링, RunnerFactory)
+- `tests/e2e/test_pm_dispatch_e2e.py` — PM 오케스트레이션·BOT_ENGINE_MAP·라우팅 검증
+- 전체 **235개 테스트, 0 failed** 확인
+- CI: `.github/workflows/ci-e2e.yml` PR 자동 실행 구성 완료
+- 문서: `tests/e2e/README.md` 작성 완료
 
 ---
 
@@ -132,4 +139,4 @@ def mock_runner():
 - `skills/engineering-review/SKILL.md` — 코드 리뷰 기준
 - `ARCHITECTURE.md` — 시스템 아키텍처 (리팩토링 시 동기화)
 
-*최종 업데이트: 2026-03-24 | 상태: 계획 단계*
+*최종 업데이트: 2026-03-25 | 상태: Phase 3 E2E 테스트 완비 완료 / Phase 1-2 진행 중*

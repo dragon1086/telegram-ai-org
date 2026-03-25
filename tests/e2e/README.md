@@ -20,8 +20,8 @@
 
 | 파일 | 역할 | 테스트 수 |
 |---|---|---|
-| `test_engine_compat_e2e.py` | 3엔진 러너 인터페이스·mock dispatch | ~178개 |
-| `test_pm_dispatch_e2e.py` | PM 오케스트레이션·BOT_ENGINE_MAP 검증 | ~85개 |
+| `test_engine_compat_e2e.py` | 3엔진 러너 인터페이스·mock dispatch | 160개 |
+| `test_pm_dispatch_e2e.py` | PM 오케스트레이션·BOT_ENGINE_MAP 검증 | 75개 |
 | `test_engine_fallback_e2e.py` | 3엔진 폴백·에러 처리·통합 레벨 실행 | 43개 |
 | `conftest.py` | 공통 픽스처·헬퍼 | — |
 | `fixtures/` | mock 응답 데이터 파일 | 3개 |

@@ -187,6 +187,28 @@ class OrgScheduler:
             id="routing_optimizer_daily", misfire_grace_time=1800,
             replace_existing=True,
         )
+        # ── 자동화 협업 프로세스 (ST-11) ──────────────────────────────────────
+        # 주간회의 자동화: 매주 월요일 09:00 KST
+        self.scheduler.add_job(
+            self._weekly_meeting_automation,
+            CronTrigger(day_of_week="mon", hour=9, minute=0, timezone=KST),
+            id="weekly_meeting_automation", misfire_grace_time=600,
+            replace_existing=True,
+        )
+        # 감사 자동화: 매월 1일 09:30 KST
+        self.scheduler.add_job(
+            self._monthly_audit_automation,
+            CronTrigger(day=1, hour=9, minute=30, timezone=KST),
+            id="monthly_audit_automation", misfire_grace_time=3600,
+            replace_existing=True,
+        )
+        # 감사 리포트: 매주 금요일 17:00 KST
+        self.scheduler.add_job(
+            self._weekly_audit_report,
+            CronTrigger(day_of_week="fri", hour=17, minute=0, timezone=KST),
+            id="weekly_audit_report", misfire_grace_time=600,
+            replace_existing=True,
+        )
 
     # ── 잡 구현 ──────────────────────────────────────────────────────────────
 
@@ -890,6 +912,69 @@ class OrgScheduler:
                 await self._safe_send(msg)
         except Exception as e:
             logger.error(f"[OrgScheduler] routing_optimizer_daily 실패: {e}")
+
+    # ── 자동화 협업 프로세스 핸들러 (ST-11 뼈대, TODO: 실제 로직 구현) ──────────
+
+    async def _weekly_meeting_automation(self) -> None:
+        """매주 월요일 09:00 KST — 주간회의 자동화 뼈대.
+
+        ST-11: 전 조직 주간회의를 자율적으로 진행한다.
+        TODO: weekly_meeting_multibot.py 로직을 여기에 통합하고
+              COLLAB dispatch로 부서별 현황 수집 → 종합 요약 전송.
+        """
+        logger.info("[OrgScheduler] weekly_meeting_automation 시작")
+        try:
+            await self._safe_send(
+                "📅 *[자동] 주간회의 시작*\n"
+                "매주 월요일 자동 진행 — 각 조직 현황 수집 중...\n"
+                "*(ST-11 자동화 뼈대 — 실제 다중봇 협업 로직 연결 예정)*"
+            )
+            # TODO: broadcast_meeting_start("weekly_meeting_automation") 호출
+            # TODO: COLLAB dispatch로 각 부서 주간 현황 수집
+            logger.info("[OrgScheduler] weekly_meeting_automation 완료 (stub)")
+        except Exception as e:
+            logger.error(f"[OrgScheduler] weekly_meeting_automation 실패: {e}")
+
+    async def _monthly_audit_automation(self) -> None:
+        """매월 1일 09:30 KST — 감사 자동화 뼈대.
+
+        ST-11: 월간 시스템 감사를 자율적으로 실행한다.
+        TODO: harness-audit 확장판으로 연결 — COLLAB 발동률, 목표 달성률,
+              태스크 실패 패턴을 집계하고 자동 개선 트리거를 발동.
+        """
+        logger.info("[OrgScheduler] monthly_audit_automation 시작")
+        try:
+            await self._safe_send(
+                "🔍 *[자동] 월간 감사 시작*\n"
+                "매월 1일 자동 진행 — 시스템 건강도 점검 중...\n"
+                "*(ST-11 자동화 뼈대 — harness-audit 연동 예정)*"
+            )
+            # TODO: run_harness_audit.py 로직 통합
+            # TODO: COLLAB 발동 성공률 집계 및 개선 트리거
+            logger.info("[OrgScheduler] monthly_audit_automation 완료 (stub)")
+        except Exception as e:
+            logger.error(f"[OrgScheduler] monthly_audit_automation 실패: {e}")
+
+    async def _weekly_audit_report(self) -> None:
+        """매주 금요일 17:00 KST — 감사 리포트 뼈대.
+
+        ST-11: 주간 감사 결과를 자율적으로 취합하여 보고한다.
+        TODO: 로그 분석 → COLLAB 활성도 + 태스크 성공률 집계 → 리포트 생성
+              STALE 감지 시 → PM 봇 iter 재개 트리거.
+        """
+        logger.info("[OrgScheduler] weekly_audit_report 시작")
+        try:
+            await self._safe_send(
+                "📊 *[자동] 주간 감사 리포트*\n"
+                "매주 금요일 자동 생성 — 이번 주 시스템 지표 취합 중...\n"
+                "*(ST-11 자동화 뼈대 — 로그 분석 및 STALE 감지 연동 예정)*"
+            )
+            # TODO: logs/ 분석 → 지난 7일 COLLAB/태스크 지표 집계
+            # TODO: docs/audits/YYYY-MM-DD-weekly-audit.md 저장
+            # TODO: STALE 감지 → PM 봇 자동 트리거
+            logger.info("[OrgScheduler] weekly_audit_report 완료 (stub)")
+        except Exception as e:
+            logger.error(f"[OrgScheduler] weekly_audit_report 실패: {e}")
 
     async def _safe_send(self, text: str) -> None:
         try:
