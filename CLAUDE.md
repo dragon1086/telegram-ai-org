@@ -89,19 +89,29 @@ bash scripts/start_all.sh
 
 > 세션 시작 시 반드시 확인. 실수가 발생할 때마다 여기에 추가한다.
 
+### [2026-03-25] PM 진척관리 스킬 & 이터레이션 루프 (전체 조직 공통)
+- **스킬 위치**: `skills/pm-progress-tracker/skill.md`
+- **목표 문서**: `memory/pm_progress_guide.md` (세션 시작 시 반드시 읽을 것)
+- **규칙**: 사용자 큰 목표 수신 시 → 즉시 pm_progress_guide.md에 등록 → 이터레이션 루프 시작
+- **자동화**: `daily_goal_pipeline` (orchestration.yaml) — 매일 09:00 KST 아침 목표를 GoalTracker에 자동 등록 → 부서 위임
+- **상태 관리**: TODO / IN_PROGRESS / DONE / BLOCKED 4가지 상태로 모든 목표 추적
+- **완료 원칙**: 완료 조건 충족 시 DONE 처리 / 미충족 시 자율 재루프 (사용자 확인 불필요)
+
 ### [2026-03-24] 3개 컨텍스트 파일 동시 수정 원칙 (전체 조직 공통)
 - **원칙**: CLAUDE.md / AGENTS.md / GEMINI.md 는 반드시 동시에 수정한다
 - **이유**: 각 엔진(Claude Code / Codex / Gemini CLI)이 자신의 컨텍스트 파일만 읽음 → 한 파일만 수정하면 나머지 엔진에 정보 불일치 발생
 - **실행 방법**: 한 파일 수정 완료 → 바로 나머지 두 파일도 동일 내용 반영
 - **CLAUDE.md가 기준**: 가장 상세하게 유지. AGENTS.md와 GEMINI.md는 여기서 동기화
 
-### [2026-03-25] CI/CD 파이프라인 추가됨
-- `.github/workflows/ci.yml` 은 `pull_request` 기준 Python 3.11 환경에서 `pip install -e ".[dev]"`, `ruff check telegram_ai_org`, `python tools/orchestration_cli.py validate-config`, `pytest tests/e2e/ -q` 순서로 PR 검증을 수행한다.
-- `.github/workflows/release.yml` 은 `main` push 기준 `verify` → `publish-pypi` → `docker-push` 순서로 직렬 실행되며, 검증 재실행 뒤 `python -m build` / `twine upload` 와 `docker/build-push-action` 배포를 수행한다.
-- GitHub Actions secret 이름은 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `GEMINI_OAUTH_CREDS`, `CLAUDE_CODE_OAUTH_TOKEN`, `PYPI_TOKEN`, `DOCKER_USERNAME`, `DOCKER_TOKEN` 을 사용한다.
+### [2026-03-25] CI/CD 파이프라인 운영 규칙
+- `.github/workflows/ci-lint.yml` 은 `pull_request`, `main` push, `workflow_dispatch` 기준으로 Ruff lint를 수행한다.
+- `.github/workflows/ci-e2e.yml` 은 `pull_request`, `main` push, `workflow_dispatch` 기준으로 `claude-code` / `codex` / `gemini-cli` 3엔진 matrix에서 `python tools/orchestration_cli.py validate-config` 와 `pytest tests/e2e/ -q --tb=short` 를 실행한다.
+- `.github/workflows/publish-pypi.yml` 은 `v*` 태그 push 또는 수동 `workflow_dispatch` 시 `verify` 후 `python -m build` / `twine upload` 로 PyPI 패키지를 배포한다.
+- `.github/workflows/docker-build.yml` 은 `v*` 태그 push 또는 수동 `workflow_dispatch` 시 `verify` 후 Docker Buildx 로 이미지를 빌드하고 Docker Hub 에 푸시한다.
+- GitHub Actions secret 이름은 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `GEMINI_OAUTH_CREDS`, `CLAUDE_CODE_OAUTH_TOKEN`, `PYPI_TOKEN`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` 을 사용한다.
 - Gemini CI는 `GEMINI_OAUTH_CREDS` 가 있으면 `~/.gemini/oauth_creds.json` 으로 복원해 사용한다.
-- `ci.yml` 을 branch protection required check로 묶어 `main` 배포 전 테스트를 강제한다.
-- 상세 운영 절차와 로컬 재현 명령은 `docs/CI_CD_SETUP.md` 를 따른다.
+- `ci-lint` 와 `ci-e2e` 를 branch protection required checks 로 묶어 `main` 배포 전 테스트를 강제한다.
+- 상세 운영 절차와 로컬 재현 명령은 `docs/CI_CD_GUIDE.md` 를 따른다.
 
 ### [2026-03-21] ⚠️ 배포 행위는 운영실(aiorg_ops_bot) 전담 — 전체 조직 적용
 - **원칙**: 운영실을 제외한 **모든 specialist 조직**은 로컬 커밋까지만 수행. 아래 세 가지는 운영실(@aiorg_ops_bot)만 실행:
