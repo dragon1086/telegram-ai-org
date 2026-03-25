@@ -17,7 +17,7 @@ from typing import Any
 import yaml
 from loguru import logger
 
-_VALID_ENGINES = {"claude-code", "codex", "auto"}
+_VALID_ENGINES = {"claude-code", "codex", "gemini-cli", "auto"}
 _DEFAULT_ORGS_PATH = Path("organizations.yaml")
 _DEFAULT_ORCH_PATH = Path("orchestration.yaml")
 

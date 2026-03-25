@@ -72,7 +72,30 @@ grep -c "상태: DONE" 또는 수동 파싱
 | ⚠️ STALE | 3일 이상 이터레이션 없음 |
 | ❌ BLOCKED | 블로커로 인해 미진행 |
 
-**자동 조치**: STALE 탐지 시 pm-progress-tracker 스킬을 호출해 iter 재개
+**자동 조치**: STALE 탐지 시 → 즉시 pm-progress-tracker 스킬 절차에 따라 iter를 재개한다. 사용자 확인 없이 자율 실행.
+
+```
+STALE 탐지 시 자동 실행 체인:
+1. 해당 목표의 잔여 TODO 서브태스크 목록 추출
+2. 개발실 담당 → [TEAM:engineering-senior-developer] 태그로 즉시 배분
+3. 타부서 담당 → [COLLAB:태스크 설명|맥락: 목표ID + 달성률] 태그로 해당 조직에 위임
+4. pm_progress_guide.md 이터레이션 로그에 "자동 재개 — harness-audit 트리거" 기록
+5. docs/goal_snapshots/YYYY-MM-DD-goal-snapshot.md 업데이트
+
+예시 (GOAL-001 STALE 탐지 시):
+[TEAM:engineering-senior-developer]
+ST-08 리팩토링 Phase 1을 재개합니다. GOAL-001이 3일 이상 진척 없어 harness-audit이 자동 트리거했습니다.
+[COLLAB:ST-11 v1.0.0 릴리스 배포 준비 선행 확인|맥락: GOAL-001 ST-09 완료, ST-11 착수 전 운영실 환경 점검 필요]
+```
+
+**COLLAB 활용 건강도 점검** (신규):
+- 최근 7일간 [COLLAB:...] 태그 사용 횟수 집계
+  ```bash
+  grep -r "COLLAB_PREFIX\|🙋 도와줄" logs/ 2>/dev/null | wc -l
+  ```
+- 0회 → ⚠️ COLLAB_INACTIVE: 이번 iter에서 COLLAB 태그 의무 사용
+- 1~3회 → ⚠️ COLLAB_LOW
+- 4회 이상 → ✅ COLLAB_HEALTHY
 
 ## 출력 형식
 ```
@@ -83,12 +106,12 @@ grep -c "상태: DONE" 또는 수동 파싱
 의존성:         ✅/⚠️/❌
 데이터 파이프:  ✅/⚠️/❌
 문서 정합성:    ✅/⚠️/❌
-목표 진척률:    ✅/⚠️/❌  ← 신규
-  GOAL-001: XX% (iter N, last: YYYY-MM-DD)
-  GOAL-002: XX% (iter N, last: YYYY-MM-DD)
+목표 진척률:    ✅/⚠️/❌
+  GOAL-001: XX% (iter N, last: YYYY-MM-DD) [ON_TRACK/STALE/BLOCKED]
+  GOAL-002: XX% (iter N, last: YYYY-MM-DD) [ON_TRACK/STALE/BLOCKED]
+협업 활성도:    ✅/⚠️/❌  (COLLAB 사용 횟수: N회/7일)
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 리스크 레벨: LOW/MEDIUM/HIGH
-권장 액션: ...
-미착수 다음조치: (STALE 탐지 시 pm-progress-tracker 자동 호출)
+STALE 감지 시: [자동 iter 재개 실행 — 위 체인 즉시 시작]
 ```
 저장: `docs/audits/YYYY-MM-DD-harness-audit.md`

@@ -269,7 +269,7 @@ class DynamicTeamBuilder:
 
         # Engine: from LLM response, validated
         engine_raw = data.get("engine", "")
-        if engine_raw in ("claude-code", "codex", "auto"):
+        if engine_raw in ("claude-code", "codex", "gemini-cli", "auto"):
             engine = engine_raw
         elif execution_mode == ExecutionMode.structured_team:
             engine = "claude-code"
@@ -277,7 +277,7 @@ class DynamicTeamBuilder:
             engine = "claude-code"
         else:
             engine = "auto"
-        if preferred_engine in ("claude-code", "codex"):
+        if preferred_engine in ("claude-code", "codex", "gemini-cli"):
             engine = preferred_engine
 
         personas = self._apply_preferences(
@@ -447,7 +447,7 @@ class DynamicTeamBuilder:
                 team_format = self._build_team_format_from_personas(recommended)
 
         # Determine engine from hints or mode defaults
-        if preferred_engine in ("claude-code", "codex"):
+        if preferred_engine in ("claude-code", "codex", "gemini-cli"):
             engine = preferred_engine
         elif execution_mode == ExecutionMode.structured_team:
             engine = self._engine_for_category("coding", default="claude-code")
@@ -455,8 +455,8 @@ class DynamicTeamBuilder:
             engine = self._engine_for_category("analysis", default="claude-code")
         else:
             engine = self._engine_for_category("writing", default="claude-code")
-        # structured_team always needs Claude Code unless org explicitly fixed to codex
-        if execution_mode == ExecutionMode.structured_team and preferred_engine != "codex":
+        # structured_team always needs Claude Code unless org explicitly fixed to codex/gemini-cli
+        if execution_mode == ExecutionMode.structured_team and preferred_engine not in ("codex", "gemini-cli"):
             engine = "claude-code"
 
         if execution_mode != ExecutionMode.sequential and engine == "codex":
