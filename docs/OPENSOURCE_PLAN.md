@@ -14,9 +14,9 @@
 ### Key Results
 | KR | 측정 기준 | 완료 기준 | 현황 |
 |----|-----------|-----------|------|
-| KR1: 원클릭 설치 | `./setup.sh` 또는 `docker compose up` 한 번에 전체 시스템 기동 | 첫 실행 ~ 봇 응답까지 10분 이내 | 🔲 |
+| KR1: 원클릭 설치 | `./setup.sh` 또는 `docker compose up` 한 번에 전체 시스템 기동 | 첫 실행 ~ 봇 응답까지 10분 이내 | ✅ |
 | KR2: 3엔진 호환 | Claude Code / Codex / Gemini CLI 각각 단독으로 전체 플로우 작동 | E2E 테스트 3개 엔진 모두 통과 | 🔲 |
-| KR3: 오픈소스 패키지 | GitHub public repo, README, 라이선스, 기여 가이드 | README star 기반 문서화 완성 | 🔲 |
+| KR3: 오픈소스 패키지 | GitHub public repo, README, 라이선스, 기여 가이드 | README star 기반 문서화 완성 | ✅ |
 | KR4: E2E 회귀 테스트 | 핵심 플로우 100% 자동화 테스트 | `pytest tests/e2e/` 그린 | 🔲 |
 | KR5: 설정 없이 작동 | `.env.example`만 채우면 바로 작동 | 새 환경 첫 실행 성공률 > 95% | 🔲 |
 
@@ -40,9 +40,9 @@
 - [ ] Gemini 이미지 생성 스킬 구현
 
 ### Day 5-6 (2026-03-28~29): 오픈소스 문서화
-- [ ] README.md 오픈소스 버전으로 전면 개편
-- [ ] CONTRIBUTING.md (기여 가이드)
-- [ ] 라이선스 파일 (MIT 또는 Apache 2.0)
+- [x] README.md 오픈소스 버전으로 전면 개편
+- [x] CONTRIBUTING.md (기여 가이드)
+- [x] 라이선스 파일 (MIT 또는 Apache 2.0)
 - [ ] 코드베이스 리팩토링 Phase 1 (핵심 모듈 응집도 개선)
 - [ ] 보안 감사 (토큰, 시크릿 노출 방지)
 
@@ -94,20 +94,38 @@ bash scripts/setup.sh --no-venv
 ### 빠른 시작 (원클릭)
 
 ```bash
+# ★ 최소 원클릭 명령 (3엔진 전체 기동)
+cp .env.example .env && docker compose up
+```
+
+> `.env.example`에 `COMPOSE_PROFILES=claude,codex,gemini`가 기본 설정되어 있어
+> 복사 즉시 `docker compose up` 하나로 Redis + 3엔진 런타임 + 7개 봇이 모두 기동됩니다.
+
+```bash
 # 1) 저장소 클론
 git clone https://github.com/dragon1086/aimesh.git telegram-ai-org
 cd telegram-ai-org
 
-# 2) 환경 변수 설정
+# 2) 환경 변수 설정 (.env.example에 COMPOSE_PROFILES=claude,codex,gemini 기본 포함)
 cp .env.example .env
 nano .env   # TELEGRAM_BOT_TOKEN, BOT_TOKEN_AIORG_* 등 필수 항목 입력
 
-# 3) 전체 실행 (claude + codex + gemini 모두)
-docker compose --profile claude --profile codex --profile gemini up -d
+# 3) 원클릭 전체 실행 — 프로파일 플래그 없이 3엔진 전체 자동 기동
+docker compose up
+
+# 또는 백그라운드 실행:
+docker compose up -d
 
 # 4) 로그 확인
 docker compose logs -f aiorg-pm
 ```
+
+**구성 내역 (2026-03-25 업데이트)**:
+- **네트워크**: `ai-org-net` (브리지, 모든 서비스 공유)
+- **소스코드 마운트**: `./:/app` (설정·스킬 핫리로드, 코드 수정 즉시 반영)
+- **퍼시스턴트 볼륨**: `aiorg-data` (context.db, shared_memory.json 영속 보존)
+- **Redis 볼륨**: `redis-data` (태스크 큐 상태 영속)
+- **Gemini OAuth 볼륨**: `gemini-oauth` (인증 파일 자동 마운트)
 
 ### 엔진별 선택 실행
 
@@ -157,14 +175,20 @@ gemini-runtime (healthy)  ←  aiorg-growth-bot, aiorg-research-bot
 
 ### Gemini CLI 인증 (Docker 환경)
 
-Gemini CLI는 OAuth 인증이 필요합니다. 호스트에서 인증 후 컨테이너에 마운트하세요:
+Gemini CLI는 OAuth 인증이 필요합니다. 호스트에서 인증 후 컨테이너에 자동 마운트됩니다:
 
 ```bash
-# 1) 호스트에서 먼저 인증
-gemini auth login   # 브라우저 로그인 → ~/.gemini/oauth_creds.json 생성
+# 1) 호스트에서 먼저 인증 (최초 1회)
+gemini auth login   # 브라우저 로그인 → ~/.gemini/oauth_creds.json 자동 생성
 
-# 2) docker-compose.yml의 gemini 서비스에 볼륨 추가 (선택)
-# 또는 환경변수 GEMINI_OAUTH_CREDS 에 JSON 내용을 직접 주입 (CI/CD 환경 권장)
+# 2) .env의 GEMINI_OAUTH_DIR 확인 (기본: ~/.gemini)
+# docker-compose.yml의 gemini-oauth volume이 이 디렉토리를 /app/.gemini:ro 로 마운트
+# gemini-runtime, aiorg-growth-bot, aiorg-research-bot 모두 자동 적용됨
+```
+
+`.env`에서 인증 디렉토리 경로 변경 가능:
+```bash
+GEMINI_OAUTH_DIR=~/.gemini    # 기본값 (변경 불필요)
 ```
 
 ### 자주 쓰는 관리 명령
@@ -198,15 +222,15 @@ docker compose down -v
 
 | 순서 | 워크플로우 | 트리거 | 필요 secret | 산출물 |
 |------|------|------|------|------|
-| 1 | `ci-lint.yml` | `pull_request`, `push` to `main` | 없음 | Ruff lint 결과 |
-| 2 | `ci-e2e.yml` | `pull_request`, `push` to `main` | 테스트용 API key 또는 OAuth secret | 설정 검증 + `tests/e2e/` 회귀 결과 |
-| 3 | `publish-pypi.yml` | `push` tag `v*`, `workflow_dispatch` | 테스트용 API key 또는 OAuth secret, `PYPI_TOKEN` | PyPI 배포 아티팩트 |
-| 4 | `docker-build.yml` | `push` tag `v*`, `workflow_dispatch` | 테스트용 API key 또는 OAuth secret, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | Docker Hub 이미지(tag 기반) 푸시 |
+| 1 | `ci-lint.yml` | `pull_request`, `push` to `main`, `workflow_dispatch` | 없음 | Ruff lint 결과 |
+| 2 | `ci-e2e.yml` | `pull_request` to `main`, `workflow_dispatch` | 테스트용 API key 또는 OAuth secret | 설정 검증 + `tests/e2e/` 회귀 결과 |
+| 3 | `publish-pypi.yml` | `push` to `main`, `workflow_dispatch` | 테스트용 API key 또는 OAuth secret, `PYPI_API_TOKEN` | PyPI 배포 아티팩트 |
+| 4 | `docker-publish.yml` | `push` to `main`, `workflow_dispatch` | 테스트용 API key 또는 OAuth secret, `DOCKER_USERNAME`, `DOCKER_PASSWORD` | Docker Hub 이미지 푸시 |
 
 운영 원칙:
 
 - 배포 전 항상 테스트: `ci-lint` 와 `ci-e2e` 를 branch protection required checks로 묶어 `main` 머지 전에 통과시킨다.
-- 인프라 변경은 단계적으로: `publish-pypi.yml` 과 `docker-build.yml` 은 각각 `verify` → 배포 순서로 직렬 실행한다.
+- 인프라 변경은 단계적으로: `publish-pypi.yml` 과 `docker-publish.yml` 은 각각 `verify` → 배포 순서로 직렬 실행한다.
 - PyPI 배포는 `python -m build`와 `twine check dist/*`를 통과한 뒤에만 진행한다.
 - Gemini CI credential은 필요 시 OAuth JSON secret(`GEMINI_OAUTH_CREDS`)로 복원한다.
 

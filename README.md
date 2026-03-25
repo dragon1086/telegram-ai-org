@@ -58,46 +58,39 @@ PM 봇이 사용자 요청을 분석해 7개 전문 부서 봇에 자동 배분�
 
 ## 아키텍처
 
-```
-Telegram 그룹 채팅방
-        │
-        ▼
-┌──────────────────────────────────────────────────────────┐
-│                   PM Bot (aiorg_pm_bot)                   │
-│                   엔진: claude-code                        │
-│  ┌─────────────────┐  ┌─────────────┐  ┌─────────────┐  │
-│  │  nl_classifier  │  │  pm_router  │  │  scheduler  │  │
-│  │  (태스크 분류)   │→ │ (부서 라우팅)│→ │ (자연어 예약)│  │
-│  └─────────────────┘  └─────────────┘  └─────────────┘  │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │           pm_orchestrator  (메인 루프)              │  │
-│  │   GoalTracker · DiscussionProtocol                 │  │
-│  │   AutoDispatch · SynthesisLoop                     │  │
-│  └────────────────────────────────────────────────────┘  │
-└────────────────────────┬─────────────────────────────────┘
-                         │ 태스크 배분
-          ┌──────────────┼──────────────────────┐
-          ▼              ▼                      ▼
-┌──────────────────┐  ┌──────────┐  ┌──────────────────┐
-│  claude-code 계열 │  │codex 계열│  │  gemini-cli 계열  │
-│ 기획실·개발실     │  │  운영실  │  │  성장실·리서치실  │
-│ 디자인실(PM 포함) │  │ 배포/인프│  │  조사/검색       │
-└──────────────────┘  └──────────┘  └──────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────────┐
-│                  엔진 러너 레이어 (tools/)                  │
-│  ClaudeCodeRunner │ CodexRunner │ GeminiCLIRunner         │
-│  복잡한 추론      │ CLI 자동화  │ 실시간 웹 검색            │
-└──────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────────┐
-│                  스킬 / MCP 레이어 (skills/)               │
-│  quality-gate · e2e-regression · bot-triage               │
-│  gemini-image-gen · safe-modify · error-gotcha            │
-│  brainstorming-auto · weekly-review · + 16개 더           │
-└──────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    User(["💬 Telegram 그룹 채팅방"])
+
+    subgraph PM["🤖 PM Bot — aiorg_pm_bot (claude-code)"]
+        NLC["nl_classifier — 태스크 분류"]
+        PMR["pm_router — 부서 라우팅"]
+        SCH["scheduler — 자연어 예약"]
+        PMO["pm_orchestrator\nGoalTracker · DiscussionProtocol\nAutoDispatch · SynthesisLoop"]
+    end
+
+    subgraph CLAUDE["📦 claude-code 계열"]
+        C1["기획실 (aiorg_product_bot)"]
+        C2["개발실 (aiorg_engineering_bot)"]
+        C3["디자인실 (aiorg_design_bot)"]
+    end
+
+    subgraph CODEX["⚙️ codex 계열"]
+        D1["운영실 (aiorg_ops_bot)"]
+    end
+
+    subgraph GEMINI["🔍 gemini-cli 계열"]
+        G1["성장실 (aiorg_growth_bot)"]
+        G2["리서치실 (aiorg_research_bot)"]
+    end
+
+    ER["🔧 엔진 러너 레이어 tools/\nClaudeCodeRunner · CodexRunner · GeminiCLIRunner"]
+    SK["🛠 스킬 / MCP 레이어 skills/\nquality-gate · e2e-regression · bot-triage · gemini-image-gen · +20"]
+
+    User --> PM
+    PMO --> CLAUDE & CODEX & GEMINI
+    CLAUDE & CODEX & GEMINI --> ER
+    ER --> SK
 ```
 
 ### 핵심 파일 구조
@@ -166,7 +159,7 @@ telegram-ai-org/
 #### 방법 A — curl 원라이너 (클론 없이 즉시 실행)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/dragon1086/aimesh/main/scripts/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dragon1086/aimesh/main/scripts/setup.sh | bash
 ```
 
 > curl 원라이너는 저장소를 클론하지 않아도 setup.sh를 직접 실행합니다.
@@ -325,10 +318,10 @@ nano .env
 # → 필수: 부서 봇 토큰 (BOT_TOKEN_AIORG_*)
 # → Gemini 인증: gemini auth login → ~/.gemini/oauth_creds.json
 
-# 3a. 전체 조직 실행 (claude + codex + gemini)
-docker compose --profile claude --profile codex --profile gemini up -d
+# 3a. 원클릭 전체 실행 (COMPOSE_PROFILES=claude,codex,gemini 자동 적용)
+docker compose up -d
 
-# 3b. Claude 계열만 실행 (PM + 기획실 + 개발실 + 디자인실)
+# 3b. Claude 계열만 실행하려면 .env의 COMPOSE_PROFILES를 수정하거나:
 docker compose --profile claude up -d
 
 # 4. 실행 상태 확인
@@ -340,7 +333,7 @@ docker compose logs -f aiorg-pm
 ```bash
 docker compose restart aiorg-pm
 # 코드 업데이트 후 이미지 재빌드:
-docker compose --profile claude build --no-cache && docker compose --profile claude up -d
+docker compose build --no-cache && docker compose up -d
 ```
 
 ---
@@ -451,21 +444,25 @@ gemini --version
 Docker Compose는 **공통 시크릿은 `.env`에서**, **엔진별 런타임 변수는 `docker-compose.yml`의 `environment` 블록에서** 주입합니다.
 서비스는 조직별로 분리되어 있고, 이미지 빌드는 엔진별(`claude` / `codex` / `gemini`)로 나뉩니다.
 
-### 빠른 시작
+### 원클릭 실행
 
 ```bash
-# 1. 환경변수 준비
+# 1. 환경변수 준비 (.env.example 에 COMPOSE_PROFILES=claude,codex,gemini 기본값 포함)
 cp .env.example .env
-nano .env  # 필수 토큰 입력
+nano .env  # 필수 토큰 입력 (TELEGRAM_BOT_TOKEN, BOT_TOKEN_AIORG_* 등)
 
-# 2. 전체 조직 빌드 + 실행
-docker compose --profile claude --profile codex --profile gemini up -d
+# 2. 원클릭 전체 실행 — 3엔진 모두 자동 기동 (COMPOSE_PROFILES 가 자동 프로파일 활성화)
+docker compose up -d
 
 # 3. 상태 확인
 docker compose ps
+docker compose logs -f aiorg-pm
 ```
 
-### 프로파일별 선택 실행
+> `.env.example`을 복사하면 `COMPOSE_PROFILES=claude,codex,gemini`가 자동 설정됩니다.
+> `docker compose up` 한 번으로 Redis + 3엔진 런타임 + 7개 봇 컨테이너가 모두 기동됩니다.
+
+### 프로파일별 선택 실행 (고급)
 
 ```bash
 # Claude 계열만 (PM + 기획실 + 개발실 + 디자인실)
@@ -477,7 +474,7 @@ docker compose --profile codex up -d
 # Gemini 계열만 (성장실 + 리서치실)
 docker compose --profile gemini up -d
 
-# 전체 조직 동시 실행
+# 전체 조직 동시 실행 (COMPOSE_PROFILES 없이 플래그로 명시)
 docker compose --profile claude --profile codex --profile gemini up -d
 ```
 
@@ -495,7 +492,9 @@ docker compose --profile claude --profile codex --profile gemini up -d
 
 공통 Redis: `aiorg-redis` (Redis 7 alpine, 포트 6379 — 내부 전용)
 
-공통 볼륨 마운트: `./logs`, `./data`, `./reports`, `./tasks`, `./skills` (read-only), `./memory`
+공통 볼륨 마운트: `./:/app` (소스코드 핫리로드), `aiorg-data:/app/data` (퍼시스턴트), `./logs`, `./reports`, `./tasks`, `./skills` (read-only), `./memory`
+
+공유 네트워크: `ai-org-net` (브리지, 서비스 간 내부 통신 전용)
 
 ### 이미지 빌드 (선택적)
 
@@ -761,10 +760,10 @@ GitHub Actions는 lint → E2E → PyPI 릴리즈 → Docker 배포의 4단계�
 
 | 워크플로우 파일 | 트리거 | 필요 Secret | 실행 내용 |
 |---------------|--------|------------|-----------|
-| [`.github/workflows/ci-lint.yml`](.github/workflows/ci-lint.yml) | PR, `push` to `main` | 없음 | Ruff 린트 검사 |
-| [`.github/workflows/ci-e2e.yml`](.github/workflows/ci-e2e.yml) | PR, `push` to `main` | 선택: 엔진/OAuth secret | Python 3.10/3.11 E2E + 3엔진 호환성 + `validate-config` |
-| [`.github/workflows/publish-pypi.yml`](.github/workflows/publish-pypi.yml) | `push` tag `v*` | `PYPI_API_TOKEN` | 검증 재실행 후 `python -m build` → `twine upload` PyPI 릴리즈 |
-| [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml) | `push` to `main`, `push` tag `v*` | `DOCKER_USERNAME`, `DOCKER_PASSWORD` | Docker Buildx 빌드 및 Docker Hub 푸시 |
+| [`.github/workflows/ci-lint.yml`](.github/workflows/ci-lint.yml) | PR, `push` to `main`, `workflow_dispatch` | 없음 | Ruff 린트 검사 |
+| [`.github/workflows/ci-e2e.yml`](.github/workflows/ci-e2e.yml) | PR to `main`, `workflow_dispatch` | 선택: 엔진/OAuth secret | Python 3.10/3.11 E2E + 3엔진 호환성 + `validate-config` |
+| [`.github/workflows/publish-pypi.yml`](.github/workflows/publish-pypi.yml) | `push` to `main`, `workflow_dispatch` | `PYPI_API_TOKEN` | 검증 재실행 후 `python -m build` → `twine upload` PyPI 릴리즈 |
+| [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml) | `push` to `main`, `workflow_dispatch` | `DOCKER_USERNAME`, `DOCKER_PASSWORD` | Docker Buildx 빌드 및 Docker Hub 푸시 |
 
 Fork PR 안전성을 위해 secret 기반 인증값은 조건부 step에서만 주입합니다.
 Gemini CI는 필요 시 `GEMINI_OAUTH_CREDS` secret을 `~/.gemini/oauth_creds.json`으로 복원해 사용합니다.
@@ -978,7 +977,7 @@ MetaGPT, AutoGen, CrewAI, OpenAI Swarm에서 영감을 받았으나 핵심 차�
 ```
 MIT License
 
-Copyright (c) 2026 telegram-ai-org contributors
+Copyright (c) 2026 Rocky / aiorg_pm_bot
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

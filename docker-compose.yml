@@ -1,11 +1,17 @@
 # =============================================================================
 # telegram-ai-org docker-compose.yml — 멀티 컨테이너: bot + redis + 3엔진 런타임
 #
+# ★ 원클릭 실행 (3엔진 모두):
+#   cp .env.example .env   # 필수 토큰/API키 입력 후
+#   docker compose up
+#
 # 사용법:
 #   # 1) 환경 변수 준비
 #   cp .env.example .env && nano .env   # 필수 토큰/API키 입력
 #
 #   # 2) 전체 실행 (권장 — claude + codex + gemini 모두)
+#   docker compose up
+#   # 또는 백그라운드 실행:
 #   docker compose --profile claude --profile codex --profile gemini up -d
 #
 #   # 3) 특정 엔진만 실행
@@ -46,8 +52,9 @@ x-bot-common: &bot-common
   environment:
     REDIS_URL: redis://aiorg-redis:6379
   volumes:
+    - ./:/app                      # 소스코드 마운트 (설정 파일·스킬 핫리로드)
+    - aiorg-data:/app/data         # 퍼시스턴트 데이터 (DB, 메모리) — named volume
     - ./logs:/app/logs
-    - ./data:/app/data
     - ./reports:/app/reports
     - ./tasks:/app/tasks
     - ./skills:/app/skills:ro
@@ -70,7 +77,7 @@ x-bot-common: &bot-common
     start_period: 30s
     retries: 3
   networks:
-    - aiorg-network
+    - ai-org-net
   logging:
     driver: json-file
     options:
@@ -83,7 +90,7 @@ x-bot-common: &bot-common
 x-engine-runtime-common: &engine-runtime-common
   restart: unless-stopped
   networks:
-    - aiorg-network
+    - ai-org-net
   logging:
     driver: json-file
     options:
@@ -110,7 +117,7 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
     networks:
-      - aiorg-network
+      - ai-org-net
     logging:
       driver: json-file
       options:
@@ -175,7 +182,7 @@ services:
   #   - telegram-ai-org:gemini 이미지 빌드의 정규 소유자
   #   - gemini CLI 바이너리(/opt/cli/bin/gemini) 정상 실행 여부를 healthcheck
   #   - gemini 계열 봇(aiorg-growth-bot, aiorg-research-bot 등)이 이 서비스 healthy 후 시작
-  #   - ~/.gemini/oauth_creds.json 마운트: --volume ~/.gemini:/root/.gemini:ro
+  #   - ~/.gemini/oauth_creds.json 마운트: GEMINI_OAUTH_CREDS_PATH 환경변수 기준
   # ===========================================================================
   gemini-runtime:
     <<: *engine-runtime-common
@@ -194,10 +201,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    volumes:
+      - gemini-oauth:/app/.gemini:ro  # OAuth 인증 파일 (gemini auth login 결과)
     environment:
       PM_ORG_NAME: gemini-runtime
       GEMINI_CLI_PATH: /opt/cli/bin/gemini
       GEMINI_CLI_MODEL: gemini-2.5-flash
+      GEMINI_OAUTH_CREDS_PATH: /app/.gemini/oauth_creds.json
 
   # ===========================================================================
   # [claude 계열 봇] PM 글로벌 봇 — 전체 조직 오케스트레이션
@@ -313,6 +323,16 @@ services:
         condition: service_healthy
       gemini-runtime:
         condition: service_healthy
+    volumes:
+      - ./:/app
+      - aiorg-data:/app/data
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      - ./tasks:/app/tasks
+      - ./skills:/app/skills:ro
+      - ./config:/app/config:ro
+      - ./memory:/app/memory
+      - gemini-oauth:/app/.gemini:ro
     environment:
       PM_ORG_NAME: aiorg_growth_bot
       AI_ENGINE: gemini-cli
@@ -320,6 +340,7 @@ services:
       GEMINI_CLI_PATH: /opt/cli/bin/gemini
       GEMINI_CLI_DEFAULT_TIMEOUT_SEC: "1800"
       GEMINI_CLI_MODEL: gemini-2.5-flash
+      GEMINI_OAUTH_CREDS_PATH: /app/.gemini/oauth_creds.json
 
   # ===========================================================================
   # [gemini 계열 봇] 리서치실 봇
@@ -335,6 +356,16 @@ services:
         condition: service_healthy
       gemini-runtime:
         condition: service_healthy
+    volumes:
+      - ./:/app
+      - aiorg-data:/app/data
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      - ./tasks:/app/tasks
+      - ./skills:/app/skills:ro
+      - ./config:/app/config:ro
+      - ./memory:/app/memory
+      - gemini-oauth:/app/.gemini:ro
     environment:
       PM_ORG_NAME: aiorg_research_bot
       AI_ENGINE: gemini-cli
@@ -342,6 +373,7 @@ services:
       GEMINI_CLI_PATH: /opt/cli/bin/gemini
       GEMINI_CLI_DEFAULT_TIMEOUT_SEC: "1800"
       GEMINI_CLI_MODEL: gemini-2.5-flash
+      GEMINI_OAUTH_CREDS_PATH: /app/.gemini/oauth_creds.json
 
 # =============================================================================
 # 볼륨
@@ -349,11 +381,19 @@ services:
 volumes:
   redis-data:
     driver: local
+  aiorg-data:
+    driver: local                  # 퍼시스턴트 봇 데이터 (context.db, shared_memory.json)
+  gemini-oauth:
+    driver: local                  # Gemini OAuth 인증 파일 (gemini auth login 결과)
+    driver_opts:
+      type: none
+      o: bind
+      device: ${GEMINI_OAUTH_DIR:-~/.gemini}   # 호스트 인증 디렉토리 (기본: ~/.gemini)
 
 # =============================================================================
-# 네트워크 — 모든 서비스가 공유하는 브리지 네트워크
+# 네트워크 — 모든 서비스가 공유하는 내부 브리지 네트워크
 # =============================================================================
 networks:
-  aiorg-network:
+  ai-org-net:
     driver: bridge
-    name: aiorg-network
+    name: ai-org-net
