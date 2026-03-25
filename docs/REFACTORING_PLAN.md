@@ -107,7 +107,8 @@ def mock_runner():
 **E2E 테스트 완비 현황** (2026-03-25 기준):
 - `tests/e2e/test_engine_compat_e2e.py` — 3엔진 호환성 (mock dispatch, 에러 핸들링, RunnerFactory)
 - `tests/e2e/test_pm_dispatch_e2e.py` — PM 오케스트레이션·BOT_ENGINE_MAP·라우팅 검증
-- 전체 **235개 테스트, 0 failed** 확인
+- `tests/e2e/test_autonomous_loop_e2e.py` — **신규** E2E 자율 루프 37개 시나리오 (8개 클래스)
+- 전체 **272개 테스트, 0 failed** 확인
 - CI: `.github/workflows/ci-e2e.yml` PR 자동 실행 구성 완료
 - 문서: `tests/e2e/README.md` 작성 완료
 

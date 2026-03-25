@@ -139,6 +139,35 @@ bash scripts/start_all.sh
 - **상태 관리**: TODO / IN_PROGRESS / DONE / BLOCKED 4가지 상태로 모든 목표 추적
 - **완료 원칙**: 완료 조건 충족 시 DONE 처리 / 미충족 시 자율 재루프 (사용자 확인 불필요)
 
+### [2026-03-25] E2E 자율 루프 운영 원칙 (전체 조직 공통)
+
+**구현 완료** — `goal_tracker/goal_tracker_client.py`, `goal_tracker/multibot_meeting_handler.py`, `run_e2e_loop.py`, `tests/e2e/test_autonomous_loop_e2e.py` (37개 테스트 통과)
+
+#### 트리거 조건
+| 트리거 | 처리 모듈 | 등록 대상 |
+|--------|----------|----------|
+| 일일회고 채팅 감지 | `MultibotMeetingHandler` | `조치사항:` 체크박스 아이템 |
+| 주간회의 채팅 감지 | `MultibotMeetingHandler` | 부서별 보고 + 조치사항 |
+| 크론 `daily_retro.py` | `GoalTrackerClient.register_report()` | 회고 MD에서 자동 추출 |
+
+#### GoalTracker 등록 규칙
+- `[ ]` 형식의 체크박스 아이템만 등록 (`goal_tracker/report_parser.py`)
+- 동일 제목 키워드(10자 정규화) 기준 중복 방지
+- `meeting_type`, `priority`, `assigned_dept`, `due_date` 자동 추출
+
+#### 멀티봇 참여 프로토콜
+- 참여 순서: 개발실 → 운영실 → 디자인실 → 기획실 → 성장실 → 리서치실
+- 봇 간 인터벌: 3.0초 (기본값)
+- 중복 방지: `{meeting_type}_{date}` 기준 당일 재처리 방지 (`force=True` 시 무시)
+- 상세 가이드: `docs/AUTONOMOUS_LOOP.md`
+
+#### 루프 상태 전이
+```
+IDLE → EVALUATE → REPLAN → DISPATCH → IDLE
+                ↓              ↓
+              IDLE (달성)   IDLE (태스크 없음)
+```
+
 ### [2026-03-24] 3개 컨텍스트 파일 동시 수정 원칙 (전체 조직 공통)
 - **원칙**: CLAUDE.md / AGENTS.md / GEMINI.md 는 반드시 동시에 수정한다
 - **이유**: 각 엔진(Claude Code / Codex / Gemini CLI)이 자신의 컨텍스트 파일만 읽음 → 한 파일만 수정하면 나머지 엔진에 정보 불일치 발생
