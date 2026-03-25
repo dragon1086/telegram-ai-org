@@ -18,7 +18,8 @@ import json
 import os
 import re
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+UTC = timezone.utc
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
