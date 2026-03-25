@@ -196,6 +196,109 @@ verification_profiles:
     require_tests: true
     require_status_snapshot: true
     require_feedback: true
+# ── COLLAB 자동 트리거 (태스크 완료 이벤트 → 크로스팀 자동 연계) ─────────────────
+# trigger_dept : 이 부서의 태스크가 완료될 때 트리거
+# trigger_task_types : 완료된 태스크의 task_type 이 이 목록에 포함되면 발동
+#                      (빈 리스트 = 모든 타입에 발동)
+# target_depts : 자동으로 후속 태스크를 생성할 대상 부서 ID 목록
+# message_template : 후속 태스크 설명. {source_dept}, {source_task_id},
+#                    {result_summary}, {target_role} 치환 가능
+# enabled : false 로 두면 비활성
+# dedup_window_minutes : 같은 source_task_id → 같은 target_dept 조합의
+#                        중복 트리거를 억제할 시간 창 (분 단위)
+collab_triggers:
+  - id: planning_to_design_engineering
+    description: "기획 산출물 완료 → 디자인실·개발실 자동 연계"
+    trigger_dept: aiorg_product_bot
+    trigger_task_types:
+      - 기획
+      - PRD
+      - 설계
+      - 요구사항
+    target_depts:
+      - aiorg_design_bot
+      - aiorg_engineering_bot
+    message_template: |
+      [COLLAB 자동연계] {source_dept}의 기획 산출물이 완료되었습니다.
+      원본 태스크: {source_task_id}
+
+      --- 기획 결과 요약 ---
+      {result_summary}
+      ----------------------
+
+      위 기획을 바탕으로 {target_role} 관점의 후속 작업을 수행하세요.
+      파일·코드 변경 허용: 예
+    enabled: true
+    dedup_window_minutes: 60
+
+  - id: research_to_growth
+    description: "리서치 완료 → 성장실 전략 수립 자동 연계"
+    trigger_dept: aiorg_research_bot
+    trigger_task_types:
+      - 조사
+      - 분석
+      - 리서치
+      - 경쟁사분석
+      - 시장조사
+    target_depts:
+      - aiorg_growth_bot
+    message_template: |
+      [COLLAB 자동연계] {source_dept}의 리서치가 완료되었습니다.
+      원본 태스크: {source_task_id}
+
+      --- 리서치 결과 요약 ---
+      {result_summary}
+      ------------------------
+
+      위 조사 결과를 바탕으로 성장 전략 및 실행 계획을 수립하세요.
+      파일·코드 변경 허용: 아니오
+    enabled: true
+    dedup_window_minutes: 120
+
+  - id: engineering_to_ops
+    description: "개발 구현 완료 → 운영실 배포 검토 자동 연계"
+    trigger_dept: aiorg_engineering_bot
+    trigger_task_types:
+      - 구현
+      - 개발
+      - 코드
+    target_depts:
+      - aiorg_ops_bot
+    message_template: |
+      [COLLAB 자동연계] {source_dept}의 구현이 완료되었습니다.
+      원본 태스크: {source_task_id}
+
+      --- 구현 결과 요약 ---
+      {result_summary}
+      ----------------------
+
+      위 구현 결과를 검토하고 배포 절차(테스트 → 스테이징 → 프로덕션)를 진행하세요.
+      파일·코드 변경 허용: 예
+    enabled: true
+    dedup_window_minutes: 30
+
+  - id: research_to_product
+    description: "리서치 완료 → 기획실 PRD 수립 자동 연계"
+    trigger_dept: aiorg_research_bot
+    trigger_task_types:
+      - 조사
+      - 분석
+      - 시장조사
+    target_depts:
+      - aiorg_product_bot
+    message_template: |
+      [COLLAB 자동연계] {source_dept}의 시장·경쟁사 조사가 완료되었습니다.
+      원본 태스크: {source_task_id}
+
+      --- 조사 결과 요약 ---
+      {result_summary}
+      ----------------------
+
+      위 조사 결과를 바탕으로 PRD 또는 기능 기획안을 작성하세요.
+      파일·코드 변경 허용: 아니오
+    enabled: false
+    dedup_window_minutes: 120
+
 conversation_history_retention_days: 30
 inactivity_threshold_hours: 4
 default_active_hours:
@@ -243,3 +346,67 @@ long_term_goals:
     meta:
       priority: "high"
       type: "infrastructure"
+
+# ── 일일 목표 파이프라인 (크론 트리거 → PM 검토 → 부서 위임 → 완료 수집) ──────────
+# morning_goals.py 가 09:00 KST 마다 목표 3개를 생성 → Telegram 전송 → 이 파이프라인 발동
+# 실행 엔진: scripts/morning_goals.py (GoalTracker.set_goal → start_goal 호출)
+daily_goal_pipeline:
+  # 파이프라인 활성화 여부 (false 시 morning_goals.py 는 Telegram 알림만 발송)
+  enabled: true
+
+  # 크론 스케줄 (UTC 기준 — KST 09:00 = UTC 00:00)
+  cron: "0 0 * * *"
+
+  # 파이프라인 단계 정의
+  steps:
+    - id: step_1_generate
+      name: "아침 목표 생성 & Telegram 알림"
+      executor: "scripts/morning_goals.py"
+      description: >
+        어제 회고 로드 → LLM으로 오늘 팀 목표 3개 생성 → Telegram 전송.
+        생성된 목표 텍스트를 step_2 로 전달.
+      on_failure:
+        notify_pm: true
+        fallback: "default_goals"
+
+    - id: step_2_pm_review
+      name: "PM 목표 검토 & 태스크 분해"
+      executor: "pm_agent"
+      description: >
+        step_1 에서 생성된 목표 3개를 PM 에이전트가 검토한다.
+        각 목표를 pm_progress_guide.md 에 등록하고
+        실행 가능한 서브태스크로 분해한다 (pm-task-dispatch 스킬 활용).
+        분해된 서브태스크 목록을 step_3 으로 전달.
+      skill: "pm-task-dispatch"
+      on_failure:
+        notify_pm: true
+        action: "skip_auto_dispatch"  # 자동 배분 건너뛰고 PM에게 수동 처리 요청
+
+    - id: step_3_dept_dispatch
+      name: "부서별 태스크 위임"
+      executor: "goal_tracker"
+      description: >
+        step_2 에서 분해된 서브태스크를 GoalTracker.start_goal() 로 각 부서에 위임한다.
+        위임 대상은 pm-task-dispatch Step 2 의 봇 선정 규칙을 따른다.
+        각 태스크는 memory/pm_progress_guide.md 에 상태 기록.
+      on_failure:
+        notify_pm: true
+        action: "log_and_continue"  # 실패한 태스크만 로그, 나머지 계속
+
+    - id: step_4_completion_collect
+      name: "완료 보고 수집 & 진척 업데이트"
+      executor: "pm_agent"
+      description: >
+        각 부서 완료 보고를 수신하면 pm_progress_guide.md 의 이터레이션 로그에 기록한다.
+        완료 조건 충족 시 → DONE 처리 + 사용자에게 보고.
+        미충족 시 → 잔여 항목을 다음 이터레이션에 등록 (pm-progress-tracker 스킬 Step 4).
+      on_failure:
+        notify_pm: true
+        action: "escalate"  # PM에게 수동 처리 에스컬레이션
+
+  # 파이프라인 전역 실패 처리
+  on_pipeline_failure:
+    notify_pm: true
+    message: >
+      ⚠️ daily_goal_pipeline 실패 — 단계: {failed_step} / 오류: {error_message}
+      수동으로 목표를 검토하고 pm_progress_guide.md 를 업데이트하세요.

@@ -127,10 +127,41 @@ async def _send_telegram(text: str) -> None:
         print(text)
 
 
+# ── GoalTracker 등록 ────────────────────────────────────────────────────────
+
+async def _register_goals_to_tracker(goals_text: str, today_str: str) -> None:
+    """생성된 목표 3개를 GoalTracker에 등록 → daily_goal_pipeline step_2 트리거."""
+    sys.path.insert(0, str(PROJECT_ROOT))
+    try:
+        from core.goal_tracker import GoalTracker
+        import sqlite3
+
+        db_path = PROJECT_ROOT / "ai_org.db"
+        tracker = GoalTracker(db_path=str(db_path), org_id="aiorg_pm_bot")
+
+        # 목표 텍스트를 줄 단위로 파싱 (형식: "N. 목표내용")
+        lines = [l.strip() for l in goals_text.splitlines() if l.strip()]
+        for line in lines:
+            # "1. 목표내용" 형식에서 내용만 추출
+            content = line.lstrip("0123456789. ").strip()
+            if not content:
+                continue
+            await tracker.set_goal(
+                title=f"[{today_str}] {content}",
+                description=content,
+                org_id="aiorg_pm_bot",
+                meta={"source": "morning_goals", "date": today_str, "auto_dispatch": True},
+            )
+        print(f"[morning_goals] GoalTracker에 {len(lines)}개 목표 등록 완료")
+    except Exception as e:
+        print(f"[morning_goals] GoalTracker 등록 실패 (알림만 발송됨): {e}")
+
+
 # ── 메인 ───────────────────────────────────────────────────────────────────
 
 async def main() -> None:
     today = datetime.now(KST).strftime("%Y년 %m월 %d일 (%A)")
+    today_short = datetime.now(KST).strftime("%Y-%m-%d")
     print(f"[morning_goals] 시작 — {today}")
 
     yesterday_retro = _load_yesterday_retro()
@@ -143,6 +174,10 @@ async def main() -> None:
     )
 
     await _send_telegram(message)
+
+    # daily_goal_pipeline step_2: GoalTracker에 등록 → 자동 부서 위임
+    await _register_goals_to_tracker(goals, today_short)
+
     print("[morning_goals] 완료")
 
 
