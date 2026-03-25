@@ -303,6 +303,13 @@ class ContextDB:
                     "UPDATE pm_tasks SET status=?, updated_at=? WHERE id=?",
                     (status, now, task_id),
                 )
+            # 취소된 태스크를 depends_on으로 참조하는 의존성 행 삭제
+            # → cancelled 태스크로 인한 후속 태스크 영구 데드락 방지
+            if status == "cancelled":
+                await db.execute(
+                    "DELETE FROM pm_task_dependencies WHERE depends_on = ?",
+                    (task_id,),
+                )
             await db.commit()
         return await self.get_pm_task(task_id)
 
