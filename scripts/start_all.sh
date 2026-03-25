@@ -11,20 +11,26 @@ esac
 
 echo "=== telegram-ai-org 봇 시작 ==="
 
-# ── bot-runtime 워크트리 설정 (main 브랜치 고정) ──────────────────────────
+# ── bot-runtime 워크트리 설정 (detached HEAD — 브랜치 비점유) ────────────
+# 개발자가 main 브랜치에서 작업 중일 때도 충돌 없이 동작한다.
+# 신규 사용자가 main에서 바로 start_all.sh를 실행해도 문제 없다.
 BOT_RUNTIME="$PROJECT_DIR/.worktrees/bot-runtime"
 if [ ! -d "$BOT_RUNTIME/core" ]; then
-  echo "▶ bot-runtime 워크트리 생성 (main 고정)..."
+  echo "▶ bot-runtime 워크트리 생성 (detached HEAD)..."
+  # 기존 깨진 디렉토리가 있으면 정리
+  if [ -d "$BOT_RUNTIME" ]; then
+    git -C "$PROJECT_DIR" worktree remove --force "$BOT_RUNTIME" 2>/dev/null || true
+    rm -rf "$BOT_RUNTIME"
+  fi
   mkdir -p "$PROJECT_DIR/.worktrees"
-  git -C "$PROJECT_DIR" worktree add "$BOT_RUNTIME" main 2>/dev/null || true
+  git -C "$PROJECT_DIR" worktree add --detach "$BOT_RUNTIME" HEAD
 fi
-# main 최신화
-git -C "$BOT_RUNTIME" checkout main 2>/dev/null || true
-git -C "$BOT_RUNTIME" pull --ff-only 2>/dev/null || true
+# HEAD 최신화 (detached — 브랜치 체크아웃 없이 reset만)
+git -C "$BOT_RUNTIME" reset --hard "$(git -C "$PROJECT_DIR" rev-parse HEAD)" 2>/dev/null || true
 # .venv, .env symlink (워크트리에는 없으므로)
 [ ! -e "$BOT_RUNTIME/.venv" ] && ln -s "$PROJECT_DIR/.venv" "$BOT_RUNTIME/.venv"
 [ -f "$PROJECT_DIR/.env" ] && [ ! -e "$BOT_RUNTIME/.env" ] && ln -s "$PROJECT_DIR/.env" "$BOT_RUNTIME/.env"
-echo "✅ bot-runtime 워크트리 준비 완료 (main)"
+echo "✅ bot-runtime 워크트리 준비 완료 (detached HEAD)"
 
 cd "$BOT_RUNTIME"
 
