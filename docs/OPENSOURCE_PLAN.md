@@ -35,7 +35,7 @@
 ### Day 3-4 (2026-03-26~27): 패키징 & 테스트
 - [x] 원클릭 설치 스크립트 개선 (`scripts/setup.sh` → 3엔진 자동 감지 + --version 검증 + .env 자동 주입)
 - [x] `.env.example` 완성 (GEMINI/CLAUDE/CODEX_CLI_PATH + DEFAULT_ENGINE 키 추가 및 모든 필수 키 문서화)
-- [ ] Docker Compose 지원 (선택 엔진별 프로파일)
+- [x] Docker Compose 지원 (engine runtime + redis + 봇 멀티 컨테이너, 선택 엔진별 프로파일)
 - [ ] E2E 테스트 스위트 구현
 - [ ] Gemini 이미지 생성 스킬 구현
 
@@ -86,6 +86,109 @@ bash scripts/setup.sh --no-venv
 2. 감지된 엔진 경로를 자동 치환: `CLAUDE_CLI_PATH`, `CODEX_CLI_PATH`, `GEMINI_CLI_PATH`
 3. 선택된 기본 엔진을 `ENGINE=`, `ACTIVE_ENGINE=`, `DEFAULT_ENGINE=` 에 동시 기재
 4. 키가 기존 `.env`에 없으면 파일 끝에 자동 추가 (기존 `.env` 덮어쓰기 없음)
+
+---
+
+## Docker 실행 가이드
+
+### 빠른 시작 (원클릭)
+
+```bash
+# 1) 저장소 클론
+git clone https://github.com/dragon1086/aimesh.git telegram-ai-org
+cd telegram-ai-org
+
+# 2) 환경 변수 설정
+cp .env.example .env
+nano .env   # TELEGRAM_BOT_TOKEN, BOT_TOKEN_AIORG_* 등 필수 항목 입력
+
+# 3) 전체 실행 (claude + codex + gemini 모두)
+docker compose --profile claude --profile codex --profile gemini up -d
+
+# 4) 로그 확인
+docker compose logs -f aiorg-pm
+```
+
+### 엔진별 선택 실행
+
+```bash
+# Claude Code 엔진만 (PM + 기획실 + 디자인실 + 개발실)
+docker compose --profile claude up -d
+
+# Codex 엔진만 (운영실)
+docker compose --profile codex up -d
+
+# Gemini CLI 엔진만 (성장실 + 리서치실)
+docker compose --profile gemini up -d
+
+# Claude + Gemini 조합 실행 (Codex 제외)
+docker compose --profile claude --profile gemini up -d
+```
+
+### 서비스 구성
+
+| 서비스 | 역할 | 프로필 | 이미지 |
+|--------|------|--------|--------|
+| `aiorg-redis` | 태스크 큐·상태 공유 (포트 6379) | 항상 실행 | `redis:7-alpine` |
+| `claude-runtime` | Claude Code CLI 상태 보증 | `claude` | `telegram-ai-org:claude` |
+| `codex-runtime` | Codex CLI 상태 보증 | `codex` | `telegram-ai-org:codex` |
+| `gemini-runtime` | Gemini CLI 상태 보증 | `gemini` | `telegram-ai-org:gemini` |
+| `aiorg-pm` | PM 글로벌 봇 (오케스트레이터) | `claude` | `telegram-ai-org:claude` |
+| `aiorg-product-bot` | 기획실 봇 | `claude` | `telegram-ai-org:claude` |
+| `aiorg-design-bot` | 디자인실 봇 | `claude` | `telegram-ai-org:claude` |
+| `aiorg-engineering-bot` | 개발실 봇 | `claude` | `telegram-ai-org:claude` |
+| `aiorg-ops-bot` | 운영실 봇 | `codex` | `telegram-ai-org:codex` |
+| `aiorg-growth-bot` | 성장실 봇 | `gemini` | `telegram-ai-org:gemini` |
+| `aiorg-research-bot` | 리서치실 봇 | `gemini` | `telegram-ai-org:gemini` |
+
+### 시작 순서 (자동 제어)
+
+```
+aiorg-redis (healthy)
+    ↓
+claude-runtime (healthy)  ←  aiorg-pm, aiorg-product-bot, aiorg-design-bot, aiorg-engineering-bot
+codex-runtime  (healthy)  ←  aiorg-ops-bot
+gemini-runtime (healthy)  ←  aiorg-growth-bot, aiorg-research-bot
+```
+
+> **런타임 서비스 역할**: 각 엔진 런타임 서비스(`claude-runtime`, `codex-runtime`, `gemini-runtime`)는
+> CLI 바이너리(`/opt/cli/bin/{claude|codex|gemini}`)가 실제로 실행 가능한지 healthcheck로 검증합니다.
+> 바이너리가 없는 이미지로 봇이 실행되는 상황을 사전에 차단하는 **게이트키퍼** 역할입니다.
+
+### Gemini CLI 인증 (Docker 환경)
+
+Gemini CLI는 OAuth 인증이 필요합니다. 호스트에서 인증 후 컨테이너에 마운트하세요:
+
+```bash
+# 1) 호스트에서 먼저 인증
+gemini auth login   # 브라우저 로그인 → ~/.gemini/oauth_creds.json 생성
+
+# 2) docker-compose.yml의 gemini 서비스에 볼륨 추가 (선택)
+# 또는 환경변수 GEMINI_OAUTH_CREDS 에 JSON 내용을 직접 주입 (CI/CD 환경 권장)
+```
+
+### 자주 쓰는 관리 명령
+
+```bash
+# 전체 상태 확인
+docker compose ps
+
+# 특정 봇 로그 실시간 확인
+docker compose logs -f aiorg-engineering-bot
+
+# 특정 서비스 재시작
+docker compose restart aiorg-pm
+
+# 이미지 재빌드 후 재시작 (코드 업데이트 시)
+docker compose --profile claude build --no-cache
+docker compose --profile claude up -d
+
+# 전체 종료 (데이터 보존)
+docker compose down
+
+# 전체 종료 + 볼륨 삭제 (초기화)
+docker compose down -v
+```
 
 ---
 
