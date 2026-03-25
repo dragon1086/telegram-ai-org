@@ -3660,11 +3660,11 @@ class TelegramRelay:
         """텔레그램 Application 빌드."""
         from telegram.request import HTTPXRequest
         req = HTTPXRequest(
-            connection_pool_size=8,
+            connection_pool_size=2,  # 큰 풀은 유휴 연결이 서버 측에서 끊힌 후 재사용 시 ClosedResourceError 유발
             connect_timeout=10.0,
-            read_timeout=30.0,
-            write_timeout=30.0,
-            pool_timeout=5.0,
+            read_timeout=60.0,
+            write_timeout=60.0,
+            pool_timeout=10.0,
         )
         builder = Application.builder().token(self.token).request(req)
         if self._task_poller is not None or self._pm_orchestrator is not None or self._org_scheduler is not None:
@@ -3821,12 +3821,17 @@ class TelegramRelay:
             )
             self._advance_runbook(run_id, "조직 위임 planning phase 시작")
             self._append_runbook(run_id, "Planning brief", brief, phase_name="planning")
-            await self.display.send_to_chat(
-                self.app.bot,
-                self.allowed_chat_id,
-                brief,
-                reply_to_message_id=reply_to_message_id,
-            )
+            try:
+                await self.display.send_to_chat(
+                    self.app.bot,
+                    self.allowed_chat_id,
+                    brief,
+                    reply_to_message_id=reply_to_message_id,
+                )
+            except Exception as _send_brief_err:
+                logger.warning(
+                    f"[{self.org_id}] 진행 브리프 전송 실패 ({task_id}), 작업 계속 진행: {_send_brief_err}"
+                )
             self._advance_runbook(run_id, "조직 위임 실행 design phase 이동")
             self._append_runbook(
                 run_id,
