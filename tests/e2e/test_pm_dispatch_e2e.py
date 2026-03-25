@@ -950,3 +950,117 @@ class TestPMRouterParseCoverage:
         assert isinstance(result, PMRoute)
         assert result.action == "confirm_pending"
         assert result.task_id == "T-999"
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 추가: core.constants 로더 fallback 경로 커버리지
+# ---------------------------------------------------------------------------
+
+
+class TestConstantsLoaderFallbacks:
+    """core.constants 로더 함수들의 fallback/에러 경로 커버리지."""
+
+    def test_load_bot_configs_returns_empty_when_dir_not_exists(self, tmp_path) -> None:
+        """bots_dir가 존재하지 않으면 빈 리스트를 반환한다 (line 55)."""
+        from core.constants import _load_bot_configs
+
+        nonexistent = tmp_path / "no_such_dir"
+        result = _load_bot_configs(bots_dir=nonexistent)
+        assert result == []
+
+    def test_load_bot_configs_handles_malformed_yaml(self, tmp_path) -> None:
+        """malformed YAML 파일이 있어도 예외 없이 건너뛴다 (lines 69-70)."""
+        from core.constants import _load_bot_configs
+
+        # 잘못된 YAML 파일 생성
+        bad_yaml = tmp_path / "bad_bot.yaml"
+        bad_yaml.write_text("org_id: test\nbroken: {unclosed")
+
+        result = _load_bot_configs(bots_dir=tmp_path)
+        # bad yaml 건너뜀 → 빈 리스트 반환 (org_id 조건 미충족)
+        assert isinstance(result, list)
+
+    def test_load_known_depts_returns_empty_on_no_configs(self, tmp_path) -> None:
+        """빈 bots_dir일 때 load_known_depts()는 빈 dict를 반환한다 (line 82)."""
+        from core.constants import load_known_depts
+
+        empty_dir = tmp_path / "empty_bots"
+        empty_dir.mkdir()
+        result = load_known_depts(bots_dir=empty_dir)
+        assert isinstance(result, dict)
+        assert result == {}
+
+    def test_load_bot_engines_returns_fallback_on_no_configs(self, tmp_path) -> None:
+        """bots_dir가 없으면 load_bot_engines()는 fallback 엔진맵을 반환한다 (line 99)."""
+        from core.constants import load_bot_engines
+
+        nonexistent = tmp_path / "no_bots"
+        result = load_bot_engines(bots_dir=nonexistent)
+        assert isinstance(result, dict)
+        assert len(result) > 0, "fallback 엔진맵이 비어있으면 안 됨"
+
+    def test_load_dept_roles_returns_fallback_on_no_configs(self, tmp_path) -> None:
+        """bots_dir가 없으면 load_dept_roles()는 fallback 역할맵을 반환한다 (line 115)."""
+        from core.constants import load_dept_roles
+
+        nonexistent = tmp_path / "no_bots"
+        result = load_dept_roles(bots_dir=nonexistent)
+        assert isinstance(result, dict)
+
+    def test_load_dept_instructions_returns_fallback_on_no_configs(self, tmp_path) -> None:
+        """bots_dir가 없으면 load_dept_instructions()는 fallback 지시문맵을 반환한다 (line 133)."""
+        from core.constants import load_dept_instructions
+
+        nonexistent = tmp_path / "no_bots"
+        result = load_dept_instructions(bots_dir=nonexistent)
+        assert isinstance(result, dict)
+
+    def test_load_bot_configs_returns_empty_when_yaml_not_importable(
+        self, tmp_path
+    ) -> None:
+        """yaml import 실패 시 _load_bot_configs()는 빈 리스트를 반환한다 (lines 60-62)."""
+        import sys
+        from unittest.mock import patch
+
+        # 유효한 bots_dir 생성 (is_dir() True)
+        bots_dir = tmp_path / "bots"
+        bots_dir.mkdir()
+        (bots_dir / "test_bot.yaml").write_text("org_id: test_bot\n")
+
+        # yaml 모듈 import 실패 시뮬레이션
+        with patch.dict(sys.modules, {"yaml": None}):
+            from core import constants as c
+            result = c._load_bot_configs(bots_dir=bots_dir)
+
+        assert result == []
+
+    def test_load_default_phases_returns_empty_when_yaml_not_importable(
+        self, tmp_path
+    ) -> None:
+        """yaml import 실패 시 load_default_phases()는 빈 dict를 반환한다 (lines 160-162)."""
+        import sys
+        from unittest.mock import patch
+
+        bots_dir = tmp_path / "bots"
+        bots_dir.mkdir()
+
+        with patch.dict(sys.modules, {"yaml": None}):
+            from core import constants as c
+            result = c.load_default_phases(bots_dir=bots_dir)
+
+        assert result == {}
+
+    def test_load_default_phases_handles_bad_default_phases_yaml(self, tmp_path) -> None:
+        """default_phases.yaml 파싱 실패 시 예외 없이 처리한다 (lines 179-180)."""
+        from core.constants import load_default_phases
+
+        # bots 디렉토리를 tmp_path로 사용
+        # default_phases.yaml 에 malformed 내용 주입
+        bad_phases = tmp_path / "default_phases.yaml"
+        bad_phases.write_text("_default: {broken yaml]]]")
+
+        # 예외 없이 호출 성공해야 함
+        result = load_default_phases(bots_dir=tmp_path)
+        assert isinstance(result, dict)
+        # malformed 파일이므로 _default 없음
+        assert "_default" not in result

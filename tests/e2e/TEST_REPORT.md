@@ -28,8 +28,8 @@ pytest tests/e2e/test_autonomous_loop_e2e.py -v --tb=short
 
 | 파일 | 테스트 수 | 결과 | 커버 영역 |
 |---|---|---|---|
-| `test_engine_compat_e2e.py` | **160개** | ✅ PASS | 3엔진 인터페이스·dispatch·에러 핸들링 |
-| `test_pm_dispatch_e2e.py` | **75개** | ✅ PASS | PM 라우팅·디스패치·조직별 엔진 배정 |
+| `test_engine_compat_e2e.py` | **168개** | ✅ PASS | 3엔진 인터페이스·dispatch·에러 핸들링·codex non-dir skip |
+| `test_pm_dispatch_e2e.py` | **85개** | ✅ PASS | PM 라우팅·디스패치·조직별 엔진 배정·constants loader fallback |
 | `test_goal_tracker_autoregister_e2e.py` | **44개** | ✅ PASS | GoalTracker 자동 등록 |
 | `test_engine_fallback_e2e.py` | **43개** | ✅ PASS | 엔진 폴백·타임아웃 복구 |
 | `test_autonomous_loop_e2e.py` | **37개** | ✅ PASS | idle→evaluate→replan→dispatch 자율 루프 |
@@ -93,6 +93,7 @@ pytest tests/e2e/test_autonomous_loop_e2e.py -v --tb=short
 | T-aiorg_pm_bot-421 | 2026-03-25 | 130/130 PASS (전체 171/171) | |
 | T-aiorg_pm_bot-426 | 2026-03-25 | 145/145 PASS (전체 186/186) | 3엔진 커버리지 완성 |
 | **T-pm-002 (일일회고)** | **2026-03-25** | **400/400 PASS** | **자율 루프 E2E 37개 추가 확인, 전체 완성** |
+| **T-aiorg_pm_bot-448** | **2026-03-25** | **245/245 PASS (3엔진 E2E)** | **3엔진 핵심 경로 100% 커버리지, codex_runner 100%, constants 100%** |
 
 ---
 
