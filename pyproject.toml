@@ -119,6 +119,12 @@ ignore = ["E501"]
 asyncio_mode = "auto"
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "e2e: end-to-end tests (no external engine required)",
+    "unit: pure unit tests with no external dependencies",
+    "integration: integration tests requiring real CLI binaries (claude-code/codex/gemini-cli)",
+    "slow: slow-running tests (timeout > 30s)",
+]
 
 [tool.mypy]
 python_version = "3.10"
