@@ -1,27 +1,50 @@
 # =============================================================================
-# telegram-ai-org docker-compose.yml — 조직별 봇 컨테이너 + 3엔진 이미지 분리
+# telegram-ai-org docker-compose.yml — 멀티 컨테이너: bot + redis + 3엔진 런타임
 #
 # 사용법:
 #   # 1) 환경 변수 준비
-#   cp .env.example .env
+#   cp .env.example .env && nano .env   # 필수 토큰/API키 입력
 #
-#   # 2) 특정 엔진 이미지만 빌드
-#   docker compose build aiorg-pm aiorg-product-bot aiorg-design-bot
-#
-#   # 3) Codex 계열 서비스만 실행
-#   docker compose --profile codex up -d
-#
-#   # 4) 전체 조직 실행
+#   # 2) 전체 실행 (권장 — claude + codex + gemini 모두)
 #   docker compose --profile claude --profile codex --profile gemini up -d
+#
+#   # 3) 특정 엔진만 실행
+#   docker compose --profile claude up -d   # claude-code 엔진만
+#   docker compose --profile codex up -d    # codex 엔진만
+#   docker compose --profile gemini up -d   # gemini-cli 엔진만
+#
+#   # 4) 로그 확인
+#   docker compose logs -f aiorg-pm
+#
+#   # 5) 전체 종료
+#   docker compose down
+#
+# 서비스 구성:
+#   [공통]       aiorg-redis         — Redis 7, 포트 6379 (모든 봇 공유)
+#   [런타임]     claude-runtime      — Claude Code CLI 상태 보증 서비스
+#   [런타임]     codex-runtime       — Codex CLI 상태 보증 서비스
+#   [런타임]     gemini-runtime      — Gemini CLI 상태 보증 서비스
+#   [claude]     aiorg-pm            — PM 글로벌 봇 (claude-code)
+#   [claude]     aiorg-product-bot   — 기획실 봇 (claude-code)
+#   [claude]     aiorg-design-bot    — 디자인실 봇 (claude-code)
+#   [claude]     aiorg-engineering-bot — 개발실 봇 (claude-code)
+#   [codex]      aiorg-ops-bot       — 운영실 봇 (codex)
+#   [gemini]     aiorg-growth-bot    — 성장실 봇 (gemini-cli)
+#   [gemini]     aiorg-research-bot  — 리서치실 봇 (gemini-cli)
 #
 # 환경변수 주입 원칙:
 #   - 공통 시크릿/토큰/API 키: .env (env_file) 에서 주입
 #   - 엔진별 런타임 변수(ENGINE_TYPE, *_CLI_PATH 등): 각 서비스 environment 블록에서 주입
 # =============================================================================
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 공통 앵커: 모든 봇 서비스에 공유되는 설정
+# ─────────────────────────────────────────────────────────────────────────────
 x-bot-common: &bot-common
   env_file:
     - .env
+  environment:
+    REDIS_URL: redis://aiorg-redis:6379
   volumes:
     - ./logs:/app/logs
     - ./data:/app/data
@@ -46,129 +69,31 @@ x-bot-common: &bot-common
     timeout: 10s
     start_period: 30s
     retries: 3
+  networks:
+    - aiorg-network
   logging:
     driver: json-file
     options:
       max-size: "10m"
       max-file: "5"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 엔진 런타임 공통 앵커: 런타임 컨테이너 공유 설정
+# ─────────────────────────────────────────────────────────────────────────────
+x-engine-runtime-common: &engine-runtime-common
+  restart: unless-stopped
+  networks:
+    - aiorg-network
+  logging:
+    driver: json-file
+    options:
+      max-size: "5m"
+      max-file: "3"
+
 services:
-  aiorg-pm:
-    <<: *bot-common
-    profiles: [claude]
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        ENGINE: claude
-    image: telegram-ai-org:claude
-    container_name: aiorg-pm
-    command: ["--org", "aiorg_pm_bot"]
-    environment:
-      PM_ORG_NAME: aiorg_pm_bot
-      ENGINE_TYPE: claude-code
-      CLAUDE_CLI_PATH: /opt/cli/bin/claude
-
-  aiorg-product-bot:
-    <<: *bot-common
-    profiles: [claude]
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        ENGINE: claude
-    image: telegram-ai-org:claude
-    container_name: aiorg-product-bot
-    command: ["--org", "aiorg_product_bot"]
-    environment:
-      PM_ORG_NAME: aiorg_product_bot
-      ENGINE_TYPE: claude-code
-      CLAUDE_CLI_PATH: /opt/cli/bin/claude
-
-  aiorg-design-bot:
-    <<: *bot-common
-    profiles: [claude]
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        ENGINE: claude
-    image: telegram-ai-org:claude
-    container_name: aiorg-design-bot
-    command: ["--org", "aiorg_design_bot"]
-    environment:
-      PM_ORG_NAME: aiorg_design_bot
-      ENGINE_TYPE: claude-code
-      CLAUDE_CLI_PATH: /opt/cli/bin/claude
-
-  aiorg-engineering-bot:
-    <<: *bot-common
-    profiles: [claude]
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        ENGINE: claude
-    image: telegram-ai-org:claude
-    container_name: aiorg-engineering-bot
-    command: ["--org", "aiorg_engineering_bot"]
-    environment:
-      PM_ORG_NAME: aiorg_engineering_bot
-      ENGINE_TYPE: claude-code
-      CLAUDE_CLI_PATH: /opt/cli/bin/claude
-
-  aiorg-ops-bot:
-    <<: *bot-common
-    profiles: [codex]
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        ENGINE: codex
-    image: telegram-ai-org:codex
-    container_name: aiorg-ops-bot
-    command: ["--org", "aiorg_ops_bot"]
-    environment:
-      PM_ORG_NAME: aiorg_ops_bot
-      ENGINE_TYPE: codex
-      CODEX_CLI_PATH: /opt/cli/bin/codex
-
-  aiorg-growth-bot:
-    <<: *bot-common
-    profiles: [gemini]
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        ENGINE: gemini
-    image: telegram-ai-org:gemini
-    container_name: aiorg-growth-bot
-    command: ["--org", "aiorg_growth_bot"]
-    environment:
-      PM_ORG_NAME: aiorg_growth_bot
-      ENGINE_TYPE: gemini-cli
-      GEMINI_CLI_PATH: /opt/cli/bin/gemini
-      GEMINI_CLI_DEFAULT_TIMEOUT_SEC: "1800"
-      GEMINI_CLI_MODEL: gemini-2.5-flash
-
-  aiorg-research-bot:
-    <<: *bot-common
-    profiles: [gemini]
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        ENGINE: gemini
-    image: telegram-ai-org:gemini
-    container_name: aiorg-research-bot
-    command: ["--org", "aiorg_research_bot"]
-    environment:
-      PM_ORG_NAME: aiorg_research_bot
-      ENGINE_TYPE: gemini-cli
-      GEMINI_CLI_PATH: /opt/cli/bin/gemini
-      GEMINI_CLI_DEFAULT_TIMEOUT_SEC: "1800"
-      GEMINI_CLI_MODEL: gemini-2.5-flash
-
+  # ===========================================================================
+  # [공통 인프라] Redis — 봇 간 태스크 큐·상태 공유
+  # ===========================================================================
   aiorg-redis:
     image: redis:7-alpine
     container_name: aiorg-redis
@@ -181,9 +106,254 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
     ports:
       - "127.0.0.1:6379:6379"
+    networks:
+      - aiorg-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
 
+  # ===========================================================================
+  # [엔진 런타임] claude-runtime — Claude Code CLI 상태 보증 서비스
+  #   - telegram-ai-org:claude 이미지 빌드의 정규 소유자
+  #   - claude CLI 바이너리(/opt/cli/bin/claude) 정상 실행 여부를 healthcheck
+  #   - claude 계열 봇(aiorg-pm, aiorg-product-bot 등)이 이 서비스 healthy 후 시작
+  # ===========================================================================
+  claude-runtime:
+    <<: *engine-runtime-common
+    profiles: [claude]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENGINE: claude
+    image: telegram-ai-org:claude
+    container_name: aiorg-claude-runtime
+    # CLI 바이너리 존재 확인 후 무한 대기 (sidecar 역할)
+    command: ["sh", "-c", "test -x /opt/cli/bin/claude && echo 'claude-runtime: CLI OK' && sleep infinity"]
+    healthcheck:
+      test: ["CMD", "sh", "-c", "test -x /opt/cli/bin/claude"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    environment:
+      PM_ORG_NAME: claude-runtime
+
+  # ===========================================================================
+  # [엔진 런타임] codex-runtime — Codex CLI 상태 보증 서비스
+  #   - telegram-ai-org:codex 이미지 빌드의 정규 소유자
+  #   - codex CLI 바이너리(/opt/cli/bin/codex) 정상 실행 여부를 healthcheck
+  #   - codex 계열 봇(aiorg-ops-bot 등)이 이 서비스 healthy 후 시작
+  # ===========================================================================
+  codex-runtime:
+    <<: *engine-runtime-common
+    profiles: [codex]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENGINE: codex
+    image: telegram-ai-org:codex
+    container_name: aiorg-codex-runtime
+    command: ["sh", "-c", "test -x /opt/cli/bin/codex && echo 'codex-runtime: CLI OK' && sleep infinity"]
+    healthcheck:
+      test: ["CMD", "sh", "-c", "test -x /opt/cli/bin/codex"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    environment:
+      PM_ORG_NAME: codex-runtime
+
+  # ===========================================================================
+  # [엔진 런타임] gemini-runtime — Gemini CLI 상태 보증 서비스
+  #   - telegram-ai-org:gemini 이미지 빌드의 정규 소유자
+  #   - gemini CLI 바이너리(/opt/cli/bin/gemini) 정상 실행 여부를 healthcheck
+  #   - gemini 계열 봇(aiorg-growth-bot, aiorg-research-bot 등)이 이 서비스 healthy 후 시작
+  #   - ~/.gemini/oauth_creds.json 마운트: --volume ~/.gemini:/root/.gemini:ro
+  # ===========================================================================
+  gemini-runtime:
+    <<: *engine-runtime-common
+    profiles: [gemini]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENGINE: gemini
+    image: telegram-ai-org:gemini
+    container_name: aiorg-gemini-runtime
+    command: ["sh", "-c", "test -x /opt/cli/bin/gemini && echo 'gemini-runtime: CLI OK' && sleep infinity"]
+    healthcheck:
+      test: ["CMD", "sh", "-c", "test -x /opt/cli/bin/gemini"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    environment:
+      PM_ORG_NAME: gemini-runtime
+      GEMINI_CLI_PATH: /opt/cli/bin/gemini
+      GEMINI_CLI_MODEL: gemini-2.5-flash
+
+  # ===========================================================================
+  # [claude 계열 봇] PM 글로벌 봇 — 전체 조직 오케스트레이션
+  # ===========================================================================
+  aiorg-pm:
+    <<: *bot-common
+    profiles: [claude]
+    image: telegram-ai-org:claude
+    container_name: aiorg-pm
+    command: ["--org", "aiorg_pm_bot"]
+    depends_on:
+      aiorg-redis:
+        condition: service_healthy
+      claude-runtime:
+        condition: service_healthy
+    environment:
+      PM_ORG_NAME: aiorg_pm_bot
+      AI_ENGINE: claude-code
+      ENGINE_TYPE: claude-code
+      CLAUDE_CLI_PATH: /opt/cli/bin/claude
+
+  # ===========================================================================
+  # [claude 계열 봇] 기획실 봇
+  # ===========================================================================
+  aiorg-product-bot:
+    <<: *bot-common
+    profiles: [claude]
+    image: telegram-ai-org:claude
+    container_name: aiorg-product-bot
+    command: ["--org", "aiorg_product_bot"]
+    depends_on:
+      aiorg-redis:
+        condition: service_healthy
+      claude-runtime:
+        condition: service_healthy
+    environment:
+      PM_ORG_NAME: aiorg_product_bot
+      AI_ENGINE: claude-code
+      ENGINE_TYPE: claude-code
+      CLAUDE_CLI_PATH: /opt/cli/bin/claude
+
+  # ===========================================================================
+  # [claude 계열 봇] 디자인실 봇
+  # ===========================================================================
+  aiorg-design-bot:
+    <<: *bot-common
+    profiles: [claude]
+    image: telegram-ai-org:claude
+    container_name: aiorg-design-bot
+    command: ["--org", "aiorg_design_bot"]
+    depends_on:
+      aiorg-redis:
+        condition: service_healthy
+      claude-runtime:
+        condition: service_healthy
+    environment:
+      PM_ORG_NAME: aiorg_design_bot
+      AI_ENGINE: claude-code
+      ENGINE_TYPE: claude-code
+      CLAUDE_CLI_PATH: /opt/cli/bin/claude
+
+  # ===========================================================================
+  # [claude 계열 봇] 개발실 봇
+  # ===========================================================================
+  aiorg-engineering-bot:
+    <<: *bot-common
+    profiles: [claude]
+    image: telegram-ai-org:claude
+    container_name: aiorg-engineering-bot
+    command: ["--org", "aiorg_engineering_bot"]
+    depends_on:
+      aiorg-redis:
+        condition: service_healthy
+      claude-runtime:
+        condition: service_healthy
+    environment:
+      PM_ORG_NAME: aiorg_engineering_bot
+      AI_ENGINE: claude-code
+      ENGINE_TYPE: claude-code
+      CLAUDE_CLI_PATH: /opt/cli/bin/claude
+
+  # ===========================================================================
+  # [codex 계열 봇] 운영실 봇
+  # ===========================================================================
+  aiorg-ops-bot:
+    <<: *bot-common
+    profiles: [codex]
+    image: telegram-ai-org:codex
+    container_name: aiorg-ops-bot
+    command: ["--org", "aiorg_ops_bot"]
+    depends_on:
+      aiorg-redis:
+        condition: service_healthy
+      codex-runtime:
+        condition: service_healthy
+    environment:
+      PM_ORG_NAME: aiorg_ops_bot
+      AI_ENGINE: codex
+      ENGINE_TYPE: codex
+      CODEX_CLI_PATH: /opt/cli/bin/codex
+
+  # ===========================================================================
+  # [gemini 계열 봇] 성장실 봇
+  # ===========================================================================
+  aiorg-growth-bot:
+    <<: *bot-common
+    profiles: [gemini]
+    image: telegram-ai-org:gemini
+    container_name: aiorg-growth-bot
+    command: ["--org", "aiorg_growth_bot"]
+    depends_on:
+      aiorg-redis:
+        condition: service_healthy
+      gemini-runtime:
+        condition: service_healthy
+    environment:
+      PM_ORG_NAME: aiorg_growth_bot
+      AI_ENGINE: gemini-cli
+      ENGINE_TYPE: gemini-cli
+      GEMINI_CLI_PATH: /opt/cli/bin/gemini
+      GEMINI_CLI_DEFAULT_TIMEOUT_SEC: "1800"
+      GEMINI_CLI_MODEL: gemini-2.5-flash
+
+  # ===========================================================================
+  # [gemini 계열 봇] 리서치실 봇
+  # ===========================================================================
+  aiorg-research-bot:
+    <<: *bot-common
+    profiles: [gemini]
+    image: telegram-ai-org:gemini
+    container_name: aiorg-research-bot
+    command: ["--org", "aiorg_research_bot"]
+    depends_on:
+      aiorg-redis:
+        condition: service_healthy
+      gemini-runtime:
+        condition: service_healthy
+    environment:
+      PM_ORG_NAME: aiorg_research_bot
+      AI_ENGINE: gemini-cli
+      ENGINE_TYPE: gemini-cli
+      GEMINI_CLI_PATH: /opt/cli/bin/gemini
+      GEMINI_CLI_DEFAULT_TIMEOUT_SEC: "1800"
+      GEMINI_CLI_MODEL: gemini-2.5-flash
+
+# =============================================================================
+# 볼륨
+# =============================================================================
 volumes:
   redis-data:
     driver: local
+
+# =============================================================================
+# 네트워크 — 모든 서비스가 공유하는 브리지 네트워크
+# =============================================================================
+networks:
+  aiorg-network:
+    driver: bridge
+    name: aiorg-network
