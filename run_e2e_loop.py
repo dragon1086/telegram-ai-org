@@ -107,8 +107,8 @@ async def _make_send_func():
 
     try:
         from telegram import Bot
+
         from core.telegram_formatting import markdown_to_html
-        bot = Bot(token=PM_BOT_TOKEN)
 
         async def _real_send(chat_id: int, text: str) -> None:
             try:
@@ -138,12 +138,13 @@ async def _make_goal_tracker():
 
     try:
         from pathlib import Path as _Path
-        from core.context_db import ContextDB
-        from core.task_graph import TaskGraph
+
         from core.claim_manager import ClaimManager
+        from core.context_db import ContextDB
+        from core.goal_tracker import GoalTracker
         from core.memory_manager import MemoryManager
         from core.pm_orchestrator import PMOrchestrator
-        from core.goal_tracker import GoalTracker
+        from core.task_graph import TaskGraph
 
         db_path = _Path(os.environ.get("CONTEXT_DB_PATH", "~/.ai-org/context.db")).expanduser()
         db = ContextDB(db_path)
@@ -151,7 +152,7 @@ async def _make_goal_tracker():
 
         send_func = await _make_send_func()
 
-        async def _telegram_send(chat_id: int, text: str) -> None:
+        async def _telegram_send(chat_id: int, text: str, **kwargs) -> None:
             await send_func(chat_id, text)
 
         orch = PMOrchestrator(
@@ -206,7 +207,7 @@ async def run_e2e_scenario(
     now = datetime.now(timezone.utc)
     date_str = now.strftime("%Y-%m-%d")
     print(f"\n{'='*60}")
-    print(f"  E2E 자율 루프 시나리오")
+    print("  E2E 자율 루프 시나리오")
     print(f"  유형: {meeting_type}")
     print(f"  날짜: {date_str}")
     print(f"  dry_run: {dry_run or not ENABLE_GOAL_TRACKER}")
@@ -259,7 +260,7 @@ async def run_e2e_scenario(
 
     # 결과 출력
     print(f"\n{'─'*60}")
-    print(f"  E2E 결과 요약")
+    print("  E2E 결과 요약")
     print(f"{'─'*60}")
     print(f"  성공: {result.success}")
     print(f"  회의 유형: {result.meeting_type}")
@@ -273,7 +274,7 @@ async def run_e2e_scenario(
         print(f"  배분 완료: {rr.dispatched_count}")
 
     if result.bot_reports:
-        print(f"\n  봇 보고 상세:")
+        print("\n  봇 보고 상세:")
         for rep in result.bot_reports:
             status = "✅" if rep.success else "❌"
             print(f"    {status} {rep.org_name}: {rep.report_text[:60]}...")
