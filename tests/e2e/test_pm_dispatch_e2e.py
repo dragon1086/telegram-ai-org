@@ -699,7 +699,7 @@ class TestEngineDispatchRoutePathE2E:
         with pytest.raises((ValueError, ImportError)):
             RunnerFactory.create("invalid-engine-for-dispatch-test-xyz")
 
-    def test_pm_bot_engine_assignment_consistent_across_sources(self) -> None:
+    def test_pm_bot_engine_assignment_consistent_across_sources_dispatch(self) -> None:
         """PM 봇(aiorg_pm_bot)의 엔진이 organizations.yaml과 BOT_ENGINE_MAP에서 모두 일치한다."""
         import yaml
         from pathlib import Path
