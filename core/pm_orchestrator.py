@@ -1951,12 +1951,18 @@ class PMOrchestrator:
                 await self._db.update_pm_task_metadata(
                     parent_task_id, {"rework_count": new_rework_count}
                 )
-                await self._send(
-                    chat_id,
-                    f"⚠️ 결과 부족 — 추가 작업 배분 중... (재작업 {new_rework_count}/{MAX_REWORK_RETRIES})\n"
-                    f"사유: {synthesis.reasoning}\n\n{user_friendly_report}\n\n"
-                    f"현재까지의 통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
-                )
+                try:
+                    await self._send(
+                        chat_id,
+                        f"⚠️ 결과 부족 — 추가 작업 배분 중... (재작업 {new_rework_count}/{MAX_REWORK_RETRIES})\n"
+                        f"사유: {synthesis.reasoning}\n\n{user_friendly_report}\n\n"
+                        f"현재까지의 통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
+                    )
+                except Exception as _send_err:
+                    logger.warning(
+                        f"[PM] INSUFFICIENT 알림 전송 실패 ({parent_task_id}), "
+                        f"재작업 배분 계속 진행: {_send_err}"
+                    )
                 if synthesis.follow_up_tasks:
                     follow_ups = [
                         SubTask(
@@ -1991,11 +1997,17 @@ class PMOrchestrator:
                     )
             else:
                 # 최대 재시도 횟수 도달 — 최선의 결과로 done 처리
-                await self._send(
-                    chat_id,
-                    f"⚠️ 자동 보완 한계 ({MAX_REWORK_RETRIES}회) 도달. 현재 최선의 결과를 전달합니다.\n\n"
-                    f"{user_friendly_report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
-                )
+                try:
+                    await self._send(
+                        chat_id,
+                        f"⚠️ 자동 보완 한계 ({MAX_REWORK_RETRIES}회) 도달. 현재 최선의 결과를 전달합니다.\n\n"
+                        f"{user_friendly_report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
+                    )
+                except Exception as _send_err:
+                    logger.warning(
+                        f"[PM] INSUFFICIENT 최종 알림 전송 실패 ({parent_task_id}), "
+                        f"done 처리 계속 진행: {_send_err}"
+                    )
                 await self._db.update_pm_task_status(
                     parent_task_id, "done", result=synthesis.summary,
                 )
