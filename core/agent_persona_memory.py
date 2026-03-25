@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,7 +42,7 @@ class AgentPersonaMemory:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
+        with self._conn() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("""
@@ -72,6 +73,23 @@ class AgentPersonaMemory:
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
+    @contextmanager
+    def _conn(self):
+        """sqlite3 connection context manager that commits/rolls back AND closes.
+
+        Python의 `with sqlite3.connect(...) as conn:` 패턴은 commit/rollback만 처리하고
+        close()를 호출하지 않아 ResourceWarning이 발생한다. 이 helper는 항상 close()를 보장한다.
+        """
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     def _pair_key(self, a: str, b: str) -> tuple[str, str]:
         """항상 (작은 id, 큰 id) 순서로 정규화."""
         return (a, b) if a < b else (b, a)
@@ -82,7 +100,7 @@ class AgentPersonaMemory:
     # ------------------------------------------------------------------
 
     def _sync_load_stats_row(self, agent_id: str) -> dict:
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
+        with self._conn() as conn:
             row = conn.execute(
                 "SELECT agent_id, strengths, weaknesses, failure_patterns, "
                 "success_patterns, total_tasks, success_tasks, updated_at "
@@ -112,7 +130,7 @@ class AgentPersonaMemory:
         }
 
     def _sync_save_stats_row(self, data: dict) -> None:
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
+        with self._conn() as conn:
             conn.execute("""
                 INSERT INTO agent_stats
                     (agent_id, strengths, weaknesses, failure_patterns,
@@ -138,7 +156,7 @@ class AgentPersonaMemory:
             ))
 
     def _sync_update_synergy(self, a: str, b: str, new_score: float) -> None:
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
+        with self._conn() as conn:
             conn.execute("""
                 INSERT INTO synergy_scores (agent_a, agent_b, score)
                 VALUES (?,?,?)
@@ -146,7 +164,7 @@ class AgentPersonaMemory:
             """, (a, b, new_score))
 
     def _sync_get_synergy_score(self, a: str, b: str) -> float:
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
+        with self._conn() as conn:
             row = conn.execute(
                 "SELECT score FROM synergy_scores WHERE agent_a=? AND agent_b=?",
                 (a, b)
@@ -154,7 +172,7 @@ class AgentPersonaMemory:
         return row[0] if row else SYNERGY_DEFAULT
 
     def _sync_recommend_team(self, task_type: str, count: int) -> list[str]:
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
+        with self._conn() as conn:
             rows = conn.execute(
                 "SELECT agent_id, success_patterns, total_tasks, success_tasks "
                 "FROM agent_stats"
@@ -170,13 +188,13 @@ class AgentPersonaMemory:
         return [agent_id for _, agent_id in candidates[:count]]
 
     def _sync_check_agent_exists(self, agent_id: str) -> bool:
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
+        with self._conn() as conn:
             return conn.execute(
                 "SELECT 1 FROM agent_stats WHERE agent_id=?", (agent_id,)
             ).fetchone() is not None
 
     def _sync_get_synergy_rows(self, agent_id: str) -> list[tuple[str, str, float]]:
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
+        with self._conn() as conn:
             rows = conn.execute(
                 "SELECT agent_a, agent_b, score FROM synergy_scores "
                 "WHERE agent_a=? OR agent_b=?",
@@ -185,12 +203,12 @@ class AgentPersonaMemory:
         return rows
 
     def _sync_get_all_agent_ids(self) -> list[str]:
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
+        with self._conn() as conn:
             rows = conn.execute("SELECT agent_id FROM agent_stats").fetchall()
         return [agent_id for (agent_id,) in rows]
 
     def _sync_get_top_performers(self, n: int) -> list[tuple[str, float]]:
-        with sqlite3.connect(self.db_path, timeout=10) as conn:
+        with self._conn() as conn:
             rows = conn.execute(
                 "SELECT agent_id, total_tasks, success_tasks FROM agent_stats "
                 "WHERE total_tasks > 0"
