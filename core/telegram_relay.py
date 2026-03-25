@@ -2983,8 +2983,9 @@ class TelegramRelay:
 
         keyboard = [
             [InlineKeyboardButton("1️⃣ Claude Code (기본, 권장)", callback_data="engine_claude-code")],
-            [InlineKeyboardButton("2️⃣ Codex", callback_data="engine_codex")],
-            [InlineKeyboardButton("3️⃣ Auto (자동 결정)", callback_data="engine_auto")],
+            [InlineKeyboardButton("2️⃣ Codex (경량 DevOps)", callback_data="engine_codex")],
+            [InlineKeyboardButton("3️⃣ Gemini CLI (Google 검색 내장)", callback_data="engine_gemini-cli")],
+            [InlineKeyboardButton("4️⃣ Auto (자동 결정)", callback_data="engine_auto")],
         ]
         await processing_msg.edit_text(
             markdown_to_html(
@@ -2992,7 +2993,8 @@ class TelegramRelay:
                 f"⚙️ **실행 엔진을 선택하세요:**\n\n"
                 f"1️⃣ `claude-code` — 복잡한 작업, 고품질 *(기본)*\n"
                 f"2️⃣ `codex` — 단순한 작업, 저렴\n"
-                f"3️⃣ `auto` — LLM이 자동 결정"
+                f"3️⃣ `gemini-cli` — Google 검색 내장, 리서치·성장 조직 권장\n"
+                f"4️⃣ `auto` — LLM이 자동 결정"
             ),
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(keyboard),
