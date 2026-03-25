@@ -2801,7 +2801,7 @@ class TelegramRelay:
             return
 
         engine = args[1].strip()
-        _VALID_ENGINES = {"claude-code", "codex"}
+        _VALID_ENGINES = {"claude-code", "codex", "gemini-cli"}
         if engine not in _VALID_ENGINES:
             await update.message.reply_text(
                 f"❌ 유효하지 않은 엔진: {escape_html(engine)}\n사용 가능: {', '.join(sorted(_VALID_ENGINES))}",

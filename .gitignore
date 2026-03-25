@@ -25,6 +25,9 @@ logs/
 .idea/
 *.swp
 
+# Claude Code 로컬 설정 (토큰/권한 포함 가능)
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
