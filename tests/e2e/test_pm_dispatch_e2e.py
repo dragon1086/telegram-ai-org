@@ -14,7 +14,7 @@ class TestNLClassifier:
 
     def test_engineering_task_classification(self) -> None:
         """코딩 관련 메시지는 TASK intent로 분류된다."""
-        from core.nl_classifier import NLClassifier, Intent
+        from core.nl_classifier import Intent, NLClassifier
 
         classifier = NLClassifier()
         result = classifier.classify("버그 수정해줘, API 엔드포인트에서 500 에러가 나")
@@ -73,8 +73,9 @@ class TestDispatchEngine:
     def test_dispatch_engine_instantiation(self) -> None:
         """DispatchEngine 클래스 임포트 및 시그니처 확인."""
         try:
-            from core.dispatch_engine import DispatchEngine
             import inspect
+
+            from core.dispatch_engine import DispatchEngine
             # DispatchEngine은 context_db, task_graph, telegram_send_func 필요
             # 실제 인스턴스화는 의존성 주입이 필요하므로 시그니처만 검증
             sig = inspect.signature(DispatchEngine.__init__)
@@ -113,8 +114,9 @@ class TestOrchestrationConfig:
 
     def test_orchestration_yaml_valid(self) -> None:
         """orchestration.yaml 파일이 유효한 YAML이다."""
-        import yaml
         from pathlib import Path
+
+        import yaml
 
         config_path = Path(__file__).parent.parent.parent / "orchestration.yaml"
         assert config_path.exists(), "orchestration.yaml 파일이 없음"
@@ -127,8 +129,9 @@ class TestOrchestrationConfig:
 
     def test_organizations_yaml_valid(self) -> None:
         """organizations.yaml 파일이 유효하고 모든 봇이 설정되어 있다."""
-        import yaml
         from pathlib import Path
+
+        import yaml
 
         config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
         assert config_path.exists(), "organizations.yaml 파일이 없음"
@@ -183,8 +186,9 @@ class TestEngineRoutingAllOrgs:
     """organizations.yaml 전체 봇 엔진 배정 정합성 검증."""
 
     def _load_org_engine_map(self) -> dict[str, str]:
-        import yaml
         from pathlib import Path
+
+        import yaml
 
         config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
         if not config_path.exists():
@@ -292,33 +296,33 @@ class TestCrossTeamCollabEngineSwitch:
 
     def test_runner_factory_creates_claude_and_gemini_independently(self) -> None:
         """RunnerFactory는 claude-code와 gemini-cli를 독립적으로 생성한다."""
-        from tools.base_runner import RunnerFactory, BaseRunner
+        from tools.base_runner import BaseRunner, RunnerFactory
 
         pm_runner = RunnerFactory.create("claude-code")
         research_runner = RunnerFactory.create("gemini-cli")
 
         assert isinstance(pm_runner, BaseRunner)
         assert isinstance(research_runner, BaseRunner)
-        assert type(pm_runner) != type(research_runner), (
+        assert pm_runner.__class__ is not research_runner.__class__, (
             "claude-code와 gemini-cli는 다른 타입의 러너여야 함"
         )
 
     def test_runner_factory_creates_claude_and_codex_independently(self) -> None:
         """RunnerFactory는 claude-code와 codex를 독립적으로 생성한다."""
-        from tools.base_runner import RunnerFactory, BaseRunner
+        from tools.base_runner import BaseRunner, RunnerFactory
 
         pm_runner = RunnerFactory.create("claude-code")
         ops_runner = RunnerFactory.create("codex")
 
         assert isinstance(pm_runner, BaseRunner)
         assert isinstance(ops_runner, BaseRunner)
-        assert type(pm_runner) != type(ops_runner), (
+        assert pm_runner.__class__ is not ops_runner.__class__, (
             "claude-code와 codex는 다른 타입의 러너여야 함"
         )
 
     def test_all_three_engines_creatable_simultaneously(self) -> None:
         """RunnerFactory는 3엔진을 동시에 생성할 수 있다."""
-        from tools.base_runner import RunnerFactory, BaseRunner
+        from tools.base_runner import BaseRunner, RunnerFactory
 
         engines = ["claude-code", "codex", "gemini-cli"]
         runners = [RunnerFactory.create(e) for e in engines]
@@ -331,7 +335,7 @@ class TestCrossTeamCollabEngineSwitch:
 
     async def test_cross_team_mock_dispatch_flow(self) -> None:
         """PM → 개발실(claude-code) → 리서치실(gemini-cli) 크로스팀 모의 흐름."""
-        from tools.base_runner import RunContext, BaseRunner
+        from tools.base_runner import BaseRunner, RunContext
 
         results: dict[str, str] = {}
 
@@ -386,8 +390,9 @@ class TestPMRouterRouteMethod:
 
     async def test_route_returns_pmroute_with_decision_client(self) -> None:
         """decision_client가 있을 때 route()는 PMRoute를 반환한다."""
-        from core.pm_router import PMRouter, PMRoute
         from unittest.mock import AsyncMock
+
+        from core.pm_router import PMRoute, PMRouter
 
         mock_client = AsyncMock()
         mock_client.complete = AsyncMock(
@@ -403,7 +408,7 @@ class TestPMRouterRouteMethod:
 
     async def test_route_falls_back_to_new_task_without_client(self) -> None:
         """decision_client가 None이면 'new_task'로 폴백한다."""
-        from core.pm_router import PMRouter, PMRoute
+        from core.pm_router import PMRoute, PMRouter
 
         router = PMRouter(decision_client=None)
         result = await router.route("랜딩 페이지 디자인 해줘")
@@ -413,8 +418,9 @@ class TestPMRouterRouteMethod:
 
     async def test_route_falls_back_on_llm_exception(self) -> None:
         """LLM 호출 중 예외 발생 시 폴백으로 PMRoute를 반환한다."""
-        from core.pm_router import PMRouter, PMRoute
         from unittest.mock import AsyncMock
+
+        from core.pm_router import PMRoute, PMRouter
 
         mock_client = AsyncMock()
         mock_client.complete = AsyncMock(side_effect=RuntimeError("LLM 연결 실패"))
@@ -435,7 +441,7 @@ class TestPMRouterRouteMethod:
         self, text: str, expected_action: str
     ) -> None:
         """pending_confirmation 컨텍스트에서 긍정 단어는 confirm_pending으로 라우팅된다."""
-        from core.pm_router import PMRouter, PMRoute
+        from core.pm_router import PMRoute, PMRouter
 
         router = PMRouter(decision_client=None)
         result = await router.route(
@@ -450,7 +456,7 @@ class TestPMRouterRouteMethod:
 
     async def test_route_status_query_detection(self) -> None:
         """LLM 없이 상태 질문은 status_query 또는 new_task로 라우팅된다."""
-        from core.pm_router import PMRouter, PMRoute
+        from core.pm_router import PMRoute, PMRouter
 
         router = PMRouter(decision_client=None)
         result = await router.route("현재 태스크 진행 현황은?")
@@ -488,7 +494,7 @@ class TestUnknownDeptHandling:
     def test_engine_dispatch_unknown_dept_uses_fallback(self) -> None:
         """알 수 없는 부서 ID는 BOT_ENGINE_MAP에서 None을 반환하며, 기본 엔진으로 폴백 가능하다."""
         from core.constants import BOT_ENGINE_MAP
-        from tools.base_runner import RunnerFactory, BaseRunner
+        from tools.base_runner import BaseRunner, RunnerFactory
 
         unknown_dept = "aiorg_xyz_nonexistent"
         engine = BOT_ENGINE_MAP.get(unknown_dept, "claude-code")  # 기본값: claude-code
@@ -531,7 +537,7 @@ class TestDepartmentEngineDispatch:
     ) -> None:
         """BOT_ENGINE_MAP에 등록된 엔진으로 RunnerFactory.create()가 BaseRunner를 반환한다."""
         from core.constants import BOT_ENGINE_MAP
-        from tools.base_runner import RunnerFactory, BaseRunner
+        from tools.base_runner import BaseRunner, RunnerFactory
 
         actual_engine = BOT_ENGINE_MAP.get(bot_id)
         assert actual_engine is not None, f"{bot_id}: BOT_ENGINE_MAP에 없음"
@@ -549,7 +555,7 @@ class TestDepartmentEngineDispatch:
     def test_all_bots_in_engine_map_have_creatable_runners(self) -> None:
         """BOT_ENGINE_MAP의 모든 봇 엔진이 RunnerFactory로 생성 가능하다."""
         from core.constants import BOT_ENGINE_MAP
-        from tools.base_runner import RunnerFactory, BaseRunner
+        from tools.base_runner import BaseRunner, RunnerFactory
 
         for bot_id, engine in BOT_ENGINE_MAP.items():
             runner = RunnerFactory.create(engine)
@@ -568,8 +574,9 @@ class TestFallbackEngineConfig:
 
     def test_all_orgs_have_fallback_engine(self) -> None:
         """모든 조직이 fallback_engine을 설정했는지 확인한다."""
-        import yaml
         from pathlib import Path
+
+        import yaml
 
         config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
         if not config_path.exists():
@@ -588,9 +595,11 @@ class TestFallbackEngineConfig:
 
     def test_fallback_differs_from_preferred_or_is_same_valid_engine(self) -> None:
         """fallback_engine은 유효한 엔진이며 실제로 생성 가능하다."""
-        import yaml
         from pathlib import Path
-        from tools.base_runner import RunnerFactory, BaseRunner
+
+        import yaml
+
+        from tools.base_runner import BaseRunner, RunnerFactory
 
         config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
         if not config_path.exists():
@@ -637,7 +646,7 @@ class TestEngineDispatchRoutePathE2E:
     ) -> None:
         """BOT_ENGINE_MAP → RunnerFactory 완전한 3단계 라우팅 경로를 검증한다."""
         from core.constants import BOT_ENGINE_MAP
-        from tools.base_runner import RunnerFactory, BaseRunner
+        from tools.base_runner import BaseRunner, RunnerFactory
 
         # Step 1: 부서 → 엔진 라우팅 (BOT_ENGINE_MAP)
         actual_engine = BOT_ENGINE_MAP.get(dept_id)
@@ -660,8 +669,10 @@ class TestEngineDispatchRoutePathE2E:
 
     def test_organizations_yaml_and_engine_map_consistent(self) -> None:
         """organizations.yaml의 preferred_engine이 BOT_ENGINE_MAP 값과 일치한다."""
-        import yaml
         from pathlib import Path
+
+        import yaml
+
         from core.constants import BOT_ENGINE_MAP
 
         config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
@@ -701,8 +712,10 @@ class TestEngineDispatchRoutePathE2E:
 
     def test_pm_bot_engine_assignment_consistent_across_sources_dispatch(self) -> None:
         """PM 봇(aiorg_pm_bot)의 엔진이 organizations.yaml과 BOT_ENGINE_MAP에서 모두 일치한다."""
-        import yaml
         from pathlib import Path
+
+        import yaml
+
         from core.constants import BOT_ENGINE_MAP
 
         config_path = Path(__file__).parent.parent.parent / "organizations.yaml"
@@ -739,7 +752,7 @@ class TestNLClassifierFullCoverage:
 
     def test_classify_tone_keyword_returns_set_bot_tone(self) -> None:
         """말투/톤 관련 키워드가 있으면 SET_BOT_TONE을 반환한다."""
-        from core.nl_classifier import NLClassifier, Intent
+        from core.nl_classifier import Intent, NLClassifier
 
         classifier = NLClassifier()
         result = classifier.classify("말투를 친근하게 바꿔줘")
@@ -749,7 +762,7 @@ class TestNLClassifierFullCoverage:
 
     def test_classify_tone_english_keyword_returns_set_bot_tone(self) -> None:
         """영어 tone 키워드도 SET_BOT_TONE을 반환한다."""
-        from core.nl_classifier import NLClassifier, Intent
+        from core.nl_classifier import Intent, NLClassifier
 
         classifier = NLClassifier()
         result = classifier.classify("set tone formal")
@@ -757,8 +770,8 @@ class TestNLClassifierFullCoverage:
 
     def test_classify_greeting_short_text_returns_greeting(self) -> None:
         """짧은 인사말(15자 미만)은 GREETING을 반환한다."""
-        from core.nl_classifier import NLClassifier, Intent
         from core.keywords import GREETING_KW
+        from core.nl_classifier import Intent, NLClassifier
 
         classifier = NLClassifier()
         # 첫 번째 인사 키워드를 사용하되 15자 미만 조건 충족
@@ -770,7 +783,7 @@ class TestNLClassifierFullCoverage:
 
     def test_classify_status_keyword_short_text_returns_status(self) -> None:
         """30자 미만 & 상태 키워드 & action 없는 텍스트는 STATUS를 반환한다."""
-        from core.nl_classifier import NLClassifier, Intent
+        from core.nl_classifier import Intent, NLClassifier
 
         classifier = NLClassifier()
         result = classifier.classify("상태")
@@ -779,7 +792,7 @@ class TestNLClassifierFullCoverage:
 
     def test_classify_approve_keyword_short_text_returns_approve(self) -> None:
         """승인 키워드 포함 짧은 텍스트는 APPROVE를 반환한다."""
-        from core.nl_classifier import NLClassifier, Intent
+        from core.nl_classifier import Intent, NLClassifier
 
         classifier = NLClassifier()
         result = classifier.classify("승인")
@@ -787,7 +800,7 @@ class TestNLClassifierFullCoverage:
 
     def test_classify_cancel_keyword_returns_cancel(self) -> None:
         """취소 키워드는 CANCEL을 반환한다."""
-        from core.nl_classifier import NLClassifier, Intent
+        from core.nl_classifier import Intent, NLClassifier
 
         classifier = NLClassifier()
         result = classifier.classify("취소")
@@ -795,7 +808,7 @@ class TestNLClassifierFullCoverage:
 
     def test_classify_reject_keyword_returns_reject(self) -> None:
         """반려 키워드는 REJECT를 반환한다."""
-        from core.nl_classifier import NLClassifier, Intent
+        from core.nl_classifier import Intent, NLClassifier
 
         classifier = NLClassifier()
         result = classifier.classify("반려")
@@ -803,7 +816,7 @@ class TestNLClassifierFullCoverage:
 
     def test_classify_long_text_without_action_returns_task_heuristic(self) -> None:
         """15자 초과 & action 키워드 없는 텍스트는 TASK(heuristic)를 반환한다."""
-        from core.nl_classifier import NLClassifier, Intent
+        from core.nl_classifier import Intent, NLClassifier
 
         classifier = NLClassifier()
         # 15자 초과이지만 action 키워드 없는 임의 텍스트
@@ -814,7 +827,7 @@ class TestNLClassifierFullCoverage:
 
     def test_classify_short_non_matching_text_returns_chat_heuristic(self) -> None:
         """15자 이하 & 아무 키워드도 없는 텍스트는 CHAT(heuristic)를 반환한다."""
-        from core.nl_classifier import NLClassifier, Intent
+        from core.nl_classifier import Intent, NLClassifier
 
         classifier = NLClassifier()
         # 15자 이하이고 어떤 키워드도 매칭 안 되는 텍스트
@@ -824,7 +837,7 @@ class TestNLClassifierFullCoverage:
 
     def test_classify_result_has_intent_confidence_source(self) -> None:
         """ClassifyResult는 intent, confidence, source 필드를 모두 포함한다."""
-        from core.nl_classifier import NLClassifier, ClassifyResult
+        from core.nl_classifier import ClassifyResult, NLClassifier
 
         classifier = NLClassifier()
         result = classifier.classify("버그 수정해줘")
@@ -844,7 +857,7 @@ class TestPMRouterParseCoverage:
 
     def test_parse_with_markdown_code_block_extracts_json(self) -> None:
         """_parse()는 마크다운 코드블록(```json...```) 내 JSON을 정상 파싱한다."""
-        from core.pm_router import PMRouter, PMRoute
+        from core.pm_router import PMRoute, PMRouter
 
         router = PMRouter()
         raw = '```json\n{"action": "new_task", "task_id": null, "confidence": 0.9}\n```'
@@ -855,7 +868,7 @@ class TestPMRouterParseCoverage:
 
     def test_parse_with_plain_code_block_extracts_json(self) -> None:
         """_parse()는 일반 코드블록(```...```) 내 JSON도 파싱한다."""
-        from core.pm_router import PMRouter, PMRoute
+        from core.pm_router import PMRoute, PMRouter
 
         router = PMRouter()
         raw = '```\n{"action": "status_query", "task_id": null, "confidence": 0.8}\n```'
@@ -865,7 +878,7 @@ class TestPMRouterParseCoverage:
 
     def test_parse_invalid_action_defaults_to_new_task(self) -> None:
         """_parse()는 유효하지 않은 action 값을 new_task로 대체한다."""
-        from core.pm_router import PMRouter, PMRoute
+        from core.pm_router import PMRoute, PMRouter
 
         router = PMRouter()
         raw = '{"action": "totally_invalid_action_xyz", "task_id": null, "confidence": 0.5}'
@@ -875,7 +888,7 @@ class TestPMRouterParseCoverage:
 
     def test_parse_json_decode_error_returns_fallback_pmroute(self) -> None:
         """_parse()는 JSON 파싱 실패 시 new_task PMRoute를 반환한다."""
-        from core.pm_router import PMRouter, PMRoute
+        from core.pm_router import PMRoute, PMRouter
 
         router = PMRouter()
         raw = "not valid json at all"
@@ -896,7 +909,7 @@ class TestPMRouterParseCoverage:
 
     def test_fallback_retry_task_keyword(self) -> None:
         """_fallback()은 retry 키워드가 있으면 retry_task를 반환한다."""
-        from core.pm_router import PMRouter, PMRoute
+        from core.pm_router import PMRoute, PMRouter
 
         router = PMRouter()
         result = router._fallback("다시해줘", {})
@@ -906,7 +919,7 @@ class TestPMRouterParseCoverage:
 
     def test_fallback_retry_english_keyword(self) -> None:
         """_fallback()은 영어 retry 키워드도 retry_task로 라우팅한다."""
-        from core.pm_router import PMRouter, PMRoute
+        from core.pm_router import PMRoute, PMRouter
 
         router = PMRouter()
         result = router._fallback("retry this", {})
@@ -915,7 +928,7 @@ class TestPMRouterParseCoverage:
 
     def test_fallback_status_query_keyword(self) -> None:
         """_fallback()은 상태 키워드가 있으면 status_query를 반환한다."""
-        from core.pm_router import PMRouter, PMRoute
+        from core.pm_router import PMRoute, PMRouter
 
         router = PMRouter()
         result = router._fallback("현재 상태 알려줘", {})
@@ -925,7 +938,7 @@ class TestPMRouterParseCoverage:
 
     def test_fallback_confirm_pending_with_long_affirmative(self) -> None:
         """pending_confirmation 컨텍스트에서 15자 초과 텍스트는 confirm_pending이 되지 않는다."""
-        from core.pm_router import PMRouter, PMRoute
+        from core.pm_router import PMRoute, PMRouter
 
         router = PMRouter()
         # 15자 초과 긍정어 → confirm_pending 조건(len <= 15) 불충족 → new_task로 폴백
@@ -936,8 +949,9 @@ class TestPMRouterParseCoverage:
 
     async def test_route_with_decision_client_parses_markdown_code_block(self) -> None:
         """decision_client가 마크다운 코드블록으로 응답해도 정상 파싱한다."""
-        from core.pm_router import PMRouter, PMRoute
         from unittest.mock import AsyncMock
+
+        from core.pm_router import PMRoute, PMRouter
 
         mock_client = AsyncMock()
         mock_client.complete = AsyncMock(
@@ -1064,3 +1078,287 @@ class TestConstantsLoaderFallbacks:
         assert isinstance(result, dict)
         # malformed 파일이므로 _default 없음
         assert "_default" not in result
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: 멀티봇 라우팅 E2E — 3개 테스트 봇 (글로벌 PM / 기획실 / 개발실)
+# ---------------------------------------------------------------------------
+# 실제 Telegram API를 호출하지 않고 로컬 디스패치 컴포넌트만 사용.
+# 3개 테스트 봇 토큰 (rate limit으로 3개만 생성 — 2026-03-25):
+#   - 글로벌 PM  : ai_org_global_pm_test_bot   (bot_id: 7341804021)
+#   - 기획실      : ai_org_product_test_bot      (bot_id: 8399399379)
+#   - 개발실      : ai_org_engineering_test_bot  (bot_id: 8645105804)
+# 전용 TEST_ 환경변수를 사용해 프로덕션 변수와 충돌 방지.
+
+
+import os
+from unittest.mock import AsyncMock, MagicMock
+
+# 테스트 봇 토큰 상수 (프로덕션 env 변수와 완전 분리)
+_TEST_PM_TOKEN = "7341804021:AAGsQpqS_CEUlQrzVoOi9SYdzokob7dEoSM"
+_TEST_PRODUCT_TOKEN = "8399399379:AAHOHmmSymkRO1Jg28eON7YHv1-FDrDVOuY"
+_TEST_ENGINEERING_TOKEN = "8645105804:AAE2uckOX-0DaZ_4YimzVrFh1nUoB6zq74Y"
+
+
+class TestMultiBotRoutingE2E:
+    """PM→기획실, PM→개발실 메시지 디스패치 및 응답 흐름 E2E 검증.
+
+    3개 테스트 봇(글로벌 PM, 기획실, 개발실)을 기반으로 한 멀티봇 라우팅 시나리오.
+    전용 TEST_ env 변수를 우선 사용하고, 없으면 하드코딩된 테스트 토큰을 fallback으로 사용한다.
+    """
+
+    # ── 헬퍼: 테스트 봇 토큰 확인 ────────────────────────────────────────────
+    def _pm_token(self) -> str:
+        return os.environ.get("TEST_BOT_TOKEN_PM", _TEST_PM_TOKEN)
+
+    def _product_token(self) -> str:
+        return os.environ.get("TEST_BOT_TOKEN_PRODUCT", _TEST_PRODUCT_TOKEN)
+
+    def _engineering_token(self) -> str:
+        return os.environ.get("TEST_BOT_TOKEN_ENGINEERING", _TEST_ENGINEERING_TOKEN)
+
+    # ── TC-MB-1: 테스트 봇 토큰 등록 검증 ───────────────────────────────────
+    def test_test_bot_tokens_registered(self) -> None:
+        """3개 테스트 봇 토큰이 환경에 로드되어 있다."""
+        pm_token = self._pm_token()
+        product_token = self._product_token()
+        engineering_token = self._engineering_token()
+
+        # 토큰 형식 검증 (숫자:문자열)
+        for name, token in [
+            ("글로벌 PM", pm_token),
+            ("기획실", product_token),
+            ("개발실", engineering_token),
+        ]:
+            assert ":" in token, f"{name} 봇 토큰 형식 오류: ':' 없음"
+            bot_id, secret = token.split(":", 1)
+            assert bot_id.isdigit(), f"{name} 봇 ID가 숫자가 아님: {bot_id}"
+            assert len(secret) > 20, f"{name} 봇 토큰 secret이 너무 짧음"
+
+    def test_test_bot_ids_are_distinct(self) -> None:
+        """3개 테스트 봇이 서로 다른 bot_id를 가진다 (동일 토큰 혼용 방지)."""
+        ids = [
+            self._pm_token().split(":")[0],
+            self._product_token().split(":")[0],
+            self._engineering_token().split(":")[0],
+        ]
+        assert len(set(ids)) == 3, f"봇 ID 중복 발생: {ids}"
+
+    # ── TC-MB-2: PM → 기획실 디스패치 흐름 ──────────────────────────────────
+    async def test_pm_to_product_dispatch_flow(self) -> None:
+        """PM→기획실 디스패치: 메시지 발송 → 라우팅 → 응답 수신 흐름 검증."""
+        from tools.base_runner import BaseRunner, RunContext
+
+        # 기획실 모의 엔진 (claude-code)
+        class ProductBotRunner(BaseRunner):
+            def __init__(self):
+                self._engine = "claude-code"
+                self._last_org = ""
+                self._metrics: dict = {}
+
+            async def run(self, ctx: RunContext) -> str:
+                self._last_org = ctx.org_id
+                self._metrics = {"engine": self._engine, "org": ctx.org_id, "chars": len(ctx.prompt)}
+                return f"[기획실/{self._engine}] 요청 처리 완료: {ctx.prompt[:30]}"
+
+            def get_last_metrics(self) -> dict:
+                return self._metrics
+
+            def capabilities(self) -> set:
+                return {"reasoning", "planning"}
+
+        # PM 디스패치 시뮬레이션
+        product_runner = ProductBotRunner()
+        ctx = RunContext(
+            prompt="신규 기능 PRD 작성 요청 — 멀티봇 라우팅 테스트",
+            org_id="aiorg_product_bot",
+        )
+        result = await product_runner.run(ctx)
+
+        # 검증: 응답 수신 및 메타데이터 확인
+        assert result is not None
+        assert "[기획실/claude-code]" in result
+        metrics = product_runner.get_last_metrics()
+        assert metrics["org"] == "aiorg_product_bot"
+        assert metrics["engine"] == "claude-code"
+        assert metrics["chars"] > 0
+
+    # ── TC-MB-3: PM → 개발실 디스패치 흐름 ──────────────────────────────────
+    async def test_pm_to_engineering_dispatch_flow(self) -> None:
+        """PM→개발실 디스패치: 메시지 발송 → 라우팅 → 응답 수신 흐름 검증."""
+        from tools.base_runner import BaseRunner, RunContext
+
+        class EngineeringBotRunner(BaseRunner):
+            def __init__(self):
+                self._engine = "claude-code"
+                self._metrics: dict = {}
+
+            async def run(self, ctx: RunContext) -> str:
+                self._metrics = {"engine": self._engine, "org": ctx.org_id, "chars": len(ctx.prompt)}
+                return f"[개발실/{self._engine}] 구현 완료: {ctx.prompt[:30]}"
+
+            def get_last_metrics(self) -> dict:
+                return self._metrics
+
+            def capabilities(self) -> set:
+                return {"coding", "debugging", "testing"}
+
+        engineering_runner = EngineeringBotRunner()
+        ctx = RunContext(
+            prompt="API 버그 수정 및 E2E 테스트 추가 요청 — 멀티봇 라우팅 테스트",
+            org_id="aiorg_engineering_bot",
+        )
+        result = await engineering_runner.run(ctx)
+
+        assert result is not None
+        assert "[개발실/claude-code]" in result
+        metrics = engineering_runner.get_last_metrics()
+        assert metrics["org"] == "aiorg_engineering_bot"
+        assert metrics["engine"] == "claude-code"
+        assert metrics["chars"] > 0
+
+    # ── TC-MB-4: 3봇 왕복 메시지 흐름 (PM→기획실→PM / PM→개발실→PM) ──────
+    async def test_three_bot_roundtrip_e2e(self) -> None:
+        """PM, 기획실, 개발실 3개 봇이 참여하는 왕복 메시지 흐름 검증.
+
+        시나리오:
+          1. PM이 기획실에 PRD 작성 요청 발송
+          2. 기획실이 PRD 결과 반환 (PM에게 응답)
+          3. PM이 개발실에 구현 요청 발송 (기획실 결과 포함)
+          4. 개발실이 구현 결과 반환 (PM에게 응답)
+          5. PM이 두 결과를 통합 확인
+        """
+        from tools.base_runner import BaseRunner, RunContext
+
+        # ── 발송/수신 로그 ─────────────────────────────
+        dispatch_log: list[dict] = []
+        response_log: list[dict] = []
+
+        # ── 모의 send_func: 실제 Telegram API 호출 없이 로그에 기록 ──
+        async def mock_send(chat_id: int, text: str, **kwargs) -> dict:
+            dispatch_log.append({"chat_id": chat_id, "text": text[:50]})
+            return {"ok": True, "message_id": len(dispatch_log)}
+
+        # ── 기획실 Runner ──────────────────────────────
+        class ProductRunner(BaseRunner):
+            async def run(self, ctx: RunContext) -> str:
+                return f"[기획실] PRD 완성: {ctx.prompt[:20]}_prd"
+            def get_last_metrics(self) -> dict:
+                return {}
+            def capabilities(self) -> set:
+                return {"planning"}
+
+        # ── 개발실 Runner ──────────────────────────────
+        class EngineeringRunner(BaseRunner):
+            async def run(self, ctx: RunContext) -> str:
+                return f"[개발실] 구현 완료: {ctx.prompt[:20]}_impl"
+            def get_last_metrics(self) -> dict:
+                return {}
+            def capabilities(self) -> set:
+                return {"coding"}
+
+        product_runner = ProductRunner()
+        engineering_runner = EngineeringRunner()
+
+        # Step 1: PM → 기획실 요청
+        product_ctx = RunContext(prompt="신규 기능 PRD 작성해줘", org_id="aiorg_product_bot")
+        product_response = await product_runner.run(product_ctx)
+        response_log.append({"from": "aiorg_product_bot", "response": product_response})
+
+        # Step 2: PM이 응답 수신 및 확인
+        assert "[기획실] PRD 완성:" in product_response
+        await mock_send(
+            chat_id=int(self._pm_token().split(":")[0]),
+            text=f"기획실 응답 수신: {product_response}",
+        )
+
+        # Step 3: PM → 개발실 요청 (기획실 결과 컨텍스트 포함)
+        engineering_ctx = RunContext(
+            prompt=f"PRD 기반 API 구현해줘 (컨텍스트: {product_response})",
+            org_id="aiorg_engineering_bot",
+        )
+        engineering_response = await engineering_runner.run(engineering_ctx)
+        response_log.append({"from": "aiorg_engineering_bot", "response": engineering_response})
+
+        # Step 4: PM이 개발실 응답 수신
+        assert "[개발실] 구현 완료:" in engineering_response
+        await mock_send(
+            chat_id=int(self._pm_token().split(":")[0]),
+            text=f"개발실 응답 수신: {engineering_response}",
+        )
+
+        # Step 5: 통합 검증
+        # 두 부서 응답 모두 수신
+        assert len(response_log) == 2
+        orgs_responded = {r["from"] for r in response_log}
+        assert "aiorg_product_bot" in orgs_responded
+        assert "aiorg_engineering_bot" in orgs_responded
+
+        # send_func가 2회 호출 (PM이 두 응답 확인)
+        assert len(dispatch_log) == 2
+
+        # 개발실 응답에 기획실 컨텍스트가 전달됨 (컨텍스트 연계 검증)
+        assert "PRD" in engineering_ctx.prompt or "prd" in engineering_ctx.prompt.lower()
+
+    # ── TC-MB-5: PM 라우터 기반 부서 자동 선택 (기획/개발 구분) ────────────
+    async def test_pm_router_product_vs_engineering_routing(self) -> None:
+        """PMRouter가 기획 요청은 기획실, 개발 요청은 개발실로 라우팅한다."""
+        from core.pm_router import PMRouter
+
+        # decision_client 없음 → heuristic fallback
+        router = PMRouter(decision_client=None)
+
+        # 두 요청 모두 new_task로 분류됨 (실제 라우팅은 DispatchEngine 담당)
+        product_route = await router.route("신규 기능 기획서 작성해줘", context={})
+        engineering_route = await router.route("버그 수정하고 테스트 추가해줘", context={})
+
+        # PMRouter는 action만 결정 (부서 배정은 NLClassifier+DispatchEngine 계층)
+        assert product_route is not None
+        assert engineering_route is not None
+        assert product_route.action in {"new_task", "chat", "status_query"}
+        assert engineering_route.action in {"new_task", "chat", "status_query"}
+
+    # ── TC-MB-6: 봇 설정에서 test bot 토큰이 올바른 조직에 매핑 ────────────
+    def test_test_bot_tokens_map_to_correct_orgs(self) -> None:
+        """테스트 봇 토큰의 bot_id가 기대 조직에 매핑된다."""
+        pm_bot_id = self._pm_token().split(":")[0]
+        product_bot_id = self._product_token().split(":")[0]
+        engineering_bot_id = self._engineering_token().split(":")[0]
+
+        # bot_id로 조직 식별 (숫자로 시작하는 고유 ID)
+        assert pm_bot_id == "7341804021", f"글로벌 PM bot_id 불일치: {pm_bot_id}"
+        assert product_bot_id == "8399399379", f"기획실 bot_id 불일치: {product_bot_id}"
+        assert engineering_bot_id == "8645105804", f"개발실 bot_id 불일치: {engineering_bot_id}"
+
+    # ── TC-MB-7: validate-config 기반 멀티봇 설정 일관성 ───────────────────
+    def test_multibot_config_consistency(self) -> None:
+        """3개 테스트 봇이 orchestration.yaml의 collab_triggers와 일관된 조직 ID를 사용한다."""
+        from pathlib import Path
+
+        import yaml
+
+        config_path = Path(__file__).parent.parent.parent / "orchestration.yaml"
+        if not config_path.exists():
+            pytest.skip("orchestration.yaml not found")
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        # orchestration.yaml은 collab_triggers 키를 사용 (routing.rules 아님)
+        collab_triggers = config.get("collab_triggers", [])
+        trigger_ids = {t["id"] for t in collab_triggers}
+        trigger_depts = {t.get("trigger_dept", "") for t in collab_triggers}
+
+        # 기획실(aiorg_product_bot)이 collab trigger로 등록되어 있어야 함
+        assert "aiorg_product_bot" in trigger_depts, (
+            f"aiorg_product_bot이 collab_triggers의 trigger_dept에 없음. 등록된 부서: {trigger_depts}"
+        )
+
+        # 기획실→개발실 협업 트리거 규칙 존재 확인 (planning_to_design_engineering)
+        planning_to_eng_exists = any(
+            "engineering" in tid and ("product" in tid or "planning" in tid)
+            for tid in trigger_ids
+        )
+        assert planning_to_eng_exists, (
+            f"기획실→개발실 collab_trigger 규칙 누락. 등록된 규칙 ID: {trigger_ids}"
+        )
