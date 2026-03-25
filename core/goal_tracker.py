@@ -135,13 +135,33 @@ class GoalTracker:
         """
         import json as _json
 
-        # 동일 제목의 active/achieved 목표가 이미 있으면 재생성 방지
+        # 동일/유사 제목의 active/achieved 목표가 이미 있으면 재생성 방지
+        # 1) 정확한 제목 일치
         existing = await self.get_goals_by_title(title)
         for g in existing:
             if g["status"] in ("active", "achieved"):
                 logger.info(
                     f"[GoalTracker] start_goal 건너뜀 — 동일 제목 목표 이미 존재: "
                     f"{g['id']} (status={g['status']})"
+                )
+                return g["id"]
+
+        # 2) 제목 키워드 유사도 체크 — 제목 첫 10자(정규화) 기준으로 active/achieved 목표와 비교
+        #    "오픈소스화 스프린트" vs "오픈소스화 — 원클릭" 같은 변형 제목 중복 방지
+        import re as _re
+
+        def _normalize(s: str) -> str:
+            return _re.sub(r"[\s\-—_·:·]+", "", s).lower()[:10]
+
+        title_key = _normalize(title)
+        all_goals = await self._db.get_active_goals()
+        # achieved 목표도 포함하여 조회
+        achieved_goals = await self._db.get_goals_by_status("achieved")
+        for g in (all_goals or []) + (achieved_goals or []):
+            if _normalize(g.get("title", "")) == title_key and title_key:
+                logger.info(
+                    f"[GoalTracker] start_goal 건너뜀 — 유사 제목 목표 이미 존재: "
+                    f"{g['id']} title='{g.get('title', '')}' (status={g.get('status')})"
                 )
                 return g["id"]
 
