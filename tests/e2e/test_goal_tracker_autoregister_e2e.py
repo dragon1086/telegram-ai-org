@@ -13,10 +13,7 @@
 """
 from __future__ import annotations
 
-import asyncio
-from datetime import datetime, timezone
-from typing import Optional
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -174,7 +171,7 @@ class TestActionParser:
 
     def test_meeting_type_detection_daily(self, daily_retro_text: str) -> None:
         """일일회고 텍스트에서 meeting type이 올바르게 감지된다."""
-        from goal_tracker.meeting_handler import detect_meeting_type, MeetingType
+        from goal_tracker.meeting_handler import MeetingType, detect_meeting_type
 
         # 일일회고 키워드 포함 텍스트
         retro_trigger = "일일회고 — 2026-03-25\n" + daily_retro_text
@@ -183,7 +180,7 @@ class TestActionParser:
 
     def test_meeting_type_detection_weekly(self, weekly_meeting_text: str) -> None:
         """주간회의 텍스트에서 meeting type이 올바르게 감지된다."""
-        from goal_tracker.meeting_handler import detect_meeting_type, MeetingType
+        from goal_tracker.meeting_handler import MeetingType, detect_meeting_type
 
         weekly_trigger = "주간회의 시작 — 2026 W13\n" + weekly_meeting_text
         detected = detect_meeting_type(weekly_trigger)
@@ -321,7 +318,7 @@ class TestAutonomousLoopRunner:
 
         sm = GoalTrackerStateMachine("G-test-002", max_iterations=5)
         runner = AutonomousLoopRunner(goal_id="G-test-002", state_machine=sm)
-        result = await runner.run_cycle(registered_ids=["G-pm-001"])
+        await runner.run_cycle(registered_ids=["G-pm-001"])
 
         assert len(sm.ctx.history) >= 3, (
             f"전이 이력 {len(sm.ctx.history)}개 — 최소 3개 기대"
@@ -343,7 +340,7 @@ class TestAutonomousLoopRunner:
 
         sm = GoalTrackerStateMachine("G-test-003")
         runner = AutonomousLoopRunner(goal_id="G-test-003", state_machine=sm)
-        await runner.run_cycle(registered_ids=["G-pm-001"])
+        result = await runner.run_cycle(registered_ids=["G-pm-001"])
 
         assert sm.state == GoalTrackerState.IDLE, (
             f"최종 상태가 IDLE이 아님: {sm.state}"
@@ -406,7 +403,7 @@ class TestAutoRegisterPipeline:
     ) -> None:
         """일일회고 텍스트 → 파싱 → 등록 → 상태머신 트리거 전체 흐름."""
         from goal_tracker.auto_register import auto_register_from_report
-        from goal_tracker.state_machine import GoalTrackerState, GoalTrackerStateMachine
+        from goal_tracker.state_machine import GoalTrackerStateMachine
 
         sm = GoalTrackerStateMachine("G-daily-pipeline-001", max_iterations=5)
 
@@ -568,9 +565,9 @@ class TestEdgeCases:
         self, daily_retro_text: str, mock_goal_tracker
     ) -> None:
         """동일 텍스트를 TTL 내 2회 auto_register 시 두 번째는 0건 등록."""
-        from goal_tracker.registrar import MeetingActionRegistrar
         from goal_tracker.action_parser import ActionParser
         from goal_tracker.meeting_handler import MeetingEvent, MeetingType
+        from goal_tracker.registrar import MeetingActionRegistrar
 
         parser = ActionParser()
         items = parser.parse(daily_retro_text)
@@ -621,7 +618,7 @@ class TestStateTransitionLog:
     async def test_state_history_order(self) -> None:
         """전이 이력이 IDLE→EVALUATE→REPLAN→DISPATCH→IDLE 순서인지 확인."""
         from goal_tracker.loop_runner import AutonomousLoopRunner
-        from goal_tracker.state_machine import GoalTrackerStateMachine, GoalTrackerState
+        from goal_tracker.state_machine import GoalTrackerState, GoalTrackerStateMachine
 
         sm = GoalTrackerStateMachine("G-log-001")
         runner = AutonomousLoopRunner(goal_id="G-log-001", state_machine=sm)
@@ -776,7 +773,7 @@ class TestDispatchConfirmCallback:
             goal_id="G-cb-003",
             on_dispatch_complete=ctor_callback,
         )
-        result = await runner.run_cycle(registered_ids=["G-pm-001"])
+        await runner.run_cycle(registered_ids=["G-pm-001"])
 
         assert len(constructor_calls) == 1, "생성자 콜백 미호출"
         assert constructor_calls[0].dispatched
@@ -828,7 +825,7 @@ class TestDispatchConfirmCallback:
     @pytest.mark.asyncio
     async def test_run_meeting_cycle_with_callback(self) -> None:
         """run_meeting_cycle() 편의 함수도 on_dispatch_complete를 지원한다."""
-        from goal_tracker.loop_runner import run_meeting_cycle, LoopRunResult
+        from goal_tracker.loop_runner import LoopRunResult, run_meeting_cycle
 
         confirmed: list[LoopRunResult] = []
 
