@@ -757,20 +757,14 @@ bash scripts/request_restart.sh --reason "이유"      # 안전한 봇 재기동
 GitHub Actions는 lint → E2E → PyPI 릴리즈 → Docker 배포의 4단계로 운영합니다.
 `main` 머지 전 lint + E2E를 required status check로 묶고, 릴리즈와 Docker 배포는 태그 기반으로 분리합니다.
 
-> **TODO**: 워크플로우 파일(`scripts/ci-lint.yml`, `scripts/ci-e2e.yml`, `scripts/publish-pypi.yml`, `scripts/docker-publish.yml`)을 `.github/workflows/`로 이동 후 활성화 필요.
+워크플로우 파일은 [`.github/workflows/`](.github/workflows/)에 위치합니다.
 
 | 워크플로우 파일 | 트리거 | 필요 Secret | 실행 내용 |
 |---------------|--------|------------|-----------|
-| `ci-lint.yml` | PR, `push` to `main` | 없음 | Ruff 린트 검사 |
-| `ci-e2e.yml` | PR, `push` to `main` | 선택: 엔진/OAuth secret | Python 3.10/3.11 E2E + 3엔진 호환성 + `validate-config` |
-| `publish-pypi.yml` | `push` tag `v*` | `PYPI_API_TOKEN` | 검증 재실행 후 `python -m build` → `twine upload` PyPI 릴리즈 |
-| `docker-publish.yml` | `push` to `main`, `push` tag `v*` | `DOCKER_USERNAME`, `DOCKER_PASSWORD` | Docker Buildx 빌드 및 Docker Hub 푸시 |
-
-워크플로우 이동 방법:
-```bash
-mkdir -p .github/workflows
-cp scripts/ci-lint.yml scripts/ci-e2e.yml scripts/publish-pypi.yml scripts/docker-publish.yml .github/workflows/
-```
+| [`.github/workflows/ci-lint.yml`](.github/workflows/ci-lint.yml) | PR, `push` to `main` | 없음 | Ruff 린트 검사 |
+| [`.github/workflows/ci-e2e.yml`](.github/workflows/ci-e2e.yml) | PR, `push` to `main` | 선택: 엔진/OAuth secret | Python 3.10/3.11 E2E + 3엔진 호환성 + `validate-config` |
+| [`.github/workflows/publish-pypi.yml`](.github/workflows/publish-pypi.yml) | `push` tag `v*` | `PYPI_API_TOKEN` | 검증 재실행 후 `python -m build` → `twine upload` PyPI 릴리즈 |
+| [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml) | `push` to `main`, `push` tag `v*` | `DOCKER_USERNAME`, `DOCKER_PASSWORD` | Docker Buildx 빌드 및 Docker Hub 푸시 |
 
 Fork PR 안전성을 위해 secret 기반 인증값은 조건부 step에서만 주입합니다.
 Gemini CI는 필요 시 `GEMINI_OAUTH_CREDS` secret을 `~/.gemini/oauth_creds.json`으로 복원해 사용합니다.
@@ -961,7 +955,7 @@ mkdir -p skills/my-new-skill
 | 실행 엔진 | Claude Code CLI / Codex CLI / Gemini CLI |
 | 패키징 | python-build + twine |
 | 컨테이너 | Docker + Docker Compose (프로파일 지원) |
-| CI/CD | GitHub Actions (ci.yml / release.yml / docker.yml) |
+| CI/CD | GitHub Actions (`ci-lint.yml` / `ci-e2e.yml` / `publish-pypi.yml` / `docker-publish.yml`) |
 
 ---
 
