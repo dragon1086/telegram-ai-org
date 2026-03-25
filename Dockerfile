@@ -19,7 +19,7 @@
 # =============================================================================
 
 # ─── Stage 1: Builder — wheel 빌드 ───────────────────────────────────────────
-FROM python:3.11-slim AS builder
+FROM python:3.11-slim@sha256:9358444059ed78e2975ada2c189f1c1a3144a5dab6f35bff8c981afb38946634 AS builder
 
 WORKDIR /build
 
@@ -48,7 +48,7 @@ RUN python -m build --wheel --outdir dist/
 
 
 # ─── Stage 2: Node.js CLI installer (엔진별 선택 설치) ───────────────────────
-FROM node:20-slim AS node-installer
+FROM node:20-slim@sha256:17281e8d1dc4d671976c6b89a12f47a44c2f390b63a989e2e327631041f544fd AS node-installer
 
 WORKDIR /npm-install
 
@@ -66,7 +66,7 @@ RUN if [ "$ENGINE" = "claude" ]; then \
 
 
 # ─── Stage 3: Runtime — 경량 실행 이미지 ─────────────────────────────────────
-FROM python:3.11-slim AS runtime
+FROM python:3.11-slim@sha256:9358444059ed78e2975ada2c189f1c1a3144a5dab6f35bff8c981afb38946634 AS runtime
 
 LABEL org.opencontainers.image.title="telegram-ai-org"
 LABEL org.opencontainers.image.description="AI organization on Telegram — multi-agent PM bot system"
@@ -129,15 +129,14 @@ RUN mkdir -p /app/logs /app/data /app/reports /app/tasks \
 USER aiorg
 
 # ─── 환경변수 기본값 ──────────────────────────────────────────────────────────
-# 실제 값은 --env-file .env 또는 docker-compose env_file 로 주입
-ENV PM_BOT_TOKEN="" \
-    TELEGRAM_BOT_TOKEN="" \
-    TELEGRAM_GROUP_CHAT_ID="" \
-    ANTHROPIC_API_KEY="" \
-    OPENAI_API_KEY="" \
-    GEMINI_API_KEY="" \
-    CLAUDE_CODE_OAUTH_TOKEN="" \
-    CLAUDE_CLI_PATH="/opt/cli/bin/claude" \
+# !! 보안 주의: 민감 시크릿(TOKEN/KEY/SECRET/PASSWORD 류)은 이 파일에 기재하지 않는다.
+# !! 런타임 주입 전용 — 아래 방식 중 하나를 사용할 것:
+#      docker run --env-file .env telegram-ai-org
+#      docker-compose: env_file: [.env]
+# !! 주입 필수 변수 목록 (값 없음 — .env 파일 또는 런타임 --env 으로만 제공):
+#      PM_BOT_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_GROUP_CHAT_ID,
+#      ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, CLAUDE_CODE_OAUTH_TOKEN
+ENV CLAUDE_CLI_PATH="/opt/cli/bin/claude" \
     CODEX_CLI_PATH="/opt/cli/bin/codex" \
     GEMINI_CLI_PATH="/opt/cli/bin/gemini" \
     GEMINI_CLI_DEFAULT_TIMEOUT_SEC="1800" \
