@@ -69,12 +69,13 @@ async def ensure_user_friendly_output(
     decision_client: DecisionClientProtocol | None = None,
 ) -> str:
     cleaned = (draft or "").strip()
-    artifact_names = extract_local_artifact_names(cleaned)
+    artifact_paths = extract_local_artifact_paths(cleaned)
+    artifact_names = [Path(p).name for p in artifact_paths] if artifact_paths else extract_local_artifact_names(cleaned)
 
     # 이미 ## 결론 구조로 정제된 보고서는 LLM 재작성 불필요.
     # full_context가 있을 때만 재작성 (합성 fallback 케이스 — raw 부서 결과를 구조화해야 함).
     if is_already_structured_report(cleaned) and not full_context:
-        return _heuristic_cleanup(cleaned, artifact_names)
+        return _heuristic_cleanup(cleaned, artifact_names, artifact_paths)
 
     should_rewrite = needs_rewrite_for_telegram(cleaned) or bool(full_context)
     if decision_client is not None and should_rewrite:
@@ -121,11 +122,11 @@ async def ensure_user_friendly_output(
         try:
             rewritten = await asyncio.wait_for(decision_client.complete(prompt), timeout=60.0)
             if rewritten and rewritten.strip():
-                return _heuristic_cleanup(rewritten.strip(), artifact_names)
+                return _heuristic_cleanup(rewritten.strip(), artifact_names, artifact_paths)
         except Exception:
             pass
 
-    return _heuristic_cleanup(cleaned, artifact_names)
+    return _heuristic_cleanup(cleaned, artifact_names, artifact_paths)
 
 
 EXIT_CODE_RE = re.compile(r"__EXIT_CODE__:\d+\s*", re.MULTILINE)
@@ -133,7 +134,11 @@ EXIT_CODE_RE = re.compile(r"__EXIT_CODE__:\d+\s*", re.MULTILINE)
 _META_TAG_RE = re.compile(r"\[(?:TEAM|COLLAB|SOLO|ARTIFACT)[^\]]*\]")
 
 
-def _heuristic_cleanup(text: str, artifact_names: list[str]) -> str:
+def _heuristic_cleanup(
+    text: str,
+    artifact_names: list[str],
+    artifact_paths: list[str] | None = None,
+) -> str:
     cleaned = ARTIFACT_MARKER_RE.sub("", text or "").strip()
     cleaned = EXIT_CODE_RE.sub("", cleaned).strip()
     cleaned = LOCAL_PATH_RE.sub("", cleaned).strip()
@@ -141,7 +146,23 @@ def _heuristic_cleanup(text: str, artifact_names: list[str]) -> str:
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     if artifact_names:
-        note = "첨부 산출물: " + ", ".join(artifact_names)
+        if artifact_paths:
+            note_parts: list[str] = []
+            for p_str in artifact_paths:
+                p = Path(p_str)
+                if p.is_file() and p.stat().st_size < 100_000:
+                    content = p.read_text(encoding="utf-8", errors="replace")[:2000]
+                    note_parts.append(f"=== {p.name} ===\n{content}")
+                elif p.is_dir():
+                    files = sorted(f.name for f in p.iterdir() if f.is_file())[:20]
+                    note_parts.append(f"=== {p.name}/ ===\n" + "\n".join(files))
+            note = (
+                "첨부 산출물:\n" + "\n\n".join(note_parts)
+                if note_parts
+                else "첨부 산출물: " + ", ".join(artifact_names)
+            )
+        else:
+            note = "첨부 산출물: " + ", ".join(artifact_names)
         if note not in cleaned:
             cleaned = f"{cleaned}\n\n{note}".strip()
     return cleaned or "최종 전달본을 정리 중입니다."
