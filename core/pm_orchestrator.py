@@ -140,6 +140,9 @@ class PMOrchestrator:
             self._staleness_checker.start()
         except Exception as _sc_err:
             logger.warning(f"[PM] StalenessChecker 시작 실패 (무시): {_sc_err}")
+        # COLLAB 자동 트리거 dedup 캐시
+        # key: (source_task_id, target_dept) → 마지막 트리거 발동 시각 (monotonic seconds)
+        self._collab_dedup: dict[tuple[str, str], float] = {}
 
     @property
     def decision_client(self) -> DecisionClientProtocol | None:
@@ -1299,6 +1302,11 @@ class PMOrchestrator:
                 except Exception as _e:
                     logger.warning(f"[PM] 태스크 {tid} 알림 전송 실패 (태스크는 assigned 상태): {_e}")
 
+        # ── COLLAB 자동 트리거 ────────────────────────────────────────────────────
+        # orchestration.yaml collab_triggers 기반으로 완료된 태스크의 부서+task_type을
+        # 확인해 매칭 트리거를 발동, 크로스팀 후속 태스크를 자동 생성한다.
+        await self._fire_collab_triggers(task_id, result, chat_id)
+
         # 모든 서브태스크가 terminal 상태(done/failed/cancelled)인지 확인 후 합성
         # 기존: all done 체크 → 실패 서브태스크가 있으면 합성 미트리거 (부모 stuck 버그) → 수정
         _TERMINAL = {"done", "failed", "cancelled"}
@@ -1326,6 +1334,121 @@ class PMOrchestrator:
                 await self._synthesize_and_act(parent_id, siblings, chat_id)
             else:
                 await self._send(chat_id, await self.build_status_snapshot(parent_id))
+
+    async def _fire_collab_triggers(
+        self, task_id: str, result: str, chat_id: int
+    ) -> None:
+        """orchestration.yaml collab_triggers 기반 자동 크로스팀 태스크 생성.
+
+        완료된 task_id의 assigned_dept + task_type을 읽어 매칭 트리거를 찾고,
+        dedup 창 안에 이미 발동된 조합은 건너뛴다.
+        """
+        import time
+
+        try:
+            task_info = await self._db.get_pm_task(task_id)
+            if not task_info:
+                return
+
+            source_dept = task_info.get("assigned_dept") or ""
+            # task_type은 metadata에 저장됨 (예: "기획", "구현", "리서치" 등)
+            task_meta = task_info.get("metadata") or {}
+            task_type = task_meta.get("task_type") or ""
+            task_description = task_info.get("description") or ""
+
+            if not source_dept:
+                return
+
+            # collab 태스크 자체가 또 트리거를 발동하는 순환 방지
+            if task_meta.get("collab"):
+                return
+
+            cfg = load_orchestration_config(force_reload=False)
+            # task_type 저장값 우선, 없으면 description 키워드로 폴백
+            triggers = cfg.get_collab_triggers(source_dept, task_type)
+            if not triggers and task_description:
+                triggers = cfg.get_collab_triggers_by_description(source_dept, task_description)
+            if not triggers:
+                return
+
+            source_dept_name = KNOWN_DEPTS.get(source_dept, source_dept)
+            result_summary = result[:300] if result else "(결과 없음)"
+            now = time.monotonic()
+
+            for trigger in triggers:
+                for target_dept in trigger.target_depts:
+                    dedup_key = (task_id, target_dept)
+                    last_fired = self._collab_dedup.get(dedup_key)
+                    dedup_window_sec = trigger.dedup_window_minutes * 60
+
+                    # 중복 트리거 억제 (같은 source_task_id → 같은 target_dept)
+                    if last_fired is not None and (now - last_fired) < dedup_window_sec:
+                        logger.info(
+                            f"[COLLAB-TRIGGER] dedup 억제: {task_id} → {target_dept} "
+                            f"(마지막 발동 {int(now - last_fired)}초 전)"
+                        )
+                        continue
+
+                    # 대상 부서가 존재하는지 확인
+                    org = cfg.get_org(target_dept)
+                    if org is None:
+                        logger.warning(
+                            f"[COLLAB-TRIGGER] 대상 부서 없음: {target_dept} (trigger={trigger.id})"
+                        )
+                        continue
+
+                    target_role = org.role or org.dept_name
+
+                    # 메시지 생성
+                    task_description = trigger.render_message(
+                        source_dept=source_dept_name,
+                        source_task_id=task_id,
+                        result_summary=result_summary,
+                        target_role=target_role,
+                    )
+
+                    # 후속 태스크 생성 (collab_dispatch 재사용)
+                    new_task_id = await self.collab_dispatch(
+                        parent_task_id=task_id,
+                        task=task_description,
+                        target_org=target_dept,
+                        requester_org=source_dept,
+                        context=f"[자동 COLLAB 트리거: {trigger.id}]",
+                        chat_id=chat_id,
+                    )
+
+                    # 태스크 할당 상태 업데이트
+                    await self._db.update_pm_task_status(new_task_id, "assigned")
+
+                    # 대상 부서에 알림 발송
+                    dept_mention = self._org_mention(target_dept)
+                    target_dept_name = KNOWN_DEPTS.get(target_dept, target_dept)
+                    notify_msg = (
+                        f"{dept_mention} [PM_TASK:{new_task_id}|dept:{target_dept}] "
+                        f"{target_dept_name}에 자동 배정 (COLLAB: {trigger.id})\n"
+                        f"태스크 유형: 협업\n"
+                        f"파일·코드 변경 허용: 예\n"
+                        f"{task_description[:400]}"
+                    )
+                    try:
+                        await self._send(chat_id, notify_msg)
+                    except Exception as _send_err:
+                        logger.warning(
+                            f"[COLLAB-TRIGGER] 알림 전송 실패 (태스크는 생성됨): {_send_err}"
+                        )
+
+                    # dedup 캐시 기록
+                    self._collab_dedup[dedup_key] = now
+
+                    logger.info(
+                        f"[COLLAB-TRIGGER] 발동: {trigger.id} | "
+                        f"{source_dept} ({task_type}) → {target_dept} | "
+                        f"new_task_id={new_task_id}"
+                    )
+
+        except Exception as _e:
+            # COLLAB 트리거 실패는 메인 태스크 완료를 막지 않는다
+            logger.warning(f"[COLLAB-TRIGGER] 처리 중 오류 (무시): {_e}")
 
     async def consolidate_results(self, parent_task_id: str) -> str:
         """부모 태스크의 완료된 서브태스크 결과를 단순 요약 문자열로 합친다."""

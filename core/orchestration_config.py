@@ -71,6 +71,49 @@ class PhasePolicy:
 
 
 @dataclass
+class CollabTrigger:
+    """orchestration.yaml collab_triggers 항목 하나를 표현.
+
+    trigger_dept 조직의 태스크가 완료되고 task_type이 trigger_task_types에
+    포함되면 target_depts에 후속 태스크를 자동 생성한다.
+    """
+
+    id: str
+    description: str
+    trigger_dept: str
+    trigger_task_types: list[str]       # 빈 리스트 = 모든 타입에 발동
+    target_depts: list[str]
+    message_template: str
+    enabled: bool = True
+    dedup_window_minutes: int = 60      # 같은 (source_task_id, target_dept) 재트리거 억제 시간
+
+    def matches(self, dept: str, task_type: str) -> bool:
+        """dept + task_type 조합이 이 트리거 조건에 해당하는지 반환."""
+        if not self.enabled:
+            return False
+        if dept != self.trigger_dept:
+            return False
+        if not self.trigger_task_types:
+            return True
+        return task_type in self.trigger_task_types
+
+    def render_message(
+        self,
+        source_dept: str,
+        source_task_id: str,
+        result_summary: str,
+        target_role: str = "",
+    ) -> str:
+        """message_template의 치환 변수를 실제 값으로 채워 반환."""
+        return self.message_template.format(
+            source_dept=source_dept,
+            source_task_id=source_task_id,
+            result_summary=result_summary,
+            target_role=target_role,
+        )
+
+
+@dataclass
 class OrganizationConfig:
     id: str
     kind: str
@@ -165,6 +208,7 @@ class OrchestrationConfig:
         self.runtime: dict[str, Any] = {}
         self.legacy_exports: dict[str, Any] = {}
         self.global_instructions: str = ""
+        self.collab_triggers: list[CollabTrigger] = []
 
     def load(self) -> "OrchestrationConfig":
         self._load_orchestration()
@@ -198,6 +242,19 @@ class OrchestrationConfig:
             name: PhasePolicy(name=name, **cfg)
             for name, cfg in raw.get("phase_policies", {}).items()
         }
+        self.collab_triggers = [
+            CollabTrigger(
+                id=item.get("id", ""),
+                description=item.get("description", ""),
+                trigger_dept=item.get("trigger_dept", ""),
+                trigger_task_types=list(item.get("trigger_task_types", [])),
+                target_depts=list(item.get("target_depts", [])),
+                message_template=item.get("message_template", ""),
+                enabled=bool(item.get("enabled", True)),
+                dedup_window_minutes=int(item.get("dedup_window_minutes", 60)),
+            )
+            for item in raw.get("collab_triggers", [])
+        ]
 
     def _merge_team(self, org_entry: dict[str, Any]) -> dict[str, Any]:
         execution = copy.deepcopy(org_entry.get("execution", {}))
@@ -273,6 +330,31 @@ class OrchestrationConfig:
 
     def get_dept_map(self) -> dict[str, str]:
         return {org.id: org.dept_name for org in self.list_specialist_orgs()}
+
+    def get_collab_triggers(
+        self, trigger_dept: str, task_type: str
+    ) -> list[CollabTrigger]:
+        """dept + task_type 조합에 매칭되는 활성 COLLAB 트리거 목록 반환."""
+        return [t for t in self.collab_triggers if t.matches(trigger_dept, task_type)]
+
+    def get_collab_triggers_by_description(
+        self, trigger_dept: str, description: str
+    ) -> list[CollabTrigger]:
+        """task_type 미설정 시 description 키워드로 폴백 매칭.
+
+        trigger_task_types 목록의 키워드가 description에 포함되는지 확인.
+        빈 trigger_task_types(= 모든 타입 발동)도 정상 포함.
+        """
+        lower_desc = description.lower()
+        result = []
+        for t in self.collab_triggers:
+            if not t.enabled or t.trigger_dept != trigger_dept:
+                continue
+            if not t.trigger_task_types:
+                result.append(t)
+            elif any(kw.lower() in lower_desc for kw in t.trigger_task_types):
+                result.append(t)
+        return result
 
     def export_legacy_bot_yaml(self, org: OrganizationConfig) -> dict[str, Any]:
         return {
