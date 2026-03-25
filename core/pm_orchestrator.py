@@ -6,25 +6,28 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Awaitable, Literal, Any
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
 
 from loguru import logger
 
-from core.context_db import ContextDB
-from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
+from core.constants import DEPT_INSTRUCTIONS, DEPT_ROLES, KNOWN_DEPTS
+from core.context_db import ContextDB
 from core.memory_manager import MemoryManager
-from core.constants import KNOWN_DEPTS, DEPT_INSTRUCTIONS, DEPT_ROLES
 from core.orchestration_config import load_orchestration_config
 from core.orchestration_runbook import OrchestrationRunbook
-from core.result_synthesizer import ResultSynthesizer, SynthesisJudgment
-from core.structured_prompt import StructuredPromptGenerator
 from core.pm_decision import DecisionClientProtocol
 from core.pm_identity import PMIdentity
-from core.telegram_user_guardrail import ensure_user_friendly_output, extract_local_artifact_paths
+from core.result_synthesizer import ResultSynthesizer, SynthesisJudgment
 from core.staleness_checker import StalenessChecker
-from core.telegram_formatting import markdown_to_html, escape_html
+from core.structured_prompt import StructuredPromptGenerator
+from core.task_graph import TaskGraph
+from core.telegram_formatting import markdown_to_html
+from core.telegram_user_guardrail import ensure_user_friendly_output, extract_local_artifact_paths
+
+if TYPE_CHECKING:
+    from core.discussion import DiscussionManager
 
 ENABLE_PM_ORCHESTRATOR = os.environ.get("ENABLE_PM_ORCHESTRATOR", "0") == "1"
 MAX_REWORK_RETRIES = int(os.environ.get("MAX_REWORK_RETRIES", "2"))
@@ -89,7 +92,7 @@ async def _record_bot_perf(
         latency = 0.0
         created = task.get("created_at", "")
         if created:
-            from datetime import datetime, UTC
+            from datetime import UTC, datetime
             try:
                 start = datetime.fromisoformat(created)
                 latency = (datetime.now(UTC) - start).total_seconds()
@@ -113,7 +116,7 @@ class PMOrchestrator:
         memory: MemoryManager,
         org_id: str,
         telegram_send_func: Callable[..., Awaitable[Any]],
-        discussion_manager: "DiscussionManager | None" = None,
+        discussion_manager: DiscussionManager | None = None,
         decision_client: DecisionClientProtocol | None = None,
     ):
         self._db = context_db
@@ -1760,7 +1763,7 @@ class PMOrchestrator:
         self, parent_id: str, stale_threshold_sec: float = 300.0,
     ) -> list[str]:
         """assigned 상태인 채로 threshold 이상 지난 서브태스크 ID 반환 + 경고 로그."""
-        from datetime import datetime, UTC, timedelta
+        from datetime import UTC, datetime, timedelta
         try:
             subtasks = await self._db.get_subtasks(parent_id)
         except Exception as _e:
@@ -1927,6 +1930,14 @@ class PMOrchestrator:
                 await self._db.update_pm_task_status(
                     parent_task_id, "done", result=report,
                 )
+            # Goal(G-*) parent는 pm_goals 테이블도 업데이트해야
+            # SynthesisPoller가 재합성 루프에 빠지지 않는다.
+            if parent_task_id.startswith("G-"):
+                try:
+                    await self._db.update_goal(parent_task_id, status="completed")
+                    logger.info(f"[PM] Goal {parent_task_id} → completed")
+                except Exception as _ge:
+                    logger.warning(f"[PM] Goal 상태 업데이트 실패 {parent_task_id}: {_ge}")
         elif synthesis.judgment == SynthesisJudgment.INSUFFICIENT:
             rework_count = int(parent_meta.get("rework_count", 0))
             if run_id:
@@ -2023,6 +2034,13 @@ class PMOrchestrator:
             await self._db.update_pm_task_status(
                 parent_task_id, "done", result=report,
             )
+            # Goal(G-*) parent는 pm_goals 테이블도 업데이트 (SynthesisPoller 재합성 루프 방지)
+            if parent_task_id.startswith("G-"):
+                try:
+                    await self._db.update_goal(parent_task_id, status="completed")
+                    logger.info(f"[PM] Goal {parent_task_id} → completed (needs_integration)")
+                except Exception as _ge:
+                    logger.warning(f"[PM] Goal 상태 업데이트 실패 {parent_task_id}: {_ge}")
 
     # ── Discussion Integration ────────────────────────────────────────────
 
@@ -2399,8 +2417,8 @@ class PMOrchestrator:
         Returns:
             전송된 상태 요약 문자열.
         """
-        from core.improvement_bus import ImprovementBus
         from core.eval_runner import EvalRunner
+        from core.improvement_bus import ImprovementBus
 
         try:
             bus = ImprovementBus(dry_run=False)
@@ -2430,8 +2448,8 @@ class PMOrchestrator:
 
     async def _handle_routing_approve(self, update, context) -> None:
         """대기 중인 라우팅 제안을 nl_classifier에 적용."""
-        from core.routing_approval_store import RoutingApprovalStore
         from core.nl_keyword_applier import NLKeywordApplier
+        from core.routing_approval_store import RoutingApprovalStore
         store = RoutingApprovalStore()
         proposal = store.load_pending()
         if not proposal:
