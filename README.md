@@ -210,6 +210,8 @@ bash scripts/start_all.sh
 |------|------|
 | `bash scripts/setup.sh` | 기본 실행 (대화형) |
 | `bash scripts/setup.sh --yes` | CI/자동화 환경 무인 설치 (프롬프트 건너뜀) |
+| `bash scripts/setup.sh --docker` | Docker 환경 감지 후 `docker compose up` 자동 실행 |
+| `bash scripts/setup.sh --yes --docker` | CI 환경 + Docker Compose 자동 실행 (완전 비대화형) |
 | `bash scripts/setup.sh --skip-verify` | 검증 단계 건너뜀 (빠른 재설치) |
 | `bash scripts/setup.sh --no-venv` | 가상환경 생성 건너뜀 (기존 환경 재사용) |
 
