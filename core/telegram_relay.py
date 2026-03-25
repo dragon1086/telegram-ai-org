@@ -1281,7 +1281,7 @@ class TelegramRelay:
                     self.org_id,
                     context=collab_ctx,
                     requester_mention=requester_mention,
-                    from_org_mention=self._org_mention(self.org_id),
+                    from_org_mention="",  # 발신자 자신을 @멘션하지 않음 — receiver가 from_org로 복원
                     target_mentions=target_mentions,
                 )
                 try:
