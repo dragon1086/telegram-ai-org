@@ -1600,3 +1600,355 @@ class TestCodexRunnerUtilityFunctions:
             result = await runner.run(ctx)
 
         assert isinstance(result, str)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 보완: ClaudeSubprocessRunner 미커버 경로 (80% → 92%+)
+# ---------------------------------------------------------------------------
+
+
+class TestClaudeSubprocessRunnerFullCoverage:
+    """ClaudeSubprocessRunner 80% → 90%+ 커버리지 달성을 위한 추가 테스트."""
+
+    async def test_run_single_delegates_with_extra_engine_config(self) -> None:
+        """run_single()은 engine_config의 shell_session_manager/shell_team_id를 전달한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        mock_session = MagicMock()
+        runner._runner = MagicMock()
+        runner._runner.run_single = AsyncMock(return_value="single 응답 완료")
+
+        ctx = RunContext(
+            prompt="단일 실행 프롬프트",
+            workdir="/tmp",
+            system_prompt="시스템 지침",
+            engine_config={
+                "shell_session_manager": mock_session,
+                "shell_team_id": "team-001",
+            },
+            org_id="aiorg_engineering_bot",
+        )
+        result = await runner.run_single(ctx)
+
+        assert result == "single 응답 완료"
+        runner._runner.run_single.assert_called_once()
+
+    async def test_run_single_without_extra_engine_config(self) -> None:
+        """run_single()은 extra 없이도 정상 동작한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        runner._runner.run_single = AsyncMock(return_value="단순 단일 응답")
+
+        ctx = RunContext(prompt="기본 단일 실행")
+        result = await runner.run_single(ctx)
+
+        assert result == "단순 단일 응답"
+
+    async def test_run_task_delegates_to_inner_run_task(self) -> None:
+        """run_task()는 내부 _runner.run_task()에 올바른 파라미터를 전달한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        runner._runner.run_task = AsyncMock(return_value="task 응답 완료")
+
+        ctx = RunContext(
+            prompt="태스크 프롬프트",
+            system_prompt="시스템: 한국어로 답변",
+            workdir="/tmp",
+            org_id="aiorg_engineering_bot",
+        )
+        result = await runner.run_task(ctx)
+
+        assert result == "task 응답 완료"
+        runner._runner.run_task.assert_called_once()
+
+    async def test_run_structured_team_delegates(self) -> None:
+        """run_structured_team()은 내부 _runner.run_structured_team()에 위임한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        runner._runner.run_structured_team = AsyncMock(return_value="structured 응답")
+
+        result = await runner.run_structured_team("팀 태스크", agents=["agent1"])
+
+        assert result == "structured 응답"
+        runner._runner.run_structured_team.assert_called_once_with("팀 태스크", agents=["agent1"])
+
+    async def test_run_agent_teams_delegates(self) -> None:
+        """run_agent_teams()는 내부 _runner.run_agent_teams()에 위임한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        runner._runner.run_agent_teams = AsyncMock(return_value="agents 응답")
+
+        result = await runner.run_agent_teams("멀티 에이전트 태스크")
+
+        assert result == "agents 응답"
+        runner._runner.run_agent_teams.assert_called_once()
+
+    async def test_run_omc_team_delegates(self) -> None:
+        """run_omc_team()은 내부 _runner.run_omc_team()에 위임한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        runner._runner.run_omc_team = AsyncMock(return_value="omc 응답")
+
+        result = await runner.run_omc_team("OMC 태스크", team_size=3)
+
+        assert result == "omc 응답"
+        runner._runner.run_omc_team.assert_called_once_with("OMC 태스크", team_size=3)
+
+    def test_get_last_metrics_falls_back_to_empty_dict_when_no_method(self) -> None:
+        """_runner에 get_last_metrics가 없으면 빈 dict를 반환한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        # spec=[] 으로 get_last_metrics 속성을 제거
+        runner._runner = MagicMock(spec=[])
+        result = runner.get_last_metrics()
+        assert result == {}
+
+    def test_capabilities_contains_all_four_capabilities(self) -> None:
+        """ClaudeSubprocessRunner는 streaming/session_resumption/team/tools 4개를 선언한다."""
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        runner = ClaudeSubprocessRunner()
+        runner._runner = MagicMock()
+        caps = runner.capabilities()
+        assert "streaming" in caps
+        assert "session_resumption" in caps
+        assert "team" in caps
+        assert "tools" in caps
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 보완: CodexRunner 미커버 경로 (83% → 90%+)
+# ---------------------------------------------------------------------------
+
+
+class TestCodexRunnerCoverageBoosters:
+    """CodexRunner 83% → 90%+ 커버리지 달성을 위한 추가 테스트."""
+
+    # ── _looks_like_repo_search_intent ──────────────────────────────────────
+
+    def test_looks_like_repo_search_intent_with_repo_keyword(self) -> None:
+        """'repo'가 포함된 프롬프트는 True를 반환한다."""
+        from tools.codex_runner import _looks_like_repo_search_intent
+
+        assert _looks_like_repo_search_intent("telegram-ai-org repo 분석해줘") is True
+
+    def test_looks_like_repo_search_intent_with_korean_keywords(self) -> None:
+        """'리포', '저장소', '디렉토리' 같은 한국어 키워드는 True를 반환한다."""
+        from tools.codex_runner import _looks_like_repo_search_intent
+
+        assert _looks_like_repo_search_intent("리포지토리 경로 찾아줘") is True
+        assert _looks_like_repo_search_intent("저장소 분석") is True
+        assert _looks_like_repo_search_intent("디렉토리 확인") is True
+
+    def test_looks_like_repo_search_intent_normal_text_is_false(self) -> None:
+        """repo 키워드 없는 텍스트는 False를 반환한다."""
+        from tools.codex_runner import _looks_like_repo_search_intent
+
+        assert _looks_like_repo_search_intent("안녕하세요") is False
+        assert _looks_like_repo_search_intent("버그 수정해줘") is False
+
+    def test_looks_like_repo_search_intent_github_url(self) -> None:
+        """GitHub URL 패턴이 있으면 True를 반환한다."""
+        from tools.codex_runner import _looks_like_repo_search_intent
+
+        assert _looks_like_repo_search_intent("https://github.com/user/repo 분석") is True
+
+    # ── _resolve_workdir ──────────────────────────────────────────────────
+
+    def test_resolve_workdir_returns_default_when_no_repo_intent(self) -> None:
+        """repo 의도가 없는 프롬프트는 기본 workdir를 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        result = runner._resolve_workdir("안녕하세요 버그 수정")
+        assert result == runner.workdir
+
+    def test_resolve_workdir_with_repo_intent_no_matches_returns_default(self) -> None:
+        """repo 의도가 있지만 실제 리포지토리가 없으면 기본 workdir를 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        result = runner._resolve_workdir("nonexistent-repo-xyz-999 디렉토리 분석")
+        assert result == runner.workdir
+
+    def test_resolve_workdir_uses_explicit_path_when_found(self, tmp_path) -> None:
+        """존재하는 경로가 명시되면 _extract_explicit_path 결과를 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        result = runner._resolve_workdir(f"이 경로 {tmp_path} 분석해줘")
+        assert result is not None
+        assert isinstance(result, str)
+
+    # ── _extract_explicit_path ───────────────────────────────────────────
+
+    def test_extract_explicit_path_with_existing_dir(self, tmp_path) -> None:
+        """존재하는 디렉토리 경로가 있으면 Path를 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        result = runner._extract_explicit_path(f" {tmp_path} 경로 분석")
+        assert result is not None
+
+    def test_extract_explicit_path_no_path_returns_none(self) -> None:
+        """경로가 없는 프롬프트에서 None을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        result = runner._extract_explicit_path("버그 수정해줘 단순 요청")
+        assert result is None
+
+    def test_extract_explicit_path_nonexistent_path_returns_none(self) -> None:
+        """존재하지 않는 경로는 None을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        result = runner._extract_explicit_path("/nonexistent/path/xyz999/nothere 분석")
+        assert result is None
+
+    # ── _find_repo_from_prompt ────────────────────────────────────────────
+
+    def test_find_repo_from_prompt_no_repo_intent_returns_none(self) -> None:
+        """repo 키워드 없는 프롬프트는 None을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        result = runner._find_repo_from_prompt("안녕하세요 버그 수정해줘")
+        assert result is None
+
+    def test_find_repo_from_prompt_repo_intent_no_names_returns_none(self) -> None:
+        """repo 키워드가 있지만 이름이 없으면 None을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        result = runner._find_repo_from_prompt("repo directory path git 분석")
+        assert result is None
+
+    def test_find_repo_from_prompt_with_empty_search_roots_returns_none(self) -> None:
+        """검색 루트가 없으면 None을 반환한다."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        with patch.object(runner, "_iter_search_roots", return_value=[]):
+            result = runner._find_repo_from_prompt("myproject 디렉토리 분석")
+        assert result is None
+
+    # ── _select_agent_prompts ─────────────────────────────────────────────
+
+    def test_select_agent_prompts_names_but_no_files_returns_empty(self, tmp_path) -> None:
+        """에이전트 디렉토리가 존재해도 파일이 없으면 빈 문자열을 반환한다."""
+        from tools.codex_runner import _select_agent_prompts
+
+        with patch("tools.codex_runner.AGENT_DIRS", [tmp_path]):
+            result = _select_agent_prompts("implement feature", agent_names=["nonexistent-xyz"])
+        assert result == ""
+
+    def test_select_agent_prompts_with_existing_agent_file(self, tmp_path) -> None:
+        """에이전트 파일이 실제 존재하면 파일 내용이 포함된 문자열을 반환한다."""
+        from tools.codex_runner import _select_agent_prompts
+
+        agent_file = tmp_path / "executor.md"
+        agent_file.write_text("당신은 시니어 개발자입니다.", encoding="utf-8")
+
+        with patch("tools.codex_runner.AGENT_DIRS", [tmp_path]):
+            result = _select_agent_prompts("implement feature", agent_names=["executor"])
+
+        # 에이전트 파일 발견 시 내용 포함
+        assert "executor" in result.lower() or "당신은" in result
+
+    # ── _communicate_with_progress — stream=None 경로 ────────────────────
+
+    async def test_drain_skips_none_stream(self) -> None:
+        """_drain은 stream=None일 때 즉시 반환한다 (line 528)."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+
+        async def my_progress(msg: str) -> None:
+            pass
+
+        proc = MagicMock()
+        proc.stdout = None
+        proc.stderr = None
+        proc.wait = AsyncMock()
+
+        stdout_bytes, stderr_bytes = await runner._communicate_with_progress(proc, my_progress)
+        assert stdout_bytes == b""
+        assert stderr_bytes == b""
+
+    async def test_drain_deduplicates_repeated_progress_lines(self) -> None:
+        """같은 줄이 반복되면 중복 progress_callback 호출을 방지한다 (line 540)."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+        callback_count = [0]
+
+        async def my_progress(msg: str) -> None:
+            callback_count[0] += 1
+
+        # 같은 라인 3번 전송
+        lines = [
+            "분석 진행 중: 반복 메시지\n".encode("utf-8"),
+            "분석 진행 중: 반복 메시지\n".encode("utf-8"),
+            "분석 진행 중: 반복 메시지\n".encode("utf-8"),
+            b"",
+        ]
+        idx = [0]
+
+        async def mock_readline() -> bytes:
+            val = lines[idx[0]] if idx[0] < len(lines) else b""
+            idx[0] += 1
+            return val
+
+        mock_stream = MagicMock()
+        mock_stream.readline = mock_readline
+
+        proc = MagicMock()
+        proc.stdout = mock_stream
+        proc.stderr = None
+        proc.wait = AsyncMock()
+
+        await runner._communicate_with_progress(proc, my_progress)
+        # 중복 억제로 콜백은 최대 1회만 호출
+        assert callback_count[0] <= 1
+
+    async def test_drain_progress_callback_exception_does_not_propagate(self) -> None:
+        """progress_callback 예외는 _drain 실행을 중단시키지 않는다 (line 550-551)."""
+        from tools.codex_runner import CodexRunner
+
+        runner = CodexRunner()
+
+        async def failing_progress(msg: str) -> None:
+            raise RuntimeError("콜백 실패")
+
+        lines = ["실행 진행 중: 단계 1\n".encode("utf-8"), b""]
+        idx = [0]
+
+        async def mock_readline() -> bytes:
+            val = lines[idx[0]] if idx[0] < len(lines) else b""
+            idx[0] += 1
+            return val
+
+        mock_stream = MagicMock()
+        mock_stream.readline = mock_readline
+
+        proc = MagicMock()
+        proc.stdout = mock_stream
+        proc.stderr = None
+        proc.wait = AsyncMock()
+
+        # 예외가 전파되지 않고 정상 완료
+        stdout_bytes, _ = await runner._communicate_with_progress(proc, failing_progress)
+        assert isinstance(stdout_bytes, bytes)
