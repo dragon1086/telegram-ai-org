@@ -13,6 +13,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -68,6 +69,9 @@ from core.setup_registration import (
     upsert_org_in_canonical_config,
     upsert_runtime_env_var,
 )
+
+if TYPE_CHECKING:
+    from core.context_db import ContextDB
 from core.task_poller import TaskPoller
 from core.telegram_delivery import resolve_delivery_target
 from core.telegram_formatting import (
@@ -125,7 +129,7 @@ class TelegramRelay:
         org_id: str = "global",
         engine: str = "claude-code",
         bus: MessageBus | None = None,
-        context_db: "ContextDB | None" = None,
+        context_db: ContextDB | None = None,
     ) -> None:
         self.token = token
         self.allowed_chat_id = allowed_chat_id
@@ -168,6 +172,7 @@ class TelegramRelay:
         # PM 오케스트레이터 모드 — ENABLE_PM_ORCHESTRATOR + context_db 필요
         self._pm_orchestrator = None
         self._synthesizing: set = set()  # 합성 중복 방지 (이벤트 드리븐 + 폴러 공유)
+        self._synthesis_perm_skip: set[str] = set()  # 합성 영구 실패 → 재시도 방지 (세션 내)
         self._collab_injecting: set[str] = set()
         self._uploaded_artifacts: set[str] = set()  # 중복 파일 업로드 방지
         self._pending_confirmation: dict = {}  # {chat_id: {action, task_ids, expires}}
@@ -1694,10 +1699,16 @@ class TelegramRelay:
             # APPROVE/REJECT/CANCEL/STATUS 는 짧은 명령이므로 task로 라우팅
             # CHAT 은 greeting과 동일하게 default PM만 처리
             is_greeting = is_greeting or _intent == Intent.CHAT
-            is_task = _intent in (Intent.TASK, Intent.APPROVE, Intent.REJECT, Intent.CANCEL, Intent.STATUS)
+            _ = _intent in (
+                Intent.TASK,
+                Intent.APPROVE,
+                Intent.REJECT,
+                Intent.CANCEL,
+                Intent.STATUS,
+            )
         else:
             is_greeting = False
-            is_task = len(text) > 5
+            _ = len(text) > 5
 
         # 1-A. 말투/성격 설정 의도 → PM 봇만 처리
         if USE_NL_CLASSIFIER and _intent == Intent.SET_BOT_TONE and self._is_pm_org:
@@ -3387,8 +3398,6 @@ class TelegramRelay:
         """pending_confirmation 실행."""
         action = conf.get("action")
         task_ids = conf.get("task_ids", [])
-        description = conf.get("description", "")
-
         if action == "retry_tasks" and task_ids:
             reset_count = 0
             for tid in task_ids:
@@ -3562,6 +3571,8 @@ class TelegramRelay:
                 for parent_id in candidates:
                     if parent_id in self._synthesizing:
                         continue
+                    if parent_id in self._synthesis_perm_skip:
+                        continue
                     siblings = await self.context_db.get_subtasks(parent_id)
                     for sibling in siblings:
                         if (
@@ -3583,6 +3594,12 @@ class TelegramRelay:
                                 )
                         except Exception as _e:
                             logger.error(f"[SynthesisPoller] 합성 실패 {parent_id}: {_e}")
+                            # 무한루프 방지: 합성 실패 시 세션 내 재시도 차단
+                            self._synthesis_perm_skip.add(parent_id)
+                            logger.warning(
+                                f"[SynthesisPoller] {parent_id} → perm_skip 추가 "
+                                f"(이 세션에서는 재시도 안 함)"
+                            )
                         finally:
                             self._synthesizing.discard(parent_id)
             except Exception as _e:
@@ -4986,5 +5003,3 @@ def _launch_bot_subprocess(token: str, org_id: str, chat_id: int) -> int:
     pid_dir.mkdir(parents=True, exist_ok=True)
     (pid_dir / f"{org_id}.pid").write_text(str(proc.pid))
     return proc.pid
-
-
