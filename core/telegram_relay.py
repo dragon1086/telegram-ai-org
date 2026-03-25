@@ -1300,8 +1300,16 @@ class TelegramRelay:
 
         cleaned = _re.sub(r"\[TEAM:[^\]]+\]", "", response).strip()
 
-        # 팀 헤더를 응답 앞에 삽입 (이미 🏗️ 섹션이 있으면 중복 방지)
-        if team_header and "🏗️" not in cleaned:
+        # [TEAM:...] 태그 기반 렌더링이 있으면 항상 사용.
+        # LLM이 직접 쓴 🏗️ 섹션(정보가 불완전할 수 있음)은 agent 파일 기반 렌더링으로 교체.
+        if team_header:
+            if "🏗️" in cleaned:
+                # LLM이 직접 쓴 🏗️ 라인 + 하위 bullet 제거 (다음 빈 줄 또는 ## 섹션 직전까지)
+                cleaned = _re.sub(
+                    r"🏗️[^\n]*(?:\n(?!(?:##|\s*$))[^\n]*)*\n?",
+                    "",
+                    cleaned,
+                ).strip()
             cleaned = team_header + cleaned
         for match in _re.findall(r"\[COLLAB:([^\]]+)\]", cleaned):
             parts = match.split("|맥락:", 1)
@@ -4516,7 +4524,7 @@ class TelegramRelay:
                 # 부서 수 기준으로 여러 메시지 분할 (4096자 제한)
                 _MAX_LEN = 3900
                 _lines: list[str] = []
-                _total = sum(len(v) for v in _groups.items())
+                _total = sum(len(v) for v in _groups.values())
                 _header = (
                     f"🤖 <b>에이전트 조직도</b>  <i>({len(_agents)}개 · {len(_groups)}개 부서)</i>\n"
                     f"<i>사용법: /agents [부서명|collapsed|full]</i>\n"
