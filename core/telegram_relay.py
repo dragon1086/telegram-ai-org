@@ -1028,6 +1028,16 @@ class TelegramRelay:
             decision_client=self._pm_decision_client,
         )
 
+        # [COLLAB:] / [TEAM:] 태그 처리 — PM이 위임을 생성했을 경우 실제로 발동시킨다.
+        # 이 호출이 없으면 LLM이 [COLLAB:...] 태그를 생성해도 협업 요청이 전송되지 않는다.
+        _bot_for_collab = self.app.bot if self.app else None
+        _chat_id_for_collab = update.effective_chat.id if update.effective_chat else self.allowed_chat_id
+        reply = await self._handle_collab_tags(
+            reply,
+            bot=_bot_for_collab,
+            chat_id=_chat_id_for_collab,
+        )
+
         if used_codex and reply:
             await self.global_context.extract_and_save(self.org_id, prompt, reply)
 
