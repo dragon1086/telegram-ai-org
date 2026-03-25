@@ -48,6 +48,37 @@ if [ ${#LOADED_SOURCES[@]} -eq 0 ]; then
 fi
 echo "✅ 설정 로드: ${LOADED_SOURCES[*]}"
 
+# ── macOS TCC 권한 체크 + Telegram 사전 알림 ─────────────────────────────────
+# Python 프로세스가 TCC 팝업에 막혀 hang되기 전에 미리 경고 메시지를 보낸다.
+# curl만 사용하므로 Python 없이도 동작. PM_BOT_TOKEN + ADMIN_CHAT_ID 필요.
+_send_tg_notice() {
+  local msg="$1"
+  local token="${PM_BOT_TOKEN:-}"
+  local chat_id="${ADMIN_CHAT_ID:-}"
+  if [ -n "${token}" ] && [ -n "${chat_id}" ]; then
+    curl -s -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+      -d "chat_id=${chat_id}" \
+      -d "text=${msg}" \
+      -d "parse_mode=HTML" > /dev/null 2>&1 || true
+  fi
+}
+
+if [[ "$(uname)" == "Darwin" ]]; then
+  # Full Disk Access 여부: TCC.db 읽기 가능 여부로 판단
+  if ! cat /Library/Application\ Support/com.apple.TCC/TCC.db > /dev/null 2>&1; then
+    echo "⚠️  [macOS] Full Disk Access 미부여 감지 — 봇 실행 중 권한 팝업이 뜰 수 있습니다."
+    echo "   → 시스템 설정 > 개인 정보 보호 및 보안 > 전체 디스크 접근 > Terminal(또는 iTerm2) 추가"
+    _send_tg_notice "⚠️ <b>봇 시작 알림</b>
+
+macOS 권한 팝업이 뜰 수 있습니다.
+화면에 <b>\"Python이 접근하는 것을 허용\"</b> 팝업이 보이면 <b>허용</b>을 눌러주세요.
+
+영구 해결: 시스템 설정 → 개인 정보 보호 및 보안 → 전체 디스크 접근 → Terminal 추가"
+  else
+    _send_tg_notice "✅ <b>봇 시작 중</b> — macOS 권한 정상 (Full Disk Access 확인됨)"
+  fi
+fi
+
 PYTHON_BIN="./.venv/bin/python3"
 [ ! -x "$PYTHON_BIN" ] && PYTHON_BIN="python3"
 
