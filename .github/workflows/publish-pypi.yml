@@ -2,8 +2,8 @@ name: publish-pypi
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 concurrency:
