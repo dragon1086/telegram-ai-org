@@ -29,7 +29,18 @@ except Exception:
 def _load_env_file(path: Path) -> None:
     if not path.exists():
         return
-    # config.yaml은 실제로 .env 형식 (KEY=VALUE) — 통일된 파서 사용
+    # .yaml/.yml 파일은 yaml.safe_load로 파싱 (KEY: value 형식)
+    if path.suffix in (".yaml", ".yml"):
+        try:
+            import yaml
+            data = yaml.safe_load(path.read_text()) or {}
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    os.environ.setdefault(str(k).strip(), str(v).strip())
+        except Exception:
+            pass
+        return
+    # .env 형식 (KEY=VALUE)
     for line in path.read_text().splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
