@@ -76,18 +76,23 @@ from core.telegram_formatting import (
     markdown_to_html,
     split_message,
 )
+from core.telegram_sender import (  # Phase 1a 리팩토링 — 전송 모듈 분리
+    ENABLE_REFACTORED_SENDER,
+)
+from core.telegram_sender import (
+    auto_upload as _sender_auto_upload,
+)
+from core.telegram_sender import (
+    send_chunked_message as _sender_send_chunked,
+)
+from core.telegram_sender import (
+    upload_artifacts_to as _sender_upload_artifacts_to,
+)
 from core.telegram_user_guardrail import (
     ensure_user_friendly_output,
     extract_local_artifact_paths,
 )
 from core.verification import ENABLE_CROSS_VERIFICATION
-
-from core.telegram_sender import (  # Phase 1a 리팩토링 — 전송 모듈 분리
-    ENABLE_REFACTORED_SENDER,
-    auto_upload as _sender_auto_upload,
-    send_chunked_message as _sender_send_chunked,
-    upload_artifacts_to as _sender_upload_artifacts_to,
-)
 
 TEAM_ID = "pm"  # aiorg_pm tmux 세션
 DEFAULT_CONFIDENCE_THRESHOLD = 5  # 이 점수 미만이면 다른 PM에게 양보
@@ -3532,10 +3537,19 @@ class TelegramRelay:
                         SELECT DISTINCT t.parent_id FROM pm_tasks t
                         WHERE t.parent_id IS NOT NULL
                           AND t.status IN ('done', 'failed', 'cancelled')
-                        AND EXISTS (
-                            SELECT 1 FROM pm_tasks p
-                            WHERE p.id = t.parent_id
-                              AND p.status NOT IN ('done', 'failed', 'cancelled', 'needs_review')
+                        AND (
+                            -- Case 1: parent는 pm_tasks 행 (기존 동작)
+                            EXISTS (
+                                SELECT 1 FROM pm_tasks p
+                                WHERE p.id = t.parent_id
+                                  AND p.status NOT IN ('done', 'failed', 'cancelled', 'needs_review')
+                            )
+                            -- Case 2: parent는 GoalTracker goal (G-* ID)
+                            OR (t.parent_id LIKE 'G-%' AND EXISTS (
+                                SELECT 1 FROM pm_goals g
+                                WHERE g.id = t.parent_id
+                                  AND g.status NOT IN ('completed', 'failed')
+                            ))
                         )
                         AND NOT EXISTS (
                             SELECT 1 FROM pm_tasks sibling
