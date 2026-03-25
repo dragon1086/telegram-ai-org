@@ -112,9 +112,9 @@ team_profiles:
     fallback_engine: claude-code
     execution_mode: sequential
     preferred_agents:
-    - planner
-    - architect
-    - writer
+    - engineering-software-architect
+    - product-manager
+    - engineering-technical-writer
     preferred_skills: []
     avoid_agents: []
     max_team_size: 3
@@ -124,8 +124,8 @@ team_profiles:
     fallback_engine: claude-code
     execution_mode: sequential
     preferred_agents:
-    - analyst
-    - writer
+    - product-trend-researcher
+    - product-feedback-synthesizer
     preferred_skills: []
     avoid_agents: []
     max_team_size: 3
@@ -135,8 +135,8 @@ team_profiles:
     fallback_engine: claude-code
     execution_mode: sequential
     preferred_agents:
-    - executor
-    - debugger
+    - engineering-senior-developer
+    - engineering-backend-architect
     preferred_skills: []
     avoid_agents: []
     max_team_size: 3
@@ -146,8 +146,8 @@ team_profiles:
     fallback_engine: codex
     execution_mode: sequential
     preferred_agents:
-    - designer
-    - writer
+    - design-ui-designer
+    - design-ux-architect
     preferred_skills: []
     avoid_agents: []
     max_team_size: 3
@@ -157,8 +157,8 @@ team_profiles:
     fallback_engine: codex
     execution_mode: sequential
     preferred_agents:
-    - planner
-    - analyst
+    - product-manager
+    - product-sprint-prioritizer
     preferred_skills: []
     avoid_agents: []
     max_team_size: 3
@@ -168,8 +168,8 @@ team_profiles:
     fallback_engine: codex
     execution_mode: sequential
     preferred_agents:
-    - analyst
-    - writer
+    - product-trend-researcher
+    - engineering-technical-writer
     preferred_skills: []
     avoid_agents: []
     max_team_size: 3
@@ -179,8 +179,8 @@ team_profiles:
     fallback_engine: claude-code
     execution_mode: sequential
     preferred_agents:
-    - executor
-    - verifier
+    - engineering-devops-automator
+    - testing-api-tester
     preferred_skills: []
     avoid_agents: []
     max_team_size: 3

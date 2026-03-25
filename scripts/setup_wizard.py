@@ -488,53 +488,54 @@ HINT_PROFILES: dict[str, dict] = {
 FULL_HINTS_YAML = """\
 # agent_hints.yaml — LLM 라우팅 힌트 카탈로그
 # setup_wizard.py 가 생성한 파일입니다.
+# preferred_agents 는 ~/.claude/agents/ 내 실제 파일명 (확장자 제외)
 
 agent_hints:
   coding:
     description: "코딩, 구현, 버그 수정, 리팩토링"
     keywords: [implement, build, code, fix, refactor, debug, develop, 구현, 코딩, 개발, 수정]
-    preferred_agents: [executor, architect, debugger]
-    omc_team_format: "2:executor,1:architect"
+    preferred_agents: [engineering-senior-developer, engineering-backend-architect, engineering-rapid-prototyper]
+    omc_team_format: "2:engineering-senior-developer,1:engineering-backend-architect"
     execution_mode: omc_team
     preferred_engine: claude-code
 
   analysis:
     description: "분석, 리서치, 데이터 처리, 시장 조사"
     keywords: [analyze, research, data, market, report, investigate, 분석, 리서치, 조사]
-    preferred_agents: [analyst, scientist]
-    omc_team_format: "1:analyst,1:scientist"
+    preferred_agents: [product-trend-researcher, product-feedback-synthesizer, paid-media-search-query-analyst]
+    omc_team_format: "1:product-trend-researcher,1:product-feedback-synthesizer"
     execution_mode: agent_teams
     preferred_engine: auto
 
   writing:
     description: "문서 작성, 보고서, README, 마케팅"
     keywords: [write, document, report, README, content, blog, 작성, 문서, 보고서]
-    preferred_agents: [writer, document-specialist]
-    omc_team_format: "2:writer"
+    preferred_agents: [engineering-technical-writer, product-manager]
+    omc_team_format: "2:engineering-technical-writer"
     execution_mode: agent_teams
     preferred_engine: claude-code
 
   review:
     description: "코드 리뷰, QA, 보안 감사, 품질 검증"
     keywords: [review, audit, security, quality, test, QA, verify, 리뷰, 검토, 감사]
-    preferred_agents: [code-reviewer, qa-tester, verifier]
-    omc_team_format: "1:code-reviewer,1:qa-tester"
+    preferred_agents: [engineering-code-reviewer, testing-api-tester, engineering-security-engineer]
+    omc_team_format: "1:engineering-code-reviewer,1:testing-api-tester"
     execution_mode: agent_teams
     preferred_engine: claude-code
 
   planning:
     description: "계획 수립, 아키텍처 설계, 전략"
     keywords: [plan, design, architect, strategy, roadmap, 계획, 설계, 전략]
-    preferred_agents: [planner, architect, analyst]
-    omc_team_format: "1:planner,1:architect"
+    preferred_agents: [engineering-software-architect, product-manager, product-sprint-prioritizer]
+    omc_team_format: "1:engineering-software-architect,1:product-manager"
     execution_mode: sequential
     preferred_engine: claude-code
 
   simple:
     description: "단순 실행, 빠른 작업"
     keywords: []
-    preferred_agents: [executor]
-    omc_team_format: "1:executor"
+    preferred_agents: [engineering-rapid-prototyper]
+    omc_team_format: "1:engineering-rapid-prototyper"
     execution_mode: sequential
     preferred_engine: codex
 """
@@ -549,8 +550,8 @@ agent_hints:
   simple:
     description: "단순 실행, 빠른 작업"
     keywords: []
-    preferred_agents: [executor]
-    omc_team_format: "1:executor"
+    preferred_agents: [engineering-rapid-prototyper]
+    omc_team_format: "1:engineering-rapid-prototyper"
     execution_mode: sequential
 """
 
@@ -559,8 +560,8 @@ SECTION_MAP = {
   coding:
     description: "코딩, 구현, 버그 수정, 리팩토링"
     keywords: [implement, build, code, fix, refactor, debug, develop, 구현, 코딩, 개발, 수정]
-    preferred_agents: [executor, architect, debugger]
-    omc_team_format: "2:executor,1:architect"
+    preferred_agents: [engineering-senior-developer, engineering-backend-architect, engineering-rapid-prototyper]
+    omc_team_format: "2:engineering-senior-developer,1:engineering-backend-architect"
     execution_mode: omc_team
     preferred_engine: claude-code
 """,
@@ -568,8 +569,8 @@ SECTION_MAP = {
   analysis:
     description: "분석, 리서치, 데이터 처리, 시장 조사"
     keywords: [analyze, research, data, market, report, investigate, 분석, 리서치, 조사]
-    preferred_agents: [analyst, scientist]
-    omc_team_format: "1:analyst,1:scientist"
+    preferred_agents: [product-trend-researcher, product-feedback-synthesizer, paid-media-search-query-analyst]
+    omc_team_format: "1:product-trend-researcher,1:product-feedback-synthesizer"
     execution_mode: agent_teams
     preferred_engine: auto
 """,
@@ -577,8 +578,8 @@ SECTION_MAP = {
   writing:
     description: "문서 작성, 보고서, README, 마케팅"
     keywords: [write, document, report, README, content, blog, 작성, 문서, 보고서]
-    preferred_agents: [writer, document-specialist]
-    omc_team_format: "2:writer"
+    preferred_agents: [engineering-technical-writer, product-manager]
+    omc_team_format: "2:engineering-technical-writer"
     execution_mode: agent_teams
     preferred_engine: claude-code
 """,
@@ -586,8 +587,8 @@ SECTION_MAP = {
   review:
     description: "코드 리뷰, QA, 보안 감사, 품질 검증"
     keywords: [review, audit, security, quality, test, QA, verify, 리뷰, 검토, 감사]
-    preferred_agents: [code-reviewer, qa-tester, verifier]
-    omc_team_format: "1:code-reviewer,1:qa-tester"
+    preferred_agents: [engineering-code-reviewer, testing-api-tester, engineering-security-engineer]
+    omc_team_format: "1:engineering-code-reviewer,1:testing-api-tester"
     execution_mode: agent_teams
     preferred_engine: claude-code
 """,
@@ -595,8 +596,8 @@ SECTION_MAP = {
   planning:
     description: "계획 수립, 아키텍처 설계, 전략"
     keywords: [plan, design, architect, strategy, roadmap, 계획, 설계, 전략]
-    preferred_agents: [planner, architect, analyst]
-    omc_team_format: "1:planner,1:architect"
+    preferred_agents: [engineering-software-architect, product-manager, product-sprint-prioritizer]
+    omc_team_format: "1:engineering-software-architect,1:product-manager"
     execution_mode: sequential
     preferred_engine: claude-code
 """,
