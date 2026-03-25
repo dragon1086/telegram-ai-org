@@ -363,7 +363,7 @@ for _candidate in python3.13 python3.12 python3.11 python3; do
         _ver=$("$_candidate" --version 2>&1 | awk '{print $2}')
         _major=$(echo "$_ver" | cut -d. -f1)
         _minor=$(echo "$_ver" | cut -d. -f2)
-        # pyproject.toml requires-python = ">=3.11"
+        # setup.sh는 tomllib 내장(Python 3.11+) 사용 — pyproject.toml requires-python = ">=3.10"
         if [ "$_major" -ge 3 ] && [ "$_minor" -ge 11 ]; then
             PYTHON_BIN="$_candidate"
             PYTHON_VERSION="$_ver"
@@ -376,7 +376,7 @@ if [ -z "$PYTHON_BIN" ]; then
     # 시스템 python3 버전 정보도 출력해서 원인 파악 용이하게
     _sys_ver=$(python3 --version 2>&1 | awk '{print $2}' 2>/dev/null || echo "미설치")
     err "Python 3.11 이상을 찾을 수 없습니다 (시스템 python3: $_sys_ver)"
-    err "(pyproject.toml requires-python = \">=3.11\" 기준)"
+    err "(setup.sh는 tomllib 내장을 위해 Python 3.11+ 요구 — pyproject.toml: >=3.10)"
     case "$OS_NAME" in
         macOS) err "설치: brew install python@3.11" ;;
         Linux) err "설치: sudo apt-get install python3.11 (Debian/Ubuntu)" ;;
@@ -1097,8 +1097,7 @@ if [ "$DOCKER_AVAILABLE" = true ]; then
                 echo ""
                 info "Docker 이미지 빌드 중... (최초 실행 시 수 분 소요)"
                 # shellcheck disable=SC2086
-                if $DOCKER_COMPOSE_BIN $(_profiles_arr=($profiles); printf '%s ' "${_profiles_arr[@]}") build --quiet 2>/dev/null || \
-                   eval "$DOCKER_COMPOSE_BIN $_profiles build --quiet 2>/dev/null"; then
+                if eval "$DOCKER_COMPOSE_BIN $_profiles build"; then
                     ok "Docker 이미지 빌드 완료"
                     eval "$DOCKER_COMPOSE_BIN $_profiles up -d"
                     ok "Docker Compose 시작 완료"
