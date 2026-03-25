@@ -2078,6 +2078,26 @@ class TestCodexRunnerRemainingCoverage:
         assert isinstance(result, Path)
         assert str(result) == str(repo_dir)
 
+    def test_find_repo_from_prompt_skips_non_directory_candidates(
+        self, tmp_path
+    ) -> None:
+        """glob 결과 중 파일(디렉토리 아님)은 건너뛴다 (line 307: not is_dir → continue)."""
+        from tools.codex_runner import CodexRunner
+        from pathlib import Path
+        from unittest.mock import patch
+
+        # myrepo라는 이름의 파일(디렉토리 아님) 생성
+        fake_file = tmp_path / "myrepo"
+        fake_file.write_text("not a directory")
+
+        runner = CodexRunner()
+        # _iter_search_roots가 tmp_path를 반환하도록 mock
+        with patch.object(runner, "_iter_search_roots", return_value=[tmp_path]):
+            result = runner._find_repo_from_prompt("myrepo 리포지토리 분석")
+
+        # 파일이므로 is_dir() == False → continue → 결과 없음(None)
+        assert result is None
+
     # ── _communicate_with_progress: 빈 progress(line 536), recent>20(543-544) ──
 
     async def test_drain_skips_empty_progress_lines(self) -> None:

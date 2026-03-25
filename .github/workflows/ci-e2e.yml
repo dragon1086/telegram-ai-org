@@ -54,5 +54,9 @@ jobs:
             --cov=tools.codex_runner \
             --cov=tools.base_runner \
             --cov=tools.claude_subprocess_runner \
-            --cov-fail-under=90 \
-            --cov-report=term-missing
+            --cov=core.pm_router \
+            --cov=core.nl_classifier \
+            --cov=core.constants \
+            --cov-fail-under=95 \
+            --cov-report=term-missing \
+            --cov-report=json:tests/e2e/coverage_e2e.json
