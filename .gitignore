@@ -62,6 +62,11 @@ skills/*/data/*.json.bak
 # 런타임 생성 보고서/태스크 파일 (세션별 임시 산출물)
 reports/
 tasks/
+# docker-compose 볼륨 마운트 디렉토리 (런타임 데이터 제외, 구조만 유지)
+memory/*
+!memory/.gitkeep
+config/*
+!config/.gitkeep
 
 # 보안 민감 파일 (절대 커밋 금지)
 시크릿_목록.md

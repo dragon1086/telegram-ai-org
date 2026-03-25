@@ -418,16 +418,17 @@ class GoalTracker:
         )
 
     async def _cancel_old_subtasks(self, goal_id: str) -> None:
-        """이전 iteration의 미완료 서브태스크를 cancelled로 마킹.
+        """이전 iteration의 서브태스크를 모두 cancelled로 마킹.
 
         replan() 호출 시 새 iteration을 위한 슬레이트 초기화.
-        done 태스크는 취소하지 않음 — evaluate_progress가 이전 iteration의
-        완료 결과를 누적하여 목표 달성 여부를 정확히 평가할 수 있도록 한다.
+        done 태스크 포함 cancelled 이외 모든 태스크를 취소한다 —
+        evaluate_progress가 현재 iteration 태스크만을 기준으로 평가할 수 있도록
+        이전 누적 결과를 격리한다.
         """
         subtasks = await self._db.get_subtasks(goal_id)
         cancelled_count = 0
         for st in subtasks:
-            if st["status"] in ("pending", "assigned", "in_progress"):
+            if st["status"] != "cancelled":
                 await self._db.update_pm_task_status(st["id"], "cancelled")
                 cancelled_count += 1
         if cancelled_count:
