@@ -82,14 +82,73 @@ CODEX_PATH=""
 GEMINI_PATH=""
 DETECTED_ENGINES=()
 
+# ── 엔진 자동 설치 헬퍼 ──────────────────────────────────────────────────────
+# _try_install_engine <engine-name>: npm/brew로 엔진 자동 설치 시도
+_try_install_engine() {
+    local engine="$1"
+    if [ "$NON_INTERACTIVE" = false ]; then
+        read -rp "  ❓ $engine 를 자동 설치하시겠습니까? [Y/n]: " _install_ans
+        _install_ans="${_install_ans:-Y}"
+        [[ "$_install_ans" =~ ^[Nn]$ ]] && return 1
+    else
+        info "--yes 모드: $engine 자동 설치 시도"
+    fi
+
+    case "$engine" in
+        claude-code)
+            if command -v npm &>/dev/null; then
+                info "npm으로 claude-code 설치 중..."
+                npm install -g @anthropic-ai/claude-code && return 0
+            elif command -v brew &>/dev/null && [ "$OS_NAME" = "macOS" ]; then
+                info "brew로 claude-code 설치 중..."
+                brew install claude && return 0
+            else
+                warn "npm/brew를 찾을 수 없어 자동 설치 실패. 수동 설치: https://claude.ai/code"
+                return 1
+            fi
+            ;;
+        codex)
+            if command -v npm &>/dev/null; then
+                info "npm으로 codex 설치 중..."
+                npm install -g @openai/codex && return 0
+            else
+                warn "npm을 찾을 수 없어 자동 설치 실패. Node.js 설치 후 재시도하세요."
+                return 1
+            fi
+            ;;
+        gemini-cli)
+            if command -v brew &>/dev/null && [ "$OS_NAME" = "macOS" ]; then
+                info "brew로 gemini-cli 설치 중..."
+                brew install gemini-cli && return 0
+            elif command -v npm &>/dev/null; then
+                info "npm으로 gemini-cli 설치 중..."
+                npm install -g @google/gemini-cli && return 0
+            else
+                warn "brew/npm을 찾을 수 없어 자동 설치 실패."
+                return 1
+            fi
+            ;;
+    esac
+    return 1
+}
+
 # claude-code 감지 — which로 경로 확인 후 --version으로 실행 가능 여부 검증
 if CLAUDE_PATH=$(which claude 2>/dev/null); then
     _claude_ver=$(claude --version 2>/dev/null | head -1 || echo "버전 확인 불가")
     ok "claude-code 감지됨: $CLAUDE_PATH  ($_claude_ver)"
     DETECTED_ENGINES+=("claude-code")
 else
-    warn "claude CLI 미감지 (설치: https://claude.ai/code)"
-    CLAUDE_PATH=""
+    warn "claude CLI 미감지"
+    if _try_install_engine "claude-code"; then
+        if CLAUDE_PATH=$(which claude 2>/dev/null); then
+            _claude_ver=$(claude --version 2>/dev/null | head -1 || echo "버전 확인 불가")
+            ok "claude-code 설치 완료: $CLAUDE_PATH  ($_claude_ver)"
+            DETECTED_ENGINES+=("claude-code")
+        fi
+    else
+        info "claude-code 건너뜀 (설치: https://claude.ai/code)"
+        CLAUDE_PATH=""
+    fi
 fi
 
 # codex 감지 — which로 경로 확인 후 --version으로 실행 가능 여부 검증
@@ -98,8 +157,17 @@ if CODEX_PATH=$(which codex 2>/dev/null); then
     ok "codex 감지됨:  $CODEX_PATH  ($_codex_ver)"
     DETECTED_ENGINES+=("codex")
 else
-    warn "codex CLI 미감지 (설치: npm install -g @openai/codex)"
-    CODEX_PATH=""
+    warn "codex CLI 미감지"
+    if _try_install_engine "codex"; then
+        if CODEX_PATH=$(which codex 2>/dev/null); then
+            _codex_ver=$(codex --version 2>/dev/null | head -1 || echo "버전 확인 불가")
+            ok "codex 설치 완료: $CODEX_PATH  ($_codex_ver)"
+            DETECTED_ENGINES+=("codex")
+        fi
+    else
+        info "codex 건너뜀 (설치: npm install -g @openai/codex)"
+        CODEX_PATH=""
+    fi
 fi
 
 # gemini-cli 감지 — /opt/homebrew/bin/gemini 우선, 이후 PATH 탐색 후 --version 검증
@@ -118,12 +186,27 @@ if [ -n "$GEMINI_PATH" ]; then
     ok "gemini-cli 감지됨: $GEMINI_PATH  ($_gemini_ver)"
     DETECTED_ENGINES+=("gemini-cli")
 else
-    warn "gemini CLI 미감지. 설치 방법:"
-    if [ "$OS_NAME" = "macOS" ]; then
-        echo "    macOS:  brew install gemini-cli"
-        echo "            또는 npm install -g @google/gemini-cli"
+    warn "gemini CLI 미감지"
+    if _try_install_engine "gemini-cli"; then
+        # brew 설치 시 /opt/homebrew/bin/gemini 경로 우선 확인
+        for _g_candidate in "/opt/homebrew/bin/gemini" "$HOME/.local/bin/gemini" "$HOME/bin/gemini"; do
+            if [ -x "$_g_candidate" ]; then
+                GEMINI_PATH="$_g_candidate"
+                break
+            fi
+        done
+        [ -z "$GEMINI_PATH" ] && GEMINI_PATH=$(which gemini 2>/dev/null) || true
+        if [ -n "$GEMINI_PATH" ]; then
+            _gemini_ver=$("$GEMINI_PATH" --version 2>/dev/null | head -1 || echo "버전 확인 불가")
+            ok "gemini-cli 설치 완료: $GEMINI_PATH  ($_gemini_ver)"
+            DETECTED_ENGINES+=("gemini-cli")
+        fi
     else
-        echo "    Linux:  npm install -g @google/gemini-cli"
+        if [ "$OS_NAME" = "macOS" ]; then
+            info "gemini-cli 건너뜀 (설치: brew install gemini-cli 또는 npm install -g @google/gemini-cli)"
+        else
+            info "gemini-cli 건너뜀 (설치: npm install -g @google/gemini-cli)"
+        fi
     fi
 fi
 
