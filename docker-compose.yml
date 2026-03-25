@@ -28,6 +28,8 @@ x-bot-common: &bot-common
     - ./reports:/app/reports
     - ./tasks:/app/tasks
     - ./skills:/app/skills:ro
+    - ./config:/app/config:ro
+    - ./memory:/app/memory
   restart: unless-stopped
   depends_on:
     aiorg-redis:
