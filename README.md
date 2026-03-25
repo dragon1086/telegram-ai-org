@@ -797,6 +797,31 @@ bash scripts/request_restart.sh --reason "이유"      # 안전한 봇 재기동
 
 ## FAQ / 트러블슈팅
 
+### macOS 권한 사전 승인 (Mac 미니/로컬 서버 운영 시 필수)
+
+봇 실행 중 **"Python 3.x이 접근하는 것을 허용합니까?"** 다이얼로그가 반복 팝업되어 프로세스가 hang되는 경우, 아래 **1회** 조치로 영구 해결할 수 있습니다.
+
+**원인**: macOS TCC(개인 정보 보호) 시스템이 Python 바이너리가 파일 시스템 또는 네트워크에 접근할 때 권한을 요청함.
+Python 버전 업데이트나 새 venv 생성 시 바이너리 경로가 바뀌면 다시 요청됨.
+
+**해결 방법 (1회 수동 설정)**:
+
+```
+시스템 설정 → 개인 정보 보호 및 보안 → 전체 디스크 접근
+→ "+" 버튼 → Terminal.app (또는 iTerm2) 추가 → 체크 활성화
+```
+
+Terminal에 Full Disk Access를 부여하면, Terminal이 실행하는 모든 Python 서브프로세스가 동일 권한을 상속받아 팝업이 더 이상 뜨지 않습니다.
+
+> **Claude Code로 봇을 실행하는 경우**: Terminal 대신 Claude Code 바이너리(`which claude`로 경로 확인)도 동일하게 추가.
+
+**설정 후 확인**:
+```bash
+bash scripts/start_all.sh   # 재실행 후 팝업 없으면 정상
+```
+
+---
+
 ### 설치 문제
 
 | 증상 | 해결 방법 |
