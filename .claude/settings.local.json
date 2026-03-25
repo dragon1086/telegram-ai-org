@@ -77,7 +77,11 @@
       "Bash(~/.claude/channels/telegram/approved/7726642089)",
       "Read(//Users/rocky/.bun/bin/**)",
       "Bash(~/.bun/bin/bun --version)",
-      "Bash(sudo ln:*)"
+      "Bash(sudo ln:*)",
+      "Bash(ps -p 12114 12108 12096 -o pid,etime,stat)",
+      "Bash(bash scripts/request_restart.sh --reason \"task timeout fix 반영 \\(TASK_EXEC_TOTAL_TIMEOUT_SEC\\)\")",
+      "Bash(.venv/bin/python -c \"import ast; ast.parse\\(open\\('core/task_poller.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(.venv/bin/python -c \"import ast; ast.parse\\(open\\(''core/goal_tracker.py''\\).read\\(\\)\\); print\\(''OK''\\)\")"
     ]
   },
   "hooks": {

@@ -163,12 +163,30 @@ class AutonomousLoop:
             goal_id = goal["id"]
             try:
                 chat_id = goal.get("chat_id", 0) or 0
+
+                # iteration 카운터 증가 및 최대 반복 횟수 체크
+                new_iter, max_iter = await self._tracker.tick_iteration(goal_id)
+                if new_iter > max_iter:
+                    await self._tracker.update_goal_status(goal_id, "max_iterations_reached")
+                    await self._send(
+                        f"⏰ [AutonomousLoop] 목표 최대 반복({max_iter}회) 도달: "
+                        f"{goal.get('title') or goal_id}"
+                    )
+                    logger.info(
+                        f"[AutonomousLoop] max_iterations 도달, 목표 종료: {goal_id} "
+                        f"({new_iter}/{max_iter})"
+                    )
+                    continue
+
                 await self._tracker.replan(
                     goal_id=goal_id,
                     remaining_work=status.remaining_work,
                     chat_id=chat_id,
                 )
-                logger.info(f"[AutonomousLoop] {goal_id} 재배분 완료")
+                logger.info(
+                    f"[AutonomousLoop] {goal_id} 재배분 완료 "
+                    f"(iteration {new_iter}/{max_iter})"
+                )
             except Exception as e:
                 logger.error(f"[AutonomousLoop] DISPATCH 오류 ({goal_id}): {e}")
 
