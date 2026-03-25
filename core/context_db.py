@@ -1148,6 +1148,23 @@ class ContextDB:
             rows = await cursor.fetchall()
             return [{"id": r[0], "status": r[1], "title": r[2]} for r in rows]
 
+    async def get_goals_by_status(self, status: str) -> list[dict]:
+        """특정 상태의 목표 목록 조회 (중복 방지 확장용).
+
+        Args:
+            status: 'active' | 'achieved' | 'stagnated' | 'cancelled' 등.
+
+        Returns:
+            [{id, status, title}] 리스트.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, status, title FROM pm_goals WHERE status=? ORDER BY created_at DESC",
+                (status,),
+            )
+            rows = await cursor.fetchall()
+            return [{"id": r[0], "status": r[1], "title": r[2]} for r in rows]
+
     async def update_goal(self, goal_id: str, **kwargs) -> dict | None:
         """PM 목표 업데이트. milestones, status, iteration, stagnation_count, last_progress 지원."""
         now = _utcnow_iso()
@@ -1245,7 +1262,7 @@ class ContextDB:
 
     async def cleanup_old_conversations(self, retention_days: int = 30) -> int:
         """retention_days일 이전 메시지를 삭제한다. 삭제된 행 수 반환."""
-        from datetime import datetime, timedelta, UTC
+        from datetime import UTC, datetime, timedelta
         cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
@@ -1268,7 +1285,7 @@ class ContextDB:
         Uses atomic INSERT ... ON CONFLICT DO UPDATE to avoid TOCTOU races.
         IMPORTANT: Uses bot_performance.colname in SET clause to reference pre-update values.
         """
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
         if week is None:
             now = datetime.now(UTC)
             week = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
@@ -1298,7 +1315,7 @@ class ContextDB:
         self, bot_id: str, week: str | None = None,
     ) -> dict | None:
         """봇 주간 성과 조회. week 미지정 시 현재 주."""
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
         if week is None:
             now = datetime.now(UTC)
             week = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
@@ -1315,7 +1332,7 @@ class ContextDB:
         self, week: str | None = None,
     ) -> list[dict]:
         """해당 주 전체 봇 성과 조회 (success_count DESC, avg_latency_sec ASC 정렬)."""
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
         if week is None:
             now = datetime.now(UTC)
             week = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
