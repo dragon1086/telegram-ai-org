@@ -727,3 +727,226 @@ class TestEngineDispatchRoutePathE2E:
         assert BOT_ENGINE_MAP.get("aiorg_engineering_bot") == "claude-code", (
             "개발실 봇이 claude-code를 사용하지 않음 — PM 디스패치 기본 엔진 불일치"
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 보완: NLClassifier 미커버 경로 (78% → 95%+)
+# ---------------------------------------------------------------------------
+
+
+class TestNLClassifierFullCoverage:
+    """NLClassifier 78% → 95%+ 커버리지 달성을 위한 추가 테스트."""
+
+    def test_classify_tone_keyword_returns_set_bot_tone(self) -> None:
+        """말투/톤 관련 키워드가 있으면 SET_BOT_TONE을 반환한다."""
+        from core.nl_classifier import NLClassifier, Intent
+
+        classifier = NLClassifier()
+        result = classifier.classify("말투를 친근하게 바꿔줘")
+        assert result.intent == Intent.SET_BOT_TONE
+        assert result.confidence == 0.95
+        assert result.source == "keyword"
+
+    def test_classify_tone_english_keyword_returns_set_bot_tone(self) -> None:
+        """영어 tone 키워드도 SET_BOT_TONE을 반환한다."""
+        from core.nl_classifier import NLClassifier, Intent
+
+        classifier = NLClassifier()
+        result = classifier.classify("set tone formal")
+        assert result.intent == Intent.SET_BOT_TONE
+
+    def test_classify_greeting_short_text_returns_greeting(self) -> None:
+        """짧은 인사말(15자 미만)은 GREETING을 반환한다."""
+        from core.nl_classifier import NLClassifier, Intent
+        from core.keywords import GREETING_KW
+
+        classifier = NLClassifier()
+        # 첫 번째 인사 키워드를 사용하되 15자 미만 조건 충족
+        greeting_word = next(iter(GREETING_KW), "안녕")
+        result = classifier.classify(greeting_word)
+        assert result.intent == Intent.GREETING
+        assert result.confidence == 1.0
+        assert result.source == "keyword"
+
+    def test_classify_status_keyword_short_text_returns_status(self) -> None:
+        """30자 미만 & 상태 키워드 & action 없는 텍스트는 STATUS를 반환한다."""
+        from core.nl_classifier import NLClassifier, Intent
+
+        classifier = NLClassifier()
+        result = classifier.classify("상태")
+        assert result.intent == Intent.STATUS
+        assert result.source == "keyword"
+
+    def test_classify_approve_keyword_short_text_returns_approve(self) -> None:
+        """승인 키워드 포함 짧은 텍스트는 APPROVE를 반환한다."""
+        from core.nl_classifier import NLClassifier, Intent
+
+        classifier = NLClassifier()
+        result = classifier.classify("승인")
+        assert result.intent == Intent.APPROVE
+
+    def test_classify_cancel_keyword_returns_cancel(self) -> None:
+        """취소 키워드는 CANCEL을 반환한다."""
+        from core.nl_classifier import NLClassifier, Intent
+
+        classifier = NLClassifier()
+        result = classifier.classify("취소")
+        assert result.intent == Intent.CANCEL
+
+    def test_classify_reject_keyword_returns_reject(self) -> None:
+        """반려 키워드는 REJECT를 반환한다."""
+        from core.nl_classifier import NLClassifier, Intent
+
+        classifier = NLClassifier()
+        result = classifier.classify("반려")
+        assert result.intent == Intent.REJECT
+
+    def test_classify_long_text_without_action_returns_task_heuristic(self) -> None:
+        """15자 초과 & action 키워드 없는 텍스트는 TASK(heuristic)를 반환한다."""
+        from core.nl_classifier import NLClassifier, Intent
+
+        classifier = NLClassifier()
+        # 15자 초과이지만 action 키워드 없는 임의 텍스트
+        result = classifier.classify("이것은 일반적인 긴 문장으로 분류 테스트를 위한")
+        assert result.intent == Intent.TASK
+        assert result.source == "heuristic"
+        assert result.confidence == 0.5
+
+    def test_classify_short_non_matching_text_returns_chat_heuristic(self) -> None:
+        """15자 이하 & 아무 키워드도 없는 텍스트는 CHAT(heuristic)를 반환한다."""
+        from core.nl_classifier import NLClassifier, Intent
+
+        classifier = NLClassifier()
+        # 15자 이하이고 어떤 키워드도 매칭 안 되는 텍스트
+        result = classifier.classify("뭐야")
+        assert result.intent == Intent.CHAT
+        assert result.source == "heuristic"
+
+    def test_classify_result_has_intent_confidence_source(self) -> None:
+        """ClassifyResult는 intent, confidence, source 필드를 모두 포함한다."""
+        from core.nl_classifier import NLClassifier, ClassifyResult
+
+        classifier = NLClassifier()
+        result = classifier.classify("버그 수정해줘")
+        assert isinstance(result, ClassifyResult)
+        assert result.intent is not None
+        assert isinstance(result.confidence, float)
+        assert isinstance(result.source, str)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 보완: PMRouter._parse() 및 _fallback() 미커버 경로 (85% → 95%+)
+# ---------------------------------------------------------------------------
+
+
+class TestPMRouterParseCoverage:
+    """PMRouter._parse() 및 _fallback() 미커버 경로 커버리지."""
+
+    def test_parse_with_markdown_code_block_extracts_json(self) -> None:
+        """_parse()는 마크다운 코드블록(```json...```) 내 JSON을 정상 파싱한다."""
+        from core.pm_router import PMRouter, PMRoute
+
+        router = PMRouter()
+        raw = '```json\n{"action": "new_task", "task_id": null, "confidence": 0.9}\n```'
+        result = router._parse(raw)
+        assert isinstance(result, PMRoute)
+        assert result.action == "new_task"
+        assert result.confidence == 0.9
+
+    def test_parse_with_plain_code_block_extracts_json(self) -> None:
+        """_parse()는 일반 코드블록(```...```) 내 JSON도 파싱한다."""
+        from core.pm_router import PMRouter, PMRoute
+
+        router = PMRouter()
+        raw = '```\n{"action": "status_query", "task_id": null, "confidence": 0.8}\n```'
+        result = router._parse(raw)
+        assert isinstance(result, PMRoute)
+        assert result.action == "status_query"
+
+    def test_parse_invalid_action_defaults_to_new_task(self) -> None:
+        """_parse()는 유효하지 않은 action 값을 new_task로 대체한다."""
+        from core.pm_router import PMRouter, PMRoute
+
+        router = PMRouter()
+        raw = '{"action": "totally_invalid_action_xyz", "task_id": null, "confidence": 0.5}'
+        result = router._parse(raw)
+        assert isinstance(result, PMRoute)
+        assert result.action == "new_task"
+
+    def test_parse_json_decode_error_returns_fallback_pmroute(self) -> None:
+        """_parse()는 JSON 파싱 실패 시 new_task PMRoute를 반환한다."""
+        from core.pm_router import PMRouter, PMRoute
+
+        router = PMRouter()
+        raw = "not valid json at all"
+        result = router._parse(raw)
+        assert isinstance(result, PMRoute)
+        assert result.action == "new_task"
+        assert result.confidence == 0.5
+        assert result.raw == raw
+
+    def test_parse_raw_is_preserved_in_pmroute(self) -> None:
+        """_parse()는 raw 필드에 원본 응답을 그대로 저장한다."""
+        from core.pm_router import PMRouter
+
+        router = PMRouter()
+        raw = '{"action": "chat", "task_id": null, "confidence": 0.7}'
+        result = router._parse(raw)
+        assert result.raw == raw
+
+    def test_fallback_retry_task_keyword(self) -> None:
+        """_fallback()은 retry 키워드가 있으면 retry_task를 반환한다."""
+        from core.pm_router import PMRouter, PMRoute
+
+        router = PMRouter()
+        result = router._fallback("다시해줘", {})
+        assert isinstance(result, PMRoute)
+        assert result.action == "retry_task"
+        assert result.confidence == 0.8
+
+    def test_fallback_retry_english_keyword(self) -> None:
+        """_fallback()은 영어 retry 키워드도 retry_task로 라우팅한다."""
+        from core.pm_router import PMRouter, PMRoute
+
+        router = PMRouter()
+        result = router._fallback("retry this", {})
+        assert isinstance(result, PMRoute)
+        assert result.action == "retry_task"
+
+    def test_fallback_status_query_keyword(self) -> None:
+        """_fallback()은 상태 키워드가 있으면 status_query를 반환한다."""
+        from core.pm_router import PMRouter, PMRoute
+
+        router = PMRouter()
+        result = router._fallback("현재 상태 알려줘", {})
+        assert isinstance(result, PMRoute)
+        assert result.action == "status_query"
+        assert result.confidence == 0.7
+
+    def test_fallback_confirm_pending_with_long_affirmative(self) -> None:
+        """pending_confirmation 컨텍스트에서 15자 초과 텍스트는 confirm_pending이 되지 않는다."""
+        from core.pm_router import PMRouter, PMRoute
+
+        router = PMRouter()
+        # 15자 초과 긍정어 → confirm_pending 조건(len <= 15) 불충족 → new_task로 폴백
+        result = router._fallback("네 그렇게 해줘 진행해줘 부탁해", {"pending_confirmation": True})
+        assert isinstance(result, PMRoute)
+        # len > 15 이므로 confirm_pending 조건 불충족
+        assert result.action in {"new_task", "status_query", "retry_task"}
+
+    async def test_route_with_decision_client_parses_markdown_code_block(self) -> None:
+        """decision_client가 마크다운 코드블록으로 응답해도 정상 파싱한다."""
+        from core.pm_router import PMRouter, PMRoute
+        from unittest.mock import AsyncMock
+
+        mock_client = AsyncMock()
+        mock_client.complete = AsyncMock(
+            return_value='```json\n{"action": "confirm_pending", "task_id": "T-999", "confidence": 0.95}\n```'
+        )
+
+        router = PMRouter(decision_client=mock_client)
+        result = await router.route("응 해줘")
+
+        assert isinstance(result, PMRoute)
+        assert result.action == "confirm_pending"
+        assert result.task_id == "T-999"
