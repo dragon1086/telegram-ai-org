@@ -376,7 +376,7 @@ class TestRunLoop:
 
         tracker.evaluate_progress = mock_evaluate
 
-        status = await tracker.run_loop(goal["id"])
+        await tracker.run_loop(goal["id"])
         # max_iterations=3이라 끝남
         g = await db.get_goal(goal["id"])
         # 3회차에서 진전이 있었으므로 stagnation이 아닌 max_iterations_reached
