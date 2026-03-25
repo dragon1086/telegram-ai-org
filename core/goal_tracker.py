@@ -13,12 +13,12 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 from loguru import logger
 
 from core.context_db import ContextDB
-from core.pm_orchestrator import PMOrchestrator, KNOWN_DEPTS
+from core.pm_orchestrator import KNOWN_DEPTS, PMOrchestrator
 
 ENABLE_GOAL_TRACKER = os.environ.get("ENABLE_GOAL_TRACKER", "0") == "1"
 
@@ -577,7 +577,10 @@ class GoalTracker:
                 break
             active = [s for s in subtasks if s["status"] not in terminal]
             if not active:
-                break
+                # 루트 PM 태스크가 아직 실행 중이면 계속 대기 (dispatch collision 방지)
+                root_active = await self._db.get_active_parent_tasks()
+                if not root_active:
+                    break
 
             # cancel_event와 sleep을 동시에 대기
             if cancel_event:
