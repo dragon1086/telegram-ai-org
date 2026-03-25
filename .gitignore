@@ -69,6 +69,12 @@ config/*
 !config/.gitkeep
 
 # 보안 민감 파일 (절대 커밋 금지)
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+.env.*
 시크릿_목록.md
 *_목록.md
 

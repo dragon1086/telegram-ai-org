@@ -4,8 +4,11 @@
 
 # ─── 보안: 절대 포함하지 말 것 ────────────────────────────────────────────────
 .env
+.env.*
 .env.local
 .env.*.local
+secrets/
+.claude/settings.local.json
 *.pem
 *.key
 *.crt
