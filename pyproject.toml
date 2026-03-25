@@ -16,13 +16,14 @@ license = "MIT"
 authors = [
     { name = "telegram-ai-org contributors" },
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 keywords = ["telegram", "ai", "multi-agent", "llm", "bot", "orchestration"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     # License classifier deprecated by PEP 639 — SPDX expression in `license = "MIT"` 사용
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Communications :: Chat",
@@ -108,7 +109,7 @@ exclude = [".venv*", ".worktrees*", "tests*", "dist*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
@@ -120,7 +121,7 @@ pythonpath = ["."]
 testpaths = ["tests"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.10"
 files = ["cli.py", "main.py", "simulation_mode.py", "core", "telegram_ai_org", "tools"]
 exclude = ["tests", ".venv", ".worktrees", "build", "dist"]
 ignore_missing_imports = true
