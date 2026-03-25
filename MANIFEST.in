@@ -20,6 +20,7 @@ recursive-include core *.py *.yaml *.md
 recursive-include tools *.py *.yaml *.md
 recursive-include skills *.py *.yaml *.md
 recursive-include telegram_ai_org *.py
+recursive-include scripts *.py *.sh *.md
 recursive-include docs *.md *.rst
 recursive-include config *.yaml *.toml *.json
 
