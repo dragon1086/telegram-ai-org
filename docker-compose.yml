@@ -101,19 +101,19 @@ services:
 
   aiorg-engineering-bot:
     <<: *bot-common
-    profiles: [codex]
+    profiles: [claude]
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        ENGINE: codex
-    image: telegram-ai-org:codex
+        ENGINE: claude
+    image: telegram-ai-org:claude
     container_name: aiorg-engineering-bot
     command: ["--org", "aiorg_engineering_bot"]
     environment:
       PM_ORG_NAME: aiorg_engineering_bot
-      ENGINE_TYPE: codex
-      CODEX_CLI_PATH: /opt/cli/bin/codex
+      ENGINE_TYPE: claude-code
+      CLAUDE_CLI_PATH: /opt/cli/bin/claude
 
   aiorg-ops-bot:
     <<: *bot-common
