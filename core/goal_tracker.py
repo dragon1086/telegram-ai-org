@@ -135,6 +135,16 @@ class GoalTracker:
         """
         import json as _json
 
+        # 동일 제목의 active/achieved 목표가 이미 있으면 재생성 방지
+        existing = await self.get_goals_by_title(title)
+        for g in existing:
+            if g["status"] in ("active", "achieved"):
+                logger.info(
+                    f"[GoalTracker] start_goal 건너뜀 — 동일 제목 목표 이미 존재: "
+                    f"{g['id']} (status={g['status']})"
+                )
+                return g["id"]
+
         await self._init_counter()
         goal_id = self._next_goal_id()
         meta_json = _json.dumps(meta or {}, ensure_ascii=False)
@@ -388,16 +398,16 @@ class GoalTracker:
         )
 
     async def _cancel_old_subtasks(self, goal_id: str) -> None:
-        """이전 iteration의 모든 서브태스크를 cancelled로 마킹.
+        """이전 iteration의 미완료 서브태스크를 cancelled로 마킹.
 
         replan() 호출 시 새 iteration을 위한 슬레이트 초기화.
-        done 서브태스크도 포함하여 취소해야 evaluate_progress가
-        새 iteration 서브태스크만 평가할 수 있다.
+        done 태스크는 취소하지 않음 — evaluate_progress가 이전 iteration의
+        완료 결과를 누적하여 목표 달성 여부를 정확히 평가할 수 있도록 한다.
         """
         subtasks = await self._db.get_subtasks(goal_id)
         cancelled_count = 0
         for st in subtasks:
-            if st["status"] in ("pending", "assigned", "in_progress", "done"):
+            if st["status"] in ("pending", "assigned", "in_progress"):
                 await self._db.update_pm_task_status(st["id"], "cancelled")
                 cancelled_count += 1
         if cancelled_count:
