@@ -12,7 +12,6 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-
 # ── 환경 설정 ─────────────────────────────────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -223,8 +222,9 @@ async def send_telegram(text: str) -> None:
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from core.telegram_formatting import markdown_to_html
         from telegram import Bot
+
+        from core.telegram_formatting import markdown_to_html
         bot = Bot(token=BOT_TOKEN)
         async with bot:
             await bot.send_message(
@@ -256,7 +256,6 @@ async def _register_retro_actions(md_content: str) -> None:
 
     ENABLE_GOAL_TRACKER=1 환경변수가 설정된 경우에만 실행한다.
     """
-    import os
     import sys
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -280,14 +279,18 @@ async def _register_retro_actions(md_content: str) -> None:
             print("[retro] 등록할 조치사항 없음 — 자율 루프 생략")
             return
 
+        if not register_result.registered_ids:
+            # GoalTracker 미연결(파싱 전용) — 가짜 ID로 noop dispatch하면 로그만 낭비
+            print(
+                f"[retro] GoalTracker 미연결 — 파싱 완료 ({register_result.action_items_found}개), "
+                "실제 등록 없음 → 루프 생략"
+            )
+            return
+
         # 자율 루프 사이클 실행 (idle→evaluate→replan→dispatch)
         loop_result = await run_meeting_cycle(
             meeting_type="daily_retro",
-            registered_ids=register_result.registered_ids or [
-                # GoalTracker 없이 파싱만 된 경우: action_items로 가상 ID 생성
-                f"G-daily-{i:03d}"
-                for i in range(register_result.action_items_found)
-            ],
+            registered_ids=register_result.registered_ids,
         )
 
         print(
