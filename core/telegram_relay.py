@@ -4025,7 +4025,24 @@ class TelegramRelay:
                             _exec_task.cancel()
                         return
 
+            _hb_interval_pm = int(os.environ.get("BOT_HB_INTERVAL_SEC", "30"))
+
+            async def _pm_heartbeat_loop() -> None:
+                """PM 태스크 실행 중 주기적 on_progress 호출 → hang watchdog 오탐 방지.
+
+                pytest 등 stdout 없이 오래 걸리는 작업이 hang으로 오탐되는 것을 막는다.
+                진짜 hang은 TASK_EXEC_TOTAL_TIMEOUT_SEC 절대 타임아웃이 잡는다.
+                """
+                await asyncio.sleep(_hb_interval_pm)
+                while True:
+                    try:
+                        await on_progress("🤔 처리 중...")
+                    except Exception:
+                        pass
+                    await asyncio.sleep(_hb_interval_pm)
+
             watchdog_task = asyncio.create_task(_hang_watchdog())
+            heartbeat_pm_task = asyncio.create_task(_pm_heartbeat_loop())
             try:
                 _exec_task = asyncio.current_task()
                 response = await self._execute_with_team_config(
@@ -4048,6 +4065,8 @@ class TelegramRelay:
             finally:
                 if not watchdog_task.done():
                     watchdog_task.cancel()
+                if not heartbeat_pm_task.done():
+                    heartbeat_pm_task.cancel()
             upload_candidates = extract_local_artifact_paths(response or "")
             self._append_runbook(
                 run_id,
