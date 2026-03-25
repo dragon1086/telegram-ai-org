@@ -471,7 +471,29 @@ class ClaudeCodeRunner:
         async def _read_stream() -> None:
             nonlocal final_result, current_session_id
             assert proc.stdout is not None
-            async for raw_line in proc.stdout:
+            while True:
+                try:
+                    raw_line = await proc.stdout.readline()
+                except asyncio.LimitOverrunError as exc:
+                    logger.warning(
+                        f"[stream_json] LimitOverrunError: 단일 라인이 10MB 버퍼 초과 "
+                        f"({exc.consumed:,} bytes). 초과 라인 스킵 후 스트림 계속."
+                    )
+                    try:
+                        # consumed 만큼 버퍼에서 제거 후 줄 끝(\n)까지 나머지 소비
+                        await proc.stdout.read(exc.consumed)
+                        while True:
+                            try:
+                                await proc.stdout.readline()
+                                break  # 줄 끝 도달
+                            except asyncio.LimitOverrunError as inner_exc:
+                                await proc.stdout.read(inner_exc.consumed)
+                    except Exception as drain_err:
+                        logger.error(f"[stream_json] 초과 라인 drain 실패, 스트림 중단: {drain_err}")
+                        break
+                    continue
+                if not raw_line:
+                    break
                 line = raw_line.decode("utf-8", errors="replace").strip()
                 if not line:
                     continue
@@ -722,7 +744,28 @@ class ClaudeCodeRunner:
 
         async def _read_stdout() -> None:
             assert proc.stdout is not None
-            async for raw_line in proc.stdout:
+            while True:
+                try:
+                    raw_line = await proc.stdout.readline()
+                except asyncio.LimitOverrunError as exc:
+                    logger.warning(
+                        f"[subprocess] LimitOverrunError: 단일 라인이 10MB 버퍼 초과 "
+                        f"({exc.consumed:,} bytes). 초과 라인 스킵."
+                    )
+                    try:
+                        await proc.stdout.read(exc.consumed)
+                        while True:
+                            try:
+                                await proc.stdout.readline()
+                                break
+                            except asyncio.LimitOverrunError as inner_exc:
+                                await proc.stdout.read(inner_exc.consumed)
+                    except Exception as drain_err:
+                        logger.error(f"[subprocess] 초과 라인 drain 실패, 스트림 중단: {drain_err}")
+                        break
+                    continue
+                if not raw_line:
+                    break
                 line = raw_line.decode("utf-8", errors="replace").rstrip()
                 output_lines.append(line)
                 if progress_callback is not None:
