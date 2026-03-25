@@ -340,7 +340,7 @@ class TestAutonomousLoopRunner:
 
         sm = GoalTrackerStateMachine("G-test-003")
         runner = AutonomousLoopRunner(goal_id="G-test-003", state_machine=sm)
-        result = await runner.run_cycle(registered_ids=["G-pm-001"])
+        await runner.run_cycle(registered_ids=["G-pm-001"])
 
         assert sm.state == GoalTrackerState.IDLE, (
             f"최종 상태가 IDLE이 아님: {sm.state}"

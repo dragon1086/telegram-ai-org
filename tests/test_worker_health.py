@@ -221,7 +221,7 @@ class TestLeaseSystem:
         mon.mark_online("w1")
         # 리스를 과거로 설정
         mon._health["w1"].lease_expires_at = time.time() - 1
-        available = mon.get_available()
+        mon.get_available()
         assert mon._health["w1"].status == WorkerStatus.DEGRADED
 
 

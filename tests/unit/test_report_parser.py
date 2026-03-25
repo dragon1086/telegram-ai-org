@@ -13,26 +13,23 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import AsyncMock, MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from goal_tracker.action_parser import ActionItem
-from goal_tracker.report_parser import (
-    parse_action_items,
-    parse_report_metadata,
-    _normalize_report_type,
-)
-from goal_tracker.meeting_handler import MeetingType
 from goal_tracker.auto_register import (
-    auto_register_from_report,
     AutoRegisterResult,
     _inject_to_state_machine,
+    auto_register_from_report,
+)
+from goal_tracker.meeting_handler import MeetingType
+from goal_tracker.report_parser import (
+    _normalize_report_type,
+    parse_action_items,
+    parse_report_metadata,
 )
 from goal_tracker.state_machine import GoalTrackerState, GoalTrackerStateMachine
-
 
 # ── 픽스처: 샘플 보고 텍스트 ─────────────────────────────────────────────────
 
@@ -373,7 +370,7 @@ class TestAutoRegisterWithStateMachine:
 
     def test_registrar_called_with_correct_event(self):
         registrar = self._make_mock_registrar(["G-weekly-001"])
-        result = asyncio.run(
+        asyncio.run(
             auto_register_from_report(
                 WEEKLY_MEETING_SAMPLE,
                 "weekly_meeting",
