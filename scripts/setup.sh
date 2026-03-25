@@ -494,8 +494,23 @@ if [ ! -f "$ENV_EXAMPLE" ]; then
 fi
 
 if [ -f "$ENV_FILE" ]; then
-    ok ".env 파일 이미 존재 — 덮어쓰기 건너뜀"
-    ENV_EXISTS=true
+    if [ "$NON_INTERACTIVE" = true ]; then
+        ok ".env 파일 이미 존재 — --yes 모드: 덮어쓰기 건너뜀"
+        ENV_EXISTS=true
+    else
+        echo ""
+        echo -e "${YELLOW}⚠️  .env 파일이 이미 존재합니다.${RESET}"
+        read -rp "  .env.example로 덮어쓰시겠습니까? 기존 값이 모두 초기화됩니다. [y/N]: " _overwrite
+        _overwrite="${_overwrite:-N}"
+        if [[ "$_overwrite" =~ ^[Yy]$ ]]; then
+            cp "$ENV_EXAMPLE" "$ENV_FILE"
+            ok ".env 파일 덮어쓰기 완료 (.env.example 기준으로 초기화)"
+            ENV_EXISTS=false
+        else
+            ok ".env 파일 유지 — 기존 설정 보존"
+            ENV_EXISTS=true
+        fi
+    fi
 else
     info ".env.example → .env 복사 중..."
     cp "$ENV_EXAMPLE" "$ENV_FILE"
@@ -640,6 +655,34 @@ else
         echo -e "${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     fi
 fi
+
+# =============================================================================
+# 권한 설정: 실행 파일에 chmod +x 적용
+# =============================================================================
+step "Step 5.5/5: 실행 파일 권한 설정"
+
+# scripts/*.sh — 모든 셸 스크립트
+_chmod_count=0
+while IFS= read -r -d '' _sh_file; do
+    chmod +x "$_sh_file"
+    _chmod_count=$((_chmod_count + 1))
+done < <(find "$SCRIPT_DIR" -maxdepth 1 -name "*.sh" -print0 2>/dev/null)
+ok "scripts/*.sh → chmod +x 적용 (${_chmod_count}개)"
+
+# tools/*.py — 도구 스크립트
+_py_chmod_count=0
+if [ -d "$PROJECT_ROOT/tools" ]; then
+    while IFS= read -r -d '' _py_file; do
+        chmod +x "$_py_file"
+        _py_chmod_count=$((_py_chmod_count + 1))
+    done < <(find "$PROJECT_ROOT/tools" -maxdepth 1 -name "*.py" -print0 2>/dev/null)
+    ok "tools/*.py → chmod +x 적용 (${_py_chmod_count}개)"
+fi
+
+# main.py / cli.py (프로젝트 루트 진입점)
+for _entry in "$PROJECT_ROOT/main.py" "$PROJECT_ROOT/cli.py"; do
+    [ -f "$_entry" ] && chmod +x "$_entry" && info "$(basename "$_entry") → chmod +x"
+done
 
 # =============================================================================
 # macOS 권한 자동 설정 (quarantine 제거 + TCC 등록 시도)
