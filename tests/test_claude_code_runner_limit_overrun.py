@@ -97,8 +97,6 @@ async def test_read_stream_limit_overrun_then_normal() -> None:
     """LimitOverrunError 발생 후 스트림이 중단되지 않고 이후 정상 라인을 처리하는지 확인."""
 
     # 10MB 초과 라인 시뮬레이션: LimitOverrunError → drain read → normal readline → EOF
-    oversized_error = asyncio.LimitOverrunError("Separator is not found, and chunk exceed the limit", 1024 * 1024 * 10)
-
     normal_result_line = json.dumps({
         "type": "result",
         "subtype": "success",

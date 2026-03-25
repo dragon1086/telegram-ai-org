@@ -4,18 +4,16 @@ from __future__ import annotations
 COLLAB_PREFIX = "🙋 도와줄 조직 찾아요!"
 COLLAB_DONE_PREFIX = "✅ 협업 완료:"
 COLLAB_CLAIM_PREFIX = "🤝 제가 맡을게요!"
+
+# Bug ② 수정: 기존 집합에 "태스크", "task", "작업", "할 일", "ctx", "context" 같은
+# 일반적인 단어가 포함되어 정상적인 COLLAB 태그를 플레이스홀더로 오탐하는 문제.
+# 수정 후: 구체적·고유한 프롬프트 예시 문구만 유지 (일반 단어 제거).
 _PLACEHOLDER_TASKS = {
-    "태스크",
-    "task",
-    "작업",
-    "할 일",
     "구체적 작업 설명",
     "출시 홍보 카피 3개 필요",
 }
+# context 집합: 접두사 기반 검사로 변형도 감지 (예: "현재 작업 요약: API 개발 ...")
 _PLACEHOLDER_CONTEXTS = {
-    "ctx",
-    "context",
-    "맥락",
     "현재 작업 요약",
     "python jwt 로그인 라이브러리 v1.0, b2b 타겟",
 }
@@ -60,10 +58,25 @@ def make_collab_done(org_id: str, result_summary: str) -> str:
 
 
 def is_placeholder_collab(task: str, context: str = "") -> bool:
-    """프롬프트 예시/플레이스홀더로 보이는 협업 태그는 무시한다."""
+    """프롬프트 예시/플레이스홀더로 보이는 협업 태그는 무시한다.
+
+    task: 완전일치(구체적 프롬프트 예시 문구만).
+    context: 접두사 검사 — "현재 작업 요약: 추가설명" 형태의 변형도 필터링.
+    일반 단어("작업", "task" 등)는 false positive 방지를 위해 집합에서 제외.
+    """
     task_norm = " ".join(task.strip().lower().split())
     context_norm = " ".join(context.strip().lower().split())
-    return task_norm in _PLACEHOLDER_TASKS or context_norm in _PLACEHOLDER_CONTEXTS
+    # task: 완전일치 (기존 방식 유지)
+    if task_norm in _PLACEHOLDER_TASKS:
+        return True
+    # context: 접두사 기반 검사 (완전일치 또는 "현재 작업 요약:" 같은 변형 처리)
+    for placeholder in _PLACEHOLDER_CONTEXTS:
+        if context_norm == placeholder:
+            return True
+        # "현재 작업 요약 - 추가내용", "현재 작업 요약: ..." 같은 변형도 필터링
+        if context_norm.startswith(placeholder + " ") or context_norm.startswith(placeholder + ":") or context_norm.startswith(placeholder + "-") or context_norm.startswith(placeholder + "—"):
+            return True
+    return False
 
 
 def is_collab_request(text: str) -> bool:

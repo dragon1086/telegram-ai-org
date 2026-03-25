@@ -89,8 +89,9 @@ class TestResolveTargetDepts:
 
 class TestCollabDispatcherDispatch:
     @pytest.mark.asyncio
-    async def test_dispatch_sends_to_target_dept(self):
+    async def test_dispatch_sends_to_target_dept(self, tmp_path, monkeypatch):
         """COLLAB 태스크가 명시된 대상 부서로 정상 전달되어야 한다."""
+        monkeypatch.setattr("core.collab_dispatcher._DISPATCH_LOG_PATH", tmp_path / "collab_dispatch.jsonl")
         dispatcher, send_mock = _make_dispatcher()
 
         result = await dispatcher.dispatch(
@@ -141,8 +142,9 @@ class TestCollabDispatcherDispatch:
         send_mock.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_dispatch_from_tag_extracts_and_sends(self):
+    async def test_dispatch_from_tag_extracts_and_sends(self, tmp_path, monkeypatch):
         """[COLLAB:...] 태그에서 자동 추출해 dispatch해야 한다."""
+        monkeypatch.setattr("core.collab_dispatcher._DISPATCH_LOG_PATH", tmp_path / "collab_dispatch.jsonl")
         dispatcher, send_mock = _make_dispatcher()
 
         full_text = (

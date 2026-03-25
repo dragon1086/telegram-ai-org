@@ -70,8 +70,8 @@ class TestRequestVerification:
         assert ver is not None
         assert ver["task_id"] == "T-v1"
         assert ver["status"] == "pending"
-        assert ver["original_model"] == "codex"
-        assert ver["verifier_model"] == "claude-code"
+        assert ver["original_model"] == "claude-code"
+        assert ver["verifier_model"] == "gemini-cli"
 
     @pytest.mark.asyncio
     async def test_request_verification_pending_task_fails(self, db, send_fn):
