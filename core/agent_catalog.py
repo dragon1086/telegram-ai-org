@@ -8,7 +8,6 @@ from pathlib import Path
 import yaml
 from loguru import logger
 
-
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
 # keyword → agent name mapping for recommend()

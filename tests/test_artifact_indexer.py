@@ -11,17 +11,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
-import os
-import tempfile
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from core.artifact_indexer import ArtifactIndexer
-
 
 # ------------------------------------------------------------------
 # 공통 픽스처

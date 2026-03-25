@@ -74,7 +74,7 @@ async def test_inject_collab_result_idempotent():
     relay = _make_relay()
     task = _collab_task(result_injected=True)
 
-    with patch("core.telegram_relay.load_orchestration_config") as mock_cfg, \
+    with patch("core.telegram_relay.load_orchestration_config"), \
          patch("telegram.Bot") as mock_bot_cls:
         await relay._inject_collab_result(task)
 

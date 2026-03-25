@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import TYPE_CHECKING, Callable, Coroutine, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -492,9 +492,10 @@ class OrgScheduler:
             tasks = []  # Phase 3에서 참조 — 여기서 초기화
             # Phase 2: RetroMemory에 저장
             try:
-                from core.retro_memory import RetroMemory, RetroEntry
-                from scripts.daily_retro import get_today_tasks
                 from datetime import date
+
+                from core.retro_memory import RetroEntry, RetroMemory
+                from scripts.daily_retro import get_today_tasks
                 tasks = get_today_tasks()
                 total = len(tasks)
                 success = sum(1 for t in tasks if t.get("status") == "completed")
@@ -511,8 +512,8 @@ class OrgScheduler:
                 logger.warning(f"[OrgScheduler] RetroMemory 저장 실패 (무시): {e2}")
             # Phase 3: CollaborationTracker + AgentPersonaMemory 업데이트
             try:
-                from core.collaboration_tracker import CollaborationTracker
                 from core.agent_persona_memory import AgentPersonaMemory
+                from core.collaboration_tracker import CollaborationTracker
                 apm = AgentPersonaMemory()
                 ct = CollaborationTracker(persona_memory=None)  # synergy는 update_from_task로만 일원화
                 # 오늘 완료된 태스크의 협업 기록
@@ -610,14 +611,15 @@ class OrgScheduler:
                     topic=topic,
                     participants=self._group_chat_hub.participant_ids,
                 )
+            from datetime import datetime, timedelta, timezone
+
             from scripts.daily_retro import (
-                get_today_tasks,
                 _llm_insights,
                 build_retro,
+                get_today_tasks,
                 save_markdown,
                 save_to_shared_memory,
             )
-            from datetime import datetime, timedelta, timezone
 
             # 이번 주 월요일부터 오늘까지 태스크 집계
             tasks = get_today_tasks()  # 오늘 기준 — 주간 집계는 별도 구현
@@ -639,9 +641,9 @@ class OrgScheduler:
                 logger.warning(f"[OrgScheduler] RetroReport 생성 실패: {e2}")
             # Phase 3: BotCharacterEvolution + 자동 MVP Shoutout
             try:
+                from core.agent_persona_memory import AgentPersonaMemory
                 from core.bot_character_evolution import BotCharacterEvolution
                 from core.shoutout_system import ShoutoutSystem
-                from core.agent_persona_memory import AgentPersonaMemory
                 bce = BotCharacterEvolution()
                 ss = ShoutoutSystem()
                 apm = AgentPersonaMemory()
@@ -846,6 +848,7 @@ class OrgScheduler:
         logger.info("[OrgScheduler] skill_improve_weekly 시작")
         try:
             import asyncio as _asyncio
+
             from core.eval_runner import EvalRunner
             from core.skill_auto_improver import SkillAutoImprover
             runner = EvalRunner()
@@ -895,8 +898,8 @@ class OrgScheduler:
         """매일 03:00 KST — RoutingOptimizer 제안 생성 및 Telegram 보고."""
         logger.info("[OrgScheduler] routing_optimizer_daily 시작")
         try:
-            from core.routing_optimizer import RoutingOptimizer
             from core.routing_approval_store import RoutingApprovalStore
+            from core.routing_optimizer import RoutingOptimizer
             opt = RoutingOptimizer()
             proposal = opt.generate_proposal()
             if proposal:

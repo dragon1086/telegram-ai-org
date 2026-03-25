@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from core.message_bus import MessageBus, Event, EventType
+from core.message_bus import Event, EventType, MessageBus
 
 if TYPE_CHECKING:
     from core.context_db import ContextDB

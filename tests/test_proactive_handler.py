@@ -3,9 +3,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from core.message_bus import MessageBus, EventType, Event
+
+import pytest
+
+from core.message_bus import Event, EventType, MessageBus
 
 
 @pytest.mark.asyncio
@@ -47,8 +49,8 @@ async def test_inactivity_handler_called_on_event():
 @pytest.mark.asyncio
 async def test_event_suppressed_outside_active_hours():
     """active_hours 범위 밖에서 이벤트가 억제되는지"""
-    from core.proactive_handler import ProactiveHandler
     import core.proactive_handler as ph_module
+    from core.proactive_handler import ProactiveHandler
     bus = MessageBus()
     handler = ProactiveHandler(
         bus,
@@ -69,8 +71,9 @@ async def test_event_suppressed_outside_active_hours():
 
 def test_active_hours_yaml_parsed():
     """bots/*.yaml active_hours 파싱 확인"""
-    import yaml
     import os
+
+    import yaml
     bot_yamls = [f for f in os.listdir("bots") if f.endswith(".yaml")]
     assert len(bot_yamls) > 0
     for fname in bot_yamls:

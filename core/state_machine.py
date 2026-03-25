@@ -35,12 +35,13 @@ idle→evaluate→replan→dispatch 4단계 전이 로직의 core 레이어 진�
 """
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Awaitable, Callable, Optional
 
 from loguru import logger
+
+from goal_tracker.loop_runner import LoopRunResult, run_meeting_cycle
 
 # ── goal_tracker 핵심 클래스 re-export ────────────────────────────────────────
 # 하위 호환: from core.state_machine import GoalTrackerStateMachine
@@ -52,9 +53,8 @@ from goal_tracker.state_machine import (  # noqa: F401
     StateMachineContext,
     StateTransition,
 )
-from goal_tracker.loop_runner import LoopRunResult, run_meeting_cycle
-from tools.meeting_loop_pipeline import MeetingLoopPipeline
 from tools.goaltracker_client import GoalTrackerClient
+from tools.meeting_loop_pipeline import MeetingLoopPipeline
 
 
 def _utcnow() -> datetime:
@@ -334,7 +334,7 @@ class MeetingStateMachine:
         goal_id = f"G-{meeting_type}-{date.today().isoformat()}"
 
         # GoalTrackerStateMachine 사용하여 dispatch 사이클 실행
-        sm = self._external_sm or GoalTrackerStateMachine(
+        _ = self._external_sm or GoalTrackerStateMachine(
             goal_id=goal_id,
             max_iterations=1,  # 회의 1회분 → 1사이클만 실행
         )

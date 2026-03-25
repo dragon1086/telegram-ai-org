@@ -29,9 +29,8 @@ from scripts.review_recent_conversations import (
     build_report,
     collect_recent_log_lines,
 )
-from tools.base_runner import RunnerFactory, RunContext
+from tools.base_runner import RunContext, RunnerFactory
 from tools.telegram_uploader import upload_file
-
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / ".omx" / "auto-improve"

@@ -2,7 +2,7 @@ schema_version: 2
 organization_ref: aiorg_engineering_bot
 username: aiorg_engineering_bot
 org_id: aiorg_engineering_bot
-token_env: BOT_TOKEN_AIORG_ENGINEERING_BOT
+token_env: DEV_BOT_TOKEN
 # claude-code: 복잡한 코드 아키텍처, 멀티스텝 디버깅, 테스트 작성에 최적
 chat_id: -5203707291
 engine: claude-code

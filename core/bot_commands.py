@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from telegram import BotCommand
 
-
 COMMON_COMMANDS = [
     BotCommand("start", "봇 시작/소개"),
     BotCommand("status", "봇 상태 확인"),

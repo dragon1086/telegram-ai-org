@@ -28,24 +28,24 @@ def _save_result(user_input: str, result: dict) -> None:
 # 프로젝트 루트를 path에 추가
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.worker_registry import WorkerRegistry
+from core.worker_registry import WorkerRegistry  # noqa: E402
 
 try:
-    from core.llm_router import LLMRouter
-    from core.task_planner import TaskPlanner
+    from core.llm_router import LLMRouter  # noqa: E402
+    from core.task_planner import TaskPlanner  # noqa: E402
     _ROUTER_AVAILABLE = True
 except ImportError:
     _ROUTER_AVAILABLE = False
 
 try:
-    from core.agent_catalog import AgentCatalog
-    from core.dynamic_team_builder import DynamicTeamBuilder, ExecutionMode
+    from core.agent_catalog import AgentCatalog  # noqa: E402
+    from core.dynamic_team_builder import DynamicTeamBuilder  # noqa: E402
     _DYNAMIC_TEAM_AVAILABLE = True
 except ImportError:
     _DYNAMIC_TEAM_AVAILABLE = False
 
 try:
-    from core.memory_manager import MemoryManager
+    from core.memory_manager import MemoryManager  # noqa: E402
     _MEMORY_AVAILABLE = True
 except ImportError:
     _MEMORY_AVAILABLE = False
@@ -268,7 +268,6 @@ async def run_dynamic_team_demo() -> None:
     else:
         # omc_team_format이 없으면 agents에서 조합
         if agents:
-            agent_parts = []
             seen: dict[str, int] = {}
             for agent in agents:
                 name = getattr(agent, "name", str(agent))

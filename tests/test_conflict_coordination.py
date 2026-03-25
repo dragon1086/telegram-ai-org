@@ -16,7 +16,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.result_synthesizer import ResultSynthesizer, SynthesisJudgment
 
-
 # ---------------------------------------------------------------------------
 # 헬퍼
 # ---------------------------------------------------------------------------
@@ -198,7 +197,7 @@ class TestPMOrchestratorConflictDispatch:
     @pytest.mark.asyncio
     async def test_conflicting_dispatches_follow_up_tasks(self):
         """CONFLICTING + follow_up_tasks 있으면 dispatch() 호출되어야 함."""
-        from core.result_synthesizer import SynthesisResult, SynthesisJudgment
+        from core.result_synthesizer import SynthesisJudgment, SynthesisResult
 
         synthesis = SynthesisResult(
             judgment=SynthesisJudgment.CONFLICTING,
@@ -247,9 +246,9 @@ class TestPMOrchestratorConflictDispatch:
     @pytest.mark.asyncio
     async def test_conflicting_fallback_when_no_follow_up(self):
         """CONFLICTING + follow_up_tasks 없으면 fallback 조율 태스크가 생성되어야 함."""
-        from core.result_synthesizer import SynthesisResult, SynthesisJudgment
-        from core.pm_orchestrator import SubTask
         from core.constants import KNOWN_DEPTS
+        from core.pm_orchestrator import SubTask
+        from core.result_synthesizer import SynthesisJudgment, SynthesisResult
 
         synthesis = SynthesisResult(
             judgment=SynthesisJudgment.CONFLICTING,

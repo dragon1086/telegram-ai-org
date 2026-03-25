@@ -59,7 +59,7 @@ organizations:
   description: 개발/코딩/API 구현/버그 수정
   telegram:
     username: aiorg_engineering_bot
-    token_env: BOT_TOKEN_AIORG_ENGINEERING_BOT
+    token_env: DEV_BOT_TOKEN
     chat_id: -5203707291
   identity:
     dept_name: 개발실
@@ -197,7 +197,7 @@ organizations:
   description: 프로젝트 총괄/부서 조율/진행 관리
   telegram:
     username: aiorg_pm_bot
-    token_env: PM_BOT_TOKEN
+    token_env: GLOBAL_PM_BOT_TOKEN
     chat_id: -5203707291
   identity:
     dept_name: PM
@@ -244,7 +244,7 @@ organizations:
   description: 기획/요구사항 분석/PRD 작성
   telegram:
     username: aiorg_product_bot
-    token_env: BOT_TOKEN_AIORG_PRODUCT_BOT
+    token_env: PLANNING_BOT_TOKEN
     chat_id: -5203707291
   identity:
     dept_name: 기획실

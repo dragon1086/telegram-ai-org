@@ -15,7 +15,7 @@ import os
 import socket
 import time
 import uuid
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 from loguru import logger
 

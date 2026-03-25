@@ -6,17 +6,15 @@ orchestration.yaml collab_triggers 파싱 + PMOrchestrator._fire_collab_triggers
 from __future__ import annotations
 
 import sys
-import tempfile
 import textwrap
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.orchestration_config import CollabTrigger, OrchestrationConfig
-
 
 # ── CollabTrigger 단위 테스트 ────────────────────────────────────────────────
 
@@ -255,10 +253,10 @@ async def db_with_task(tmp_path):
 @pytest.mark.asyncio
 async def test_fire_collab_triggers_creates_tasks(tmp_path, db_with_task):
     """_fire_collab_triggers: 기획 완료 → 디자인·개발 태스크 자동 생성."""
-    from core.task_graph import TaskGraph
     from core.claim_manager import ClaimManager
     from core.memory_manager import MemoryManager
     from core.pm_orchestrator import PMOrchestrator
+    from core.task_graph import TaskGraph
 
     orgs_path = tmp_path / "organizations.yaml"
     orch_path = tmp_path / "orchestration.yaml"
@@ -300,10 +298,10 @@ async def test_fire_collab_triggers_creates_tasks(tmp_path, db_with_task):
 @pytest.mark.asyncio
 async def test_fire_collab_triggers_dedup(tmp_path, db_with_task):
     """같은 (source_task_id, target_dept) 조합은 dedup_window 내 재트리거 억제."""
-    from core.task_graph import TaskGraph
     from core.claim_manager import ClaimManager
     from core.memory_manager import MemoryManager
     from core.pm_orchestrator import PMOrchestrator
+    from core.task_graph import TaskGraph
 
     orgs_path = tmp_path / "organizations.yaml"
     orch_path = tmp_path / "orchestration.yaml"
@@ -345,11 +343,11 @@ async def test_fire_collab_triggers_dedup(tmp_path, db_with_task):
 @pytest.mark.asyncio
 async def test_fire_collab_triggers_skips_collab_tasks(tmp_path):
     """이미 collab=True인 태스크 완료 시 순환 트리거 발동 안 함."""
-    from core.context_db import ContextDB
-    from core.task_graph import TaskGraph
     from core.claim_manager import ClaimManager
+    from core.context_db import ContextDB
     from core.memory_manager import MemoryManager
     from core.pm_orchestrator import PMOrchestrator
+    from core.task_graph import TaskGraph
 
     cdb = ContextDB(tmp_path / "test2.db")
     await cdb.initialize()

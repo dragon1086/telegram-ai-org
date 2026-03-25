@@ -29,18 +29,21 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Awaitable, Callable, Optional
 
+from loguru import logger
+
+from goal_tracker.action_parser import ActionItem
+from goal_tracker.meeting_handler import MeetingEvent
+from goal_tracker.report_parser import (
+    _normalize_report_type,
+    parse_action_items,
+    parse_report_metadata,
+)
+from goal_tracker.state_machine import GoalTrackerState, GoalTrackerStateMachine
+
 
 def _utcnow() -> datetime:
     """timezone-aware UTC datetime (Python 3.14+ 호환)."""
     return datetime.now(timezone.utc)
-
-from loguru import logger
-
-from goal_tracker.action_parser import ActionItem
-from goal_tracker.meeting_handler import MeetingEvent, MeetingType, detect_meeting_type
-from goal_tracker.report_parser import parse_action_items, parse_report_metadata, _normalize_report_type
-from goal_tracker.state_machine import GoalTrackerState, GoalTrackerStateMachine
-
 
 # ── 결과 데이터클래스 ─────────────────────────────────────────────────────────
 
@@ -241,7 +244,6 @@ async def _register_item_direct(
 ) -> Optional[str]:
     """GoalTracker.start_goal()로 단일 ActionItem 직접 등록."""
     from datetime import date as _date
-    import json as _json
 
     today = _date.today().isoformat()
     type_label = meeting_event.display_name

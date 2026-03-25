@@ -21,12 +21,12 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
+from loguru import logger
+
 
 def _utcnow() -> datetime:
     """timezone-aware UTC datetime (Python 3.14+ 호환)."""
     return datetime.now(timezone.utc)
-
-from loguru import logger
 
 
 class GoalTrackerState(str, Enum):

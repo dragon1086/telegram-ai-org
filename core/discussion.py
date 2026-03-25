@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import os
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 from loguru import logger
 
 from core.context_db import ContextDB
-from core.message_bus import MessageBus, Event, EventType
+from core.message_bus import Event, EventType, MessageBus
 
 ENABLE_DISCUSSION_PROTOCOL = os.environ.get("ENABLE_DISCUSSION_PROTOCOL", "0") == "1"
 

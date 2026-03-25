@@ -11,7 +11,6 @@ import yaml
 
 from core.orchestration_config import load_orchestration_config
 
-
 DEFAULT_ORCHESTRATION_CONFIG: dict[str, Any] = {
     "schema_version": 1,
     "runtime": {

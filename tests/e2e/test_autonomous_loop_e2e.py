@@ -20,27 +20,26 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from goal_tracker.state_machine import (
-    GoalTrackerState,
-    GoalTrackerStateMachine,
-    EvaluationResult,
-)
-from goal_tracker.loop_runner import AutonomousLoopRunner, LoopRunResult, run_meeting_cycle
 from goal_tracker.goal_tracker_client import GoalTrackerClient, ReportRegisterResult
+from goal_tracker.loop_runner import AutonomousLoopRunner, LoopRunResult, run_meeting_cycle
 from goal_tracker.multibot_meeting_handler import (
-    MultibotMeetingHandler,
+    ALL_ORG_BOTS,
     BotReport,
+    MultibotMeetingHandler,
     _build_combined_report,
     _detect_type,
-    ALL_ORG_BOTS,
 )
-
+from goal_tracker.state_machine import (
+    EvaluationResult,
+    GoalTrackerState,
+    GoalTrackerStateMachine,
+)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 공통 픽스처

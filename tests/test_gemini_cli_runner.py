@@ -8,8 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from tools.base_runner import RunContext, RunnerError, RunnerFactory, RunnerTimeoutError
-from tools.gemini_cli_runner import GeminiCLIRunner, _sanitize_output, _extract_json_block
-
+from tools.gemini_cli_runner import GeminiCLIRunner, _extract_json_block, _sanitize_output
 
 # ---------------------------------------------------------------------------
 # _sanitize_output

@@ -5,9 +5,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import pytest
+
 from tools import codex_runner
 from tools.codex_runner import CodexRunner
-import pytest
 
 
 def test_prefers_explicit_path_as_workdir(tmp_path: Path) -> None:

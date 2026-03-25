@@ -3,6 +3,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.improvement_bus import ImprovementItem
 
 
 @dataclass
@@ -32,5 +36,5 @@ class BaseAction:
     def __init__(self, dry_run: bool = False) -> None:
         self.dry_run = dry_run
 
-    def run(self, item: "ImprovementItem") -> ActionResult:  # type: ignore[name-defined]
+    def run(self, item: ImprovementItem) -> ActionResult:
         raise NotImplementedError

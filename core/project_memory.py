@@ -10,8 +10,8 @@ import re
 import tempfile
 import time
 from collections import Counter
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from dataclasses import dataclass, asdict
 from typing import Any
 
 from loguru import logger
@@ -207,7 +207,6 @@ class ProjectMemory:
         if not candidates:
             return None
 
-        now = time.time()
         scored = []
         for w in candidates:
             stats = self._data["worker_stats"].get(w, {})

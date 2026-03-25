@@ -13,17 +13,17 @@ from __future__ import annotations
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.context_db import ContextDB
-from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
+from core.context_db import ContextDB
 from core.memory_manager import MemoryManager
 from core.pm_orchestrator import PMOrchestrator
+from core.task_graph import TaskGraph
 
 _TERMINAL = {"done", "failed", "cancelled"}
 

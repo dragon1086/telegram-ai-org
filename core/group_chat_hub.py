@@ -27,7 +27,6 @@ from typing import Awaitable, Callable
 
 from loguru import logger
 
-
 # ── 상수 ─────────────────────────────────────────────────────────────────────
 
 TURN_TIMEOUT_SEC = 45       # 봇 응답 대기 최대 시간

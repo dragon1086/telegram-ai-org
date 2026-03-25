@@ -118,8 +118,9 @@ async def test_multiple_children_with_cancelled_parent_all_run(db):
 async def test_stale_task_recovered_when_parent_cancelled(db):
     """부모가 cancelled여도 stale running 태스크는 복구되어야 한다 (Bug 2 수정 검증)."""
     import json
-    import aiosqlite
     from datetime import UTC, datetime, timedelta
+
+    import aiosqlite
 
     await db.create_pm_task("T-parent-004", "parent task", None, "pm")
     await db.update_pm_task_status("T-parent-004", "cancelled")
@@ -151,8 +152,9 @@ async def test_stale_task_recovered_when_parent_cancelled(db):
 async def test_stale_task_recovered_without_parent(db):
     """부모 없는 stale 태스크는 정상적으로 복구되어야 한다."""
     import json
-    import aiosqlite
     from datetime import UTC, datetime, timedelta
+
+    import aiosqlite
 
     await db.create_pm_task("T-stale-solo", "solo stale task", "engineering", "pm")
     await db.update_pm_task_status("T-stale-solo", "running")
@@ -239,8 +241,9 @@ async def test_task_reclaimed_before_max_attempts_exceeded(db):
     - 수정 후: MAX_TASK_ATTEMPTS=5, attempt_count=3 → 재클레임 가능
     """
     import json
-    import aiosqlite
     from datetime import UTC, datetime, timedelta
+
+    import aiosqlite
 
     await db.create_pm_task("T-maxattempt-001", "task", "engineering", "pm")
     await db.update_pm_task_status("T-maxattempt-001", "running")
@@ -269,8 +272,9 @@ async def test_task_reclaimed_before_max_attempts_exceeded(db):
 async def test_task_blocked_at_max_attempts(db):
     """attempt_count가 MAX_TASK_ATTEMPTS에 도달하면 expired lease 태스크를 재픽업하지 않아야 한다."""
     import json
-    import aiosqlite
     from datetime import UTC, datetime, timedelta
+
+    import aiosqlite
 
     await db.create_pm_task("T-maxattempt-002", "task", "engineering", "pm")
     await db.update_pm_task_status("T-maxattempt-002", "running")
@@ -299,8 +303,9 @@ async def test_task_blocked_at_max_attempts(db):
 async def test_stale_task_not_recovered_when_parent_failed(db):
     """부모가 failed이면 stale 태스크는 복구되면 안 된다 (안전 동작 보존)."""
     import json
-    import aiosqlite
     from datetime import UTC, datetime, timedelta
+
+    import aiosqlite
 
     await db.create_pm_task("T-parent-fail-002", "parent task", None, "pm")
     await db.update_pm_task_status("T-parent-fail-002", "failed")

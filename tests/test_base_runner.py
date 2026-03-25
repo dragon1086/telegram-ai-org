@@ -69,14 +69,14 @@ def test_runner_auth_error_is_runner_error() -> None:
 
 def test_runner_rate_limit_error_is_runner_error() -> None:
     """RunnerRateLimitError is a subclass of RunnerError."""
-    from tools.base_runner import RunnerRateLimitError, RunnerError
+    from tools.base_runner import RunnerError, RunnerRateLimitError
 
     assert issubclass(RunnerRateLimitError, RunnerError)
 
 
 def test_runner_timeout_error_is_runner_error() -> None:
     """RunnerTimeoutError is a subclass of RunnerError."""
-    from tools.base_runner import RunnerTimeoutError, RunnerError
+    from tools.base_runner import RunnerError, RunnerTimeoutError
 
     assert issubclass(RunnerTimeoutError, RunnerError)
 
@@ -84,8 +84,8 @@ def test_runner_timeout_error_is_runner_error() -> None:
 def test_runner_error_hierarchy_all_subclasses() -> None:
     """RunnerAuthError, RunnerRateLimitError, RunnerTimeoutError are all RunnerError subclasses."""
     from tools.base_runner import (
-        RunnerError,
         RunnerAuthError,
+        RunnerError,
         RunnerRateLimitError,
         RunnerTimeoutError,
     )
@@ -116,7 +116,7 @@ def test_runner_factory_unknown_raises_value_error() -> None:
 
 def test_runner_factory_codex_returns_base_runner_instance() -> None:
     """RunnerFactory.create('codex') returns a BaseRunner instance."""
-    from tools.base_runner import RunnerFactory, BaseRunner
+    from tools.base_runner import BaseRunner, RunnerFactory
 
     runner = RunnerFactory.create("codex")
     assert isinstance(runner, BaseRunner)
@@ -133,7 +133,7 @@ def test_runner_factory_codex_returns_codex_runner() -> None:
 
 def test_runner_factory_gemini_returns_base_runner_instance() -> None:
     """RunnerFactory.create('gemini') returns a BaseRunner instance."""
-    from tools.base_runner import RunnerFactory, BaseRunner
+    from tools.base_runner import BaseRunner, RunnerFactory
 
     # Mock google.genai so GeminiRunner can be imported without the SDK installed
     fake_genai = MagicMock()
@@ -155,7 +155,7 @@ def test_runner_factory_gemini_returns_gemini_runner() -> None:
 
 def test_runner_factory_claude_returns_base_runner_instance() -> None:
     """RunnerFactory.create('claude-code') returns a BaseRunner instance."""
-    from tools.base_runner import RunnerFactory, BaseRunner
+    from tools.base_runner import BaseRunner, RunnerFactory
 
     # ClaudeAgentRunner requires claude_agent_sdk; mock it so factory falls
     # back to ClaudeSubprocessRunner (which has no optional deps).

@@ -13,22 +13,21 @@
 """
 from __future__ import annotations
 
-import asyncio
 import hashlib
 from datetime import date, datetime, timezone
 from typing import Awaitable, Callable, Optional
-
-
-def _utcnow() -> datetime:
-    """timezone-aware UTC datetime (Python 3.14+ 호환)."""
-    return datetime.now(timezone.utc)
 
 from loguru import logger
 
 from goal_tracker.action_parser import ActionItem
 from goal_tracker.meeting_handler import MeetingEvent, MeetingType
 from goal_tracker.router import DeptRouter
-from goal_tracker.state_machine import GoalTrackerStateMachine, GoalTrackerState
+from goal_tracker.state_machine import GoalTrackerState, GoalTrackerStateMachine
+
+
+def _utcnow() -> datetime:
+    """timezone-aware UTC datetime (Python 3.14+ 호환)."""
+    return datetime.now(timezone.utc)
 
 
 class MeetingActionRegistrar:

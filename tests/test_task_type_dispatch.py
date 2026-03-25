@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from dataclasses import dataclass, field
 
 import pytest
 
@@ -15,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.pm_orchestrator import PMOrchestrator, SubTask
 from core.structured_prompt import StructuredPrompt, StructuredPromptGenerator, TaskComplexity
-
 
 # ─── _parse_decompose 유형 파싱 테스트 ──────────────────────────────────────
 

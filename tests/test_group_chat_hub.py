@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -11,10 +11,7 @@ from core.group_chat_hub import (
     GroupChatHub,
     GroupMessage,
     TurnManager,
-    TURN_TIMEOUT_SEC,
-    MEETING_TURN_GAP_SEC,
 )
-
 
 # ── 픽스처 ────────────────────────────────────────────────────────────────────
 

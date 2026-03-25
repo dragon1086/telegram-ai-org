@@ -5,10 +5,9 @@
 """
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -16,23 +15,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # ── 모듈 임포트 ──────────────────────────────────────────────────────────────
 
-from goal_tracker.state_machine import (
-    GoalTrackerState,
-    GoalTrackerStateMachine,
-    EvaluationResult,
-    StateTransition,
-)
-from goal_tracker.router import DeptRoute, DeptRouter, DEPT_ROUTES, VALID_ORG_IDS
-from goal_tracker.dispatcher import GoalTrackerDispatcher, DispatchResult, RoutingPlan
 from goal_tracker.action_parser import ActionItem, ActionParser
+from goal_tracker.dispatcher import GoalTrackerDispatcher, RoutingPlan
 from goal_tracker.meeting_handler import (
-    MeetingType,
     MeetingEvent,
     MeetingEventHandler,
+    MeetingType,
     detect_meeting_type,
 )
 from goal_tracker.registrar import MeetingActionRegistrar
-
+from goal_tracker.router import VALID_ORG_IDS, DeptRouter
+from goal_tracker.state_machine import (
+    EvaluationResult,
+    GoalTrackerState,
+    GoalTrackerStateMachine,
+)
 
 # ════════════════════════════════════════════════════════════════════════════
 # 1. StateMachine 테스트
@@ -443,7 +440,6 @@ class TestActionParser:
         text = "액션아이템:\n- [aiorg_engineering_bot] REST API 구현"
         items = parser.parse(text)
         if items:
-            has_dept = any(i.assigned_dept == "aiorg_engineering_bot" for i in items)
             # org_id 또는 None (파싱 성공 기준만 검사)
             assert len(items) >= 1
 

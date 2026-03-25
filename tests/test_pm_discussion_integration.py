@@ -10,12 +10,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.context_db import ContextDB
-from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
-from core.memory_manager import MemoryManager
-from core.pm_orchestrator import PMOrchestrator, SubTask, DiscussionNeeded
+from core.context_db import ContextDB
 from core.discussion import DiscussionManager
+from core.memory_manager import MemoryManager
+from core.pm_orchestrator import DiscussionNeeded, PMOrchestrator, SubTask
+from core.task_graph import TaskGraph
 
 
 @pytest.fixture

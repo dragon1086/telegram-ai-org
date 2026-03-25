@@ -11,7 +11,6 @@ from core.agent_persona_memory import AgentPersonaMemory
 from core.bot_character_evolution import BotCharacterEvolution
 from core.collaboration_tracker import CollaborationTracker
 
-
 # ---------------------------------------------------------------------------
 # TC-A1: coding 성공 3회 → strengths에 'coding' 포함
 # ---------------------------------------------------------------------------

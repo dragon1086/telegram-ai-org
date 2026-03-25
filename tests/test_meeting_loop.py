@@ -17,28 +17,25 @@
 """
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
-from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tools.meeting_parser import MeetingParser, ParsedActionItem
-from tools.goaltracker_client import GoalTrackerClient, RegisterResult
-from tools.meeting_loop_pipeline import MeetingLoopPipeline, PipelineResult
 from core.state_machine import (
-    MeetingStateMachine,
-    MeetingEndResult,
-    on_meeting_end,
-    GoalTrackerStateMachine,
     GoalTrackerState,
+    GoalTrackerStateMachine,
+    MeetingEndResult,
+    MeetingStateMachine,
+    on_meeting_end,
 )
 from goal_tracker.action_parser import ActionItem
-
+from tools.goaltracker_client import GoalTrackerClient, RegisterResult
+from tools.meeting_loop_pipeline import MeetingLoopPipeline, PipelineResult
+from tools.meeting_parser import MeetingParser, ParsedActionItem
 
 # ── 샘플 채팅 로그 ─────────────────────────────────────────────────────────────
 

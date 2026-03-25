@@ -1,10 +1,12 @@
 """MessageEnvelope E2E 테스트 — 자연어 통신 + 메타데이터 분리 검증."""
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from core.message_envelope import MessageEnvelope
+from core.message_envelope import MessageEnvelope  # noqa: E402
 
 
 def test_tc_e1_to_display_hides_metadata():
@@ -79,9 +81,10 @@ def test_tc_e5_extract_legacy_tags_graceful_fallback():
     assert result == {}
 
 
-import pytest
-from core.context_db import ContextDB
-from core.message_envelope import EnvelopeManager
+import pytest  # noqa: E402
+
+from core.context_db import ContextDB  # noqa: E402
+from core.message_envelope import EnvelopeManager  # noqa: E402
 
 
 @pytest.mark.asyncio

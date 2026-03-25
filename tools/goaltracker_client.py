@@ -26,16 +26,14 @@
 """
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Awaitable, Callable, Optional
 
 from loguru import logger
 
-from goal_tracker.action_parser import ActionItem
 from goal_tracker.auto_register import AutoRegisterResult, auto_register_from_report
-from goal_tracker.meeting_handler import MeetingEvent, MeetingType
+from goal_tracker.meeting_handler import MeetingType
 from goal_tracker.registrar import MeetingActionRegistrar
 from goal_tracker.router import DeptRouter
 from goal_tracker.state_machine import GoalTrackerStateMachine

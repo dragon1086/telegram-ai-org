@@ -10,12 +10,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
-import tempfile
-import os
+from unittest.mock import patch
 
 import pytest
 
@@ -121,8 +120,9 @@ class TestFailRollback:
 
     def test_restart_timeout_triggers_rollback(self, mock_env):
         """재기동 타임아웃 시 False 반환 + _rollback() 호출."""
-        import scripts.restart_watchdog as rw
         import subprocess
+
+        import scripts.restart_watchdog as rw
 
         rw.START_SCRIPT.write_text("#!/bin/bash\nsleep 999\n")
 

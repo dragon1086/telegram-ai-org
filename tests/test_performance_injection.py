@@ -4,7 +4,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
@@ -52,8 +51,9 @@ def test_write_memory_with_performance(tmp_path):
 
 def test_write_memory_without_performance_backward_compat():
     """Existing 2-arg call sites still work."""
-    from core.session_manager import SessionManager
     import inspect
+
+    from core.session_manager import SessionManager
     sig = inspect.signature(SessionManager.write_memory_to_claude_md)
     # Verify team_id and memory_context are still the first two params
     params = list(sig.parameters.keys())

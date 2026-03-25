@@ -6,8 +6,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock
 
 
 def test_task_type_vocab_defined():
@@ -41,8 +42,8 @@ def test_infer_task_type_general():
 
 def test_infer_task_type_vocab_alignment():
     """All return values of _infer_task_type are members of TASK_TYPE_VOCAB."""
-    from core.pm_orchestrator import PMOrchestrator
     from core.agent_persona_memory import TASK_TYPE_VOCAB
+    from core.pm_orchestrator import PMOrchestrator
     orch = object.__new__(PMOrchestrator)
     test_messages = [
         "코드 짜줘", "디자인 해줘", "리서치", "기획서", "배포해줘",

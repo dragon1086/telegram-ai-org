@@ -108,8 +108,6 @@ class GlobalContext:
         if not selected:
             selected = candidates[-3:]
 
-        recent_text = "\n### [".join(selected)
-
         def _build(sel: list[str]) -> str:
             body = "\n### [".join(sel)
             return (

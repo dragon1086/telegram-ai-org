@@ -93,7 +93,13 @@
       "Bash(timeout 10 /opt/homebrew/bin/gemini --version 2>&1)",
       "Bash(bash /Users/rocky/telegram-ai-org/scripts/request_restart.sh --reason \"COLLAB 무한루프 수정 완료 \\(collab_dispatcher dedup + T-546/547 done 처리\\)\" 2>&1)",
       "Bash(bash scripts/request_restart.sh --reason \"context_db: cancelled 태스크 취소 시 pm_task_dependencies 자동 정리 — ORDER-GUARD 데드락 방지\")",
-      "Bash(.venv/bin/ruff check:*)"
+      "Bash(.venv/bin/ruff check:*)",
+      "Bash(bash /Users/rocky/telegram-ai-org/scripts/request_restart.sh --reason \"fix: GoalTracker noop, reply_to_message_id TypeError, 첨부 산출물 내용 포함\" 2>&1)",
+      "Bash(python -c \":*)",
+      "Bash(bash /Users/rocky/telegram-ai-org/scripts/request_restart.sh --reason \"Fix 주간회의 멀티봇 버그 2개: 스팸 메시지 제거 + SynthesisPoller GoalTracker 지원\")",
+      "Bash(pip show:*)",
+      "Bash(pip3 show:*)",
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/pip show:*)"
     ]
   },
   "hooks": {

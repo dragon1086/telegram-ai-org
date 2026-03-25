@@ -11,13 +11,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.context_db import ContextDB
-from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
+from core.context_db import ContextDB
+from core.context_window import build_context_window, format_history_for_prompt
 from core.memory_manager import MemoryManager
 from core.pm_orchestrator import PMOrchestrator
-from core.context_window import build_context_window, format_history_for_prompt
-
+from core.task_graph import TaskGraph
 
 # ── 픽스처 ──────────────────────────────────────────────────────────────────
 
@@ -157,6 +156,7 @@ async def test_context_db_history_excludes_current_message(orch_setup):
 def test_env_var_max_history_messages():
     """MAX_HISTORY_MESSAGES 환경변수가 반영되는지 확인."""
     import importlib
+
     import core.context_window as cw
 
     with patch.dict(os.environ, {"MAX_HISTORY_MESSAGES": "7"}):
@@ -170,6 +170,7 @@ def test_env_var_max_history_messages():
 def test_env_var_max_history_tokens():
     """MAX_HISTORY_TOKENS 환경변수가 반영되는지 확인."""
     import importlib
+
     import core.context_window as cw
 
     with patch.dict(os.environ, {"MAX_HISTORY_TOKENS": "1500"}):

@@ -10,17 +10,14 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.health_report_parser import ImprovementItem
-from core.improvement_queue import ImprovementQueue, QueueRunLog
-from core.improvement_actions.base import ActionResult
 from core.feedback_loop_runner import FeedbackLoopRunner, FeedbackLoopSummary
-
+from core.health_report_parser import ImprovementItem
+from core.improvement_actions.base import ActionResult
+from core.improvement_queue import ImprovementQueue
 
 # ------------------------------------------------------------------
 # helpers

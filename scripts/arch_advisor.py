@@ -10,9 +10,7 @@ Rocky에게 구조 개선 제안을 Telegram으로 보고한다.
 from __future__ import annotations
 
 import argparse
-import json
-import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 

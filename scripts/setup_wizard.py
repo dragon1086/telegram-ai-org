@@ -28,53 +28,77 @@ from core.setup_registration import (  # noqa: F401 — re-exported as module at
 try:
     from scripts.setup_wizard_preflight import (
         PreflightResult as _PreflightResult,
+    )
+    from scripts.setup_wizard_preflight import (
         run_preflight as _run_preflight_impl,
+    )
+    from scripts.setup_wizard_preflight import (
         step_install_tools as _step_install_tools_impl,
     )
     from scripts.setup_wizard_storage import (
         print_final_summary as _print_final_summary_impl,
+    )
+    from scripts.setup_wizard_storage import (
         reset_config as _reset_config_impl,
+    )
+    from scripts.setup_wizard_storage import (
         save_all as _save_all_impl,
     )
 except ImportError:
-    from setup_wizard_preflight import (
-        PreflightResult as _PreflightResult,
-        run_preflight as _run_preflight_impl,
-        step_install_tools as _step_install_tools_impl,
-    )
     from setup_wizard_flow import (
         EXEC_ENGINE_LABEL,
         EXEC_MODE_LABEL,
-        step_pm_bot as _step_pm_bot_impl,
-        step_org_structure as _step_org_structure_impl,
-        step_agent_hints as _step_agent_hints_impl,
-        step_agency_agents as _step_agency_agents_impl,
-        step_exec_engine as _step_exec_engine_impl,
-        step_python_deps as _step_python_deps_impl,
-        step_simulation as _step_simulation_impl,
-        _show_engine_check as _show_engine_check_impl,
-        _auto_start_bots as _auto_start_bots_impl,
+    )
+    from setup_wizard_flow import (
+        _auto_start_bots as _auto_start_bots_impl,  # noqa: F401
+    )
+    from setup_wizard_flow import (
+        _show_engine_check as _show_engine_check_impl,  # noqa: F401
+    )
+    from setup_wizard_flow import (
+        step_agency_agents as _step_agency_agents_impl,  # noqa: F401
+    )
+    from setup_wizard_flow import (
+        step_agent_hints as _step_agent_hints_impl,  # noqa: F401
+    )
+    from setup_wizard_flow import (
+        step_exec_engine as _step_exec_engine_impl,  # noqa: F401
+    )
+    from setup_wizard_flow import (
+        step_org_structure as _step_org_structure_impl,  # noqa: F401
+    )
+    from setup_wizard_flow import (
+        step_pm_bot as _step_pm_bot_impl,  # noqa: F401
+    )
+    from setup_wizard_flow import (
+        step_python_deps as _step_python_deps_impl,  # noqa: F401
+    )
+    from setup_wizard_flow import (
+        step_simulation as _step_simulation_impl,  # noqa: F401
+    )
+    from setup_wizard_preflight import (
+        PreflightResult as _PreflightResult,
+    )
+    from setup_wizard_preflight import (
+        run_preflight as _run_preflight_impl,
+    )
+    from setup_wizard_preflight import (
+        step_install_tools as _step_install_tools_impl,
     )
     from setup_wizard_storage import (
         print_final_summary as _print_final_summary_impl,
+    )
+    from setup_wizard_storage import (
         reset_config as _reset_config_impl,
+    )
+    from setup_wizard_storage import (
         save_all as _save_all_impl,
     )
 else:
     from scripts.setup_wizard_flow import (
         EXEC_ENGINE_LABEL,
         EXEC_MODE_LABEL,
-        step_pm_bot as _step_pm_bot_impl,
-        step_org_structure as _step_org_structure_impl,
-        step_agent_hints as _step_agent_hints_impl,
-        step_agency_agents as _step_agency_agents_impl,
-        step_exec_engine as _step_exec_engine_impl,
-        step_python_deps as _step_python_deps_impl,
-        step_simulation as _step_simulation_impl,
-        _show_engine_check as _show_engine_check_impl,
-        _auto_start_bots as _auto_start_bots_impl,
     )
-
 # ─── 경로 상수 ────────────────────────────────────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -857,16 +881,6 @@ def step_simulation() -> None:
 
 
 # ─── 설정 저장 ────────────────────────────────────────────────────────────────
-
-step_pm_bot = lambda existing: _step_pm_bot_impl(sys.modules[__name__], existing)
-step_org_structure = lambda pm_token, pm_chat_id: _step_org_structure_impl(sys.modules[__name__], pm_token, pm_chat_id)
-step_agent_hints = lambda: _step_agent_hints_impl(sys.modules[__name__])
-step_agency_agents = lambda: _step_agency_agents_impl(sys.modules[__name__])
-step_exec_engine = lambda existing_cfg, preflight=None: _step_exec_engine_impl(sys.modules[__name__], existing_cfg, preflight)
-step_python_deps = lambda deps_missing: _step_python_deps_impl(sys.modules[__name__], deps_missing)
-step_simulation = lambda: _step_simulation_impl(sys.modules[__name__])
-_show_engine_check = lambda: _show_engine_check_impl(sys.modules[__name__])
-_auto_start_bots = lambda: _auto_start_bots_impl(sys.modules[__name__])
 
 def save_all(orgs: list[dict], exec_mode: str, binaries: dict, preferred_engine: str = "claude-code") -> None:
     _save_all_impl(sys.modules[__name__], orgs, exec_mode, binaries, preferred_engine)

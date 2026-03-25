@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 from loguru import logger
 
-from core.message_bus import MessageBus, Event, EventType
+from core.message_bus import Event, EventType, MessageBus
 
 
 @dataclass

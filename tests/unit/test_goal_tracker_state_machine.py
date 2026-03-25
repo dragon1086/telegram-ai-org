@@ -22,10 +22,7 @@ from goal_tracker.state_machine import (
     GoalTrackerState,
     GoalTrackerStateMachine,
     InvalidTransitionError,
-    StateMachineContext,
-    StateTransition,
 )
-
 
 # ── 픽스처 ────────────────────────────────────────────────────────────────────
 

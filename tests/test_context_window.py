@@ -4,8 +4,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.context_window import (
@@ -13,7 +11,6 @@ from core.context_window import (
     build_context_window,
     format_history_for_prompt,
 )
-
 
 # ── 헬퍼 ──────────────────────────────────────────────────────────────────────
 
@@ -152,8 +149,8 @@ def test_format_history_empty_content_skipped():
     # 실제 메시지는 포함
     assert "실제 메시지" in result
     # 빈 메시지 라인 없음
-    lines = [l for l in result.split("\n") if l.startswith("[user]")]
-    assert all(l.strip() != "[user]" for l in lines)
+    lines = [line for line in result.split("\n") if line.startswith("[user]")]
+    assert all(line.strip() != "[user]" for line in lines)
 
 
 def test_format_history_only_empty_returns_empty():

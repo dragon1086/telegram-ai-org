@@ -18,7 +18,7 @@ import json
 import logging
 import subprocess
 import time
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 # ── 상수 ────────────────────────────────────────────────────────────────────

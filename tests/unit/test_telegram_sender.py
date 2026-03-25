@@ -14,7 +14,7 @@ for _mod in (
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from core.telegram_sender import (
+from core.telegram_sender import (  # noqa: E402
     ENABLE_REFACTORED_SENDER,
     auto_upload,
     send_chunked_message,

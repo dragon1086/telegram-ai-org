@@ -22,7 +22,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-
 # ── 키워드 패턴 정의 ──────────────────────────────────────────────────────────
 
 # 액션아이템 섹션 시작 키워드 (대소문자 무시)

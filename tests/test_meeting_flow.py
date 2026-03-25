@@ -11,21 +11,20 @@ import asyncio
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.group_chat_hub import GroupChatHub, GroupMessage
-from core.context_db import ContextDB
-from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
+from core.context_db import ContextDB
+from core.goal_tracker import GoalTracker
+from core.group_chat_hub import GroupChatHub
 from core.memory_manager import MemoryManager
 from core.pm_orchestrator import PMOrchestrator
-from core.goal_tracker import GoalTracker
 from core.scheduler import OrgScheduler
-
+from core.task_graph import TaskGraph
 
 # ── 픽스처 ─────────────────────────────────────────────────────────────────────
 

@@ -10,20 +10,20 @@
     report_parser.py  — 일일회고/주간회의 보고 파서 (parse_action_items)
     auto_register.py  — 보고 → GoalTracker 자동 등록 파이프라인
 """
-from goal_tracker.state_machine import (
-    GoalTrackerState,
-    StateMachineContext,
-    StateTransition,
-    GoalTrackerStateMachine,
-)
-from goal_tracker.router import DeptRoute, DeptRouter, DEPT_ROUTES
-from goal_tracker.dispatcher import GoalTrackerDispatcher, DispatchResult
-from goal_tracker.meeting_handler import MeetingType, MeetingEvent, MeetingEventHandler
 from goal_tracker.action_parser import ActionItem, ActionParser
+from goal_tracker.auto_register import AutoRegisterResult, auto_register_from_report
+from goal_tracker.dispatcher import DispatchResult, GoalTrackerDispatcher
+from goal_tracker.loop_runner import AutonomousLoopRunner, LoopRunResult, run_meeting_cycle
+from goal_tracker.meeting_handler import MeetingEvent, MeetingEventHandler, MeetingType
 from goal_tracker.registrar import MeetingActionRegistrar
 from goal_tracker.report_parser import parse_action_items, parse_report_metadata
-from goal_tracker.auto_register import auto_register_from_report, AutoRegisterResult
-from goal_tracker.loop_runner import AutonomousLoopRunner, LoopRunResult, run_meeting_cycle
+from goal_tracker.router import DEPT_ROUTES, DeptRoute, DeptRouter
+from goal_tracker.state_machine import (
+    GoalTrackerState,
+    GoalTrackerStateMachine,
+    StateMachineContext,
+    StateTransition,
+)
 
 __all__ = [
     # state_machine

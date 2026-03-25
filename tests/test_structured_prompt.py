@@ -9,10 +9,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.structured_prompt import (
+    Phase,
+    StructuredPrompt,
     StructuredPromptGenerator,
     TaskComplexity,
-    StructuredPrompt,
-    Phase,
 )
 
 

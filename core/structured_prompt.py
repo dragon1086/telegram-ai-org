@@ -14,7 +14,7 @@ from enum import Enum
 
 from loguru import logger
 
-from core.constants import KNOWN_DEPTS, DEPT_ROLES, DEFAULT_PHASES
+from core.constants import DEFAULT_PHASES, DEPT_ROLES, KNOWN_DEPTS
 from core.pm_decision import DecisionClientProtocol
 
 # LLM 없이 _template_generate() 가 호출됐을 때 _default 도 로드 실패한 경우의

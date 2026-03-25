@@ -11,8 +11,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.context_db import ContextDB
-from core.task_graph import TaskGraph
 from core.dispatch_engine import DispatchEngine
+from core.task_graph import TaskGraph
 
 
 @pytest.fixture

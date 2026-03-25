@@ -5,9 +5,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.attachment_manager import AttachmentContext
 from core.artifact_pipeline import prepare_upload_bundle
 from core.attachment_analysis import AttachmentAnalyzer
+from core.attachment_manager import AttachmentContext
 
 
 def test_attachment_context_includes_preview(tmp_path: Path) -> None:
@@ -65,7 +65,12 @@ def test_attachment_bundle_prompt(tmp_path: Path) -> None:
 def test_attachment_analyzer_bridge(monkeypatch, tmp_path: Path) -> None:
     image = tmp_path / "image.jpg"
     image.write_bytes(b"fake")
-    ctx = AttachmentContext.from_local_file(kind="photo", local_path=image, caption="img", mime_type="image/jpeg")
+    AttachmentContext.from_local_file(
+        kind="photo",
+        local_path=image,
+        caption="img",
+        mime_type="image/jpeg",
+    )
     analyzer = AttachmentAnalyzer()
 
     class _Proc:

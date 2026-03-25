@@ -17,14 +17,13 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.shared_memory import SharedMemory, _slot_id
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -101,7 +100,6 @@ async def test_cache_hit_no_db_call(mock_db):
 async def test_cache_miss_loads_from_db(mock_db):
     """캐시가 없을 때 context_db에서 값을 로드하고 캐시에 적재."""
     # context_db에 직접 데이터 삽입 (캐시 우회)
-    import json
     mock_db._backend[_slot_id("ns", "key")] = {"data": 42}
 
     mem = SharedMemory(context_db=mock_db, cache_ttl=60.0)
@@ -154,7 +152,6 @@ async def test_invalidate_triggers_db_reload(mock_db):
     await mem.set("ns", "key", "original")
 
     # context_db에 업데이트된 값 삽입
-    import json
     mock_db._backend[_slot_id("ns", "key")] = "updated"
 
     await mem.invalidate("ns", "key")

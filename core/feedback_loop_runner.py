@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -26,7 +26,6 @@ from loguru import logger
 
 from core.health_report_parser import HealthReportParser, ImprovementItem
 from core.improvement_queue import ImprovementQueue, QueueRunLog
-
 
 # ------------------------------------------------------------------
 # 설정

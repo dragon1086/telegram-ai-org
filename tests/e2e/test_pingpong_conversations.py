@@ -16,7 +16,6 @@ import pytest
 
 from core.discussion import DiscussionManager
 
-
 # ── 공통 헬퍼 ─────────────────────────────────────────────────────────────────
 
 

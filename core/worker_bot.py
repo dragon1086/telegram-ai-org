@@ -101,7 +101,7 @@ class WorkerBot:
         if context:
             prompt = f"[배경 컨텍스트]\n{context.get('content', '')}\n\n[태스크]\n{content}"
 
-        from tools.base_runner import RunnerFactory, RunContext, RunnerError
+        from tools.base_runner import RunContext, RunnerError, RunnerFactory
 
         if self.engine == "both":
             try:

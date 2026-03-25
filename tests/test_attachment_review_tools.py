@@ -9,10 +9,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.review_recent_conversations import (
+    _extract_timestamp,
     collect_recent_log_lines,
     heuristic_review_markdown,
     maybe_upload_report,
-    _extract_timestamp,
 )
 
 

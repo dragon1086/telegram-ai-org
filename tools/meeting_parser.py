@@ -13,15 +13,13 @@
 """
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from loguru import logger
 
 from goal_tracker.action_parser import ActionItem, ActionParser
-from goal_tracker.meeting_handler import MeetingType, detect_meeting_type
-
+from goal_tracker.meeting_handler import detect_meeting_type
 
 # ── 결과 데이터클래스 ─────────────────────────────────────────────────────────
 

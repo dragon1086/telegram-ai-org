@@ -1,5 +1,6 @@
 """프로액티브 봇 행동 핸들러 — INACTIVITY_DETECTED/DAILY_INSIGHT 이벤트 구독."""
 from __future__ import annotations
+
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -7,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from core.message_bus import MessageBus
 
-from core.message_bus import EventType, Event
+from core.message_bus import Event, EventType
 
 logger = logging.getLogger(__name__)
 

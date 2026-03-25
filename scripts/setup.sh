@@ -527,14 +527,103 @@ else
     info "gemini-cli 미감지 — google-genai SDK 설치 건너뜀 (필요시: pip install google-genai)"
 fi
 
-# ── Node/npm 존재 여부 확인 (codex 설치 시 필요) ───────────────────────────────
-if [ -n "$CODEX_PATH" ]; then
-    if command -v node &>/dev/null && command -v npm &>/dev/null; then
-        NODE_VER=$(node --version)
-        NPM_VER=$(npm --version)
-        ok "Node.js $NODE_VER / npm $NPM_VER 감지됨"
+# ── Node.js 18+ 자동 설치 헬퍼 (Ubuntu/Debian 전용) ──────────────────────────
+# _ensure_nodejs_ubuntu: /etc/os-release 로 Debian/Ubuntu 계열 감지 →
+#   NodeSource PPA 등록 → apt-get install -y nodejs
+#   --yes 모드: 비대화형 자동 설치 (DEBIAN_FRONTEND=noninteractive)
+_ensure_nodejs_ubuntu() {
+    # /etc/os-release 기반 Debian/Ubuntu 계열 확인
+    local _is_debian=false
+    if [ -f "/etc/os-release" ]; then
+        local _os_id _os_id_like
+        _os_id=$(. /etc/os-release 2>/dev/null && echo "${ID:-}")
+        _os_id_like=$(. /etc/os-release 2>/dev/null && echo "${ID_LIKE:-}")
+        if [[ "$_os_id" =~ ^(ubuntu|debian)$ ]] || [[ "$_os_id_like" =~ (ubuntu|debian) ]]; then
+            _is_debian=true
+        fi
+    fi
+    if [ "$_is_debian" = false ]; then
+        return 1  # Ubuntu/Debian 계열 아님 — 호출자가 다른 방법으로 처리
+    fi
+
+    # 사용자 확인 (--yes 모드는 자동 진행)
+    if [ "$NON_INTERACTIVE" = false ]; then
+        read -rp "  ❓ Node.js 18+를 NodeSource PPA로 자동 설치하시겠습니까? [Y/n]: " _node_ans
+        _node_ans="${_node_ans:-Y}"
+        if [[ "$_node_ans" =~ ^[Nn]$ ]]; then
+            warn "Node.js 설치 건너뜀 — npm 기반 엔진 자동 설치 불가"
+            return 1
+        fi
     else
-        warn "Node.js / npm 미감지 — codex CLI를 npm 없이 사용 중 (바이너리 직접 설치)"
+        info "--yes 모드: Ubuntu/Debian 감지 — NodeSource PPA로 Node.js 18+ 자동 설치"
+    fi
+
+    # curl 의존성 확인 (NodeSource 스크립트에 필요)
+    if ! command -v curl &>/dev/null; then
+        info "curl 미감지 — apt-get으로 먼저 설치 중..."
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y curl
+    fi
+
+    # NodeSource PPA 등록 (Node.js 18.x LTS)
+    info "NodeSource PPA 등록 중 (Node.js 18.x LTS)..."
+    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+
+    # Node.js 설치 (비대화형 모드 강제)
+    info "Node.js 18 설치 중..."
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+
+    if command -v node &>/dev/null; then
+        ok "Node.js $(node --version) / npm $(npm --version) 설치 완료 (NodeSource PPA)"
+        return 0
+    else
+        err "Node.js 설치 실패 — 수동 설치: https://nodejs.org/en/download/"
+        return 1
+    fi
+}
+
+# ── Node.js 18+ 확인 및 자동 설치 ─────────────────────────────────────────────
+# npm 기반 엔진(claude-code / codex / gemini-cli) 설치에 Node.js 18+ 필요
+# Linux(Ubuntu/Debian): NodeSource PPA 자동 설치
+# macOS: brew 자동 설치 (감지된 경우)
+NODE_AVAILABLE=false
+if command -v node &>/dev/null && command -v npm &>/dev/null; then
+    NODE_VER=$(node --version)
+    NPM_VER=$(npm --version)
+    NODE_MAJOR=$(echo "$NODE_VER" | sed 's/v//' | cut -d. -f1)
+    if [ "$NODE_MAJOR" -ge 18 ]; then
+        ok "Node.js $NODE_VER / npm $NPM_VER 감지됨 (18+ 요구사항 충족)"
+        NODE_AVAILABLE=true
+    else
+        warn "Node.js $NODE_VER 감지됨 — 18+ 필요, 업그레이드 시도"
+        if [ "$OS_NAME" = "Linux" ] && _ensure_nodejs_ubuntu; then
+            NODE_AVAILABLE=true
+        elif [ "$OS_NAME" = "macOS" ]; then
+            warn "macOS: brew upgrade node 또는 https://nodejs.org 에서 18+ 설치 필요"
+        fi
+    fi
+else
+    warn "Node.js / npm 미감지 — 설치 시도 중"
+    if [ "$OS_NAME" = "Linux" ] && _ensure_nodejs_ubuntu; then
+        NODE_AVAILABLE=true
+    elif [ "$OS_NAME" = "macOS" ]; then
+        if command -v brew &>/dev/null; then
+            if [ "$NON_INTERACTIVE" = false ]; then
+                read -rp "  ❓ brew로 Node.js를 설치하시겠습니까? [Y/n]: " _brew_node_ans
+                _brew_node_ans="${_brew_node_ans:-Y}"
+                if [[ ! "$_brew_node_ans" =~ ^[Nn]$ ]]; then
+                    brew install node && NODE_AVAILABLE=true || true
+                fi
+            else
+                info "--yes 모드: brew로 Node.js 설치 시도"
+                brew install node && NODE_AVAILABLE=true || true
+            fi
+        else
+            warn "brew 미감지 — Node.js 수동 설치 필요: https://nodejs.org"
+        fi
+    fi
+    if [ "$NODE_AVAILABLE" = false ]; then
+        warn "Node.js 미설치 — npm 기반 엔진(codex/claude-code/gemini-cli) 설치 시 수동 설치 필요"
+        warn "수동 설치: https://nodejs.org/en/download/"
     fi
 fi
 

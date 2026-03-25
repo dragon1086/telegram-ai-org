@@ -7,9 +7,6 @@
 
 from __future__ import annotations
 
-import pytest
-
-
 # ------------------------------------------------------------------
 # 헬퍼: telegram_relay.py 의 컨텍스트 조립 로직 단위 테스트용 함수
 # (실제 Update 객체를 직접 임포트하는 대신, 동일 로직을 분리 검증)

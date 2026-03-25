@@ -5,8 +5,9 @@ import re
 from pathlib import Path
 
 from loguru import logger
-from core.orchestration_config import load_orchestration_config
+
 from core.builtin_surfaces import recommend_builtin_surfaces
+from core.orchestration_config import load_orchestration_config
 
 
 class PMIdentity:
@@ -362,11 +363,11 @@ class PMIdentity:
 - 섹션 구분: ## 헤더 (H2), ### 소제목 (H3)
 - 강조: **굵게**, *기울임*
 - 목록: - 항목 (bullet), 1. 항목 (번호)
-- 코드: \`인라인\`, \`\`\`언어\\n코드\\n\`\`\` (블록)
+- 코드: \\`인라인\\`, \\`\\`\\`언어\\n코드\\n\\`\\`\\` (블록)
 - 구분선: --- (수평선)
 - 인용: > 텍스트 (blockquote)
 - 링크: [텍스트](URL)
-- HTML 태그(\`<b>\`, \`<i>\` 등)를 직접 쓰지 말 것 — 마크다운만 사용."""
+- HTML 태그(\\`<b>\\`, \\`<i>\\` 등)를 직접 쓰지 말 것 — 마크다운만 사용."""
 
     # ── 파싱 헬퍼 ───────────────────────────────────────────────────────────
 
@@ -439,8 +440,8 @@ class PMIdentity:
     def update(self, new_data: dict) -> None:
         """정체성 업데이트 후 파일 저장."""
         self._data.update(new_data)
-        from pathlib import Path
         import re
+        from pathlib import Path
         identity_file = Path.home() / ".ai-org" / "memory" / f"pm_{self.org_id}.md"
         existing = identity_file.read_text(encoding="utf-8") if identity_file.exists() else ""
         # 방향성 줄 업데이트

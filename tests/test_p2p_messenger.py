@@ -6,10 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from core.message_bus import MessageBus, EventType
+from core.message_bus import EventType, MessageBus
 from core.p2p_messenger import P2PMessage, P2PMessenger
 from core.shared_memory import SharedMemory
-
 
 # ---------------------------------------------------------------------------
 # P2PMessenger

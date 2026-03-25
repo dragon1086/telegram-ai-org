@@ -9,8 +9,8 @@ import pytest
 
 from core.telegram_user_guardrail import (
     ensure_user_friendly_output,
-    extract_local_artifact_paths,
     extract_local_artifact_names,
+    extract_local_artifact_paths,
     is_already_structured_report,
     needs_rewrite_for_telegram,
 )

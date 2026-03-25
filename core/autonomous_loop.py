@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import os
 from enum import Enum
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 from loguru import logger
 
@@ -214,8 +214,9 @@ def load_loop_config(orchestration_yaml_path: str | None = None) -> dict:
     Returns:
         {idle_sleep_sec: int, max_dispatch: int}
     """
-    import yaml
     from pathlib import Path
+
+    import yaml
 
     default = {"idle_sleep_sec": DEFAULT_IDLE_SLEEP_SEC, "max_dispatch": DEFAULT_MAX_DISPATCH_PER_CYCLE}
     yaml_path = orchestration_yaml_path or str(

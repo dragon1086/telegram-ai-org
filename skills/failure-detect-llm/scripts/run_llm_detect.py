@@ -24,15 +24,15 @@ import argparse
 import asyncio
 import json
 import sys
-from pathlib import Path
 from dataclasses import dataclass, field
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from loguru import logger
-from core.llm_failure_detector import LLMFailureDetector
+from loguru import logger  # noqa: E402
 
+from core.llm_failure_detector import LLMFailureDetector  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 헬퍼: dict → ScanDiff-like 객체
@@ -127,8 +127,8 @@ async def main() -> int:
     uncertain = detector.is_uncertain(diff, algo_is_failure)
     if not uncertain and not args.force:
         logger.info(
-            f"[failure-detect-llm] 불확실 구간 아님 (is_uncertain=False) "
-            f"— 알고리즘 판정 유지 (--force 옵션으로 강제 실행 가능)"
+            "[failure-detect-llm] 불확실 구간 아님 (is_uncertain=False) "
+            "— 알고리즘 판정 유지 (--force 옵션으로 강제 실행 가능)"
         )
         result = {
             "skipped": True,
