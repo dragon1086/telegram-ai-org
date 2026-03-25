@@ -637,7 +637,11 @@ class ContextDB:
                 if attempt_count >= self.MAX_TASK_ATTEMPTS:
                     logger.warning(
                         f"[ContextDB] 태스크 {task['id']} attempt_count={attempt_count} "
-                        f">= MAX={self.MAX_TASK_ATTEMPTS} — 봇 재시작 시 recover_stale_dept_tasks로 복구됨"
+                        f">= MAX={self.MAX_TASK_ATTEMPTS} — 자동 failed 처리"
+                    )
+                    await self.update_pm_task_status(
+                        task["id"], "failed",
+                        result=f"attempt_count {attempt_count} >= MAX {self.MAX_TASK_ATTEMPTS} — 자동 실패 처리",
                     )
                     continue
                 lease_until = metadata.get("lease_expires_at")
