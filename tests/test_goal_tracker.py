@@ -11,12 +11,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.context_db import ContextDB
-from core.task_graph import TaskGraph
 from core.claim_manager import ClaimManager
+from core.context_db import ContextDB
+from core.goal_tracker import GoalStatus, GoalTracker
 from core.memory_manager import MemoryManager
 from core.pm_orchestrator import PMOrchestrator
-from core.goal_tracker import GoalTracker, GoalStatus
+from core.task_graph import TaskGraph
 
 
 @pytest.fixture
@@ -235,7 +235,7 @@ class TestCancellation:
 
         tracker._orch.dispatch = slow_dispatch
 
-        status = await tracker.run_loop(goal["id"])
+        await tracker.run_loop(goal["id"])
         # 취소 또는 달성 (첫 dispatch에서 done 마킹 후 evaluate에서 achieved일 수 있음)
         g = await db.get_goal(goal["id"])
         assert g["status"] in ("cancelled", "achieved")
@@ -552,8 +552,6 @@ class TestStartGoal:
     @pytest.mark.asyncio
     async def test_start_goal_background_task_created(self, db, tracker):
         """start_goal() 호출 시 백그라운드 루프 태스크가 생성된다."""
-        import asyncio
-        tasks_before = {t.get_name() for t in asyncio.all_tasks()}
         gid = await tracker.start_goal(
             org_id="pm", title="루프 테스트", description="백그라운드 태스크 확인"
         )
@@ -594,7 +592,7 @@ class TestIterationBugFixes:
         goal_id = goal["id"]
 
         # done 서브태스크 생성
-        task = await db.create_pm_task(
+        await db.create_pm_task(
             task_id="T-done-001",
             description="완료된 태스크",
             assigned_dept="aiorg_engineering_bot",

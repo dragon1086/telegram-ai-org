@@ -236,7 +236,7 @@ async def test_update_parent_child_failed():
     tm = TaskManager()
     parent = await tm.create_task("parent", ["@bot1"])
     c1 = await tm.create_task("child1", ["@bot2"], parent_id=parent.id)
-    c2 = await tm.create_task("child2", ["@bot3"], parent_id=parent.id)
+    await tm.create_task("child2", ["@bot3"], parent_id=parent.id)
     await tm.update_status(parent.id, TaskStatus.RUNNING)
     await tm.update_status(c1.id, TaskStatus.RUNNING)
     await tm.update_status(c1.id, TaskStatus.FAILED)
