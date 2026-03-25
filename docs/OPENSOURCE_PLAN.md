@@ -34,7 +34,7 @@
 
 ### Day 3-4 (2026-03-26~27): 패키징 & 테스트
 - [x] 원클릭 설치 스크립트 개선 (`scripts/setup.sh` → 3엔진 자동 감지 + --version 검증 + .env 자동 주입)
-- [x] `.env.example` 완성 (GEMINI/CLAUDE/CODEX_CLI_PATH 및 모든 필수 키 문서화)
+- [x] `.env.example` 완성 (GEMINI/CLAUDE/CODEX_CLI_PATH + DEFAULT_ENGINE 키 추가 및 모든 필수 키 문서화)
 - [ ] Docker Compose 지원 (선택 엔진별 프로파일)
 - [ ] E2E 테스트 스위트 구현
 - [ ] Gemini 이미지 생성 스킬 구현
@@ -54,19 +54,56 @@
 
 ---
 
+## 원클릭 설치 (`scripts/setup.sh`)
+
+### 사용법
+
+```bash
+# 기본: 대화형 설치 (엔진 자동 감지 후 기본 엔진 선택 프롬프트)
+bash scripts/setup.sh
+
+# CI/자동화 환경: 비대화형 설치 (프롬프트 없이 자동 선택)
+bash scripts/setup.sh --yes
+
+# 검증 단계 건너뜀 (빠른 재설치)
+bash scripts/setup.sh --skip-verify
+
+# 가상환경 생성 건너뜀 (기존 환경 재사용)
+bash scripts/setup.sh --no-venv
+```
+
+### 3엔진 자동 감지 동작 방식
+
+| 엔진 | 감지 조건 | 인증 확인 |
+|------|-----------|-----------|
+| **claude-code** | `which claude` 성공 + `claude --version` 실행 가능 | `CLAUDE_CODE_OAUTH_TOKEN` 또는 브라우저 OAuth |
+| **codex** | `which codex` 성공 + `codex --version` 실행 가능 | `~/.codex/auth.json` 또는 `OPENAI_API_KEY` |
+| **gemini-cli** | `/opt/homebrew/bin/gemini` (우선) 또는 `which gemini` 성공 + `--version` 실행 가능 | `~/.gemini/oauth_creds.json` (OAuth) |
+
+### .env 자동 생성 규칙
+
+1. `.env` 파일이 없으면 `.env.example` 기반으로 복사
+2. 감지된 엔진 경로를 자동 치환: `CLAUDE_CLI_PATH`, `CODEX_CLI_PATH`, `GEMINI_CLI_PATH`
+3. 선택된 기본 엔진을 `ENGINE=`, `ACTIVE_ENGINE=`, `DEFAULT_ENGINE=` 에 동시 기재
+4. 키가 기존 `.env`에 없으면 파일 끝에 자동 추가 (기존 `.env` 덮어쓰기 없음)
+
+---
+
 ## CI/CD
 
 현재 오픈소스 배포 파이프라인은 두 단계로 운영한다.
 
 | 순서 | 워크플로우 | 트리거 | 필요 secret | 산출물 |
 |------|------|------|------|------|
-| 1 | `ci.yml` | `pull_request` | 테스트용 API key 또는 OAuth secret | `telegram_ai_org` 범위 lint, 설정 검증, `tests/e2e/` 회귀 결과 |
-| 2 | `release.yml` | `push` to `main` | 테스트용 API key 또는 OAuth secret, `PYPI_TOKEN`, `DOCKER_USERNAME`, `DOCKER_TOKEN` | PyPI 배포 + Docker Hub 이미지(`latest`, commit SHA) 푸시 |
+| 1 | `ci-lint.yml` | `pull_request`, `push` to `main` | 없음 | Ruff lint 결과 |
+| 2 | `ci-e2e.yml` | `pull_request`, `push` to `main` | 테스트용 API key 또는 OAuth secret | 설정 검증 + `tests/e2e/` 회귀 결과 |
+| 3 | `publish-pypi.yml` | `push` tag `v*`, `workflow_dispatch` | 테스트용 API key 또는 OAuth secret, `PYPI_TOKEN` | PyPI 배포 아티팩트 |
+| 4 | `docker-build.yml` | `push` tag `v*`, `workflow_dispatch` | 테스트용 API key 또는 OAuth secret, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | Docker Hub 이미지(tag 기반) 푸시 |
 
 운영 원칙:
 
-- 배포 전 항상 테스트: `ci.yml`을 branch protection required check로 묶어 `main` 머지 전에 통과시킨다.
-- 인프라 변경은 단계적으로: `release.yml`은 `verify` → `publish-pypi` → `docker-push` 순서로 직렬 실행한다.
+- 배포 전 항상 테스트: `ci-lint` 와 `ci-e2e` 를 branch protection required checks로 묶어 `main` 머지 전에 통과시킨다.
+- 인프라 변경은 단계적으로: `publish-pypi.yml` 과 `docker-build.yml` 은 각각 `verify` → 배포 순서로 직렬 실행한다.
 - PyPI 배포는 `python -m build`와 `twine check dist/*`를 통과한 뒤에만 진행한다.
 - Gemini CI credential은 필요 시 OAuth JSON secret(`GEMINI_OAUTH_CREDS`)로 복원한다.
 
