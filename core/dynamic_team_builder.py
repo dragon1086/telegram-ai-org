@@ -53,9 +53,14 @@ class TeamConfig:
 
 
 _TEAM_SYSTEM_PROMPT_FALLBACK_AGENTS = (
-    "executor, debugger, architect, analyst, scientist, writer, "
-    "document-specialist, code-reviewer, security-reviewer, quality-reviewer, "
-    "test-engineer, verifier, qa-tester, planner, explore, designer, build-fixer, critic"
+    "engineering-senior-developer, engineering-rapid-prototyper, engineering-backend-architect, "
+    "engineering-software-architect, engineering-code-reviewer, engineering-security-engineer, "
+    "engineering-incident-response-commander, engineering-technical-writer, "
+    "data-analytics-reporter, product-trend-researcher, product-behavioral-nudge-engine, "
+    "engineering-technical-writer, specialized-document-generator, "
+    "testing-api-tester, testing-evidence-collector, testing-reality-checker, testing-workflow-optimizer, "
+    "project-management-project-shepherd, product-manager, "
+    "design-ux-architect, design-ui-designer, specialized-model-qa"
 )
 
 
@@ -93,7 +98,7 @@ CRITICAL: You MUST respond with ONLY a single JSON object. No markdown, no expla
 Do NOT execute or answer the task — only decide the team composition.
 
 Output format (nothing else):
-{{"agents": [{{"name": "executor", "count": 2}}, {{"name": "analyst", "count": 1}}], "execution_mode": "structured_team", "engine": "claude-code", "reasoning": "brief reason"}}
+{{"agents": [{{"name": "engineering-senior-developer", "count": 2}}, {{"name": "data-analytics-reporter", "count": 1}}], "execution_mode": "structured_team", "engine": "claude-code", "reasoning": "brief reason"}}
 
 Rules:
 - Use at most 3 distinct agent types.
@@ -469,7 +474,7 @@ class DynamicTeamBuilder:
         team_format = self._build_team_format_from_personas(recommended)
 
         if any(kw in lower for kw in multimodal_keywords):
-            preferred_names = ["designer", "analyst", "document-specialist"]
+            preferred_names = ["design-ui-designer", "data-analytics-reporter", "specialized-document-generator"]
             multimodal_personas: list[AgentPersona] = []
             for name in preferred_names:
                 persona = self._catalog.get_persona(name)

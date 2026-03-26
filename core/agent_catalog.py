@@ -11,36 +11,37 @@ from loguru import logger
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
 # keyword → agent name mapping for recommend()
+# 실제 ~/.claude/agents 페르소나 파일명(stem)을 사용한다. 추상 역할명(executor 등) 사용 금지.
 _KEYWORD_MAP: list[tuple[list[str], list[str]]] = [
     (
         ["coding", "implement", "debug", "fix", "code", "build", "refactor",
          "구현", "코딩", "개발", "수정", "버그", "빌드", "리팩토링"],
-        ["executor", "debugger", "architect"],
+        ["engineering-senior-developer", "engineering-incident-response-commander", "engineering-software-architect"],
     ),
     (
         ["analysis", "research", "data", "market", "analyze", "analyse",
          "분석", "리서치", "데이터", "시장", "조사", "리포트"],
-        ["analyst", "scientist"],
+        ["data-analytics-reporter", "product-trend-researcher"],
     ),
     (
         ["write", "document", "report", "readme", "docs", "documentation",
          "작성", "문서", "보고서", "글쓰기", "마케팅"],
-        ["writer", "document-specialist"],
+        ["engineering-technical-writer", "specialized-document-generator"],
     ),
     (
         ["review", "audit", "security", "quality", "vulnerability",
          "리뷰", "검토", "감사", "보안", "품질"],
-        ["code-reviewer", "security-reviewer", "quality-reviewer"],
+        ["engineering-code-reviewer", "engineering-security-engineer", "testing-reality-checker"],
     ),
     (
         ["test", "qa", "verify", "testing", "coverage", "spec",
          "테스트", "검증", "qa", "커버리지"],
-        ["test-engineer", "verifier", "qa-tester"],
+        ["testing-api-tester", "testing-evidence-collector", "testing-workflow-optimizer"],
     ),
     (
         ["plan", "design", "architect", "architecture", "strategy",
          "계획", "설계", "전략", "아키텍처"],
-        ["planner", "architect"],
+        ["project-management-project-shepherd", "engineering-software-architect"],
     ),
 ]
 
