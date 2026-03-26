@@ -316,4 +316,4 @@ git worktree remove .worktrees/<task-slug>
 | 기획실 (aiorg_product_bot) | claude-code | PRD, 요구사항 문서화 |
 | 성장실 (aiorg_growth_bot) | gemini-cli | Google 검색 내장, 시장 데이터 |
 | 리서치실 (aiorg_research_bot) | gemini-cli | 실시간 웹 검색, 경쟁사 분석 |
-| 운영실 (aiorg_ops_bot) | codex | 경량 DevOps 스크립트 특화 |
+| 운영실 (aiorg_ops_bot) | gemini-cli | codex 리밋 대응 임시 전환 (2026-03-26) |

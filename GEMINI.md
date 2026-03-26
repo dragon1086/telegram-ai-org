@@ -121,6 +121,7 @@ Gemini CLI가 배정된 조직과 그 이유:
 |------|------|-----------|
 | 성장실 (aiorg_growth_bot) | gemini-cli | Google 검색 내장 → 최신 시장 데이터 실시간 조회, 경쟁사 분석 |
 | 리서치실 (aiorg_research_bot) | gemini-cli | 멀티소스 웹 검색, 문서 요약, 대규모 컨텍스트 처리 |
+| 운영실 (aiorg_ops_bot) | gemini-cli | codex 리밋 대응 임시 전환 (2026-03-26) — DevOps 태스크 처리 |
 
 ### Gemini CLI의 강점 (다른 엔진과 차별점)
 1. **실시간 Google 검색** — 최신 시장 데이터, 경쟁사 정보 즉시 조회
