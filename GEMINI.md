@@ -245,7 +245,17 @@ find ~ -name '*'
 
 # ✅ 허용 (프로젝트 디렉토리 내부만)
 glob.glob('/Users/rocky/telegram-ai-org/**/*.db', recursive=True)
+# ✅ 산출물 저장소 (AI_ORG_DATA_DIR 기반 — telegram-ai-org 외부 허용)
+glob.glob(os.environ.get('AI_ORG_DATA_DIR', str(Path.home() / 'telegram-ai-org-data')) + '/**/*', recursive=True)
 ```
+
+### [2026-03-26] AI_ORG_DATA_DIR — 산출물·데이터 저장 경로 표준화 (전체 조직 공통)
+- **원칙**: `telegram-ai-org/`는 오픈소스 코드만 포함. 모든 산출물·생성 코드·스킬 로그는 `AI_ORG_DATA_DIR`에 저장
+- **기본값**: `~/telegram-ai-org-data` (환경변수 미설정 시 자동 사용)
+- **`.env` 설정**: `AI_ORG_DATA_DIR=~/telegram-ai-org-data`
+- **`~/.ai-org/workspace`**: 기존 산출물 보존. 신규 산출물은 `AI_ORG_DATA_DIR`로만 저장
+- **스킬 경로**: `${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}/skills/<skill-name>/data/`
+- **금지**: `../telegram-ai-org-data/` 상대 경로 하드코딩 (오픈소스 사용자 경로 불일치 유발)
 
 ---
 

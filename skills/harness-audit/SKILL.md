@@ -80,7 +80,7 @@ STALE 탐지 시 자동 실행 체인:
 2. 개발실 담당 → [TEAM:engineering-senior-developer] 태그로 즉시 배분
 3. 타부서 담당 → [COLLAB:태스크 설명|맥락: 목표ID + 달성률] 태그로 해당 조직에 위임
 4. pm_progress_guide.md 이터레이션 로그에 "자동 재개 — harness-audit 트리거" 기록
-5. docs/goal_snapshots/YYYY-MM-DD-goal-snapshot.md 업데이트
+5. ${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}/docs/goal_snapshots/YYYY-MM-DD-goal-snapshot.md 업데이트
 
 예시 (GOAL-001 STALE 탐지 시):
 [TEAM:engineering-senior-developer]
@@ -119,7 +119,7 @@ COLLAB_INACTIVE 감지 시 자동 실행:
 | 주간회의 | `logs/weekly_meeting.log` 최근 실행 날짜 | 7일 이내 → ✅ |
 | 일일 회고 | `logs/retro.log` 최근 실행 날짜 | 1일 이내 → ✅ |
 | 목표 파이프라인 | `logs/goal_pipeline.log` 최근 실행 | 1일 이내 → ✅ |
-| harness-audit | `docs/audits/` 최신 파일 날짜 | 7일 이내 → ✅ |
+| harness-audit | `${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}/docs/audits/` 최신 파일 날짜 | 7일 이내 → ✅ |
 
 **자동 조치**: 프로세스가 누락된 경우 →
 ```bash
@@ -148,7 +148,7 @@ stat -f "%m %N" logs/weekly_meeting.log 2>/dev/null
 STALE 감지 시: [자동 iter 재개 실행 — 위 체인 즉시 시작]
 COLLAB_INACTIVE 감지 시: [다부서 태스크 즉시 COLLAB 태그 발동]
 ```
-저장: `docs/audits/YYYY-MM-DD-harness-audit.md`
+저장: `${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}/docs/audits/YYYY-MM-DD-harness-audit.md`
 
 ## 감사 완료 후 필수 후속 조치
 

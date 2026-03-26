@@ -285,7 +285,8 @@ async def send_telegram(text: str) -> None:
 
 def _save_audit_report(report: str) -> Path:
     today = datetime.now(UTC).strftime("%Y-%m-%d")
-    out_dir = PROJECT_ROOT / "docs" / "audits"
+    data_dir = Path(os.environ.get("AI_ORG_DATA_DIR", str(Path.home() / "telegram-ai-org-data")))
+    out_dir = data_dir / "docs" / "audits"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{today}-harness-audit.md"
     out_path.write_text(report, encoding="utf-8")

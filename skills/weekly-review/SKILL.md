@@ -38,14 +38,15 @@ AI 조직의 주간회의를 PM이 자율적으로 진행한다.
 주간회의 완료 즉시 결과를 JSONL 로그에 기록한다:
 
 ```bash
-python skills/_shared/save-log.py '{"week": "YYYY-WW", "summary": "...", "highlights": [], "blockers": []}' ../telegram-ai-org-data/skills/weekly-review/data/weekly-log.jsonl
+DATA_DIR="${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}"
+python skills/_shared/save-log.py '{"week": "YYYY-WW", "summary": "...", "highlights": [], "blockers": []}' "${DATA_DIR}/skills/weekly-review/data/weekly-log.jsonl"
 ```
 
 - `week`: ISO 주차 형식 (예: `2026-W12`)
 - `summary`: 이번 주 전체 요약 (200자 이내)
 - `highlights`: Top 3 성과 목록
 - `blockers`: 미해결 블로커 목록
-- 저장 경로: `../telegram-ai-org-data/skills/weekly-review/data/weekly-log.jsonl` (외부 산출물 루트)
+- 저장 경로: `${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}/skills/weekly-review/data/weekly-log.jsonl`
 - fcntl.flock으로 원자적 append — 동시 실행 안전
 
 > 이 단계는 선택이 아닌 필수다. Step 4(보고) 직후 반드시 실행한다.

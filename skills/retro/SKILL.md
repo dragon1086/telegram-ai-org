@@ -37,7 +37,8 @@ BLOCKER: 근본 원인 (5 Whys 적용)
 회고 완료 즉시 결과를 JSONL 로그에 기록한다:
 
 ```bash
-python skills/_shared/save-log.py '{"date": "YYYY-MM-DD", "sprint": "...", "summary": "...", "action_items": [], "patterns": []}' ../telegram-ai-org-data/skills/retro/data/retro-log.jsonl
+DATA_DIR="${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}"
+python skills/_shared/save-log.py '{"date": "YYYY-MM-DD", "sprint": "...", "summary": "...", "action_items": [], "patterns": []}' "${DATA_DIR}/skills/retro/data/retro-log.jsonl"
 ```
 
 - `date`: 회고 실행 날짜
@@ -45,7 +46,7 @@ python skills/_shared/save-log.py '{"date": "YYYY-MM-DD", "sprint": "...", "summ
 - `summary`: 전체 요약 (200자 이내)
 - `action_items`: 도출된 액션 아이템 목록
 - `patterns`: 반복 패턴 목록
-- 저장 경로: `skills/retro/data/retro-log.jsonl`
+- 저장 경로: `${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}/skills/retro/data/retro-log.jsonl`
 - fcntl.flock으로 원자적 append — 동시 실행 안전
 
 > 이 단계는 선택이 아닌 필수다. Step 4(보고서 저장) 직후 반드시 실행한다.
