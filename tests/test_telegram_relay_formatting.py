@@ -52,13 +52,25 @@ def _make_team_config(agent_names: list[str]):
     return _FakeTeamConfig(agents=[_FakePersona(name=n) for n in agent_names])
 
 
+def _make_relay_stub():
+    """_format_team_header 호출에 필요한 최소 stub 인스턴스를 반환한다.
+
+    _format_team_header는 인스턴스 메서드이므로 self._team_builder가 있는 stub이 필요하다.
+    """
+    from core.dynamic_team_builder import DynamicTeamBuilder
+    from core.telegram_relay import TelegramRelay
+    stub = MagicMock()
+    stub._team_builder = DynamicTeamBuilder()
+    stub._format_team_header = TelegramRelay._format_team_header.__get__(stub, type(stub))
+    return stub
+
+
 def test_format_team_header_contains_team_tag() -> None:
     """_format_team_header 결과 첫 줄에 [TEAM:...] 태그가 있어야 한다."""
-    # TelegramRelay의 static method만 테스트 — 클래스 인스턴스 불필요
-    from core.telegram_relay import TelegramRelay
-
+    stub = _make_relay_stub()
+    # 실제 페르소나명은 이름 해소 없이 그대로 유지되어야 한다
     config = _make_team_config(["engineering-senior-developer", "testing-api-tester"])
-    header = TelegramRelay._format_team_header(config)
+    header = stub._format_team_header(config)
 
     first_line = header.splitlines()[0]
     assert first_line.startswith("[TEAM:")
@@ -68,26 +80,23 @@ def test_format_team_header_contains_team_tag() -> None:
 
 def test_format_team_header_empty_agents_returns_empty() -> None:
     """에이전트 없는 team_config이면 빈 문자열을 반환해야 한다."""
-    from core.telegram_relay import TelegramRelay
-
+    stub = _make_relay_stub()
     config = _make_team_config([])
-    assert TelegramRelay._format_team_header(config) == ""
+    assert stub._format_team_header(config) == ""
 
 
 def test_format_team_header_none_returns_empty() -> None:
     """team_config이 None이면 빈 문자열을 반환해야 한다."""
-    from core.telegram_relay import TelegramRelay
-
-    assert TelegramRelay._format_team_header(None) == ""
+    stub = _make_relay_stub()
+    assert stub._format_team_header(None) == ""
 
 
 def test_format_team_header_counts_duplicates() -> None:
-    """같은 에이전트가 2회 등장하면 ×2 표기가 있어야 한다."""
-    from core.telegram_relay import TelegramRelay
-
+    """추상 역할명(executor)이 실제 페르소나명으로 해소되어 ×2 표기가 있어야 한다."""
+    stub = _make_relay_stub()
     config = _make_team_config(["executor", "executor", "analyst"])
-    header = TelegramRelay._format_team_header(config)
+    header = stub._format_team_header(config)
 
     assert "×2" in header
-    assert "executor" in header
-    assert "analyst" in header
+    # executor → engineering-senior-developer 로 해소되어야 함
+    assert "engineering-senior-developer" in header

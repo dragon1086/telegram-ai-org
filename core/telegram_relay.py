@@ -1126,9 +1126,10 @@ class TelegramRelay:
             backend = "tmux_batch"
         return backend
 
-    @staticmethod
-    def _format_team_header(team_config) -> str:
+    def _format_team_header(self, team_config) -> str:
         """team_config 에이전트 목록으로 응답 앞에 붙일 팀 구성 헤더를 생성한다.
+
+        ~/.claude/agents 실제 페르소나명으로 추상 역할명(executor, analyst 등)을 해소한다.
 
         예시:
             [TEAM:engineering-senior-developer,testing-api-tester]
@@ -1138,9 +1139,26 @@ class TelegramRelay:
         """
         if not team_config or not getattr(team_config, "agents", None):
             return ""
+
+        # 실제 페르소나명 로드 (엣지케이스: 실패 시 빈 집합으로 폴백)
+        try:
+            from core.dynamic_team_builder import load_personas
+            available: set[str] = set(load_personas())
+        except Exception:
+            available = set()
+
         counts: dict[str, int] = {}
         for persona in team_config.agents:
-            counts[persona.name] = counts.get(persona.name, 0) + 1
+            # 추상 역할명 → 실제 페르소나명 해소
+            try:
+                if available and hasattr(self, "_team_builder") and self._team_builder:
+                    display = self._team_builder._resolve_persona_display_name(persona.name, available)
+                else:
+                    display = persona.name
+            except Exception:
+                display = persona.name
+            counts[display] = counts.get(display, 0) + 1
+
         if not counts:
             return ""
         names = list(counts.keys())
@@ -2440,6 +2458,13 @@ class TelegramRelay:
                 original_request=text,
                 decision_client=self._pm_decision_client if self._is_pm_org else None,
             )
+            # 완료보고 결론 하단에 투입 페르소나 목록 추가
+            try:
+                _persona_footer = self._team_builder.format_persona_footer(team_config)
+                if _persona_footer:
+                    response = response + _persona_footer
+            except Exception as _pf_err:
+                logger.debug("투입 페르소나 footer 생성 실패 (무시): {}", _pf_err)
             # response 앞에 실제 팀 구성 헤더 주입
             _team_hdr = self._format_team_header(team_config)
             if _team_hdr:
