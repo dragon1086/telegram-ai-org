@@ -100,3 +100,76 @@ def test_format_team_header_counts_duplicates() -> None:
     assert "×2" in header
     # executor → engineering-senior-developer 로 해소되어야 함
     assert "engineering-senior-developer" in header
+
+
+# ── format_persona_footer: 완료보고 사용 에이전트 footer ─────────────────────
+
+
+def _make_team_config_full(agent_names: list[str]):
+    """TeamConfig와 동일한 인터페이스를 가진 테스트용 구사체를 생성한다."""
+    from core.agent_catalog import DEFAULT_MODEL, AgentPersona
+    from core.dynamic_team_builder import ExecutionMode, TeamConfig
+
+    personas = [AgentPersona(name=n, description="test", model=DEFAULT_MODEL) for n in agent_names]
+    return TeamConfig(
+        agents=personas,
+        execution_mode=ExecutionMode.agent_teams,
+        engine="gemini-cli",
+        team_format=",".join(f"1:{n}" for n in agent_names),
+        reasoning="test",
+    )
+
+
+def test_format_persona_footer_resolves_abstract_names() -> None:
+    """완료보고 footer에서 analyst/executor/scientist 같은 추상명이 실제 페르소나명으로 해소되어야 한다."""
+    from core.dynamic_team_builder import DynamicTeamBuilder
+
+    builder = DynamicTeamBuilder()
+    config = _make_team_config_full(["analyst", "executor", "scientist"])
+    footer = builder.format_persona_footer(config)
+
+    assert "**사용 에이전트/페르소나**" in footer
+    # 추상명이 그대로 노출되면 안 됨
+    assert "analyst" not in footer
+    assert "executor" not in footer
+    assert "scientist" not in footer
+    # 해소된 실제 페르소나명이 포함되어야 함
+    assert "data-analytics-reporter" in footer or "engineering-senior-developer" in footer
+
+
+def test_format_persona_footer_real_names_pass_through() -> None:
+    """실제 페르소나명은 변환 없이 그대로 footer에 포함되어야 한다."""
+    from core.dynamic_team_builder import DynamicTeamBuilder
+
+    builder = DynamicTeamBuilder()
+    config = _make_team_config_full(["product-trend-researcher", "data-analytics-reporter"])
+    footer = builder.format_persona_footer(config)
+
+    assert "product-trend-researcher" in footer
+    assert "data-analytics-reporter" in footer
+
+
+def test_format_persona_footer_empty_agents_returns_empty() -> None:
+    """에이전트 없는 config이면 footer가 빈 문자열이어야 한다."""
+    from core.dynamic_team_builder import DynamicTeamBuilder
+
+    builder = DynamicTeamBuilder()
+    config = _make_team_config_full([])
+    footer = builder.format_persona_footer(config)
+
+    assert footer == ""
+
+
+def test_format_team_announcement_resolves_abstract_names() -> None:
+    """실행계획 팀 구성 발표에서 추상명이 실제 페르소나명으로 표시되어야 한다."""
+    from core.dynamic_team_builder import DynamicTeamBuilder
+
+    builder = DynamicTeamBuilder()
+    config = _make_team_config_full(["analyst", "executor"])
+    announcement = builder.format_team_announcement(config)
+
+    assert "🤖 팀 구성 완료" in announcement
+    assert "analyst" not in announcement
+    assert "executor" not in announcement
+    # 해소된 실제 이름이 있어야 함
+    assert "data-analytics-reporter" in announcement or "engineering-senior-developer" in announcement
