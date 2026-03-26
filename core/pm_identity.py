@@ -331,15 +331,16 @@ class PMIdentity:
 ### 팀 구성 필수
 ⚠️ **무조건 응답 맨 첫 줄에 [TEAM:...] 태그 작성. 빠뜨리면 시스템 오류.**
 → 응답 첫 줄에 반드시 [TEAM:에이전트1,에이전트2,...] 태그 포함:
-  예: [TEAM:backend-engineer, ux-designer, data-analyst]
+  **반드시 ~/.claude/agents/ 파일명(확장자 제외)을 정확히 사용할 것** (ls로 확인 후 실제 존재하는 파일명만 사용)
+  예: [TEAM:engineering-senior-developer,data-analytics-reporter,testing-api-tester]
   팀원 없이 혼자 처리하면: [TEAM:solo]
   (에이전트 호출해도 solo이면 [TEAM:solo] 작성)
 → 그 다음 팀 구성 발표:
 🏗️ 팀 구성
-• [에이전트A]: [담당 역할]
-• [에이전트B]: [담당 역할]
+• engineering-senior-developer: [담당 역할]
+• data-analytics-reporter: [담당 역할]
 이유: [선택 이유 한 줄]
-(예: engineering-senior-developer: 코드 구현 / data-analytics-reporter: 요구사항 분석)
+(예: engineering-senior-developer: 코드 구현 / data-analytics-reporter: 요구사항 분석 / testing-api-tester: API 검증)
 - 실제 코드 작성/수정/구현
 - 파일·시스템·DB 변경
 - 보고서·문서 직접 작성
