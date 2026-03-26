@@ -260,7 +260,8 @@ class CodexRunner(BaseRunner):
     ) -> None:
         self.cli_path = cli_path
         self.timeout = timeout
-        self.workdir = workdir or str(Path.home() / ".ai-org" / "workspace")
+        _project_root = Path(__file__).resolve().parent.parent  # telegram-ai-org
+        self.workdir = workdir or str(_project_root)
         Path(self.workdir).mkdir(parents=True, exist_ok=True)
         self._last_run_metrics: dict[str, int | float | str] = {}
 
@@ -281,12 +282,25 @@ class CodexRunner(BaseRunner):
 
         return self.workdir
 
+    # workdir로 사용하면 안 되는 경로 (에이전트 프롬프트 등에서 오염)
+    _WORKDIR_BLOCKLIST = {
+        str(Path.home() / ".claude"),
+        str(Path.home() / ".claude" / "agents"),
+        str(Path.home() / ".ai-org" / "agents"),
+        str(Path.home() / ".ai-org"),
+    }
+
     def _extract_explicit_path(self, prompt: str) -> Path | None:
         for raw in re.findall(r"(?:(?<=\s)|^)(~?/[^ \t\r\n'\"`]+)", prompt):
             candidate = Path(raw).expanduser()
             if not candidate.exists():
                 continue
             target = candidate if candidate.is_dir() else candidate.parent
+            # 블록리스트 경로는 workdir로 사용하지 않음
+            target_str = str(target.resolve())
+            if any(target_str.startswith(blocked) for blocked in self._WORKDIR_BLOCKLIST):
+                logger.debug(f"Codex workdir 후보 차단(blocklist): {target}")
+                continue
             repo_root = self._find_repo_root(target)
             return repo_root or target
         return None

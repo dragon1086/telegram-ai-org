@@ -48,7 +48,8 @@ class ClaudeCodeRunner:
     ) -> None:
         self.cli_path = cli_path
         self.timeout = timeout
-        self.workdir = workdir or str(Path.home() / ".ai-org" / "workspace")
+        _project_root = Path(__file__).resolve().parent.parent  # telegram-ai-org
+        self.workdir = workdir or str(_project_root)
         Path(self.workdir).mkdir(parents=True, exist_ok=True)
         self._last_run_metrics: dict[str, int | float | str] = {}
 
