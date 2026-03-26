@@ -27,7 +27,7 @@ def load_personas(agents_dir: Path | None = None) -> list[str]:
         logger.debug("load_personas: agents_dir not found: {}", target)
         return []
     try:
-        return sorted(p.stem for p in target.glob("*.md"))
+        return sorted(p.stem for p in target.rglob("*.md"))
     except Exception as exc:  # noqa: BLE001
         logger.warning("load_personas: 디렉토리 읽기 실패 ({}): {}", target, exc)
         return []

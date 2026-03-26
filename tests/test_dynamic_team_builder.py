@@ -8,7 +8,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.agent_catalog import AgentCatalog
-from core.dynamic_team_builder import DynamicTeamBuilder, _build_team_system_prompt
+from core.dynamic_team_builder import DynamicTeamBuilder, _build_team_system_prompt, load_personas
 
 
 def _write_agent(directory: Path, name: str, description: str) -> None:
@@ -141,6 +141,32 @@ async def test_build_team_injects_catalog_names_into_system_prompt(tmp_path: Pat
     assert len(received_prompts) == 1
     assert "engineering-senior-developer" in received_prompts[0]
     assert "testing-api-tester" in received_prompts[0]
+
+
+# ── load_personas rglob: 서브디렉토리 에이전트 인식 ─────────────────────────
+
+def test_load_personas_rglob_includes_subdirectory_agents(tmp_path: Path) -> None:
+    """load_personas()가 rglob을 사용해 design/, engineering/ 등 하위 디렉토리 에이전트도 반환해야 한다."""
+    agents_dir = tmp_path / "agents"
+    eng_dir = agents_dir / "engineering"
+    design_dir = agents_dir / "design"
+    eng_dir.mkdir(parents=True)
+    design_dir.mkdir(parents=True)
+
+    _write_agent(agents_dir, "top-level-agent", "Root level")
+    _write_agent(eng_dir, "engineering-senior-developer", "Senior dev")
+    _write_agent(design_dir, "design-ui-designer", "UI designer")
+
+    names = load_personas(agents_dir)
+    assert "top-level-agent" in names
+    assert "engineering-senior-developer" in names
+    assert "design-ui-designer" in names
+
+
+def test_load_personas_returns_empty_for_missing_dir(tmp_path: Path) -> None:
+    """존재하지 않는 디렉토리 전달 시 빈 리스트를 반환해야 한다."""
+    names = load_personas(tmp_path / "nonexistent")
+    assert names == []
 
 
 # ── Change 2: AgentCatalog rglob 서브디렉토리 로드 ──────────────────────────
