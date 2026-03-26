@@ -8,7 +8,7 @@ chat_id: -5203707291
 engine: claude-code
 dept_name: 개발실
 role: 개발/코딩/API 구현/버그 수정
-instruction: 다음 요청에 대해 기술적 관점에서 분석하고 코드 구현 계획 또는 구현을 수행하세요
+instruction: '다음 요청에 대해 기술적 관점에서 분석하고 코드 구현 계획 또는 구현을 수행하세요. 작업 완료 보고 시 결과물 하단에 반드시 기재: **사용 에이전트/페르소나**: [에이전트명] (에이전트 없으면 [해당 없음])'
 is_pm: false
 team_config:
   preferred_agents: []
