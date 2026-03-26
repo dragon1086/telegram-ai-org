@@ -301,10 +301,25 @@ class DynamicTeamBuilder:
                 except (ValueError, TypeError):
                     logger.warning("Invalid agent count '{}', defaulting to 1", raw_count)
                     count = 1
+                # 추상 역할명(analyst, executor 등) → 실제 페르소나명 즉시 해소
+                # 카탈로그에 직접 없는 경우에만 _ABSTRACT_TO_PERSONA 매핑 적용
+                resolved_name = name
                 persona = self._catalog.get_persona(name)
+                if persona is None and name in self._ABSTRACT_TO_PERSONA:
+                    available_now = set(load_personas())
+                    for candidate in self._ABSTRACT_TO_PERSONA[name]:
+                        if candidate in available_now:
+                            resolved_name = candidate
+                            break
+                    else:
+                        # 후보가 없으면 첫 번째 후보를 폴백으로 사용
+                        resolved_name = self._ABSTRACT_TO_PERSONA[name][0] if self._ABSTRACT_TO_PERSONA[name] else name
+                    if resolved_name != name:
+                        logger.debug("Abstract role '{}' resolved to '{}'", name, resolved_name)
+                    persona = self._catalog.get_persona(resolved_name)
                 if persona is None:
                     from core.agent_catalog import DEFAULT_MODEL, AgentPersona
-                    persona = AgentPersona(name=name, description=f"{name} agent", model=DEFAULT_MODEL)
+                    persona = AgentPersona(name=resolved_name, description=f"{resolved_name} agent", model=DEFAULT_MODEL)
                 for _ in range(count):
                     personas.append(persona)
             except Exception as spec_err:
@@ -569,14 +584,16 @@ class DynamicTeamBuilder:
         return abstract_name
 
     def format_persona_footer(self, config: TeamConfig, *, agents_dir: Path | None = None) -> str:
-        """완료보고 결론 하단에 추가할 투입 페르소나 목록 문자열을 반환한다.
+        """완료보고 결론 하단에 추가할 사용 에이전트/페르소나 목록 문자열을 반환한다.
+
+        각 조직(dept) 봇 자체 보고에만 포함 — PM 봇은 호출하지 않는다.
 
         Args:
             config: build_team()이 반환한 TeamConfig.
             agents_dir: 페르소나 디렉토리. None이면 ~/.claude/agents 사용.
 
         Returns:
-            투입 페르소나 목록 문자열. 페르소나 없으면 빈 문자열.
+            사용 에이전트/페르소나 목록 문자열. 에이전트 없으면 빈 문자열.
         """
         available = set(load_personas(agents_dir))
         resolved = []
@@ -589,7 +606,7 @@ class DynamicTeamBuilder:
         if not resolved:
             return ""
         names_str = ", ".join(resolved)
-        return f"\n\n**투입 페르소나**: {names_str}"
+        return f"\n\n**사용 에이전트/페르소나**: [{names_str}]"
 
     def format_team_announcement(self, config: TeamConfig, *, agents_dir: Path | None = None) -> str:
         """Telegram 친화적인 팀 구성 안내 문자열을 반환한다.

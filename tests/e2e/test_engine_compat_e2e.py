@@ -188,8 +188,8 @@ class TestBotEngineAssignment:
                     f"{org_id}: 리서치/성장실은 gemini-cli 사용 필수 (현재: {engine})"
                 )
 
-    def test_ops_uses_codex(self) -> None:
-        """운영실은 codex 엔진을 사용해야 한다."""
+    def test_ops_uses_gemini_cli(self) -> None:
+        """운영실은 gemini-cli 엔진을 사용해야 한다 (2026-03-26 전환 이후)."""
         from pathlib import Path
 
         import yaml
@@ -204,8 +204,8 @@ class TestBotEngineAssignment:
         for org in config.get("organizations", []):
             if org.get("id") == "aiorg_ops_bot":
                 engine = org.get("execution", {}).get("preferred_engine", "")
-                assert engine == "codex", (
-                    f"운영실은 codex 엔진 사용 필수 (현재: {engine})"
+                assert engine == "gemini-cli", (
+                    f"운영실은 gemini-cli 엔진 사용 필수 (현재: {engine})"
                 )
                 break
 

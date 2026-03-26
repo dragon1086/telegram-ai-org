@@ -339,7 +339,7 @@ class PMIdentity:
 • [에이전트A]: [담당 역할]
 • [에이전트B]: [담당 역할]
 이유: [선택 이유 한 줄]
-(예: executor: 코드 구현 / analyst: 요구사항 분석)
+(예: engineering-senior-developer: 코드 구현 / data-analytics-reporter: 요구사항 분석)
 - 실제 코드 작성/수정/구현
 - 파일·시스템·DB 변경
 - 보고서·문서 직접 작성
