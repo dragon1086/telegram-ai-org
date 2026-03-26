@@ -117,7 +117,7 @@ session_policies:
     stale_after_minutes: 180
 team_profiles:
   global_orchestrator:
-    preferred_engine: codex
+    preferred_engine: gemini-cli
     fallback_engine: claude-code
     execution_mode: sequential
     preferred_agents:
@@ -129,7 +129,7 @@ team_profiles:
     max_team_size: 3
     guidance: 전체 조율과 사용자 응답 품질을 우선한다.
   research_strategy:
-    preferred_engine: codex
+    preferred_engine: gemini-cli
     fallback_engine: claude-code
     execution_mode: sequential
     preferred_agents:
@@ -140,7 +140,7 @@ team_profiles:
     max_team_size: 3
     guidance: 출처와 비교 기준을 명확히 남긴다.
   engineering_delivery:
-    preferred_engine: codex
+    preferred_engine: gemini-cli
     fallback_engine: claude-code
     execution_mode: sequential
     preferred_agents:
@@ -152,7 +152,7 @@ team_profiles:
     guidance: 구현과 검증을 함께 수행한다.
   design_strategy:
     preferred_engine: claude-code
-    fallback_engine: codex
+    fallback_engine: gemini-cli
     execution_mode: sequential
     preferred_agents:
     - design-ui-designer
@@ -163,7 +163,7 @@ team_profiles:
     guidance: 사용자 경험과 전달 명확성을 우선한다.
   product_strategy:
     preferred_engine: claude-code
-    fallback_engine: codex
+    fallback_engine: gemini-cli
     execution_mode: sequential
     preferred_agents:
     - product-manager
@@ -174,7 +174,7 @@ team_profiles:
     guidance: 요구사항과 우선순위를 구조화한다.
   growth_strategy:
     preferred_engine: claude-code
-    fallback_engine: codex
+    fallback_engine: gemini-cli
     execution_mode: sequential
     preferred_agents:
     - product-trend-researcher
@@ -184,7 +184,7 @@ team_profiles:
     max_team_size: 3
     guidance: 가설, 지표, 메시지 전달을 명확히 한다.
   ops_delivery:
-    preferred_engine: codex
+    preferred_engine: gemini-cli
     fallback_engine: claude-code
     execution_mode: sequential
     preferred_agents:
