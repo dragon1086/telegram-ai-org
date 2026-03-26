@@ -80,7 +80,7 @@ organizations:
   execution:
     # claude-code: 복잡한 코드 아키텍처, 멀티스텝 디버깅, 테스트 작성에 최적
     preferred_engine: claude-code
-    fallback_engine: codex
+    fallback_engine: gemini-cli
     team_profile: engineering_delivery
     verification_profile: specialist_default
     phase_policy: default
@@ -171,8 +171,8 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    # codex: 경량 CLI 특화, DevOps 스크립트·인프라 자동화에 최적. 복잡한 추론 불필요
-    preferred_engine: codex
+    # gemini-cli: codex rate limit 대응으로 전환 (2026-03-26). DevOps 스크립트·인프라 자동화 처리
+    preferred_engine: gemini-cli
     fallback_engine: claude-code
     team_profile: ops_delivery
     verification_profile: specialist_default

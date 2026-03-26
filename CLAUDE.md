@@ -89,15 +89,15 @@ bash scripts/start_all.sh
 
 > 세션 시작 시 반드시 확인. 실수가 발생할 때마다 여기에 추가한다.
 
-### [2026-03-26] 엔진 전환 — 운영실 codex → gemini-cli (임시)
-- **배경**: OpenAI Codex CLI rate limit 도달 → 운영실(aiorg_ops_bot)을 gemini-cli로 임시 전환
-- **변경 파일**: `bots/aiorg_ops_bot.yaml`, `orchestration.yaml` (team_profiles), `.env.example`, AGENTS.md, GEMINI.md
+### [2026-03-26] 엔진 전환 — codex 사용 전 조직 → gemini-cli 일괄 전환
+- **배경**: OpenAI Codex CLI rate limit 도달 → codex 엔진 사용 조직 전체를 gemini-cli(gemini-2.5-flash)로 전환
+- **변경 파일**: `bots/aiorg_ops_bot.yaml`, `organizations.yaml`, `agent_hints.yaml`, AGENTS.md, GEMINI.md
 - **현재 엔진 배정**:
   | 조직 | 엔진 |
   |------|------|
   | PM / 개발실 / 디자인실 / 기획실 | claude-code |
-  | 성장실 / 리서치실 / **운영실** | **gemini-cli** |
-- **복원 조건**: Codex 리밋 해소 시 `bots/aiorg_ops_bot.yaml` engine: 다시 `codex`로 변경
+  | 성장실 / 리서치실 / 운영실 | gemini-cli |
+- **모델**: 모든 gemini-cli 조직은 `gemini-2.5-flash` 사용 (gemini-2.0-flash 사용 금지)
 
 ### [2026-03-25] 자율 협업 실행 원칙 — "다음 조치 = 즉시 실행" (전체 조직 필수)
 
