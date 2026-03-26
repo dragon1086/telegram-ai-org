@@ -15,6 +15,9 @@
 
     # 주간 회의 시작
     await hub.start_meeting("주간 스탠드업", participants=["engineering","product","growth"])
+
+    # 대화형 회고 시작 (3라운드: 잘한것 → 어려운것 → 다음실험)
+    result = await hub.start_retro(context_summary="이번 주 완료: ...", participants=["engineering","product"])
 """
 from __future__ import annotations
 
@@ -32,6 +35,10 @@ from loguru import logger
 TURN_TIMEOUT_SEC = 45       # 봇 응답 대기 최대 시간
 MEETING_TURN_GAP_SEC = 2    # 발언 간 간격 (연속 발언 방지)
 MAX_CONTEXT_MESSAGES = 50   # 그룹 컨텍스트 최대 보존 메시지 수
+
+
+RETRO_ROUND_TIMEOUT_SEC = 60    # 회고 라운드 봇 응답 최대 대기 시간 (회의보다 여유)
+RETRO_INTER_ROUND_GAP_SEC = 3   # 라운드 간 대기 시간
 
 
 # ── 데이터 클래스 ──────────────────────────────────────────────────────────────
@@ -52,6 +59,22 @@ class ParticipantInfo:
     """speak_callback(message, context) → 응답 문자열 or None(발언 안 함)"""
     domain_keywords: list[str] = field(default_factory=list)
     """이 키워드가 메시지에 포함될 때 응답 우선 고려."""
+
+
+@dataclass
+class RetroRoundResult:
+    """회고 한 라운드의 수집 결과."""
+    phase: str                  # "잘한것" | "어려운것" | "다음실험"
+    responses: dict[str, str]   # bot_id → 발언 내용
+    skipped: list[str]          # 발언 없음/타임아웃 봇 목록
+
+
+@dataclass
+class RetroResult:
+    """대화형 회고 전체 결과."""
+    rounds: list[RetroRoundResult]
+    action_items: list[str]     # 다음실험 라운드에서 추출된 액션 아이템
+    summary: str                # PM이 종합한 한 줄 요약
 
 
 # ── 그룹 컨텍스트 ──────────────────────────────────────────────────────────────
@@ -168,6 +191,163 @@ class TurnManager:
             async with self._lock:
                 self._active_meeting = False
 
+    async def start_retro(
+        self,
+        context_summary: str,
+        participants: list[str],
+        speak_callbacks: dict[str, Callable[[str, list[GroupMessage]], Awaitable[str | None]]],
+    ) -> RetroResult:
+        """대화형 회고 진행 — 3라운드 (잘한것 → 어려운것 → 다음실험).
+
+        각 라운드에서 모든 참가자가 순서대로 발언하며, 이전 라운드 발언이
+        컨텍스트에 누적되므로 후속 발언자가 앞 발언을 참고할 수 있다.
+
+        Args:
+            context_summary: 최근 완료 태스크 / 진행 중 항목 요약 (회고 배경 맥락).
+            participants: 발언 순서대로 정렬된 봇 ID 목록.
+            speak_callbacks: bot_id → speak_callback 매핑.
+
+        Returns:
+            RetroResult: 라운드별 발언 + 액션 아이템 목록.
+        """
+        async with self._lock:
+            if self._active_meeting:
+                logger.warning("[TurnManager] 이미 진행 중인 회의/회고가 있음 — 스킵")
+                return RetroResult(rounds=[], action_items=[], summary="진행 중인 회의로 인해 생략")
+            self._active_meeting = True
+
+        # 회고 라운드 정의: (phase_name, 질문 프롬프트)
+        rounds_spec = [
+            (
+                "잘한것",
+                (
+                    f"[회고 1라운드 — 잘한 것]\n\n{context_summary}\n\n"
+                    "위 최근 활동을 바탕으로, 우리 팀/당신 조직이 이번에 **가장 잘한 것** 하나를 공유해주세요. "
+                    "구체적인 사례를 들어 한 문단으로 편하게 말씀해주세요."
+                ),
+            ),
+            (
+                "어려운것",
+                (
+                    "[회고 2라운드 — 어려웠던 것]\n\n"
+                    "앞서 팀원들의 발언을 참고해서, 이번에 **가장 어렵거나 안 풀렸던 것**을 솔직하게 공유해주세요. "
+                    "원인이 무엇이라고 생각하시나요? 다른 분 발언에 공감되는 부분이 있다면 덧붙여도 좋습니다."
+                ),
+            ),
+            (
+                "다음실험",
+                (
+                    "[회고 3라운드 — 다음에 해볼 것]\n\n"
+                    "지금까지 나온 잘한 것과 어려운 것을 종합해서, **다음에 꼭 시도해볼 개선 아이디어나 실험**을 제안해주세요. "
+                    "'ACTION: ...' 형식으로 구체적인 액션 아이템을 1~2개 포함시켜 주세요."
+                ),
+            ),
+        ]
+
+        all_rounds: list[RetroRoundResult] = []
+
+        try:
+            await self._send(
+                f"🔄 **일일 회고 시작**\n"
+                f"참여: {', '.join(participants)}\n\n"
+                f"📋 *배경*: {context_summary[:200]}{'...' if len(context_summary) > 200 else ''}"
+            )
+            await asyncio.sleep(RETRO_INTER_ROUND_GAP_SEC)
+
+            for round_idx, (phase_name, round_prompt) in enumerate(rounds_spec, start=1):
+                await self._send(f"\n---\n**[{round_idx}/3] {phase_name}** 라운드")
+                round_responses: dict[str, str] = {}
+                round_skipped: list[str] = []
+
+                for bot_id in participants:
+                    callback = speak_callbacks.get(bot_id)
+                    if callback is None:
+                        round_skipped.append(bot_id)
+                        continue
+
+                    # 이전 라운드 발언 포함한 최신 컨텍스트
+                    ctx = await self._context.recent(20)
+                    try:
+                        response = await asyncio.wait_for(
+                            callback(round_prompt, ctx),
+                            timeout=RETRO_ROUND_TIMEOUT_SEC,
+                        )
+                        if response and response.strip():
+                            msg_text = f"**[{bot_id}]** {response.strip()}"
+                            await self._send(msg_text)
+                            await self._context.add(
+                                GroupMessage(from_bot=bot_id, text=response.strip())
+                            )
+                            round_responses[bot_id] = response.strip()
+                        else:
+                            round_skipped.append(bot_id)
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            f"[TurnManager.retro] {bot_id} 타임아웃 ({RETRO_ROUND_TIMEOUT_SEC}s)"
+                        )
+                        await self._send(f"⏱️ *{bot_id}* 타임아웃 — 다음으로")
+                        round_skipped.append(bot_id)
+                    except Exception as e:
+                        logger.error(f"[TurnManager.retro] {bot_id} 발언 오류: {e}")
+                        round_skipped.append(bot_id)
+
+                    await asyncio.sleep(MEETING_TURN_GAP_SEC)
+
+                all_rounds.append(
+                    RetroRoundResult(
+                        phase=phase_name,
+                        responses=round_responses,
+                        skipped=round_skipped,
+                    )
+                )
+                await asyncio.sleep(RETRO_INTER_ROUND_GAP_SEC)
+
+            # 액션 아이템 추출 (3라운드 "다음실험" 발언에서 ACTION: 행 파싱)
+            action_items: list[str] = []
+            last_round = all_rounds[-1] if all_rounds else None
+            if last_round:
+                import re as _re
+                for resp_text in last_round.responses.values():
+                    for line in resp_text.splitlines():
+                        stripped = line.strip()
+                        if stripped.upper().startswith("ACTION:"):
+                            action_text = stripped[7:].strip()
+                            if action_text:
+                                action_items.append(action_text)
+
+            # 요약 생성
+            total_participants = len(participants)
+            total_responded = len(
+                set().union(*[r.responses.keys() for r in all_rounds])
+            ) if all_rounds else 0
+            summary = (
+                f"참여 {total_participants}명 중 {total_responded}명 발언 완료, "
+                f"액션 아이템 {len(action_items)}개 도출"
+            )
+
+            await self._send(
+                f"\n✅ **회고 완료** — {summary}\n"
+                + (
+                    "\n🎯 *도출된 액션 아이템:*\n"
+                    + "\n".join(f"  • {item}" for item in action_items)
+                    if action_items else ""
+                )
+            )
+
+            return RetroResult(
+                rounds=all_rounds,
+                action_items=action_items,
+                summary=summary,
+            )
+
+        except Exception as e:
+            logger.error(f"[TurnManager.retro] 회고 실행 오류: {e}")
+            await self._send(f"❌ 회고 중 오류 발생: {e}")
+            return RetroResult(rounds=all_rounds, action_items=[], summary=f"오류: {e}")
+        finally:
+            async with self._lock:
+                self._active_meeting = False
+
     async def _process_queue(self) -> None:
         """큐에서 발언을 꺼내 그룹에 전송 (자율 발언 처리)."""
         while True:
@@ -275,6 +455,27 @@ class GroupChatHub:
         parts = participants or list(self._participants.keys())
         callbacks = {bid: info.speak_callback for bid, info in self._participants.items()}
         await self.turn_manager.start_meeting(topic, parts, callbacks)
+
+    async def start_retro(
+        self,
+        context_summary: str,
+        participants: list[str] | None = None,
+    ) -> RetroResult:
+        """대화형 일일/주간 회고 시작 (3라운드: 잘한것 → 어려운것 → 다음실험).
+
+        start_meeting()과 달리 라운드마다 이전 발언이 컨텍스트에 쌓여
+        참가자들이 서로의 발언을 참고하며 자연스럽게 토론할 수 있다.
+
+        Args:
+            context_summary: 최근 완료/진행 중 태스크 요약 (배경 맥락).
+            participants: 참여할 봇 ID 목록. None이면 등록된 전체 봇.
+
+        Returns:
+            RetroResult: 라운드별 발언 기록 + 도출된 액션 아이템.
+        """
+        parts = participants or list(self._participants.keys())
+        callbacks = {bid: info.speak_callback for bid, info in self._participants.items()}
+        return await self.turn_manager.start_retro(context_summary, parts, callbacks)
 
     def start_background_processor(self) -> None:
         """자율 발언 큐 처리 태스크 시작."""
