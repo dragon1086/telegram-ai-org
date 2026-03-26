@@ -540,6 +540,7 @@ class DynamicTeamBuilder:
         )
 
     # 추상 역할명 → 실제 페르소나명 후보 매핑 (우선순위 순)
+    # 새 항목 추가 시: ~/.claude/agents/ 파일명 기준으로 작성
     _ABSTRACT_TO_PERSONA: dict[str, list[str]] = {
         "executor": ["engineering-senior-developer", "engineering-rapid-prototyper", "engineering-backend-architect"],
         "debugger": ["engineering-incident-response-commander", "engineering-code-reviewer"],
@@ -559,6 +560,19 @@ class DynamicTeamBuilder:
         "designer": ["design-ux-architect", "design-ui-designer"],
         "build-fixer": ["engineering-rapid-prototyper", "engineering-git-workflow-master"],
         "critic": ["testing-reality-checker", "specialized-model-qa"],
+        # 시스템 프롬프트 예시에서 자주 등장하는 비정규 약어 → 구체 페르소나 폴백
+        "backend-engineer": ["engineering-backend-architect", "engineering-senior-developer"],
+        "frontend-engineer": ["engineering-frontend-developer", "engineering-senior-developer"],
+        "ux-designer": ["design-ux-architect", "design-ui-designer"],
+        "ui-designer": ["design-ui-designer", "design-ux-architect"],
+        "data-analyst": ["data-analytics-reporter", "product-trend-researcher"],
+        "researcher": ["product-trend-researcher", "data-analytics-reporter"],
+        "devops": ["engineering-devops-automator", "engineering-sre"],
+        "security": ["engineering-security-engineer", "blockchain-security-auditor"],
+        "pm": ["product-manager", "project-management-project-shepherd"],
+        "tester": ["testing-api-tester", "testing-reality-checker"],
+        "developer": ["engineering-senior-developer", "engineering-rapid-prototyper"],
+        "engineer": ["engineering-senior-developer", "engineering-backend-architect"],
     }
 
     def _resolve_persona_display_name(self, abstract_name: str, available_personas: set[str]) -> str:
