@@ -578,23 +578,29 @@ class DynamicTeamBuilder:
     def _resolve_persona_display_name(self, abstract_name: str, available_personas: set[str]) -> str:
         """추상 역할명을 실제 페르소나명으로 변환한다.
 
-        available_personas에 후보가 없으면 추상명을 그대로 반환(폴백).
+        available_personas에 후보가 없어도 _ABSTRACT_TO_PERSONA의 첫 번째 후보를 반환(폴백).
+        load_personas()가 빈 집합을 반환하는 경우에도 추상명이 노출되지 않도록 한다.
 
         Args:
             abstract_name: 추상 역할명 (예: "executor").
             available_personas: ~/.claude/agents에서 로드한 실제 페르소나 파일명 집합.
 
         Returns:
-            실제 페르소나명 또는 폴백 추상명.
+            실제 페르소나명. 매핑이 없으면 추상명 그대로.
         """
         candidates = self._ABSTRACT_TO_PERSONA.get(abstract_name, [])
+        # 1순위: available_personas에 실제 존재하는 후보
         for candidate in candidates:
             if candidate in available_personas:
                 return candidate
-        # 추상명이 이미 실제 페르소나명인 경우 그대로 반환
+        # 2순위: 추상명이 이미 실제 페르소나명인 경우
         if abstract_name in available_personas:
             return abstract_name
-        # 폴백: 추상명 그대로
+        # 3순위: available_personas가 비어 있어도 매핑된 첫 번째 후보 사용
+        # (load_personas() 실패 시에도 analyst→data-analytics-reporter 등이 표시되도록)
+        if candidates:
+            return candidates[0]
+        # 폴백: 매핑 자체가 없으면 추상명 그대로
         return abstract_name
 
     def format_persona_footer(self, config: TeamConfig, *, agents_dir: Path | None = None) -> str:
