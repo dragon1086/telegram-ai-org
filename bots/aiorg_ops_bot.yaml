@@ -4,7 +4,7 @@ username: aiorg_ops_bot
 org_id: aiorg_ops_bot
 token_env: BOT_TOKEN_AIORG_OPS_BOT
 chat_id: -5203707291
-engine: gemini-cli  # gemini-cli: codex 리밋으로 인한 임시 전환 (2026-03-26) — gemini-2.5-flash
+engine: gemini-cli  # gemini-cli: codex rate limit 대응 전환 (2026-03-26) — gemini-2.5-flash
 dept_name: 운영실
 role: 운영/배포/인프라/모니터링
 instruction: 다음 요청에 대해 운영/인프라 관점에서 분석하고 배포 및 모니터링 계획을 수립하세요

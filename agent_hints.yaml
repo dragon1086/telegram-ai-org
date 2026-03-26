@@ -20,6 +20,6 @@ agent_hints:
     preferred_agents: [engineering-software-architect, product-manager, product-sprint-prioritizer]
     omc_team_format: "1:engineering-software-architect,1:product-manager"
   simple:
-    preferred_engine: codex
+    preferred_engine: gemini-cli
     preferred_agents: [engineering-rapid-prototyper]
     omc_team_format: "1:engineering-rapid-prototyper"
