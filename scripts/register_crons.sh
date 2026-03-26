@@ -213,8 +213,17 @@ ensure_job \
 
 echo "[OK] bot_deploy_healthcheck 등록"
 
+# 14. PRISM 앱스토어 주간 점검 체크리스트 — 매주 월요일 09:02 KST
+ensure_job \
+  "appstore_weekly_checklist" \
+  "2 9 * * 1" \
+  "PRISM 앱스토어 주간 점검 체크리스트: 매주 월요일 09:02 KST — Rocky 수동 확인 알림 전송" \
+  "Repository: $PROJ. Run \`cd $PROJ && ./.venv/bin/python scripts/appstore_weekly_checklist.py >> logs/appstore_checklist.log 2>&1\` and finish with a one-line success/failure summary."
+
+echo "[OK] appstore_weekly_checklist 등록"
+
 echo ""
-echo "=== 등록 완료 (총 13개) ==="
+echo "=== 등록 완료 (총 14개) ==="
 echo "확인: openclaw cron list"
 echo ""
 echo "등록된 크론 목록:"
@@ -231,3 +240,4 @@ echo " 10. goal_tracker_evaluate — 매시 25분 KST"
 echo " 11. goal_tracker_replan  — 매시 30분 KST"
 echo " 12. goal_tracker_dispatch — 매시 35분 KST"
 echo " 13. bot_deploy_healthcheck — 매시 12분/42분 KST"
+echo " 14. appstore_weekly_checklist — 매주 월요일 09:02 KST (PRISM 앱스토어 점검 알림)"

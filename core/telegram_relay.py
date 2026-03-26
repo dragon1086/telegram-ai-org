@@ -2202,13 +2202,14 @@ class TelegramRelay:
                             original_request=request_text,
                             decision_client=self._pm_decision_client,
                         )
-                        # 완료보고 결론 하단에 투입 페르소나 목록 추가
-                        try:
-                            _persona_footer = self._team_builder.format_persona_footer(team_config)
-                            if _persona_footer:
-                                response = response + _persona_footer
-                        except Exception as _pf_err:
-                            logger.debug("투입 페르소나 footer 생성 실패 (무시): {}", _pf_err)
+                        # 투입 페르소나는 각 조직(dept) 봇 자체 보고에만 기재 — PM 봇은 제외
+                        if not self._is_pm_org:
+                            try:
+                                _persona_footer = self._team_builder.format_persona_footer(team_config)
+                                if _persona_footer:
+                                    response = response + _persona_footer
+                            except Exception as _pf_err:
+                                logger.debug("투입 페르소나 footer 생성 실패 (무시): {}", _pf_err)
                         # response 앞에 실제 팀 구성 헤더 주입
                         _team_hdr = self._format_team_header(team_config)
                         if _team_hdr:
@@ -2458,13 +2459,14 @@ class TelegramRelay:
                 original_request=text,
                 decision_client=self._pm_decision_client if self._is_pm_org else None,
             )
-            # 완료보고 결론 하단에 투입 페르소나 목록 추가
-            try:
-                _persona_footer = self._team_builder.format_persona_footer(team_config)
-                if _persona_footer:
-                    response = response + _persona_footer
-            except Exception as _pf_err:
-                logger.debug("투입 페르소나 footer 생성 실패 (무시): {}", _pf_err)
+            # 투입 페르소나는 각 조직(dept) 봇 자체 보고에만 기재 — PM 봇은 제외
+            if not self._is_pm_org:
+                try:
+                    _persona_footer = self._team_builder.format_persona_footer(team_config)
+                    if _persona_footer:
+                        response = response + _persona_footer
+                except Exception as _pf_err:
+                    logger.debug("투입 페르소나 footer 생성 실패 (무시): {}", _pf_err)
             # response 앞에 실제 팀 구성 헤더 주입
             _team_hdr = self._format_team_header(team_config)
             if _team_hdr:

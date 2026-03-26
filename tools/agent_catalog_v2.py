@@ -48,7 +48,8 @@ def recommend_agents(task: str, max_agents: int = 3) -> list[str]:
             scores[name] = score
 
     if not scores:
-        return ["analyst", "executor", "planner"][:max_agents]
+        # 추상 역할명 대신 ~/.claude/agents 실제 페르소나명 사용
+        return ["data-analytics-reporter", "engineering-senior-developer", "product-manager"][:max_agents]
 
     sorted_agents = sorted(scores.items(), key=lambda x: -x[1])
     return [name for name, _ in sorted_agents[:max_agents]]

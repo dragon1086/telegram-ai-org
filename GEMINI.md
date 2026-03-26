@@ -133,6 +133,16 @@ Gemini CLI가 배정된 조직과 그 이유:
 
 > 세션 시작 시 반드시 확인. 실수가 발생할 때마다 여기에 추가한다.
 
+### [2026-03-26] 앱스토어 링크 현황 + 투입 페르소나 기재 규칙 (전체 조직 공통)
+
+- **앱스토어 링크**: iOS App Store / Google Play 링크 **미확보** (2026-03-26 기준) — ETC-05로 트래킹 중
+- **사용 에이전트/페르소나 기재 위치**: 각 조직이 **자신의 작업 결과물 안에** 직접 기재. 글로벌 PM 최종 보고에 혼입 금지.
+  - ✅ 올바른 예: 각 조직 보고서 내 `**사용 에이전트/페르소나**: [engineering-senior-developer, testing-api-tester]` 형태
+  - ❌ 잘못된 예: PM 최종 보고에 "투입 페르소나: 개발실" 형태로 삽입
+- **구현 상태** (2026-03-26): `pm_orchestrator.py` PM 합산 보고에서 제거 / `telegram_relay.py` PM 봇에 `if not self._is_pm_org` 가드 / `dynamic_team_builder.py` 레이블 `**사용 에이전트/페르소나**`로 변경
+
+상세 규칙: CLAUDE.md `[2026-03-26]` 섹션 참고.
+
 ### [2026-03-25] 자율 협업 실행 원칙 — "다음 조치 = 즉시 실행" (전체 조직 필수)
 
 "다음 조치"를 나열하고 끝내는 것은 안티패턴. 나열하는 순간 즉시 실행한다.
@@ -215,8 +225,8 @@ cp .env.example .env
 # 2. Gemini 계열(성장/리서치) 단독 실행
 docker compose --profile gemini up -d
 
-# 3. 전체 조직 동시 실행
-docker compose --profile claude --profile codex --profile gemini up -d
+# 3. 전체 조직 동시 실행 (codex 프로파일은 레거시 — 현재 미사용)
+docker compose --profile claude --profile gemini up -d
 
 # 4. 로그 확인
 docker compose ps

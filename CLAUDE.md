@@ -99,6 +99,22 @@ bash scripts/start_all.sh
   | 성장실 / 리서치실 / 운영실 | gemini-cli |
 - **모델**: 모든 gemini-cli 조직은 `gemini-2.5-flash` 사용 (gemini-2.0-flash 사용 금지)
 
+### [2026-03-26] 앱스토어 링크 현황 + 투입 페르소나 기재 규칙 (전체 조직 공통)
+
+#### 앱스토어 링크 미확보 현황
+- **현재 상태**: iOS App Store / Google Play 링크 **미확보** (2026-03-26 기준)
+- **장기 액션 아이템 (ETC-05)**: 링크 확보 후 README.md 배지 섹션 및 배포 문서에 반영
+- **담당**: 기획실 / 우선순위: medium / 트래킹: `memory/project_pending_tasks.md` ETC-05
+
+#### "사용 에이전트/페르소나" 기재 위치 규칙
+- **잘못된 방식** ❌: 글로벌 PM 최종 보고에 "투입 페르소나: 개발실" 형태로 혼입
+- **올바른 방식** ✅: 각 조직(개발실/운영실/기획실 등)이 **자신의 작업 결과물 안에** 자신이 사용한 에이전트(페르소나)를 직접 기재
+- **이유**: 글로벌 PM 최종 보고는 조직 간 조율·완료 요약 용도 — 에이전트 세부 투입 내역은 각 조직 산출물에 귀속
+- **예시**: 개발실 보고서 내 `**사용 에이전트/페르소나**: [engineering-senior-developer, engineering-code-reviewer]` 형태로 기재
+- **구현 상태** (2026-03-26): `core/pm_orchestrator.py` PM 합산 보고에서 제거 / `core/telegram_relay.py` PM 봇에 `if not self._is_pm_org` 가드 / `core/dynamic_team_builder.py` 레이블 `**사용 에이전트/페르소나**`로 변경 완료
+
+---
+
 ### [2026-03-25] 자율 협업 실행 원칙 — "다음 조치 = 즉시 실행" (전체 조직 필수)
 
 **가장 중요한 원칙**: "다음 조치"를 나열하고 끝내는 것은 안티패턴이다. 나열하는 순간 즉시 실행한다.
@@ -218,12 +234,11 @@ cp .env.example .env
 # 2. 단일 엔진 실행 (예: Claude 계열 — PM/기획/디자인)
 docker compose --profile claude up -d
 
-# 3. 특정 엔진 실행 (Codex: 개발/운영, Gemini: 성장/리서치)
-docker compose --profile codex up -d
+# 3. 특정 엔진 실행 (Gemini: 성장/리서치/운영, Codex: 레거시 — 현재 미사용)
 docker compose --profile gemini up -d
 
-# 4. 전체 조직 동시 실행
-docker compose --profile claude --profile codex --profile gemini up -d
+# 4. 전체 조직 동시 실행 (codex 프로파일은 레거시 — 현재 미사용)
+docker compose --profile claude --profile gemini up -d
 
 # 5. 로그 확인
 docker compose ps

@@ -99,7 +99,11 @@
       "Bash(bash /Users/rocky/telegram-ai-org/scripts/request_restart.sh --reason \"Fix 주간회의 멀티봇 버그 2개: 스팸 메시지 제거 + SynthesisPoller GoalTracker 지원\")",
       "Bash(pip show:*)",
       "Bash(pip3 show:*)",
-      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/pip show:*)"
+      "Bash(/Users/rocky/telegram-ai-org/.venv/bin/pip show:*)",
+      "Bash(cp coverage_e2e.json /Users/rocky/telegram-ai-org-data/)",
+      "Bash(cp .coverage_e2e.json /Users/rocky/telegram-ai-org-data/)",
+      "Bash(cp trivy-scan-report.txt /Users/rocky/telegram-ai-org-data/)",
+      "Bash(bash scripts/request_restart.sh --reason \"AI_ORG_DATA_DIR 마이그레이션 완료 — 산출물 경로 표준화\" 2>&1)"
     ]
   },
   "hooks": {
