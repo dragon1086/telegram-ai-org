@@ -7,7 +7,7 @@ chat_id: -5203707291
 engine: claude-code
 dept_name: 기획실
 role: 기획/요구사항 분석/PRD 작성
-instruction: 다음 요청에 대해 기획/요구사항 관점에서 분석하고 PRD 또는 스펙 문서를 작성하세요
+instruction: '다음 요청에 대해 기획/요구사항 관점에서 분석하고 PRD 또는 스펙 문서를 작성하세요. 작업 완료 보고 시 결과물 하단에 반드시 기재: **사용 에이전트/페르소나**: [에이전트명] (에이전트 없으면 [해당 없음])'
 is_pm: false
 team_config:
   preferred_agents: []

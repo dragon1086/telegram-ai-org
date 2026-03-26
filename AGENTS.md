@@ -95,6 +95,8 @@ bash scripts/start_all.sh
   - ✅ 올바른 예: 개발실 보고서 내 `**사용 에이전트/페르소나**: [engineering-senior-developer, engineering-code-reviewer]` 형태
   - ❌ 잘못된 예: PM 최종 보고에 "투입 페르소나: 개발실" 형태로 삽입
 - **구현 상태** (2026-03-26): `pm_orchestrator.py` PM 합산 보고에서 제거 / `telegram_relay.py` PM 봇에 `if not self._is_pm_org` 가드 / `dynamic_team_builder.py` 레이블 `**사용 에이전트/페르소나**`로 변경
+- **각 조직 보고 의무**: PM 제외 모든 specialist 조직은 완료 보고 시 결과물 하단에 `**사용 에이전트/페르소나**: [에이전트명]` 반드시 기재. 에이전트 미사용 시 `[해당 없음]` 명시.
+- **절대 금지 패턴**: PM 보고서에 `투입 페르소나: [조직명]`, `사용 에이전트: 에이전트명` 형태 혼입 금지.
 
 상세 규칙: CLAUDE.md `[2026-03-26]` 섹션 참고.
 

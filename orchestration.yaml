@@ -61,6 +61,15 @@ global_instructions: |
     - glob.glob(os.environ.get('AI_ORG_DATA_DIR', str(Path.home() / 'telegram-ai-org-data')) + '/**/*', recursive=True)
     - find "${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}" -name '*.jsonl'
 
+  ## 각 조직 결과 보고 시 사용 에이전트/페르소나 기재 (specialist 조직 공통 — 필수)
+  PM(aiorg_pm_bot)을 제외한 모든 specialist 조직은 작업 완료 보고 시 아래를 준수한다:
+  - 결과물 섹션 바로 아래 또는 보고서 마지막에 반드시 기재
+  - 형식: **사용 에이전트/페르소나**: [에이전트명1, 에이전트명2]
+  - 에이전트명은 ~/.claude/agents/ 에 실제 존재하는 파일명(확장자 제외) 기준
+  - 에이전트 없이 단독 처리한 경우: [해당 없음] 으로 명시
+  절대 금지: PM 최종 취합 보고에 "투입 페르소나: [조직명]" 또는 에이전트명 혼입.
+  PM 보고는 조직 간 조율·완료 요약 용도 — 에이전트 투입 내역은 각 조직 산출물에 귀속.
+
   ## AI_ORG_DATA_DIR — 산출물·데이터 저장 경로 표준화 (전체 조직 공통 — 필수)
   telegram-ai-org/ 는 오픈소스 코드만 포함한다. 모든 산출물·생성 코드·스킬 로그는 AI_ORG_DATA_DIR 에 저장한다.
   - 기본값: ~/telegram-ai-org-data (환경변수 미설정 시 자동 사용)
