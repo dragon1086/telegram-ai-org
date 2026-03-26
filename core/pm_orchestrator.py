@@ -1895,28 +1895,9 @@ class PMOrchestrator:
             + ", ".join(f"`{n}`" for n in _artifact_names)
         ) if _artifact_names else ""
 
-        # 팀 구성 헤더 생성 — 경로 B (다부서 합성) 팀 가시성 보장
-        # 경로 A(_reply_with_pm_chat)는 [TEAM:] 태그를 _handle_collab_tags()로 처리하지만,
-        # 경로 B는 _synthesize_and_act에서 subtasks의 assigned_dept를 직접 렌더링해야 한다.
+        # 팀 구성 헤더 — 미렌더링 (T-aiorg_pm_bot-700)
+        # 사용자 요청에 따라 PM 위임 보고서에서 팀 구성 헤더를 표시하지 않도록 변경.
         _synthesis_team_header = ""
-        try:
-            from tools.agent_parser import render_team_header as _render_team_header
-            _dept_ids = [
-                st.get("assigned_dept", "")
-                for st in subtasks
-                if st.get("assigned_dept")
-            ]
-            # 중복 제거(순서 유지)
-            _seen: list[str] = []
-            for _d in _dept_ids:
-                if _d not in _seen:
-                    _seen.append(_d)
-            if _seen:
-                _header_text = _render_team_header(_seen)
-                if _header_text:
-                    _synthesis_team_header = _header_text + "\n\n"
-        except Exception as _team_err:
-            logger.debug(f"[PM] 팀 헤더 렌더링 실패 (무시): {_team_err}")
 
         if synthesis.judgment == SynthesisJudgment.SUFFICIENT:
             report = _synthesis_team_header + user_friendly_report

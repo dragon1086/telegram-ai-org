@@ -486,16 +486,13 @@ async def test_synthesize_and_act_includes_team_header_sufficient(setup, monkeyp
     assert final_reports, "최종 보고 메시지가 전송되지 않음"
 
     report_msg = final_reports[0]
-    # 팀 구성 헤더가 포함되어야 한다
-    assert "🏗️" in report_msg or "팀 구성" in report_msg, (
-        f"팀 구성 헤더가 보고 메시지에 없음. 실제: {report_msg[:300]}"
+    # 팀 구성 헤더가 노출되지 않아야 한다 (T-aiorg_pm_bot-700 — PM 위임 보고 헤더 미렌더링)
+    assert "🏗️" not in report_msg and "팀 구성" not in report_msg, (
+        f"팀 구성 헤더가 보고 메시지에 노출됨. 실제: {report_msg[:300]}"
     )
-    # 두 부서 모두 언급되어야 한다
-    assert "aiorg_research_bot" in report_msg or "리서치" in report_msg, (
-        "리서치 부서가 팀 헤더에 미포함"
-    )
-    assert "aiorg_engineering_bot" in report_msg or "개발" in report_msg, (
-        "개발 부서가 팀 헤더에 미포함"
+    # 최종 보고서 내용이 전달되어야 한다
+    assert "최종 보고서 내용입니다." in report_msg, (
+        f"최종 보고서 내용이 전달되지 않음. 실제: {report_msg[:300]}"
     )
 
 
@@ -577,8 +574,9 @@ async def test_synthesize_and_act_includes_team_header_insufficient(setup, monke
     assert insufficient_msgs, "INSUFFICIENT 알림이 전송되지 않음"
 
     msg = insufficient_msgs[0]
-    assert "🏗️" in msg or "팀 구성" in msg, (
-        f"INSUFFICIENT 알림에 팀 구성 헤더가 없음. 실제: {msg[:300]}"
+    # 팀 구성 헤더가 노출되지 않아야 한다 (T-aiorg_pm_bot-700)
+    assert "🏗️" not in msg and "팀 구성" not in msg, (
+        f"INSUFFICIENT 알림에 팀 구성 헤더가 노출됨. 실제: {msg[:300]}"
     )
 
 
@@ -628,14 +626,15 @@ async def test_synthesize_and_act_includes_team_header_conflicting(setup, monkey
     assert conflicting_msgs, "CONFLICTING 알림이 전송되지 않음"
 
     msg = conflicting_msgs[0]
-    assert "🏗️" in msg or "팀 구성" in msg, (
-        f"CONFLICTING 알림에 팀 구성 헤더가 없음. 실제: {msg[:300]}"
+    # 팀 구성 헤더가 노출되지 않아야 한다 (T-aiorg_pm_bot-700)
+    assert "🏗️" not in msg and "팀 구성" not in msg, (
+        f"CONFLICTING 알림에 팀 구성 헤더가 노출됨. 실제: {msg[:300]}"
     )
 
 
 @pytest.mark.asyncio
 async def test_synthesize_and_act_includes_team_header_needs_integration(setup, monkeypatch):
-    """경로 B NEEDS_INTEGRATION: 통합 보고 메시지에도 팀 구성 헤더가 포함되어야 한다."""
+    """경로 B NEEDS_INTEGRATION: 통합 보고 메시지에 팀 구성 헤더가 없어야 한다 (T-aiorg_pm_bot-700)."""
     from unittest.mock import AsyncMock, patch
 
     from core.result_synthesizer import SynthesisJudgment, SynthesisResult
@@ -678,6 +677,7 @@ async def test_synthesize_and_act_includes_team_header_needs_integration(setup, 
     assert integration_msgs, "NEEDS_INTEGRATION 보고 메시지가 전송되지 않음"
 
     msg = integration_msgs[0]
-    assert "🏗️" in msg or "팀 구성" in msg, (
-        f"NEEDS_INTEGRATION 보고에 팀 구성 헤더가 없음. 실제: {msg[:300]}"
+    # 팀 구성 헤더가 노출되지 않아야 한다 (T-aiorg_pm_bot-700)
+    assert "🏗️" not in msg and "팀 구성" not in msg, (
+        f"NEEDS_INTEGRATION 보고에 팀 구성 헤더가 노출됨. 실제: {msg[:300]}"
     )
