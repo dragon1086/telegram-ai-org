@@ -12,6 +12,7 @@ from tools.base_runner import BaseRunner, RunContext, RunnerError, RunnerTimeout
 
 GEMINI_CLI = os.environ.get("GEMINI_CLI_PATH", "gemini")
 DEFAULT_TIMEOUT = int(os.environ.get("GEMINI_CLI_DEFAULT_TIMEOUT_SEC", "1800"))
+GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
 
 # Gemini CLI가 stdout에 출력하는 노이즈 라인 (소문자 비교)
 _NOISE_LINE_PREFIXES = (
@@ -55,9 +56,27 @@ class GeminiCLIRunner(BaseRunner):
         self._last_metrics: dict[str, int | str] = {}
 
     async def run(self, ctx: RunContext) -> str:
-        """프롬프트를 실행하고 결과 텍스트를 반환한다."""
+        """프롬프트를 실행하고 결과 텍스트를 반환한다.
+
+        Preview 모델 실패 시 GEMINI_FALLBACK_MODEL(기본값: gemini-2.5-flash GA)로 자동 재시도한다.
+        """
         model = (ctx.engine_config or {}).get("model")
 
+        try:
+            return await self._run_with_model(ctx, model)
+        except RunnerError as exc:
+            # Preview 모델이 지정된 경우에만 폴백 시도
+            fallback = GEMINI_FALLBACK_MODEL
+            if model and model != fallback:
+                logger.warning(
+                    f"[FALLBACK] Preview 모델 실패 → {fallback}(GA) 로 전환 "
+                    f"(원인: {exc})"
+                )
+                return await self._run_with_model(ctx, fallback)
+            raise
+
+    async def _run_with_model(self, ctx: RunContext, model: str | None) -> str:
+        """지정된 모델로 Gemini CLI를 실행하고 결과 텍스트를 반환한다."""
         cmd = [self.cli_path, "-p", ctx.prompt, "--output-format", "json"]
         if model:
             cmd += ["--model", model]
@@ -70,7 +89,10 @@ class GeminiCLIRunner(BaseRunner):
         }
 
         workdir = ctx.workdir or os.getcwd()
-        logger.debug(f"[GeminiCLI] 실행: 프롬프트 {len(ctx.prompt)}자, cwd={workdir}")
+        model_label = model or "(기본)"
+        logger.debug(
+            f"[GeminiCLI] 실행: 프롬프트 {len(ctx.prompt)}자, model={model_label}, cwd={workdir}"
+        )
 
         try:
             proc = await asyncio.create_subprocess_exec(

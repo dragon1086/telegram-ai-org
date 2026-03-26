@@ -19,7 +19,7 @@ from core.orchestration_config import load_orchestration_config
 from core.orchestration_runbook import OrchestrationRunbook
 from core.pm_decision import DecisionClientProtocol
 from core.pm_identity import PMIdentity
-from core.result_synthesizer import ResultSynthesizer, SynthesisJudgment
+from core.result_synthesizer import ResultSynthesizer, SynthesisJudgment, SynthesisResult
 from core.staleness_checker import StalenessChecker
 from core.structured_prompt import StructuredPromptGenerator
 from core.task_graph import TaskGraph
@@ -45,6 +45,10 @@ class SubTask:
     task_type: str | None = None
     # 파일·코드 변경 허용 여부 (실행형=True, 사고형=False)
     allow_file_change: bool | None = None
+    # 태스크 메타데이터 (회의 브로드캐스트·오케스트레이션 컨텍스트 전달용)
+    expected_output: str = ""    # 예상 출력 형태/내용 힌트
+    rationale: str = ""          # 이 태스크를 배분하는 이유
+    priority: str = "medium"     # 우선순위: low | medium | high
 
 
 @dataclass
@@ -103,6 +107,136 @@ async def _record_bot_perf(
         )
     except Exception as _perf_err:
         logger.warning(f"[PM] bot_performance 기록 실패 (무시): {_perf_err}")
+
+
+# ── 2-pass 위임 판단 헬퍼 ────────────────────────────────────────────────────
+
+def _infer_dept_from_text(text: str) -> str | None:
+    """태스크 설명 텍스트에서 대상 부서를 키워드 매칭으로 추론한다.
+
+    반환값은 KNOWN_DEPTS에 등록된 org_id 문자열이거나 None.
+    """
+    text_lower = text.lower()
+    _DEPT_KEYWORDS: dict[str, list[str]] = {
+        "aiorg_ops_bot": [
+            "운영실", "운영", "배포", "deploy", "크론", "cron",
+            "infra", "인프라", "모니터링", "watchdog", "ops",
+            "restart", "재시작", "서버",
+        ],
+        "aiorg_engineering_bot": [
+            "개발실", "개발", "코드", "code", "구현", "implement",
+            "버그", "fix", "engineering", "api", "스크립트",
+        ],
+        "aiorg_design_bot": [
+            "디자인실", "디자인", "design", "ui", "ux", "와이어프레임",
+        ],
+        "aiorg_product_bot": [
+            "기획실", "기획", "product", "prd", "요구사항", "기능 정의",
+        ],
+        "aiorg_growth_bot": [
+            "성장실", "성장", "growth", "마케팅", "marketing", "지표",
+        ],
+        "aiorg_research_bot": [
+            "리서치실", "리서치", "research", "조사", "분석", "시장",
+        ],
+    }
+    for dept, keywords in _DEPT_KEYWORDS.items():
+        if any(kw in text_lower for kw in keywords):
+            return dept
+    return None
+
+
+def should_delegate_further(
+    synthesis: "SynthesisResult",
+    report_text: str = "",
+) -> list[dict]:
+    """PM 합성 후 추가 위임이 필요한 태스크 목록을 반환한다 (2-pass 판단).
+
+    기존 synthesis.follow_up_tasks (LLM FOLLOW_UP: 줄 파싱 결과)와
+    보고서 본문 내 [COLLAB:...] 태그를 모두 수집하여 중복 없이 합산한다.
+
+    COLLAB 태그 예시: "[COLLAB:크론 중복 삭제 후 단일 운영|맥락: daily_ai_news 중복]"
+    → 태그 내 텍스트에서 대상 부서를 키워드로 추론.
+
+    Args:
+        synthesis: ResultSynthesizer.synthesize() 반환값
+        report_text: PM 합성 보고서 텍스트 (COLLAB 태그 소스)
+
+    Returns:
+        [{"dept": org_id, "description": task_description}, ...] 리스트.
+        빈 리스트 반환 시 추가 위임 불필요.
+    """
+    from core.collab_dispatcher import parse_collab_tags
+
+    results: list[dict] = list(synthesis.follow_up_tasks)  # 기존 FOLLOW_UP 태스크
+    seen_keys: set[tuple[str, str]] = {
+        (ft["dept"], ft["description"][:80]) for ft in results
+    }
+
+    # 보고서 내 [COLLAB:...] 태그 파싱
+    if report_text:
+        collab_tags = parse_collab_tags(report_text)
+        for tag in collab_tags:
+            task_desc = tag["task"].strip()
+            context_text = tag.get("context", "")
+            # 대상 부서 추론: task + context 텍스트 합산
+            combined = task_desc + " " + context_text
+            target_dept = _infer_dept_from_text(combined)
+            if not target_dept:
+                logger.debug(
+                    f"[PM 2-pass] COLLAB 태그 부서 추론 실패, skip: {task_desc[:60]}"
+                )
+                continue
+            key = (target_dept, task_desc[:80])
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            results.append({"dept": target_dept, "description": task_desc})
+            logger.info(
+                f"[PM 2-pass] COLLAB 태그 → 추가 위임 감지: "
+                f"{target_dept} ← {task_desc[:60]}"
+            )
+
+    return results
+
+
+def aggregate_results(
+    first_pass_subtasks: list[dict],
+    second_pass_subtasks: list[dict],
+    original_request: str = "",
+) -> str:
+    """1차 + 2차 위임 결과를 합산 요약 문자열로 반환한다.
+
+    ResultSynthesizer가 이미 모든 서브태스크를 통합 합성하므로
+    이 함수는 주로 로깅·테스트·디버깅 목적으로 사용한다.
+
+    Args:
+        first_pass_subtasks:  1차 위임 완료 서브태스크 딕셔너리 목록
+        second_pass_subtasks: 2차 추가 위임 완료 서브태스크 딕셔너리 목록
+        original_request:    원본 사용자 요청 텍스트
+
+    Returns:
+        "[2-pass 결과 합산: 1차 N개 + 2차 M개]\\n..." 형식 요약 문자열
+    """
+    from core.constants import KNOWN_DEPTS
+
+    lines: list[str] = [
+        f"[2-pass 결과 합산: 1차 {len(first_pass_subtasks)}개 + 2차 {len(second_pass_subtasks)}개]"
+    ]
+    if original_request:
+        lines.append(f"원본 요청: {original_request[:200]}")
+    lines.append("")
+
+    first_set: set[str] = {t.get("id", "") for t in first_pass_subtasks}
+    all_tasks = first_pass_subtasks + second_pass_subtasks
+    for task in all_tasks:
+        dept = task.get("assigned_dept", "unknown")
+        dept_name = KNOWN_DEPTS.get(dept, dept)
+        result = (task.get("result") or "(결과 없음)").strip()[:300]
+        pass_label = "1차" if task.get("id", "") in first_set else "2차"
+        lines.append(f"[{pass_label} | {dept_name}]\n{result}")
+
+    return "\n\n".join(lines)
 
 
 class PMOrchestrator:
@@ -1834,6 +1968,80 @@ class PMOrchestrator:
             await self._discussion_summarize(parent_task_id, subtasks, chat_id)
             return
 
+        # ── COLLAB 재진입 Judgment Gate ─────────────────────────────────────
+        # COLLAB 서브태스크가 있으면 각 결과를 PMJudgmentGate로 평가한다.
+        # APPROVE → 기존 합성 진행, REJECT → 동일 부서 재작업, REROUTE → 타 부서 디스패치
+        collab_subtasks = [s for s in subtasks if (s.get("metadata") or {}).get("collab")]
+        if collab_subtasks:
+            try:
+                from core.pm_judgment_gate import JudgmentVerdict, PMJudgmentGate
+                gate = PMJudgmentGate()
+                rework_dispatched = False
+                for st in collab_subtasks:
+                    st_result = (st.get("result") or "").strip()
+                    st_desc = st.get("description") or ""
+                    st_meta = st.get("metadata") or {}
+                    judgment = await gate.evaluate(
+                        task_description=st_desc,
+                        result=st_result,
+                        context=st_meta.get("collab_context", ""),
+                        decision_client=self._decision_client,
+                    )
+                    logger.info(
+                        f"[PMJudgmentGate] {st.get('id', '?')} → {judgment.verdict.value}: {judgment.reasoning}"
+                    )
+                    if judgment.verdict == JudgmentVerdict.REJECT:
+                        # 동일 부서 재작업 디스패치
+                        rework_task_id = await self._next_task_id()
+                        rework_desc = (
+                            f"[재작업 요청] 이전 결과가 불충분합니다.\n"
+                            f"사유: {judgment.reasoning}\n"
+                            f"보완 지시: {judgment.rework_prompt}\n\n"
+                            f"원본 태스크: {st_desc[:300]}"
+                        )
+                        await self._db.create_pm_task(
+                            task_id=rework_task_id,
+                            description=rework_desc,
+                            assigned_dept=st.get("assigned_dept", ""),
+                            created_by=self._org_id,
+                            parent_id=parent_task_id,
+                            metadata={
+                                "collab": True,
+                                "collab_rework": True,
+                                "original_subtask_id": st.get("id", ""),
+                            },
+                        )
+                        await self._send(
+                            chat_id,
+                            f"⚠️ [PMJudgmentGate] 결과 불충분 → {st.get('assigned_dept','?')} 재작업 배정\n"
+                            f"사유: {judgment.reasoning}",
+                        )
+                        rework_dispatched = True
+                        logger.info(f"[PMJudgmentGate] REJECT → 재작업 {rework_task_id} 생성")
+                    elif judgment.verdict == JudgmentVerdict.REROUTE and judgment.suggested_dept:
+                        # 타 부서 재라우팅
+                        reroute_task_id = await self.collab_dispatch(
+                            parent_task_id=parent_task_id,
+                            task=st_desc,
+                            target_org=judgment.suggested_dept,
+                            requester_org=self._org_id,
+                            context=f"[PMJudgmentGate 재라우팅] {judgment.reasoning}",
+                            chat_id=chat_id,
+                        )
+                        await self._send(
+                            chat_id,
+                            f"🔀 [PMJudgmentGate] 재라우팅 → {judgment.suggested_dept}\n"
+                            f"사유: {judgment.reasoning}",
+                        )
+                        rework_dispatched = True
+                        logger.info(f"[PMJudgmentGate] REROUTE → {judgment.suggested_dept} | {reroute_task_id}")
+                if rework_dispatched:
+                    # 재작업/재라우팅이 생겼으면 현재 합성 중단 (완료 후 재합성)
+                    return
+            except Exception as _gate_err:
+                logger.warning(f"[PMJudgmentGate] 게이트 처리 중 오류 (무시, 합성 계속): {_gate_err}")
+        # ── /COLLAB 재진입 Judgment Gate ─────────────────────────────────────
+
         synthesis = await self._synthesizer.synthesize(original_request, subtasks)
         logger.info(
             f"[PM] 결과 합성: {parent_task_id} → {synthesis.judgment.value}"
@@ -1924,19 +2132,28 @@ class PMOrchestrator:
                     "⚠️ **보고서 불일치 감지**: 보고서에 후속 태스크를 접수했다고 기재되어 있으나 "
                     "실제 등록된 태스크가 없습니다. 보고서 내용을 검토하고 필요한 작업을 명시적으로 요청해 주세요.",
                 )
-            # 향후 계획/추가 작업이 있으면 자동 실행 (LLM이 FOLLOW_UP으로 추출한 것)
-            if synthesis.follow_up_tasks:
+            # 2-pass 위임 판단: synthesis FOLLOW_UP 라인 + 보고서 내 COLLAB 태그 통합 처리
+            # should_delegate_further()가 두 소스를 합산·중복 제거하여 반환한다.
+            _follow_up_all = should_delegate_further(synthesis, user_friendly_report)
+            if _follow_up_all:
                 follow_ups = [
                     SubTask(
                         description=ft["description"],
                         assigned_dept=ft["dept"],
                         workdir=parent_workdir,
                     )
-                    for ft in synthesis.follow_up_tasks
+                    for ft in _follow_up_all
                 ]
+                _2pass_depts = ", ".join(
+                    sorted({ft["dept"] for ft in _follow_up_all})
+                )
                 await self._send(
                     chat_id,
-                    f"📋 향후 계획 {len(follow_ups)}건 자동 실행 중..."
+                    f"📋 2-pass 추가 위임: {len(follow_ups)}건 자동 실행 중... ({_2pass_depts})",
+                )
+                # aggregate_results 로그 (디버깅·감사용)
+                logger.info(
+                    aggregate_results(subtasks, follow_ups, original_request)[:400]
                 )
                 await self._db.update_pm_task_status(
                     parent_task_id, "done", result=report,
