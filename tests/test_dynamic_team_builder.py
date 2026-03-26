@@ -79,9 +79,10 @@ async def test_build_team_prefers_decision_client(tmp_path: Path) -> None:
 async def test_fallback_team_uses_multimodal_lane(tmp_path: Path) -> None:
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir()
-    _write_agent(agents_dir, "designer", "Understands visuals")
-    _write_agent(agents_dir, "analyst", "Analyzes requirements")
-    _write_agent(agents_dir, "document-specialist", "Reads documents well")
+    # 실제 페르소나명으로 fake agent 파일 생성
+    _write_agent(agents_dir, "design-ui-designer", "Understands visuals and UI design")
+    _write_agent(agents_dir, "data-analytics-reporter", "Analyzes requirements and data")
+    _write_agent(agents_dir, "specialized-document-generator", "Reads and generates documents")
 
     catalog = AgentCatalog(agents_dir=agents_dir)
     catalog.load()
@@ -92,7 +93,10 @@ async def test_fallback_team_uses_multimodal_lane(tmp_path: Path) -> None:
     config = await builder.build_team("[첨부 입력]\n- 종류: photo\n- MIME: image/jpeg", preferred_engine="claude-code")
 
     assert config.execution_mode.value == "agent_teams"
-    assert {persona.name for persona in config.agents} & {"designer", "analyst", "document-specialist"}
+    # 실제 페르소나명으로 검증
+    assert {persona.name for persona in config.agents} & {
+        "design-ui-designer", "data-analytics-reporter", "specialized-document-generator"
+    }
 
 
 # ── Change 1: _build_team_system_prompt 동적 주입 ───────────────────────────
@@ -114,7 +118,8 @@ def test_build_team_system_prompt_injects_real_names() -> None:
 def test_build_team_system_prompt_uses_fallback_when_empty() -> None:
     """에이전트 이름 목록이 비어 있으면 폴백 상수를 사용해야 한다."""
     prompt = _build_team_system_prompt([])
-    assert "executor" in prompt  # 폴백 상수에 포함된 이름
+    # 폴백 상수는 이제 실제 페르소나명을 사용한다 (추상명 executor 는 제거됨)
+    assert "engineering-senior-developer" in prompt  # 폴백 상수에 포함된 실제 페르소나명
 
 
 @pytest.mark.asyncio
