@@ -1895,8 +1895,31 @@ class PMOrchestrator:
             + ", ".join(f"`{n}`" for n in _artifact_names)
         ) if _artifact_names else ""
 
+        # 팀 구성 헤더 생성 — 경로 B (다부서 합성) 팀 가시성 보장
+        # 경로 A(_reply_with_pm_chat)는 [TEAM:] 태그를 _handle_collab_tags()로 처리하지만,
+        # 경로 B는 _synthesize_and_act에서 subtasks의 assigned_dept를 직접 렌더링해야 한다.
+        _synthesis_team_header = ""
+        try:
+            from tools.agent_parser import render_team_header as _render_team_header
+            _dept_ids = [
+                st.get("assigned_dept", "")
+                for st in subtasks
+                if st.get("assigned_dept")
+            ]
+            # 중복 제거(순서 유지)
+            _seen: list[str] = []
+            for _d in _dept_ids:
+                if _d not in _seen:
+                    _seen.append(_d)
+            if _seen:
+                _header_text = _render_team_header(_seen)
+                if _header_text:
+                    _synthesis_team_header = _header_text + "\n\n"
+        except Exception as _team_err:
+            logger.debug(f"[PM] 팀 헤더 렌더링 실패 (무시): {_team_err}")
+
         if synthesis.judgment == SynthesisJudgment.SUFFICIENT:
-            report = user_friendly_report
+            report = _synthesis_team_header + user_friendly_report
             _artifact_suffix = (
                 f"\n\n---\n📎 첨부: {', '.join(f'`{Path(p).name}`' for p in _all_artifact_paths if p)}"
                 if _all_artifact_paths else ""
@@ -1966,7 +1989,7 @@ class PMOrchestrator:
                     await self._send(
                         chat_id,
                         f"⚠️ 결과 부족 — 추가 작업 배분 중... (재작업 {new_rework_count}/{MAX_REWORK_RETRIES})\n"
-                        f"사유: {synthesis.reasoning}\n\n{user_friendly_report}\n\n"
+                        f"사유: {synthesis.reasoning}\n\n{_synthesis_team_header}{user_friendly_report}\n\n"
                         f"현재까지의 통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
                     )
                 except Exception as _send_err:
@@ -2018,7 +2041,7 @@ class PMOrchestrator:
                     await self._send(
                         chat_id,
                         f"⚠️ 자동 보완 한계 ({MAX_REWORK_RETRIES}회) 도달. 현재 최선의 결과를 전달합니다.\n\n"
-                        f"{user_friendly_report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
+                        f"{_synthesis_team_header}{user_friendly_report}\n\n통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
                     )
                 except Exception as _send_err:
                     logger.warning(
@@ -2038,7 +2061,7 @@ class PMOrchestrator:
             await self._send(
                 chat_id,
                 f"⚠️ 부서 간 결과 충돌 감지\n"
-                f"사유: {synthesis.reasoning}\n\n{user_friendly_report}\n\n"
+                f"사유: {synthesis.reasoning}\n\n{_synthesis_team_header}{user_friendly_report}\n\n"
                 f"조율이 필요합니다.\n현재 통합 보고서를 첨부합니다.\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
             )
             if run_id:
@@ -2057,7 +2080,7 @@ class PMOrchestrator:
                 except Exception as _ge:
                     logger.warning(f"[PM] Goal 상태 업데이트 실패 {parent_task_id}: {_ge}")
         else:  # NEEDS_INTEGRATION
-            report = user_friendly_report
+            report = _synthesis_team_header + user_friendly_report
             _artifact_suffix = (
                 f"\n\n---\n📎 첨부: {', '.join(f'`{Path(p).name}`' for p in _all_artifact_paths if p)}"
                 if _all_artifact_paths else ""

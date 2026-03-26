@@ -435,3 +435,249 @@ async def test_dispatch_sequential_research_eng_ops(setup):
     await orch.on_task_complete(eng_id, "개발 완료", chat_id=-123)
     third_wave_msgs = [call[0][1] for call in send_fn.call_args_list]
     assert any("aiorg_ops_bot" in m for m in third_wave_msgs), "개발 완료 후 운영실 미발송"
+
+
+# ── 팀 구성 가시성 버그(T-669) 수정 검증: 경로 B (다부서 합성 최종 보고) ──────────────────
+
+
+@pytest.mark.asyncio
+async def test_synthesize_and_act_includes_team_header_sufficient(setup, monkeypatch):
+    """경로 B(다부서 합성 SUFFICIENT): 최종 보고 메시지에 팀 구성 헤더가 포함되어야 한다."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from core.result_synthesizer import SynthesisJudgment, SynthesisResult
+
+    orch, db, send_fn = setup
+
+    parent_id = "T-team-header-test"
+    await db.create_pm_task(parent_id, "다부서 테스트 요청", None, "aiorg_pm_bot")
+
+    subtasks_data = [
+        {
+            "task_id": "T-sub-1",
+            "description": "리서치",
+            "assigned_dept": "aiorg_research_bot",
+            "status": "done",
+            "result": "리서치 결과입니다.",
+            "metadata": {},
+        },
+        {
+            "task_id": "T-sub-2",
+            "description": "개발",
+            "assigned_dept": "aiorg_engineering_bot",
+            "status": "done",
+            "result": "개발 결과입니다.",
+            "metadata": {},
+        },
+    ]
+
+    mock_synthesis = SynthesisResult(
+        judgment=SynthesisJudgment.SUFFICIENT,
+        summary="통합 요약",
+        unified_report="최종 보고서 내용입니다.",
+    )
+
+    with patch.object(orch._synthesizer, "synthesize", new=AsyncMock(return_value=mock_synthesis)):
+        await orch._synthesize_and_act(parent_id, subtasks_data, chat_id=-999)
+
+    all_sent = [call[0][1] for call in send_fn.call_args_list]
+    # 최종 보고 메시지(ARTIFACT 마커 포함)
+    final_reports = [m for m in all_sent if "최종 보고서 내용입니다." in m or "[ARTIFACT:" in m]
+    assert final_reports, "최종 보고 메시지가 전송되지 않음"
+
+    report_msg = final_reports[0]
+    # 팀 구성 헤더가 포함되어야 한다
+    assert "🏗️" in report_msg or "팀 구성" in report_msg, (
+        f"팀 구성 헤더가 보고 메시지에 없음. 실제: {report_msg[:300]}"
+    )
+    # 두 부서 모두 언급되어야 한다
+    assert "aiorg_research_bot" in report_msg or "리서치" in report_msg, (
+        "리서치 부서가 팀 헤더에 미포함"
+    )
+    assert "aiorg_engineering_bot" in report_msg or "개발" in report_msg, (
+        "개발 부서가 팀 헤더에 미포함"
+    )
+
+
+@pytest.mark.asyncio
+async def test_synthesize_and_act_team_header_absent_when_no_depts(setup, monkeypatch):
+    """서브태스크에 assigned_dept가 없으면 팀 헤더가 없어도 오류가 발생하지 않는다."""
+    from unittest.mock import AsyncMock, patch
+
+    from core.result_synthesizer import SynthesisJudgment, SynthesisResult
+
+    orch, db, send_fn = setup
+
+    parent_id = "T-no-dept-test"
+    await db.create_pm_task(parent_id, "부서 없는 테스트", None, "aiorg_pm_bot")
+
+    subtasks_data = [
+        {
+            "task_id": "T-sub-nd",
+            "description": "작업",
+            "assigned_dept": "",
+            "status": "done",
+            "result": "결과",
+            "metadata": {},
+        },
+    ]
+
+    mock_synthesis = SynthesisResult(
+        judgment=SynthesisJudgment.SUFFICIENT,
+        summary="요약",
+        unified_report="보고서",
+    )
+
+    # render_team_header가 빈 리스트로 호출되어도 예외 없이 처리되어야 한다
+    with patch.object(orch._synthesizer, "synthesize", new=AsyncMock(return_value=mock_synthesis)):
+        await orch._synthesize_and_act(parent_id, subtasks_data, chat_id=-999)
+
+    # 최소한 보고서가 전송됐는지 확인 (팀 헤더 없이도 오류 없음)
+    all_sent = [call[0][1] for call in send_fn.call_args_list]
+    assert any("보고서" in m for m in all_sent), "보고서가 전송되지 않음"
+
+
+@pytest.mark.asyncio
+async def test_synthesize_and_act_includes_team_header_insufficient(setup, monkeypatch):
+    """경로 B INSUFFICIENT: 재작업 알림 메시지에도 팀 구성 헤더가 포함되어야 한다."""
+    from unittest.mock import AsyncMock, patch
+
+    from core.result_synthesizer import SynthesisJudgment, SynthesisResult
+
+    orch, db, send_fn = setup
+
+    parent_id = "T-insufficient-header"
+    await db.create_pm_task(parent_id, "부족 결과 테스트", None, "aiorg_pm_bot")
+
+    subtasks_data = [
+        {
+            "task_id": "T-sub-ins",
+            "description": "작업",
+            "assigned_dept": "aiorg_design_bot",
+            "status": "done",
+            "result": "미흡한 결과",
+            "metadata": {},
+        },
+    ]
+
+    mock_synthesis = SynthesisResult(
+        judgment=SynthesisJudgment.INSUFFICIENT,
+        summary="부족 요약",
+        unified_report="부족 보고서",
+        reasoning="결과가 충분하지 않습니다.",
+        follow_up_tasks=[{"dept": "aiorg_design_bot", "description": "보완 작업"}],
+    )
+
+    with patch.object(orch._synthesizer, "synthesize", new=AsyncMock(return_value=mock_synthesis)):
+        await orch._synthesize_and_act(parent_id, subtasks_data, chat_id=-999)
+
+    all_sent = [call[0][1] for call in send_fn.call_args_list]
+    # INSUFFICIENT 알림 메시지 확인
+    insufficient_msgs = [m for m in all_sent if "결과 부족" in m or "재작업" in m]
+    assert insufficient_msgs, "INSUFFICIENT 알림이 전송되지 않음"
+
+    msg = insufficient_msgs[0]
+    assert "🏗️" in msg or "팀 구성" in msg, (
+        f"INSUFFICIENT 알림에 팀 구성 헤더가 없음. 실제: {msg[:300]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_synthesize_and_act_includes_team_header_conflicting(setup, monkeypatch):
+    """경로 B CONFLICTING: 충돌 알림 메시지에도 팀 구성 헤더가 포함되어야 한다."""
+    from unittest.mock import AsyncMock, patch
+
+    from core.result_synthesizer import SynthesisJudgment, SynthesisResult
+
+    orch, db, send_fn = setup
+
+    parent_id = "T-conflicting-header"
+    await db.create_pm_task(parent_id, "충돌 결과 테스트", None, "aiorg_pm_bot")
+
+    subtasks_data = [
+        {
+            "task_id": "T-sub-c1",
+            "description": "작업A",
+            "assigned_dept": "aiorg_engineering_bot",
+            "status": "done",
+            "result": "방안 A",
+            "metadata": {},
+        },
+        {
+            "task_id": "T-sub-c2",
+            "description": "작업B",
+            "assigned_dept": "aiorg_design_bot",
+            "status": "done",
+            "result": "방안 B",
+            "metadata": {},
+        },
+    ]
+
+    mock_synthesis = SynthesisResult(
+        judgment=SynthesisJudgment.CONFLICTING,
+        summary="충돌 요약",
+        unified_report="충돌 보고서 내용",
+        reasoning="두 부서가 상충하는 방향을 제시함",
+    )
+
+    with patch.object(orch._synthesizer, "synthesize", new=AsyncMock(return_value=mock_synthesis)):
+        await orch._synthesize_and_act(parent_id, subtasks_data, chat_id=-999)
+
+    all_sent = [call[0][1] for call in send_fn.call_args_list]
+    conflicting_msgs = [m for m in all_sent if "충돌" in m or "CONFLICTING" in m.upper()]
+    assert conflicting_msgs, "CONFLICTING 알림이 전송되지 않음"
+
+    msg = conflicting_msgs[0]
+    assert "🏗️" in msg or "팀 구성" in msg, (
+        f"CONFLICTING 알림에 팀 구성 헤더가 없음. 실제: {msg[:300]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_synthesize_and_act_includes_team_header_needs_integration(setup, monkeypatch):
+    """경로 B NEEDS_INTEGRATION: 통합 보고 메시지에도 팀 구성 헤더가 포함되어야 한다."""
+    from unittest.mock import AsyncMock, patch
+
+    from core.result_synthesizer import SynthesisJudgment, SynthesisResult
+
+    orch, db, send_fn = setup
+
+    parent_id = "T-needs-integration-header"
+    await db.create_pm_task(parent_id, "통합 필요 테스트", None, "aiorg_pm_bot")
+
+    subtasks_data = [
+        {
+            "task_id": "T-sub-ni1",
+            "description": "리서치 파트",
+            "assigned_dept": "aiorg_research_bot",
+            "status": "done",
+            "result": "리서치 결과 A",
+            "metadata": {},
+        },
+        {
+            "task_id": "T-sub-ni2",
+            "description": "기획 파트",
+            "assigned_dept": "aiorg_product_bot",
+            "status": "done",
+            "result": "기획 결과 B",
+            "metadata": {},
+        },
+    ]
+
+    mock_synthesis = SynthesisResult(
+        judgment=SynthesisJudgment.NEEDS_INTEGRATION,
+        summary="통합 필요 요약",
+        unified_report="통합이 필요한 보고서 내용",
+    )
+
+    with patch.object(orch._synthesizer, "synthesize", new=AsyncMock(return_value=mock_synthesis)):
+        await orch._synthesize_and_act(parent_id, subtasks_data, chat_id=-999)
+
+    all_sent = [call[0][1] for call in send_fn.call_args_list]
+    integration_msgs = [m for m in all_sent if "통합이 필요한 보고서" in m or "[ARTIFACT:" in m]
+    assert integration_msgs, "NEEDS_INTEGRATION 보고 메시지가 전송되지 않음"
+
+    msg = integration_msgs[0]
+    assert "🏗️" in msg or "팀 구성" in msg, (
+        f"NEEDS_INTEGRATION 보고에 팀 구성 헤더가 없음. 실제: {msg[:300]}"
+    )
