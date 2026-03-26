@@ -128,7 +128,7 @@ class AgentCatalog:
             logger.warning("agents_dir not found: {}", self._agents_dir)
             return
 
-        for md_path in sorted(self._agents_dir.glob("*.md")):
+        for md_path in sorted(self._agents_dir.rglob("*.md")):
             try:
                 persona = _parse_md(md_path)
                 self._personas[persona.name] = persona
