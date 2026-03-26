@@ -276,14 +276,17 @@ class MultibotMeetingHandler:
                     timeout=self._timeout / len(self._bots),
                 )
             else:
-                # request_bot_report 미설정 — 보고 없음으로 처리
-                # (채팅방에 스팸 메시지를 뿌리지 않음)
-                logger.debug(f"[MultibotHandler] {org_name}: request_bot_report 미설정, 보고 건너뜀")
-                report_text = ""
-                return BotReport(
-                    org_id=org_id, org_name=org_name,
-                    report_text="", success=False, error="request_bot_report 미설정",
+                # 기본: COLLAB 형식 메시지 전송 후 빈 보고 반환
+                # (실제 봇은 채널 메시지를 보고 자율적으로 응답)
+                type_label = _meeting_label(meeting_type)
+                await self._send(
+                    chat_id,
+                    f"🙋 도와줄 조직 찾아요!\n"
+                    f"발신: aiorg_pm_bot\n"
+                    f"요청: {org_name} {type_label} 현황 보고 (200자 이내)\n"
+                    f"📎 맥락: {type_label} 진행 중. 완료사항·진행중·블로커·계획 각 1~2줄.",
                 )
+                report_text = f"[{org_name}] 보고 요청 전송됨 — 봇 자율 응답 대기"
 
             return BotReport(
                 org_id=org_id,
