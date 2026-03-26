@@ -1924,9 +1924,37 @@ class PMOrchestrator:
                 f"\n\n---\n📎 첨부: {', '.join(f'`{Path(p).name}`' for p in _all_artifact_paths if p)}"
                 if _all_artifact_paths else ""
             )
+            # 완료보고 결론 하단에 투입 페르소나(참여 부서) 목록 추가
+            _persona_footer = ""
+            try:
+                from core.dynamic_team_builder import load_personas as _load_personas
+                _available_personas = set(_load_personas())
+                _dept_ids = [
+                    st.get("assigned_dept", "")
+                    for st in subtasks
+                    if st.get("assigned_dept")
+                ]
+                _unique_depts: list[str] = []
+                _seen_depts: set[str] = set()
+                for _d in _dept_ids:
+                    if _d not in _seen_depts:
+                        _seen_depts.add(_d)
+                        _unique_depts.append(_d)
+                if _unique_depts:
+                    # 실제 페르소나명과 교차 검색해 표시 (매핑 없으면 org_id 그대로)
+                    _persona_names = []
+                    for _dept in _unique_depts:
+                        if _dept in _available_personas:
+                            _persona_names.append(_dept)
+                        else:
+                            _dept_display = KNOWN_DEPTS.get(_dept, _dept)
+                            _persona_names.append(_dept_display)
+                    _persona_footer = f"\n\n**투입 페르소나**: {', '.join(_persona_names)}"
+            except Exception as _pf_err:
+                logger.debug(f"[PM] 투입 페르소나 footer 생성 실패 (무시): {_pf_err}")
             await self._send(
                 chat_id,
-                f"{report}{_artifact_suffix}\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
+                f"{report}{_persona_footer}{_artifact_suffix}\n[ARTIFACT:{artifact_path}]{subtask_artifact_markers}",
             )
             if run_id:
                 try:

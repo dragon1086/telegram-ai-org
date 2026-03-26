@@ -13,6 +13,26 @@ from core.agent_catalog import AgentCatalog, AgentPersona
 from core.pm_decision import DecisionClientProtocol
 
 
+def load_personas(agents_dir: Path | None = None) -> list[str]:
+    """~/.claude/agents 디렉토리의 .md 파일명(확장자 제외) 목록을 반환한다.
+
+    Args:
+        agents_dir: 페르소나 .md 파일이 있는 디렉토리. None이면 ~/.claude/agents 사용.
+
+    Returns:
+        파일명(stem) 목록. 디렉토리가 없거나 읽기 실패 시 빈 리스트.
+    """
+    target = agents_dir or (Path.home() / ".claude" / "agents")
+    if not target.exists():
+        logger.debug("load_personas: agents_dir not found: {}", target)
+        return []
+    try:
+        return sorted(p.stem for p in target.glob("*.md"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("load_personas: 디렉토리 읽기 실패 ({}): {}", target, exc)
+        return []
+
+
 class ExecutionMode(str, Enum):
     """팀 실행 모드."""
 
@@ -32,7 +52,25 @@ class TeamConfig:
     reasoning: str
 
 
-_TEAM_SYSTEM_PROMPT = """You are a PM (Project Manager) for an AI development team.
+_TEAM_SYSTEM_PROMPT_FALLBACK_AGENTS = (
+    "executor, debugger, architect, analyst, scientist, writer, "
+    "document-specialist, code-reviewer, security-reviewer, quality-reviewer, "
+    "test-engineer, verifier, qa-tester, planner, explore, designer, build-fixer, critic"
+)
+
+
+def _build_team_system_prompt(agent_names: list[str]) -> str:
+    """사용 가능한 에이전트 이름을 동적으로 주입해 팀 구성 LLM 프롬프트를 생성한다.
+
+    Args:
+        agent_names: AgentCatalog에서 로드된 실제 에이전트 이름 목록.
+                     비어 있으면 하드코딩된 폴백 목록을 사용한다.
+
+    Returns:
+        LLM에 전달할 시스템 프롬프트 문자열.
+    """
+    names_str = ", ".join(agent_names) if agent_names else _TEAM_SYSTEM_PROMPT_FALLBACK_AGENTS
+    return f"""You are a PM (Project Manager) for an AI development team.
 
 Given a task description, decide:
 1. Which agent personas to use and how many of each.
@@ -49,15 +87,13 @@ Engine rules:
 - "codex": only for simple sequential tasks (quick single-file changes, short answers)
 - "auto": when unsure or task complexity is mixed
 
-Available agent names: executor, debugger, architect, analyst, scientist, writer,
-document-specialist, code-reviewer, security-reviewer, quality-reviewer,
-test-engineer, verifier, qa-tester, planner, explore, designer, build-fixer, critic.
+Available agent names: {names_str}
 
 CRITICAL: You MUST respond with ONLY a single JSON object. No markdown, no explanation, no prose.
 Do NOT execute or answer the task — only decide the team composition.
 
 Output format (nothing else):
-{"agents": [{"name": "executor", "count": 2}, {"name": "analyst", "count": 1}], "execution_mode": "structured_team", "engine": "claude-code", "reasoning": "brief reason"}
+{{"agents": [{{"name": "executor", "count": 2}}, {{"name": "analyst", "count": 1}}], "execution_mode": "structured_team", "engine": "claude-code", "reasoning": "brief reason"}}
 
 Rules:
 - Use at most 3 distinct agent types.
@@ -200,9 +236,11 @@ class DynamicTeamBuilder:
                 f"Guidance: {guidance or 'none'}"
             )
             if self._decision_client is not None:
+                agent_names = [p.name for p in self._catalog.list_agents()]
+                system_prompt = _build_team_system_prompt(agent_names)
                 content = await self._decision_client.complete(
                     task_context,
-                    system_prompt=_TEAM_SYSTEM_PROMPT,
+                    system_prompt=system_prompt,
                 )
             logger.debug("LLM team build raw response (first 500 chars): {}", content[:500])
             data = _extract_json_from_response(content)
@@ -481,24 +519,98 @@ class DynamicTeamBuilder:
             reasoning=reasoning,
         )
 
-    def format_team_announcement(self, config: TeamConfig) -> str:
-        """Telegram 친화적인 팀 구성 안내 문자열을 반환한다.
+    # 추상 역할명 → 실제 페르소나명 후보 매핑 (우선순위 순)
+    _ABSTRACT_TO_PERSONA: dict[str, list[str]] = {
+        "executor": ["engineering-senior-developer", "engineering-rapid-prototyper", "engineering-backend-architect"],
+        "debugger": ["engineering-incident-response-commander", "engineering-code-reviewer"],
+        "architect": ["engineering-software-architect", "engineering-backend-architect"],
+        "analyst": ["data-analytics-reporter", "product-trend-researcher"],
+        "scientist": ["data-analytics-reporter", "product-behavioral-nudge-engine"],
+        "writer": ["engineering-technical-writer", "marketing-content-creator"],
+        "document-specialist": ["specialized-document-generator", "engineering-technical-writer"],
+        "code-reviewer": ["engineering-code-reviewer"],
+        "security-reviewer": ["engineering-security-engineer", "blockchain-security-auditor"],
+        "quality-reviewer": ["testing-reality-checker", "testing-tool-evaluator"],
+        "test-engineer": ["testing-api-tester", "testing-performance-benchmarker"],
+        "verifier": ["testing-evidence-collector", "testing-reality-checker"],
+        "qa-tester": ["testing-api-tester", "testing-workflow-optimizer"],
+        "planner": ["project-management-project-shepherd", "product-manager"],
+        "explore": ["product-trend-researcher", "academic-psychologist"],
+        "designer": ["design-ux-architect", "design-ui-designer"],
+        "build-fixer": ["engineering-rapid-prototyper", "engineering-git-workflow-master"],
+        "critic": ["testing-reality-checker", "specialized-model-qa"],
+    }
 
-        Example output:
-            🤖 팀 구성: executor×2 + analyst×1 (structured_team 모드)
+    def _resolve_persona_display_name(self, abstract_name: str, available_personas: set[str]) -> str:
+        """추상 역할명을 실제 페르소나명으로 변환한다.
+
+        available_personas에 후보가 없으면 추상명을 그대로 반환(폴백).
+
+        Args:
+            abstract_name: 추상 역할명 (예: "executor").
+            available_personas: ~/.claude/agents에서 로드한 실제 페르소나 파일명 집합.
+
+        Returns:
+            실제 페르소나명 또는 폴백 추상명.
+        """
+        candidates = self._ABSTRACT_TO_PERSONA.get(abstract_name, [])
+        for candidate in candidates:
+            if candidate in available_personas:
+                return candidate
+        # 추상명이 이미 실제 페르소나명인 경우 그대로 반환
+        if abstract_name in available_personas:
+            return abstract_name
+        # 폴백: 추상명 그대로
+        return abstract_name
+
+    def format_persona_footer(self, config: TeamConfig, *, agents_dir: Path | None = None) -> str:
+        """완료보고 결론 하단에 추가할 투입 페르소나 목록 문자열을 반환한다.
 
         Args:
             config: build_team()이 반환한 TeamConfig.
+            agents_dir: 페르소나 디렉토리. None이면 ~/.claude/agents 사용.
+
+        Returns:
+            투입 페르소나 목록 문자열. 페르소나 없으면 빈 문자열.
+        """
+        available = set(load_personas(agents_dir))
+        resolved = []
+        seen: set[str] = set()
+        for persona in config.agents:
+            display = self._resolve_persona_display_name(persona.name, available)
+            if display not in seen:
+                seen.add(display)
+                resolved.append(display)
+        if not resolved:
+            return ""
+        names_str = ", ".join(resolved)
+        return f"\n\n**투입 페르소나**: {names_str}"
+
+    def format_team_announcement(self, config: TeamConfig, *, agents_dir: Path | None = None) -> str:
+        """Telegram 친화적인 팀 구성 안내 문자열을 반환한다.
+
+        추상 역할명(executor, analyst 등) 대신 ~/.claude/agents의 실제 페르소나명을 표시한다.
+        매핑 실패 시 추상명을 그대로 사용(폴백).
+
+        Args:
+            config: build_team()이 반환한 TeamConfig.
+            agents_dir: 페르소나 디렉토리. None이면 ~/.claude/agents 사용.
 
         Returns:
             포맷된 문자열.
         """
-        # count occurrences of each agent name
+        available = set(load_personas(agents_dir))
+
+        # count occurrences of each agent name, resolving to real persona names
         counts: dict[str, int] = {}
         for persona in config.agents:
-            counts[persona.name] = counts.get(persona.name, 0) + 1
+            display = self._resolve_persona_display_name(persona.name, available)
+            counts[display] = counts.get(display, 0) + 1
 
-        parts = " + ".join(f"{name}×{cnt}" for name, cnt in counts.items())
+        parts = " + ".join(
+            f"{name}×{cnt}" if cnt > 1 else name
+            for name, cnt in counts.items()
+        )
         mode_label = config.execution_mode.value
         engine_label = {
             "claude-code": "Claude Code",

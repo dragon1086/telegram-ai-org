@@ -1126,6 +1126,31 @@ class TelegramRelay:
             backend = "tmux_batch"
         return backend
 
+    @staticmethod
+    def _format_team_header(team_config) -> str:
+        """team_config 에이전트 목록으로 응답 앞에 붙일 팀 구성 헤더를 생성한다.
+
+        예시:
+            [TEAM:engineering-senior-developer,testing-api-tester]
+            🏗️ 팀 구성
+            • engineering-senior-developer
+            • testing-api-tester
+        """
+        if not team_config or not getattr(team_config, "agents", None):
+            return ""
+        counts: dict[str, int] = {}
+        for persona in team_config.agents:
+            counts[persona.name] = counts.get(persona.name, 0) + 1
+        if not counts:
+            return ""
+        names = list(counts.keys())
+        team_tag = f"[TEAM:{','.join(names)}]"
+        members = "\n".join(
+            f"• {name}" + (f" ×{cnt}" if cnt > 1 else "")
+            for name, cnt in counts.items()
+        )
+        return f"{team_tag}\n🏗️ 팀 구성\n{members}"
+
     def _format_execution_brief(
         self,
         task: str,
@@ -2159,6 +2184,17 @@ class TelegramRelay:
                             original_request=request_text,
                             decision_client=self._pm_decision_client,
                         )
+                        # 완료보고 결론 하단에 투입 페르소나 목록 추가
+                        try:
+                            _persona_footer = self._team_builder.format_persona_footer(team_config)
+                            if _persona_footer:
+                                response = response + _persona_footer
+                        except Exception as _pf_err:
+                            logger.debug("투입 페르소나 footer 생성 실패 (무시): {}", _pf_err)
+                        # response 앞에 실제 팀 구성 헤더 주입
+                        _team_hdr = self._format_team_header(team_config)
+                        if _team_hdr:
+                            response = _team_hdr + "\n\n" + response
                         for chunk in split_message(response, 3800):  # HTML 태그 팽창 여유 (~4096 한도)
                             await self.display.send_reply(update.effective_message, chunk)
                         await self._auto_upload("\n".join(upload_candidates), self.token, update.effective_chat.id)
@@ -2404,6 +2440,10 @@ class TelegramRelay:
                 original_request=text,
                 decision_client=self._pm_decision_client if self._is_pm_org else None,
             )
+            # response 앞에 실제 팀 구성 헤더 주입
+            _team_hdr = self._format_team_header(team_config)
+            if _team_hdr:
+                response = _team_hdr + "\n\n" + response
             for chunk in split_message(response, 3800):  # HTML 태그 팽창 여유 (~4096 한도)
                 await self.display.send_reply(update.effective_message, chunk)
             await self._auto_upload("\n".join(upload_candidates), self.token, update.effective_chat.id)
