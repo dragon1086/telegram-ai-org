@@ -778,6 +778,14 @@ class PMOrchestrator:
         logger.info(f"[PM] 키워드 분해 결과: {len(subtasks)}개 서브태스크")
         return subtasks
 
+    # workdir로 사용하면 안 되는 경로 (에이전트 프롬프트 등에서 오염)
+    _WORKDIR_BLOCKLIST = {
+        str(Path.home() / ".claude"),
+        str(Path.home() / ".claude" / "agents"),
+        str(Path.home() / ".ai-org" / "agents"),
+        str(Path.home() / ".ai-org"),
+    }
+
     @staticmethod
     def _extract_workdir(user_message: str) -> str | None:
         for raw in re.findall(r"(?:(?<=\s)|^)(~?/[^ \t\r\n'\"`]+)", user_message):
@@ -785,6 +793,9 @@ class PMOrchestrator:
             if not candidate.exists():
                 continue
             target = candidate if candidate.is_dir() else candidate.parent
+            target_str = str(target.resolve())
+            if any(target_str.startswith(blocked) for blocked in PMOrchestrator._WORKDIR_BLOCKLIST):
+                continue
             repo_root = PMOrchestrator._find_repo_root(target)
             return str(repo_root or target)
         return None
@@ -1995,6 +2006,12 @@ class PMOrchestrator:
                     await self._db.update_pm_task_status(
                         parent_task_id, "done", result=synthesis.summary,
                     )
+                    if parent_task_id.startswith("G-"):
+                        try:
+                            await self._db.update_goal(parent_task_id, status="completed")
+                            logger.info(f"[PM] Goal {parent_task_id} → completed (insufficient, no follow-up)")
+                        except Exception as _ge:
+                            logger.warning(f"[PM] Goal 상태 업데이트 실패 {parent_task_id}: {_ge}")
             else:
                 # 최대 재시도 횟수 도달 — 최선의 결과로 done 처리
                 try:
@@ -2011,6 +2028,12 @@ class PMOrchestrator:
                 await self._db.update_pm_task_status(
                     parent_task_id, "done", result=synthesis.summary,
                 )
+                if parent_task_id.startswith("G-"):
+                    try:
+                        await self._db.update_goal(parent_task_id, status="max_iterations_reached")
+                        logger.info(f"[PM] Goal {parent_task_id} → max_iterations_reached (insufficient)")
+                    except Exception as _ge:
+                        logger.warning(f"[PM] Goal 상태 업데이트 실패 {parent_task_id}: {_ge}")
         elif synthesis.judgment == SynthesisJudgment.CONFLICTING:
             await self._send(
                 chat_id,
