@@ -637,6 +637,7 @@ class DynamicTeamBuilder:
         engine_label = {
             "claude-code": "Claude Code",
             "codex": "Codex CLI",
+            "gemini-cli": "Gemini CLI",
             "auto": "자동 선택",
         }.get(config.engine, config.engine)
 
