@@ -277,10 +277,9 @@ class OrgScheduler:
                 SubTask(
                     assigned_dept=org_id,
                     description=meeting_prompt,
-                    expected_output=f"{dept_name} 상태 보고 및 조치사항",
-                    rationale=f"{meeting_type} 회의 참여",
-                    priority="medium",
                     depends_on=[],
+                    task_type="보고",
+                    allow_file_change=False,
                 )
                 for org_id, dept_name in KNOWN_DEPTS.items()
             ]
