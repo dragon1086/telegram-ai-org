@@ -15,6 +15,12 @@
 - `glob('/Users/rocky/telegram-ai-org/**/*.py', recursive=True)` — 프로젝트 내부만
 - 경로 변수: `PROJECT_DIR="/Users/rocky/telegram-ai-org"` 상단 정의 후 사용
 
+### 허용 패턴 (산출물 저장소 — AI_ORG_DATA_DIR)
+- `DATA_DIR="${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}"` — 상단에 정의 후 사용
+- `find "${DATA_DIR}" -name '*.jsonl'` — 산출물 디렉토리 내부로 한정
+- `glob(os.environ.get('AI_ORG_DATA_DIR', str(Path.home() / 'telegram-ai-org-data')) + '/**/*', recursive=True)`
+- **금지**: `AI_ORG_DATA_DIR` 없이 `../telegram-ai-org-data/` 상대 경로 하드코딩
+
 ## 외부 프로세스 실행
 
 ### subprocess 제한

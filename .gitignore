@@ -52,6 +52,15 @@ docs/orchestration-v2/
 # 자동생성 회고/리포트 (monthly_review.py가 읽지만 런타임 생성물)
 docs/retros/
 
+# 산출물 — AI_ORG_DATA_DIR로 이동됨 (telegram-ai-org-data/)
+docs/audits/
+docs/bug-analysis-*.md
+docs/goal_snapshots/
+docs/weekly/
+coverage_e2e.json
+.coverage_e2e.json
+trivy-scan-report.txt
+
 # 런타임 데이터 (self_code_improver.py 속도제한 파일 등)
 data/
 

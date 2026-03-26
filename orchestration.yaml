@@ -58,6 +58,15 @@ global_instructions: |
     - glob.glob(os.environ.get('CLAUDE_PROJECT_DIR', '.') + '/**/*.db', recursive=True)
     - os.walk('/Users/rocky/telegram-ai-org/')
     - find /Users/rocky/telegram-ai-org -name '*.db'
+    - glob.glob(os.environ.get('AI_ORG_DATA_DIR', str(Path.home() / 'telegram-ai-org-data')) + '/**/*', recursive=True)
+    - find "${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}" -name '*.jsonl'
+
+  ## AI_ORG_DATA_DIR — 산출물·데이터 저장 경로 표준화 (전체 조직 공통 — 필수)
+  telegram-ai-org/ 는 오픈소스 코드만 포함한다. 모든 산출물·생성 코드·스킬 로그는 AI_ORG_DATA_DIR 에 저장한다.
+  - 기본값: ~/telegram-ai-org-data (환경변수 미설정 시 자동 사용)
+  - 신규 산출물에 ~/.ai-org/workspace 사용 금지 (기존 내용 보존만 허용)
+  - 스킬 로그 경로: ${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}/skills/<skill-name>/data/
+  - 금지: ../telegram-ai-org-data/ 상대 경로 하드코딩 (오픈소스 사용자 경로 불일치 유발)
 
 phase_policies:
   default:

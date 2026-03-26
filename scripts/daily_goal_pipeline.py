@@ -160,7 +160,8 @@ def _build_pipeline_message(goals: list[dict]) -> str:
 
 def _save_goal_snapshot(goals: list[dict]) -> None:
     today = datetime.now(UTC).strftime("%Y-%m-%d")
-    out_dir = PROJECT_ROOT / "docs" / "goal_snapshots"
+    data_dir = Path(os.environ.get("AI_ORG_DATA_DIR", str(Path.home() / "telegram-ai-org-data")))
+    out_dir = data_dir / "docs" / "goal_snapshots"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{today}-goal-snapshot.md"
 
