@@ -76,7 +76,8 @@ async def test_handle_collab_tags_ignores_placeholder_request() -> None:
         requester_mention="@rocky",
     )
 
-    # [TEAM:solo] 태그는 팀 헤더로 변환돼 cleaned 앞에 붙고,
+    # [TEAM:solo] 태그는 제거되고 팀 헤더는 렌더링되지 않는다 (T-aiorg_pm_bot-700)
     # 플레이스홀더 [COLLAB:...]는 드롭된다 — 핵심 내용 포함 여부만 검증
     assert "최종 요약입니다." in cleaned
+    assert "🏗️" not in cleaned and "팀 구성" not in cleaned
     relay.display.send_to_chat.assert_not_called()

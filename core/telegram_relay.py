@@ -1371,34 +1371,17 @@ class TelegramRelay:
             return response
         import re as _re
 
-        # [TEAM:...] → 사용자 가시 팀 헤더로 변환 후 제거
-        team_header = ""
-        team_match = _re.search(r"\[TEAM:([^\]]+)\]", response)
-        if team_match:
-            raw_agents = team_match.group(1)
-            agent_ids = [a.strip() for a in raw_agents.split(",") if a.strip()]
-            try:
-                from tools.agent_parser import render_team_header as _render_team
-                _header = _render_team(agent_ids)
-                if _header:
-                    team_header = _header + "\n\n"
-            except Exception:
-                # fallback: 마크다운 형식 (format_for_telegram → HTML 변환됨)
-                team_header = f"🏗️ **팀 구성**: {', '.join(agent_ids)}\n\n"
-
+        # [TEAM:...] 태그 제거 — 팀 구성 헤더 미렌더링 (T-aiorg_pm_bot-700)
+        # PM 위임 보고서 + 직접 응답 모두에서 팀 구성 블록을 노출하지 않도록 변경.
         cleaned = _re.sub(r"\[TEAM:[^\]]+\]", "", response).strip()
 
-        # [TEAM:...] 태그 기반 렌더링이 있으면 항상 사용.
-        # LLM이 직접 쓴 🏗️ 섹션(정보가 불완전할 수 있음)은 agent 파일 기반 렌더링으로 교체.
-        if team_header:
-            if "🏗️" in cleaned:
-                # LLM이 직접 쓴 🏗️ 라인 + 하위 bullet 제거 (다음 빈 줄 또는 ## 섹션 직전까지)
-                cleaned = _re.sub(
-                    r"🏗️[^\n]*(?:\n(?!(?:##|\s*$))[^\n]*)*\n?",
-                    "",
-                    cleaned,
-                ).strip()
-            cleaned = team_header + cleaned
+        # LLM이 직접 작성한 🏗️ 팀 구성 블록도 함께 제거 (헤더 일관성 유지)
+        if "🏗️" in cleaned:
+            cleaned = _re.sub(
+                r"🏗️[^\n]*(?:\n(?!(?:##|\s*$))[^\n]*)*\n?",
+                "",
+                cleaned,
+            ).strip()
         for match in _re.findall(r"\[COLLAB:([^\]]+)\]", cleaned):
             parts = match.split("|맥락:", 1)
             collab_task = parts[0].strip()
