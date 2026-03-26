@@ -111,14 +111,31 @@ async def run_weekly_meeting() -> None:
 
         # ── Step 2: 각 부서에 COLLAB 요청 (봇끼리 토론 유도)
         # 각 부서 간격: 5초 (봇들이 순서대로 발언할 수 있도록)
+        try:
+            from core.collab_request import make_collab_request_v2
+        except ImportError:
+            make_collab_request_v2 = None  # type: ignore[assignment]
+
         for i, dept in enumerate(DEPARTMENTS):
-            collab_msg = (
-                f"🙋 도와줄 조직 찾아요!\n"
-                f"발신: aiorg_pm_bot\n"
-                f"요청: {dept['name']} 주간 현황 보고 (200자 이내)\n"
-                f"📎 맥락: {year} W{week_num:02d} 주간회의. "
-                f"완료사항·진행중·블로커·다음주계획 각 1~2줄."
-            )
+            if make_collab_request_v2 is not None:
+                collab_msg = make_collab_request_v2(
+                    task=f"{dept['name']} 주간 현황 보고 (200자 이내)",
+                    from_org="aiorg_pm_bot",
+                    context=(
+                        f"{year} W{week_num:02d} 주간회의. "
+                        f"완료사항·진행중·블로커·다음주계획 각 1~2줄."
+                    ),
+                    target_mentions=[dept["id"]],
+                )
+            else:
+                collab_msg = (
+                    f"🙋 도와줄 조직 찾아요!\n"
+                    f"발신: aiorg_pm_bot\n"
+                    f"요청: {dept['name']} 주간 현황 보고 (200자 이내)\n"
+                    f"대상조직: {dept['id']}\n"
+                    f"📎 맥락: {year} W{week_num:02d} 주간회의. "
+                    f"완료사항·진행중·블로커·다음주계획 각 1~2줄."
+                )
             await send_message(bot, collab_msg, delay_sec=3.0 * i)
             print(f"[weekly_meeting] {dept['name']} COLLAB 요청 전송")
 
