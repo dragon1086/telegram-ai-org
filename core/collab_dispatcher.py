@@ -11,11 +11,13 @@ PM 단독 경유 없이 직접 대상 부서 에이전트로 dispatch한다.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Literal
 
 from loguru import logger
 
@@ -50,6 +52,13 @@ _DISPATCH_LOG_PATH = Path(__file__).resolve().parent.parent / "logs" / "collab_d
 # 동일 task_id + target_dept 조합의 최대 dispatch 횟수 (무한루프 방지)
 _MAX_DISPATCH_PER_TARGET = 3
 
+# chat_id 조회 실패 시 재시도 설정
+_RETRY_MAX = 2
+_RETRY_DELAY = 0.5  # seconds
+
+# 실패 유형 리터럴 타입
+_FailureType = Literal["permanent", "transient"]
+
 
 def _count_previous_dispatches(task_id: str, target_dept: str) -> int:
     """collab_dispatch.jsonl에서 동일 task_id + target_dept 의 dispatched 횟수를 반환한다."""
@@ -82,9 +91,10 @@ def _append_dispatch_event(
     target_dept: str = "",
     context: str = "",
     detail: str = "",
+    failure_type: str = "",
 ) -> None:
     """COLLAB 전달 이력을 JSONL로 남긴다."""
-    payload = {
+    payload: dict[str, str] = {
         "ts": datetime.now(UTC).isoformat(),
         "status": status,
         "task_id": task_id,
@@ -93,6 +103,8 @@ def _append_dispatch_event(
         "context": context[:300],
         "detail": detail[:400],
     }
+    if failure_type:
+        payload["failure_type"] = failure_type
     _DISPATCH_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _DISPATCH_LOG_PATH.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -145,20 +157,23 @@ class CollabDispatcher:
         send_func: (chat_id: int, text: str) → Awaitable[None] 시그니처의 전송 함수.
                    chat_id 없이 텍스트만 받는 경우 chat_id_resolver도 함께 제공.
         chat_id_resolver: dept_id → chat_id 매핑 함수. 없으면 환경변수에서 조회.
+        admin_chat_id: fallback 알림을 수신할 관리자 채팅방 ID.
+                       지정 시 일시적 실패 재시도 소진 후 관리자에게 알림 전송.
     """
 
     def __init__(
         self,
         send_func: Callable[[int, str], Awaitable[None]],
         chat_id_resolver: Callable[[str], int | None] | None = None,
+        admin_chat_id: int | None = None,
     ) -> None:
         self._send = send_func
         self._resolver = chat_id_resolver or self._env_chat_id_resolver
+        self._admin_chat_id = admin_chat_id
 
     @staticmethod
     def _env_chat_id_resolver(dept_id: str) -> int | None:
         """환경 변수에서 dept_id에 대응하는 chat_id를 조회한다."""
-        import os
         env_key = _DEPT_CHAT_ID_ENV.get(dept_id)
         if not env_key:
             return None
@@ -170,6 +185,103 @@ class CollabDispatcher:
         except ValueError:
             logger.warning(f"[CollabDispatcher] {env_key}={val!r} — int 변환 실패")
             return None
+
+    @staticmethod
+    def _classify_env_failure(dept_id: str) -> tuple[_FailureType, str]:
+        """환경변수 기반 chat_id 조회 실패 원인을 분류한다.
+
+        Returns:
+            (failure_type, reason) — "permanent" (재시도 불필요) 또는 "transient" (재시도 가능)
+        """
+        env_key = _DEPT_CHAT_ID_ENV.get(dept_id)
+        if not env_key:
+            return "permanent", (
+                f"dept_id={dept_id!r} 는 알 수 없는 부서 — "
+                f"_DEPT_CHAT_ID_ENV 매핑 없음 (등록되지 않은 조직 ID)"
+            )
+        val = os.environ.get(env_key)
+        if val is None:
+            return "permanent", (
+                f"환경변수 {env_key} 미설정 — "
+                f".env 또는 배포 환경에 {env_key}=<chat_id> 추가 필요"
+            )
+        return "permanent", (
+            f"환경변수 {env_key}={val!r} — 정수 변환 불가 (유효한 Telegram chat_id가 아님)"
+        )
+
+    async def _resolve_with_retry(
+        self, dept_id: str
+    ) -> tuple[int | None, _FailureType | None, str]:
+        """chat_id를 조회하고, 일시적 실패 시 최대 _RETRY_MAX 회 재시도한다.
+
+        실패 유형 분류:
+        - permanent: resolver가 None 반환 (환경변수 미설정, 부서 미등록 등)
+                     — 재시도해도 회복되지 않으므로 즉시 포기
+        - transient: resolver가 Exception 발생 (네트워크 오류, API 타임아웃 등)
+                     — 재시도 후 회복 가능, 소진 시 fallback
+
+        Returns:
+            (chat_id, failure_type, reason)
+            - chat_id가 None인 경우 failure_type·reason에 상세 원인 포함
+        """
+        last_exc: Exception | None = None
+
+        # 1차 시도
+        try:
+            chat_id = self._resolver(dept_id)
+        except Exception as e:
+            last_exc = e
+            chat_id = None
+
+        if chat_id is not None:
+            return chat_id, None, ""
+
+        # resolver가 None 반환(예외 없음) → 환경 설정 문제 → 영구적 실패
+        if last_exc is None:
+            if self._resolver is self._env_chat_id_resolver:
+                failure_type, reason = self._classify_env_failure(dept_id)
+            else:
+                env_key = _DEPT_CHAT_ID_ENV.get(dept_id, "N/A")
+                reason = (
+                    f"커스텀 resolver가 None 반환 "
+                    f"(dept_id={dept_id!r}, env_key={env_key})"
+                )
+                failure_type = "permanent"
+            return None, failure_type, reason
+
+        # resolver가 Exception 발생 → 일시적 실패 → retry
+        logger.warning(
+            f"[CollabDispatcher] {dept_id} chat_id 1차 조회 실패 (일시적) — "
+            f"재시도 최대 {_RETRY_MAX}회 시작. 오류: {last_exc}"
+        )
+        for attempt in range(1, _RETRY_MAX + 1):
+            await asyncio.sleep(_RETRY_DELAY)
+            try:
+                chat_id = self._resolver(dept_id)
+                if chat_id is not None:
+                    logger.info(
+                        f"[CollabDispatcher] {dept_id} chat_id 재시도 {attempt}/{_RETRY_MAX} 성공"
+                    )
+                    return chat_id, None, ""
+                # retry 중 None 반환 → 이제 영구적으로 전환
+                if self._resolver is self._env_chat_id_resolver:
+                    failure_type, reason = self._classify_env_failure(dept_id)
+                else:
+                    reason = f"재시도 {attempt}회 중 resolver가 None 반환 (dept_id={dept_id!r})"
+                    failure_type = "permanent"
+                return None, failure_type, reason
+            except Exception as e:
+                last_exc = e
+                logger.warning(
+                    f"[CollabDispatcher] {dept_id} chat_id 재시도 {attempt}/{_RETRY_MAX} 실패: {e}"
+                )
+
+        reason = (
+            f"재시도 {_RETRY_MAX}회 모두 소진 — "
+            f"dept_id={dept_id!r}, "
+            f"마지막 오류: {last_exc}"
+        )
+        return None, "transient", reason
 
     async def dispatch(
         self,
@@ -247,20 +359,49 @@ class CollabDispatcher:
                 )
                 continue
 
-            chat_id = self._resolver(dept_id)
+            # ── chat_id 조회 (재시도 + 원인 분류 포함) ──────────────────────
+            chat_id, failure_type, failure_reason = await self._resolve_with_retry(dept_id)
             if chat_id is None:
+                env_key = _DEPT_CHAT_ID_ENV.get(dept_id, "N/A")
                 logger.warning(
-                    f"[CollabDispatcher] {dept_id} chat_id 없음 — skip"
+                    f"[CollabDispatcher] {dept_id} chat_id 조회 실패 — "
+                    f"failure_type={failure_type}, env_key={env_key}, "
+                    f"reason={failure_reason}"
                 )
+                # 원인 유형별 세분화 status: skipped_no_chat_id_permanent / skipped_no_chat_id_transient
+                status = f"skipped_no_chat_id_{failure_type}"
                 _append_dispatch_event(
-                    status="skipped_no_chat_id",
+                    status=status,
                     task_id=task_id,
                     source_dept=source_dept,
                     target_dept=dept_id,
                     context=context,
-                    detail=task_text,
+                    detail=failure_reason,
+                    failure_type=failure_type or "",
                 )
+
+                # fallback: 일시적 실패(재시도 소진) 시 관리자 채널 알림
+                if failure_type == "transient" and self._admin_chat_id:
+                    try:
+                        await self._send(
+                            self._admin_chat_id,
+                            (
+                                f"[COLLAB_DISPATCH_ALERT] {task_id} → {dept_id} "
+                                f"chat_id 일시적 조회 실패 (재시도 {_RETRY_MAX}회 소진)\n"
+                                f"원인: {failure_reason}"
+                            ),
+                        )
+                        logger.info(
+                            f"[CollabDispatcher] {dept_id} 일시적 실패 — "
+                            f"관리자({self._admin_chat_id}) 알림 전송 완료"
+                        )
+                    except Exception as alert_err:
+                        logger.error(
+                            f"[CollabDispatcher] 관리자 알림 전송 실패 "
+                            f"(admin_chat_id={self._admin_chat_id}): {alert_err}"
+                        )
                 continue
+            # ────────────────────────────────────────────────────────────────
 
             dept_name = _DEPT_NAMES.get(dept_id, dept_id)
             msg_lines = [

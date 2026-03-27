@@ -609,7 +609,8 @@ class ContextDB:
                         dep_cursor = await dep_db.execute(
                             """SELECT d.depends_on, dep.status FROM pm_task_dependencies d
                                JOIN pm_tasks dep ON dep.id = d.depends_on
-                               WHERE d.task_id = ? AND dep.status != 'done'
+                               WHERE d.task_id = ?
+                                 AND dep.status NOT IN ('done', 'cancelled', 'failed')
                                LIMIT 1""",
                             (task["id"],),
                         )

@@ -211,8 +211,17 @@ class FailureCondition:
             )
 
         if diff.baseline_issue_count > 0 and diff.improvement_rate == 0.0:
+            # warn-only 이슈는 no_change 실패에서 제외 — 수동 리팩토링 예약된 파일은
+            # 자동 파이프라인이 해소할 수 없으므로 critical 이슈가 없으면 통과 처리.
+            critical_unresolved = [
+                item for item in diff.unresolved_items
+                if item.get("severity") == "critical"
+            ]
+            if not critical_unresolved:
+                return False, ""  # warn-only → 성공 처리
             return True, (
-                f"개선 항목 0건 — baseline {diff.baseline_issue_count}건 이슈 모두 미해소"
+                f"개선 항목 0건 — baseline {diff.baseline_issue_count}건 이슈 모두 미해소 "
+                f"(critical {len(critical_unresolved)}건)"
             )
 
         if diff.baseline_issue_count > 0:

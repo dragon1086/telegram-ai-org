@@ -369,6 +369,8 @@ class PMDiscussionMixin:
         if not needs_discussion:
             return []
 
+        # 지연 임포트 — pm_orchestrator ↔ pm_discussion_mixin 순환 임포트 방지
+        from core.pm_orchestrator import DiscussionNeeded  # noqa: PLC0415
         return [DiscussionNeeded(
             topic=user_message[:100],
             proposal=user_message[:300],
