@@ -1,0 +1,333 @@
+# =============================================================================
+# infra-baseline.yaml
+# 모든 팀이 공유하는 인프라 환경 기준선 파일
+# 이 파일을 기준으로 E2E 테스트·배포·모니터링이 실행된다.
+#
+# 사용 원칙:
+#   - 이 파일의 값은 .env / docker-compose.yml 보다 낮은 우선순위 (문서 기준선)
+#   - 실제 런타임 오버라이드는 .env 에서 수행, 이 파일은 '허용 범위'의 기준
+#   - 변경 시 반드시 metadata 섹션을 갱신하고 PR에 변경 이유를 명시한다
+#   - 배포 전 pre-flight 체크에서 이 파일의 값과 실제 .env 를 비교한다
+# =============================================================================
+
+version:
+  number: "1.1.0"
+  created_at: "2026-03-26"
+  last_updated: "2026-03-26"
+  description: "telegram-ai-org 인프라 파라미터 기준선 (RETRO-03 산출물; ETC-02/03 반영)"
+
+# -----------------------------------------------------------------------------
+# timeouts — 컴포넌트별 타임아웃 (단위: 초)
+#
+# 허용 범위:
+#   min_value: 실제로 사용 중인 최솟값
+#   max_value: 운영 경험상 상한선 (이 값 초과 시 재검토 필요)
+#   warn_above: 이 값 초과 시 슬랙·텔레그램 경보
+# -----------------------------------------------------------------------------
+timeouts:
+
+  # Bot 런타임 (telegram_relay.py)
+  bot_idle_sec:
+    default: 300           # 5분 — 마지막 메시지 후 봇이 idle로 전환되는 시간
+    min_value: 60
+    max_value: 600
+    warn_above: 300
+    env_key: BOT_IDLE_TIMEOUT_SEC
+    source: core/telegram_relay.py:2025
+
+  bot_max_task_sec:
+    default: 1800          # 30분 — 단일 태스크 절대 상한
+    min_value: 600
+    max_value: 3600
+    warn_above: 1800
+    env_key: BOT_MAX_TIMEOUT_SEC
+    source: core/telegram_relay.py:2026
+
+  bot_hang_detect_sec:
+    default: 900           # 15분 — 이 시간 동안 변화 없으면 hang으로 판단
+    min_value: 300
+    max_value: 1800
+    warn_above: 900
+    env_key: HANG_DETECT_TIMEOUT_SEC
+    source: core/telegram_relay.py:4000
+
+  task_exec_total_sec:
+    default: 1800          # 30분 — 태스크 실행 절대 한계 (telegram_relay 내부)
+    min_value: 600
+    max_value: 3600
+    warn_above: 1800
+    env_key: TASK_EXEC_TOTAL_TIMEOUT_SEC
+    source: core/telegram_relay.py:4002
+
+  subtask_sec:
+    default: 600           # 10분 — 서브태스크 단위 타임아웃 (staleness_checker)
+    min_value: 120
+    max_value: 1800
+    warn_above: 1800       # .env 현재값 1800s (복잡한 구현 태스크 허용)
+    env_key: SUBTASK_TIMEOUT_SEC
+    source: core/staleness_checker.py:16
+
+  pm_reply_sec:
+    default: 300           # 5분 — PM 봇이 채팅 응답을 기다리는 시간
+    min_value: 60
+    max_value: 600
+    warn_above: 300
+    env_key: PM_CHAT_REPLY_TIMEOUT_SEC
+    source: core/telegram_relay.py:111
+
+  # 그룹 채팅 허브 (group_chat_hub.py)
+  group_turn_sec:
+    default: 45            # 45초 — 토론 라운드에서 봇 응답 대기 시간
+    min_value: 30
+    max_value: 120
+    warn_above: 60
+    source: core/group_chat_hub.py:35
+
+  group_retro_round_sec:
+    default: 60            # 60초 — 회고 라운드 봇 응답 대기
+    min_value: 30
+    max_value: 180
+    warn_above: 120
+    source: core/group_chat_hub.py:40
+
+  # 스케줄러 (scheduler.py)
+  scheduler_collect_sec:
+    default: 120           # 2분 — 응답 수집 기본 타임아웃
+    min_value: 60
+    max_value: 300
+    warn_above: 120
+    source: core/scheduler.py
+
+  scheduler_discussion_sec:
+    default: 90            # 1.5분 — 토론 프로토콜 응답 수집
+    min_value: 60
+    max_value: 180
+    warn_above: 120
+    source: core/scheduler.py:484
+
+  # 완료 ACK (completion.py)
+  ack_sec:
+    default: 120           # 2분 — 완료 ACK 타임아웃
+    min_value: 60
+    max_value: 300
+    warn_above: 120
+    env_key: ACK_TIMEOUT_SECONDS
+    source: core/completion.py:11
+
+  # LLM 헬스체크 (llm_failure_detector.py)
+  llm_health_check_sec:
+    default: 5             # 5초 — Gemini API 헬스체크 단일 호출 타임아웃
+    min_value: 3
+    max_value: 15
+    warn_above: 10
+    source: core/llm_failure_detector.py:45
+
+  # 첨부파일 분석 (attachment_analysis.py)
+  attachment_vision_sec:
+    default: 60            # 1분 — 비전 브리지 타임아웃
+    min_value: 30
+    max_value: 120
+    warn_above: 60
+    env_key: ATTACHMENT_VISION_BRIDGE_TIMEOUT_SEC
+    source: tools/attachment_analysis.py:45
+
+  # 에이전트 모니터 (agent_monitor.py)
+  agent_stuck_threshold_sec:
+    default: 300           # 5분 — 에이전트 변화 없음 → "stuck" 의심
+    min_value: 120
+    max_value: 600
+    warn_above: 300
+    source: scripts/agent_monitor.py
+
+  agent_response_cooldown_sec:
+    default: 300           # 5분 — 연속 응답 사이 최소 간격
+    min_value: 60
+    max_value: 600
+    warn_above: 300
+    source: scripts/agent_monitor.py
+
+  # E2E 테스트 (e2e_full_suite.py, e2e_collab_discussion_test.py)
+  e2e:
+    slow_scenario_sec:
+      default: 120         # 코딩·REST API 시나리오 (P0-SLOW)
+      min_value: 60
+      max_value: 300
+      env_key: E2E_SLOW_TIMEOUT_SEC
+      source: scripts/e2e_full_suite.py
+
+    discussion_startup_sec:
+      default: 120         # 토론 시작 확인 대기 (P1-DISC)
+      min_value: 60
+      max_value: 300
+      source: scripts/e2e_full_suite.py
+
+    collab_short_sec:
+      default: 120         # 협업 테스트 단기 단계
+      min_value: 60
+      max_value: 300
+      source: scripts/e2e_collab_discussion_test.py:43
+
+    collab_long_sec:
+      default: 300         # 협업 테스트 장기 단계
+      min_value: 120
+      max_value: 600
+      source: scripts/e2e_collab_discussion_test.py:59
+
+    session_task_sec:
+      default: 600         # 세션 전체 태스크 실행
+      min_value: 300
+      max_value: 1800
+      source: scripts/e2e_session_20260319.py:206
+
+# -----------------------------------------------------------------------------
+# filters — 메시지 필터링 파라미터
+# -----------------------------------------------------------------------------
+filters:
+
+  telethon_listener:
+    min_id_strategy: "record_on_activation"
+    # 설명: 리스너 활성화 직전의 최신 message.id 를 min_id 로 기록.
+    #       이후 수신 메시지 id <= min_id 이면 skip → 크로스 컨테미네이션 방지.
+    # 적용 파일: scripts/telethon_listener.py (TelethonListenerHelper)
+    # E2E 적용: e2e_full_suite.py:385, e2e_collab_discussion_test.py:194
+    skip_condition: "event.message.id <= min_id"
+    scope: "per_chat_entity"  # chat_entity 별로 독립 min_id 관리
+
+  pm_hourly_call_limit:
+    default: 40            # PM 봇 시간당 LLM 호출 상한
+    min_value: 10
+    max_value: 100
+    env_key: PM_HOURLY_CALL_LIMIT
+
+  circuit_breaker_reset_sec:
+    default: 300           # 5분 — 서킷 브레이커 리셋 주기
+    min_value: 60
+    max_value: 600
+    env_key: CIRCUIT_BREAKER_RESET_SEC
+
+  bot_hb_interval_sec:
+    default: 30            # 30초 — 봇 하트비트 인터벌
+    min_value: 10
+    max_value: 120
+    env_key: BOT_HB_INTERVAL_SEC
+
+# -----------------------------------------------------------------------------
+# env_defaults — 필수 환경변수 키 목록 및 기본값
+# 시크릿(토큰·API 키)은 절대 기재하지 않는다.
+# -----------------------------------------------------------------------------
+env_defaults:
+
+  required_keys:           # 이 키들이 없으면 봇이 기동하지 않아야 함
+    - TELEGRAM_BOT_TOKEN
+    - TELEGRAM_GROUP_CHAT_ID
+    - ADMIN_CHAT_ID
+
+  optional_with_defaults:
+    DEFAULT_ENGINE: "claude-code"                  # 기본 LLM 엔진
+    GEMINI_CLI_PATH: "/opt/homebrew/bin/gemini"    # macOS Homebrew 기본 경로
+    GEMINI_CLI_DEFAULT_TIMEOUT_SEC: "1800"
+    GEMINI_CLI_MODEL: "gemini-2.5-flash"
+    CLAUDE_DEFAULT_TIMEOUT_SEC: "14400"            # 4시간 (복잡 추론)
+    CODEX_DEFAULT_TIMEOUT_SEC: "1800"
+    CODEX_COMPLEX_TIMEOUT_SEC: "14400"
+    BOT_IDLE_TIMEOUT_SEC: "300"
+    BOT_MAX_TIMEOUT_SEC: "1800"
+    TASK_EXEC_TOTAL_TIMEOUT_SEC: "1800"
+    SUBTASK_TIMEOUT_SEC: "600"
+    PM_CHAT_REPLY_TIMEOUT_SEC: "300"
+    PM_HOURLY_CALL_LIMIT: "40"
+    CIRCUIT_BREAKER_RESET_SEC: "300"
+    BOT_HB_INTERVAL_SEC: "30"
+    HANG_DETECT_TIMEOUT_SEC: "900"
+    ACK_TIMEOUT_SECONDS: "120"
+    ATTACHMENT_VISION_BRIDGE_TIMEOUT_SEC: "60"
+    ENABLE_PM_ORCHESTRATOR: "1"
+    ENABLE_DISCUSSION_PROTOCOL: "1"
+    ENABLE_AUTO_DISPATCH: "1"
+    ENABLE_CROSS_VERIFICATION: "1"
+    ENABLE_GOAL_TRACKER: "1"
+
+  feature_flags:
+    # 기능 플래그 — 1=활성화, 0=비활성화
+    ENABLE_PM_ORCHESTRATOR: "1"
+    ENABLE_DISCUSSION_PROTOCOL: "1"
+    ENABLE_AUTO_DISPATCH: "1"
+    ENABLE_CROSS_VERIFICATION: "1"
+    ENABLE_GOAL_TRACKER: "1"
+
+# -----------------------------------------------------------------------------
+# models — 엔진별 권장 모델 버전
+# -----------------------------------------------------------------------------
+models:
+
+  gemini:
+    production:
+      model: "gemini-2.5-flash"
+      status: "GA"         # 2026-03 기준 최신 stable GA, 프로덕션 권장
+      env_key: GEMINI_CLI_MODEL
+      notes: "Google Search 내장 — 성장실·리서치실 기본 엔진"
+
+    image_generation:
+      model: "gemini-2.5-flash-preview-image-generation"
+      status: "Preview"    # GA 아님. 실패 시 production 모델로 fallback
+      fallback: "gemini-2.5-flash"
+      env_key: GEMINI_FALLBACK_MODEL
+
+    preview_available:     # 실재하나 프로덕션 배포 금지
+      - model: "gemini-3-flash-preview"
+        status: "Preview"
+        notes: "Vertex AI Preview — GA 전환 시까지 사용 금지"
+      - model: "gemini-3.1-flash-lite-preview"
+        status: "Preview"
+        released: "2026-03-03"
+        notes: "Preview — GA 전환 시까지 사용 금지"
+
+    deprecated:            # 즉시 사용 중단
+      - model: "gemini-2.0-flash"
+        eol: "2026-06-01"
+        notes: "EOL 예정. 코드·설정에서 gemini-2.5-flash 로 교체 필수"
+
+  claude:
+    engine: "claude-code"
+    default_timeout_sec: 14400   # 4시간 — 복잡 추론·리팩토링
+    notes: "개발실·디자인실·기획실·PM 기본 엔진 (복잡한 추론)"
+
+  codex:
+    engine: "codex"
+    default_timeout_sec: 1800    # 30분 기본
+    complex_timeout_sec: 14400   # 4시간 (복잡 태스크)
+    notes: "운영실 기본 엔진 (경량 DevOps)"
+
+# -----------------------------------------------------------------------------
+# metadata — 변경 이력 (최신 항목이 상단)
+# 운영 규칙: 이 파일 수정 시 반드시 아래 항목을 추가한다.
+# -----------------------------------------------------------------------------
+metadata:
+  history:
+    - version: "1.1.0"
+      date: "2026-03-26"
+      author: "aiorg_ops_bot"
+      tasks: ["ETC-02", "ETC-03"]
+      reason: |
+        ETC-02: E2E 스크립트 S-P1 timeout 60s→120s 상향 — slow_scenario_sec 기본값
+        확정 및 env_key(E2E_SLOW_TIMEOUT_SEC) 명세 추가.
+        ETC-03: Telethon listener min_id 필터 전략(record_on_activation) 명세화 —
+        cross-contamination 재발 방지를 위한 skip_condition·scope 명시.
+      changed_sections:
+        - "version.number (1.0.0→1.1.0)"
+        - "timeouts.e2e.slow_scenario_sec (확정)"
+        - "filters.telethon_listener (전략 명세 추가)"
+        - "metadata.history (이 항목 신규 추가)"
+
+    - version: "1.0.0"
+      date: "2026-03-26"
+      author: "aiorg_ops_bot"
+      reason: |
+        RETRO-03 산출물: 인프라 파라미터(timeout·filter·env)를 infra-baseline.yaml 로
+        명세화. 모든 팀이 공유하는 환경 기준선 파일 신규 생성.
+        실제 코드베이스(telegram_relay.py, scheduler.py, staleness_checker.py,
+        group_chat_hub.py, completion.py, llm_failure_detector.py,
+        attachment_analysis.py, agent_monitor.py, e2e_full_suite.py 등)에서
+        직접 추출한 값으로 구성.
+      changed_sections:
+        - "전체 (신규 생성)"
