@@ -486,6 +486,21 @@ class OrgScheduler:
             if responses:
                 await self._post_meeting_summary(responses, "daily_retro", topic)
 
+            # RetroDiscussion 연동: 대화형 라운드별 회고 + 라운드별 중간 요약 Telegram 전송
+            # 각 라운드(잘한 것/잘못한 것/해야 할 것) 종료 시 _send_round_summary() 자동 호출됨
+            if self._pm_orchestrator is not None:
+                try:
+                    from core.retro_discussion import RetroDiscussion
+                    rd = RetroDiscussion(
+                        pm_orchestrator=self._pm_orchestrator,
+                        send_text=self._safe_send,
+                        pm_chat_id=self._pm_chat_id,
+                        goal_tracker=self._goal_tracker,
+                    )
+                    await rd.run_retro(meeting_type="daily_retro")
+                except Exception as e_rd:
+                    logger.warning(f"[OrgScheduler] RetroDiscussion 실행 실패 (무시): {e_rd}")
+
             from scripts.daily_retro import main as _retro_main
             await _retro_main()
             tasks = []  # Phase 3에서 참조 — 여기서 초기화
@@ -610,6 +625,22 @@ class OrgScheduler:
                     topic=topic,
                     participants=self._group_chat_hub.participant_ids,
                 )
+
+            # RetroDiscussion 연동: 대화형 라운드별 회고 + 라운드별 중간 요약 Telegram 전송
+            # 각 라운드(잘한 것/잘못한 것/해야 할 것) 종료 시 _send_round_summary() 자동 호출됨
+            if self._pm_orchestrator is not None:
+                try:
+                    from core.retro_discussion import RetroDiscussion
+                    rd = RetroDiscussion(
+                        pm_orchestrator=self._pm_orchestrator,
+                        send_text=self._safe_send,
+                        pm_chat_id=self._pm_chat_id,
+                        goal_tracker=self._goal_tracker,
+                    )
+                    await rd.run_retro(meeting_type="friday_retro")
+                except Exception as e_rd:
+                    logger.warning(f"[OrgScheduler] RetroDiscussion 실행 실패 (무시): {e_rd}")
+
             from datetime import datetime, timedelta, timezone
 
             from scripts.daily_retro import (

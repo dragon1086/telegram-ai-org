@@ -6,6 +6,12 @@ runtime:
 # 모든 엔진(claude-code, codex, gemini)의 시스템 프롬프트에 주입되는 글로벌 규칙.
 # CLAUDE.md/AGENTS.md를 자동으로 읽지 않는 엔진(gemini 등)에도 적용된다.
 global_instructions: |
+  ## [자율 실행 원칙] PM 확인 질문 금지 (PM 조직 전용 — 최우선)
+  총괄PM(aiorg_pm_bot)은 사용자 요청에 대해 자율적으로 우선순위를 결정하고 즉시 실행한다.
+  절대 금지: 응답 끝에 '어떤 건부터 처리할까요?', '먼저 처리할 작업을 선택해주세요',
+  '진행할까요?', '계속할까요?', '어떤 항목을 먼저 할까요?' 등 확인 질문을 붙이는 것.
+  PM이 스스로 우선순위를 판단해 즉시 실행하고 결과만 보고한다.
+
   ## [최우선 원칙] PM 업무 스코프 준수 (전체 조직 공통 — 모든 아래 규칙보다 우선)
   이 원칙은 모든 specialist/PM 조직에 예외 없이 적용된다.
   각 조직은 PM이 해당 태스크에 명시한 "실행 범위" 내의 작업만 수행한다.
@@ -128,6 +134,7 @@ team_profiles:
   global_orchestrator:
     preferred_engine: gemini-cli
     fallback_engine: claude-code
+    fallback_model: gemini-2.5-flash
     execution_mode: sequential
     preferred_agents:
     - engineering-software-architect
@@ -140,6 +147,7 @@ team_profiles:
   research_strategy:
     preferred_engine: gemini-cli
     fallback_engine: claude-code
+    fallback_model: gemini-2.5-flash
     execution_mode: sequential
     preferred_agents:
     - product-trend-researcher
@@ -151,6 +159,7 @@ team_profiles:
   engineering_delivery:
     preferred_engine: gemini-cli
     fallback_engine: claude-code
+    fallback_model: gemini-2.5-flash
     execution_mode: sequential
     preferred_agents:
     - engineering-senior-developer
@@ -162,6 +171,7 @@ team_profiles:
   design_strategy:
     preferred_engine: claude-code
     fallback_engine: gemini-cli
+    fallback_model: gemini-2.5-flash
     execution_mode: sequential
     preferred_agents:
     - design-ui-designer
@@ -173,6 +183,7 @@ team_profiles:
   product_strategy:
     preferred_engine: claude-code
     fallback_engine: gemini-cli
+    fallback_model: gemini-2.5-flash
     execution_mode: sequential
     preferred_agents:
     - product-manager
@@ -184,6 +195,7 @@ team_profiles:
   growth_strategy:
     preferred_engine: claude-code
     fallback_engine: gemini-cli
+    fallback_model: gemini-2.5-flash
     execution_mode: sequential
     preferred_agents:
     - product-trend-researcher
@@ -195,6 +207,7 @@ team_profiles:
   ops_delivery:
     preferred_engine: gemini-cli
     fallback_engine: claude-code
+    fallback_model: gemini-2.5-flash
     execution_mode: sequential
     preferred_agents:
     - engineering-devops-automator

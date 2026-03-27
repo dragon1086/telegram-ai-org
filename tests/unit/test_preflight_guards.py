@@ -193,7 +193,7 @@ class TestTelethonMinIdGuard:
         old_event = MagicMock()
         old_event.message.id = 50  # <= min_id=100 이므로 skip
 
-        asyncio.get_event_loop().run_until_complete(handler(old_event))
+        asyncio.run(handler(old_event))
         assert len(collected) == 0, "min_id 이하 메시지가 수집되어서는 안 됩니다"
 
 

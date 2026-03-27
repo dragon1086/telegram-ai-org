@@ -41,6 +41,7 @@ class TeamProfile:
     name: str
     preferred_engine: str = "auto"
     fallback_engine: str = "claude-code"
+    fallback_model: str = ""
     execution_mode: str = "sequential"
     preferred_agents: list[str] = field(default_factory=list)
     preferred_skills: list[str] = field(default_factory=list)

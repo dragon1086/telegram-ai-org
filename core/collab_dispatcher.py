@@ -206,6 +206,25 @@ class CollabDispatcher:
         source_name = _DEPT_NAMES.get(source_dept, source_dept)
         dispatched: list[str] = []
 
+        # ContextDB에 COLLAB pm_task 레코드 생성 (추적 및 재시작 내성 확보)
+        try:
+            from core.context_db import ContextDB
+            _ctx_db = ContextDB()
+            await _ctx_db.create_pm_task(
+                task_id=task_id,
+                description=task_text[:500],
+                assigned_dept=",".join(t for t in targets if t != source_dept) or source_dept,
+                created_by=source_dept,
+                metadata={
+                    "collab": True,
+                    "collab_requester": source_dept,
+                    "collab_targets": targets,
+                    "collab_context": context[:300],
+                },
+            )
+        except Exception as _ctx_err:
+            logger.warning(f"[CollabDispatcher] ContextDB pm_task 생성 실패 (무시): {_ctx_err}")
+
         for dept_id in targets:
             if dept_id == source_dept:
                 # 자기 자신에게는 보내지 않는다

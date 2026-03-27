@@ -162,9 +162,13 @@ class RunnerFactory:
         elif engine == "codex":
             from tools.codex_runner import CodexRunner
             return CodexRunner(**kwargs)
-        elif engine == "gemini":
+        elif engine in ("gemini", "gemini-2.5-flash"):
             from tools.gemini_runner import GeminiRunner
-            return GeminiRunner(**kwargs)
+            runner = GeminiRunner(**kwargs)
+            # gemini-2.5-flash 명시 시 RunContext의 engine_config에 model 주입
+            if engine == "gemini-2.5-flash":
+                runner._default_model = "gemini-2.5-flash"
+            return runner
         elif engine == "gemini-cli":
             from tools.gemini_cli_runner import GeminiCLIRunner
             return GeminiCLIRunner(**kwargs)
@@ -173,7 +177,7 @@ class RunnerFactory:
         else:
             raise ValueError(
                 f"Unknown engine: {engine!r}. "
-                f"Valid engines: 'claude-code', 'codex', 'gemini', 'gemini-cli'"
+                f"Valid engines: 'claude-code', 'codex', 'gemini', 'gemini-2.5-flash', 'gemini-cli'"
             )
 
     @classmethod

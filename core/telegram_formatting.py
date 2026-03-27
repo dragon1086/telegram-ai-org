@@ -3,6 +3,13 @@ from __future__ import annotations
 
 import re
 
+# fix_html_tag_pairs 에서 검증·보정할 태그 목록
+_TRACKED_HTML_TAGS = frozenset(["pre", "code", "blockquote", "b", "i", "s", "u"])
+_HTML_TAG_RE = re.compile(
+    r"<(/?)(" + "|".join(sorted(_TRACKED_HTML_TAGS)) + r")(?:\s[^>]*)?>",
+    re.IGNORECASE,
+)
+
 _CONTINUATION = "…(이어짐)"  # 청크가 잘릴 때 말미에 붙는 연출 문자열
 
 # [TEAM:...], [COLLAB:...], [AGENT:...] 등 내부 메타데이터 태그 패턴
@@ -17,15 +24,71 @@ def escape_html(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def fix_html_tag_pairs(html: str) -> str:
+    """<pre>/<blockquote> 등 HTML 태그 쌍 불일치를 스택 기반으로 자동 보정한다.
+
+    Telegram HTML parse_mode 에서 지원하는 주요 태그들의 열림/닫힘 쌍이
+    올바르게 매칭되도록 보정한다:
+    - 닫히지 않은 태그 → 문서 말미에 닫는 태그 자동 추가
+    - 잘못 닫힌 태그 (스택에 없는 닫힘 태그) → 해당 닫힘 태그 제거
+    - 중첩 순서 불일치 (예: <pre><blockquote>...</pre></blockquote>) →
+      올바른 역순으로 자동 재정렬
+
+    대상 태그: pre, code, blockquote, b, i, s, u
+    """
+    parts: list[str] = []
+    stack: list[str] = []
+    pos = 0
+
+    for m in _HTML_TAG_RE.finditer(html):
+        tag = m.group(2).lower()
+        is_close = m.group(1) == "/"
+
+        # 매치 이전 텍스트 보존
+        parts.append(html[pos : m.start()])
+        pos = m.end()
+
+        if not is_close:
+            # 열린 태그: 스택에 추가
+            stack.append(tag)
+            parts.append(m.group(0))
+        else:
+            # 닫힌 태그: 스택에서 매칭
+            if stack and stack[-1] == tag:
+                # 올바른 닫힘: 그대로 출력
+                stack.pop()
+                parts.append(m.group(0))
+            elif tag in stack:
+                # 중첩 순서 불일치: 스택 최상단부터 해당 태그까지 순서대로 닫음
+                while stack and stack[-1] != tag:
+                    parts.append(f"</{stack.pop()}>")
+                if stack:
+                    stack.pop()
+                    parts.append(m.group(0))
+            # else: 스택에 없는 닫힘 태그 → 제거 (아무것도 추가하지 않음)
+
+    # 나머지 텍스트 보존
+    parts.append(html[pos:])
+
+    # 스택에 남은 미닫힌 태그 역순으로 자동 닫음
+    for tag in reversed(stack):
+        parts.append(f"</{tag}>")
+
+    return "".join(parts)
+
+
 def _convert_blockquotes(text: str) -> str:
     """HTML 이스케이프 후 &gt; 로 시작하는 줄을 <blockquote> 태그로 변환한다.
 
     연속된 blockquote 줄은 하나의 <blockquote> 블록으로 병합한다.
     빈 &gt; 줄(내용 없는 blockquote)도 빈 줄로 처리한다.
+    <pre> 블록 내부의 &gt; 줄은 blockquote로 변환하지 않는다
+    (Telegram HTML은 <pre> 를 <blockquote> 안에 중첩 허용하지 않음).
     """
     lines = text.split("\n")
     result: list[str] = []
     bq_lines: list[str] = []
+    in_pre = False  # <pre> 블록 내부 추적
 
     def _flush() -> None:
         if bq_lines:
@@ -34,6 +97,22 @@ def _convert_blockquotes(text: str) -> str:
             bq_lines.clear()
 
     for line in lines:
+        # <pre> 블록 진입 감지 (아직 pre 안에 있지 않을 때)
+        if not in_pre and "<pre" in line:
+            _flush()
+            result.append(line)
+            # 같은 줄에서 닫히지 않으면 multi-line pre 모드 진입
+            if "</pre>" not in line:
+                in_pre = True
+            continue
+
+        # <pre> 블록 내부: blockquote 변환 없이 그대로 출력
+        if in_pre:
+            result.append(line)
+            if "</pre>" in line:
+                in_pre = False
+            continue
+
         if line.startswith("&gt; ") or line == "&gt;":
             bq_lines.append(line[5:] if line.startswith("&gt; ") else "")
         else:
@@ -155,6 +234,10 @@ def markdown_to_html(text: str) -> str:
 
     # 6. blockquote 변환 (HTML 이스케이프 이후라 > 는 &gt; 로 표현됨)
     text = _convert_blockquotes(text)
+
+    # 7. 최종 HTML 태그 쌍 검증·자동 보정 (safety net)
+    #    LLM 출력이나 엣지 케이스로 인한 미닫힘/중첩 불일치 방지
+    text = fix_html_tag_pairs(text)
 
     return text
 
