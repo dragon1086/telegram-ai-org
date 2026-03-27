@@ -83,12 +83,33 @@ class CodeHealthMonitor:
         return report
 
     def _scan_files(self) -> list[FileHealthEntry]:
+        # data/ 디렉토리에 .refactor_needed_*.flag 파일이 있으면
+        # 해당 파일은 "수동 리팩토링 예약됨" — critical 대신 warn으로 강등하여
+        # 자가개선 파이프라인이 무한 no_change 루프에 빠지지 않도록 한다.
+        data_dir = self._core_dir.parent / "data"
+        _flagged: set[str] = set()
+        if data_dir.exists():
+            for flag_file in data_dir.glob(".refactor_needed_*.flag"):
+                # 플래그 파일명에서 파일 경로 복원 (__ → /, .flag 접미사 제거)
+                stem = flag_file.name[len(".refactor_needed_"):]
+                if stem.endswith(".flag"):
+                    stem = stem[:-len(".flag")]
+                file_rel = stem.replace("__", "/")
+                _flagged.add(file_rel)
+
         entries = []
         for py_file in sorted(self._core_dir.glob("*.py")):
             size_kb = py_file.stat().st_size / 1024
+            rel_path = f"core/{py_file.name}"
+            is_flagged = rel_path in _flagged
             if size_kb >= CRITICAL_KB:
-                status = "critical"
-                note = f"분리 권장 (>{CRITICAL_KB:.0f}KB)"
+                if is_flagged:
+                    # 수동 리팩토링 예약된 파일 — warn으로 강등 (파이프라인 non-blocking)
+                    status = "warn"
+                    note = f"수동 리팩토링 예약됨 ({size_kb:.0f}KB, flag 존재)"
+                else:
+                    status = "critical"
+                    note = f"분리 권장 (>{CRITICAL_KB:.0f}KB)"
             elif size_kb >= WARN_KB:
                 status = "warn"
                 note = f"성장 추세 모니터링 ({WARN_KB:.0f}KB 초과)"
@@ -96,7 +117,7 @@ class CodeHealthMonitor:
                 status = "ok"
                 note = ""
             entries.append(FileHealthEntry(
-                path=f"core/{py_file.name}",
+                path=rel_path,
                 size_kb=round(size_kb, 1),
                 status=status,
                 note=note,
