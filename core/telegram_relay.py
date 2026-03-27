@@ -2900,6 +2900,11 @@ class TelegramRelay:
             self._task_poller.start()
             logger.info(f"[{self.org_id}] TaskPoller 시작됨")
 
+        # StalenessChecker — 이벤트 루프 안에서 시작해야 asyncio.create_task() 동작
+        if self._pm_orchestrator is not None:
+            self._pm_orchestrator._staleness_checker.start()
+            logger.info(f"[{self.org_id}] StalenessChecker 시작됨")
+
         # pm_bot(global)에서만 완료 감지 폴러 시작 — 최종 합성 보장
         if self._pm_orchestrator is not None and self.context_db is not None:
             import asyncio as _asyncio
@@ -3103,7 +3108,7 @@ class TelegramRelay:
                 task_id=task_id,
                 description=prompt,
                 assigned_dept=org_id,
-                chat_id=self.allowed_chat_id,
+                created_by=f"speak:{self.org_id}",
             )
 
             # 최대 40초 폴링 (5초 간격 × 8회)

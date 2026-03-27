@@ -275,10 +275,7 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
             logger.debug(f"[PM] AgentPersonaMemory 초기화 실패 (무시): {_apm_err}")
         # StalenessChecker — 백그라운드 루프로 stale 서브태스크 자동 감지
         self._staleness_checker = StalenessChecker(context_db)
-        try:
-            self._staleness_checker.start()
-        except Exception as _sc_err:
-            logger.warning(f"[PM] StalenessChecker 시작 실패 (무시): {_sc_err}")
+        # NOTE: start()는 _post_init에서 호출 — __init__ 시점에는 이벤트 루프가 없음
         # COLLAB 자동 트리거 dedup 캐시
         # key: (source_task_id, target_dept) → 마지막 트리거 발동 시각 (monotonic seconds)
         self._collab_dedup: dict[tuple[str, str], float] = {}
