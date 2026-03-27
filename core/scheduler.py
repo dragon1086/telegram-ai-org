@@ -291,7 +291,8 @@ class OrgScheduler:
                 task_id=parent_task_id,
                 description=f"[{meeting_type}] {topic}",
                 assigned_dept="pm",
-                chat_id=self._pm_chat_id,
+                created_by="pm_scheduler",
+                metadata={"chat_id": self._pm_chat_id},
             )
 
             task_ids = await self._pm_orchestrator.dispatch(
@@ -473,80 +474,40 @@ class OrgScheduler:
             await self._safe_send(f"⚠️ [스케줄러] 아침 목표 생성 중 오류 발생: {e}")
 
     async def daily_retro(self) -> None:
-        """매일 23:30 KST — 저녁 회고."""
+        """매일 23:30 KST — 저녁 회고 (대화형 RetroDiscussion 단일 버전)."""
         logger.info("[OrgScheduler] daily_retro 시작")
         try:
-            # Phase 3: 전 조직 브로드캐스트 — 상태 보고 + 조치사항 수집
-            topic = "일일 회고 — 오늘의 완료 항목, 진행 중인 작업, 내일 조치사항 공유"
-            responses = await self.broadcast_meeting_start(
-                meeting_type="daily_retro",
-                topic=topic,
-                collect_timeout_sec=90.0,
-            )
-            if responses:
-                await self._post_meeting_summary(responses, "daily_retro", topic)
-
-            # RetroDiscussion 연동: 대화형 라운드별 회고 + 라운드별 중간 요약 Telegram 전송
-            # 각 라운드(잘한 것/잘못한 것/해야 할 것) 종료 시 _send_round_summary() 자동 호출됨
+            # 대화형 라운드별 회고: 잘한 것 → 잘못한 것 → 해야 할 것
+            # 각 라운드 종료 시 _send_round_summary() 자동 호출됨
             if self._pm_orchestrator is not None:
-                try:
-                    from core.retro_discussion import RetroDiscussion
-                    rd = RetroDiscussion(
-                        pm_orchestrator=self._pm_orchestrator,
-                        send_text=self._safe_send,
-                        pm_chat_id=self._pm_chat_id,
-                        goal_tracker=self._goal_tracker,
-                    )
-                    await rd.run_retro(meeting_type="daily_retro")
-                except Exception as e_rd:
-                    logger.warning(f"[OrgScheduler] RetroDiscussion 실행 실패 (무시): {e_rd}")
+                from core.retro_discussion import RetroDiscussion
+                rd = RetroDiscussion(
+                    pm_orchestrator=self._pm_orchestrator,
+                    send_text=self._safe_send,
+                    pm_chat_id=self._pm_chat_id,
+                    goal_tracker=self._goal_tracker,
+                )
+                await rd.run_retro(meeting_type="daily_retro")
+            else:
+                await self._safe_send("⚠️ [일일 회고] PM Orchestrator 미초기화 — 회고를 실행할 수 없습니다.")
+                return
 
-            from scripts.daily_retro import main as _retro_main
-            await _retro_main()
-            tasks = []  # Phase 3에서 참조 — 여기서 초기화
-            # Phase 2: RetroMemory에 저장
+            # RetroMemory에 저장
             try:
                 from datetime import date
 
                 from core.retro_memory import RetroEntry, RetroMemory
-                from scripts.daily_retro import get_today_tasks
-                tasks = get_today_tasks()
-                total = len(tasks)
-                success = sum(1 for t in tasks if t.get("status") == "completed")
                 rm = RetroMemory()
                 rm.save_daily(RetroEntry(
                     date=date.today().isoformat(),
-                    best_thing=f"오늘 {success}/{total}건 완료",
-                    failure_summary=f"실패 {total - success}건",
+                    best_thing="대화형 회고 완료",
+                    failure_summary="",
                     experiment="내일 개선 방향 탐색",
-                    task_count=total,
-                    success_count=success,
+                    task_count=0,
+                    success_count=0,
                 ))
             except Exception as e2:
                 logger.warning(f"[OrgScheduler] RetroMemory 저장 실패 (무시): {e2}")
-            # Phase 3: CollaborationTracker + AgentPersonaMemory 업데이트
-            try:
-                from core.agent_persona_memory import AgentPersonaMemory
-                from core.collaboration_tracker import CollaborationTracker
-                apm = AgentPersonaMemory()
-                ct = CollaborationTracker(persona_memory=None)  # synergy는 update_from_task로만 일원화
-                # 오늘 완료된 태스크의 협업 기록
-                for task in tasks:
-                    if task.get("status") == "completed":
-                        task_id = task.get("id", "")
-                        participants = task.get("participants", [])
-                        task_type = task.get("type", "general")
-                        if participants and len(participants) > 1:
-                            _tid = task_id or str(uuid.uuid4())[:8]
-                            await asyncio.get_event_loop().run_in_executor(
-                                None, ct.record, _tid, participants, task_type, True
-                            )
-                        elif task.get("assigned_to"):
-                            await asyncio.get_event_loop().run_in_executor(
-                                None, apm.update_from_task, task["assigned_to"], task_type, True
-                            )
-            except Exception as e2:
-                logger.warning(f"[OrgScheduler] Phase3 CollaborationTracker 저장 실패 (무시): {e2}")
         except Exception as e:
             logger.error(f"[OrgScheduler] daily_retro 실패: {e}")
             await self._safe_send(f"⚠️ [스케줄러] 일일 회고 중 오류 발생: {e}")
