@@ -75,6 +75,7 @@ bash scripts/start_all.sh
 | `core/shoutout_system.py` | 팀워크·칭찬 시스템 |
 | `core/lesson_memory.py` | 교훈 메모리 |
 | `core/telegram_relay.py` | Telegram 메시지 중계 |
+| `core/bot_message_handler.py` | 봇 메시지 수신·분류·첨부파일 처리 (Phase 1b 분리) |
 | `core/context_window.py` | PM 대화 히스토리 컨텍스트 창 유틸리티 |
 | `workers.yaml` | 워커 봇 등록부 (레거시, bots/*.yaml 참조) |
 | `orchestration.yaml` | 오케스트레이션 설정 |
@@ -87,6 +88,26 @@ bash scripts/start_all.sh
 ## 운영 주의사항 (누적)
 
 > 세션 시작 시 반드시 확인. 실수가 발생할 때마다 여기에 추가한다.
+
+### [2026-03-27] Gemini Preview 모델 폴백 정책 (gemini-cli 조직 공통)
+
+- **구현**: `tools/gemini_cli_runner.py` — Preview 모델 호출 실패(`RunnerError`) 시 `GEMINI_FALLBACK_MODEL`(기본값: `gemini-2.5-flash` GA)로 자동 재시도
+- **폴백 조건**: `engine_config.model`이 지정되어 있고, 해당 모델이 `GEMINI_FALLBACK_MODEL`과 다를 때만 발동 (무한 루프 방지)
+- **로그**: `[FALLBACK] Preview 모델 실패 → gemini-2.5-flash(GA) 로 전환 (원인: ...)` 형태로 warning 출력
+- **환경변수**: `.env` — `GEMINI_FALLBACK_MODEL=gemini-2.5-flash`
+- **orchestration.yaml**: gemini-cli 사용 team_profiles에 `fallback_model: gemini-2.5-flash` 필드 추가
+
+상세 규칙: CLAUDE.md `[2026-03-27] Gemini Preview 모델 폴백 정책` 섹션 참고.
+
+### [2026-03-26] 조사/리서치 태스크 — 웹검색 의무 규칙 (전체 조직 공통)
+
+- **규칙**: 조사·리서치·사실 확인이 포함된 태스크를 수행할 때는 **반드시 웹검색을 포함**해야 한다.
+- **금지**: 학습 데이터 기반 추론만으로 시간에 따라 변하는 사실 정보(모델 버전, API 스펙, EOS 날짜 등)를 단정하는 것 — 할루시네이션 위험
+- **의무 적용 범위**: 최신 모델명·버전, API 스펙, 서비스 종료(EOS) 일정, 경쟁사 동향, 시장 데이터 등
+- **올바른 절차**: 조사 요청 수신 → **웹검색** → 결과 요약 → 판단 (검색 없이 바로 답변 금지)
+- **근거**: 2026-03-26 Gemini 모델 버전 조사 시 웹검색 미수행으로 "gemini-3.1 Flash는 존재하지 않는다"는 오류 발생 (실제: gemini-3.1-flash-lite-preview가 2026-03-03 출시됨)
+
+상세 규칙: CLAUDE.md `[2026-03-26] 조사/리서치 태스크` 섹션 참고.
 
 ### [2026-03-26] 앱스토어 링크 현황 + 투입 페르소나 기재 규칙 (전체 조직 공통)
 

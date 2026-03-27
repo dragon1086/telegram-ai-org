@@ -6,7 +6,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.telegram_formatting import escape_html, format_for_telegram, markdown_to_html
+from core.telegram_formatting import (
+    escape_html,
+    fix_html_tag_pairs,
+    format_for_telegram,
+    markdown_to_html,
+)
 
 # ── escape_html ────────────────────────────────────────────────────────────
 
@@ -242,6 +247,35 @@ def test_blockquote_empty_gt() -> None:
     text = "> "
     result = markdown_to_html(text)
     assert "<blockquote>" in result
+
+
+def test_blockquote_no_pre_nesting() -> None:
+    """코드블록 내 > 로 시작하는 줄이 <blockquote> 안에 중첩되지 않아야 함.
+
+    Telegram HTML은 <pre> 를 <blockquote> 안에 허용하지 않아 파싱 오류 발생.
+    재현 조건: 코드 내용에 > 로 시작하는 줄이 있을 때.
+    """
+    text = "```\n> return value\n> another line\n```"
+    result = markdown_to_html(text)
+    # <pre> 가 <blockquote> 안에 중첩되지 않아야 함
+    assert "<blockquote>" not in result
+    assert "<pre>" in result
+    # 원문 코드 내용은 보존 (HTML 이스케이프된 형태로)
+    assert "&gt; return value" in result
+
+
+def test_blockquote_pre_and_quote_separate() -> None:
+    """코드블록과 blockquote 가 독립적으로 공존할 때 각각 올바르게 변환."""
+    text = "> 인용 문구\n\n```\ncode here\n```"
+    result = markdown_to_html(text)
+    assert "<blockquote>인용 문구</blockquote>" in result
+    assert "<pre>" in result and "code here" in result
+    # 중첩 없음: <blockquote> 내부에 <pre> 없어야 함
+    bq_start = result.index("<blockquote>")
+    bq_end = result.index("</blockquote>")
+    pre_start = result.index("<pre>")
+    # <pre> 가 <blockquote> 범위 밖에 있어야 함
+    assert not (bq_start < pre_start < bq_end)
 
 
 # ── 순서 없는 목록 변환 ──────────────────────────────────────────────────────
@@ -594,3 +628,128 @@ def test_full_pm_report_renders_correctly() -> None:
     # 순서 있는 목록은 그대로 유지
     assert "1. 커밋 및 푸시" in result
     assert "2. 봇 재기동 요청" in result
+
+
+# ── fix_html_tag_pairs ──────────────────────────────────────────────────────
+
+def test_fix_html_tag_pairs_valid_unchanged() -> None:
+    """올바른 HTML은 변경 없이 그대로 반환된다."""
+    html = "<blockquote>인용</blockquote>\n<pre>코드</pre>"
+    assert fix_html_tag_pairs(html) == html
+
+
+def test_fix_html_tag_pairs_unclosed_blockquote() -> None:
+    """닫히지 않은 <blockquote>를 자동으로 닫는다."""
+    html = "<blockquote>닫힘 없음"
+    result = fix_html_tag_pairs(html)
+    assert result == "<blockquote>닫힘 없음</blockquote>"
+
+
+def test_fix_html_tag_pairs_unclosed_pre() -> None:
+    """닫히지 않은 <pre>를 자동으로 닫는다."""
+    html = "<pre>코드 시작"
+    result = fix_html_tag_pairs(html)
+    assert result == "<pre>코드 시작</pre>"
+
+
+def test_fix_html_tag_pairs_stray_close_removed() -> None:
+    """스택에 없는 닫힘 태그(</pre>)는 제거된다."""
+    html = "일반 텍스트</pre>더 많은 텍스트"
+    result = fix_html_tag_pairs(html)
+    assert "</pre>" not in result
+    assert "일반 텍스트" in result
+    assert "더 많은 텍스트" in result
+
+
+def test_fix_html_tag_pairs_wrong_nesting_pre_blockquote() -> None:
+    """T-698 재현: <pre><blockquote>...</pre></blockquote> 순서 불일치 자동 보정.
+
+    Telegram 오류: 'expected </blockquote>, found </pre>'
+    stack=[pre, blockquote], </pre> 발견 시 → blockquote 먼저 닫고 pre 닫음.
+    """
+    # 잘못된 중첩: pre 안에 blockquote가 있는데 pre가 먼저 닫힘
+    bad = "<pre>코드<blockquote>인용</pre></blockquote>"
+    result = fix_html_tag_pairs(bad)
+    # 결과: </blockquote>가 </pre>보다 먼저 와야 함
+    assert result.index("</blockquote>") < result.index("</pre>")
+    # 원본 텍스트는 보존
+    assert "코드" in result
+    assert "인용" in result
+
+
+def test_fix_html_tag_pairs_wrong_nesting_blockquote_pre() -> None:
+    """<blockquote><pre>...</blockquote></pre> 순서 불일치 자동 보정."""
+    bad = "<blockquote>인용<pre>코드</blockquote></pre>"
+    result = fix_html_tag_pairs(bad)
+    assert result.index("</pre>") < result.index("</blockquote>")
+
+
+def test_fix_html_tag_pairs_nested_bold_italic() -> None:
+    """정상 중첩 <b><i>text</i></b>는 그대로 유지된다."""
+    html = "<b><i>강조</i></b>"
+    assert fix_html_tag_pairs(html) == html
+
+
+def test_fix_html_tag_pairs_multiple_unclosed() -> None:
+    """여러 미닫힌 태그가 역순으로 자동 닫힌다."""
+    html = "<pre><code>코드"
+    result = fix_html_tag_pairs(html)
+    assert result == "<pre><code>코드</code></pre>"
+
+
+def test_fix_html_tag_pairs_code_with_class() -> None:
+    """<code class="language-python"> 형식도 올바르게 처리된다."""
+    html = '<pre><code class="language-python">x = 1\n</code></pre>'
+    assert fix_html_tag_pairs(html) == html
+
+
+# ── 통합 테스트: markdown_to_html 내 fix_html_tag_pairs 적용 ────────────────
+
+def test_markdown_code_block_with_gt_lines_no_tag_mismatch() -> None:
+    """코드블록 내 > 로 시작하는 줄이 있어도 태그 쌍 불일치가 발생하지 않는다.
+
+    재현 조건: 멀티라인 코드블록 안에 > 로 시작하는 줄 포함.
+    """
+    md = "```bash\n$ ls -la > output.txt\n$ cat output.txt\n```"
+    result = markdown_to_html(md)
+    # <pre> 는 반드시 있어야 하고
+    assert "<pre>" in result
+    # <blockquote> 가 <pre> 안에 중첩되지 않아야 함
+    if "<blockquote>" in result:
+        pre_idx = result.index("<pre>")
+        bq_idx = result.index("<blockquote>")
+        bq_close_idx = result.index("</blockquote>")
+        # blockquote 가 pre 밖에 있어야 함
+        assert bq_idx < pre_idx or bq_close_idx > result.index("</pre>")
+
+
+def test_markdown_blockquote_before_code_no_mismatch() -> None:
+    """> 인용 다음에 코드블록이 와도 HTML 태그 쌍이 올바르다."""
+    md = "> 참고: 중요 내용\n\n```python\nresult = x > 0\n```"
+    result = markdown_to_html(md)
+    assert "<blockquote>참고: 중요 내용</blockquote>" in result
+    assert "<pre>" in result
+    # 태그 쌍 검증: fix_html_tag_pairs 를 한번 더 적용해도 변하지 않아야 함
+    assert fix_html_tag_pairs(result) == result
+
+
+def test_markdown_code_then_blockquote_no_mismatch() -> None:
+    """코드블록 다음에 blockquote가 와도 HTML 태그 쌍이 올바르다."""
+    md = "```python\nx = 1\n```\n\n> 요약 완료"
+    result = markdown_to_html(md)
+    assert "<pre>" in result
+    assert "<blockquote>요약 완료</blockquote>" in result
+    assert fix_html_tag_pairs(result) == result
+
+
+def test_markdown_to_html_output_is_fix_idempotent() -> None:
+    """markdown_to_html 출력은 fix_html_tag_pairs 를 다시 적용해도 불변이다 (멱등)."""
+    md = (
+        "## 결론\n\n"
+        "**수정 완료**\n\n"
+        "> 참고: 중요 사항\n\n"
+        "```python\ndef foo():\n    return x > 0\n```\n\n"
+        "- 항목 1\n- 항목 2\n"
+    )
+    result = markdown_to_html(md)
+    assert fix_html_tag_pairs(result) == result

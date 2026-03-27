@@ -148,6 +148,22 @@ def stop_bot(org_id: str) -> bool:
     pids = _known_pids_for_org(org_id)
     stopped = False
 
+    # Phase 1: Kill entire process groups via SIGTERM.
+    # Since start_bot() uses start_new_session=True, each main.py PID is also
+    # the PGID (Process Group ID). Killing the process group ensures that child
+    # processes (claude_agent_sdk, codex, etc.) are terminated together, preventing
+    # orphan processes (PPID=1) that survive after main.py exits.
+    for pid in sorted(pids):
+        try:
+            os.killpg(pid, signal.SIGTERM)
+            stopped = True
+        except (ProcessLookupError, PermissionError, OSError):
+            # Process group may not exist or we lack permission; fall through
+            # to per-PID kill below.
+            pass
+
+    # Phase 2: Per-PID SIGTERM as fallback for any processes not covered by
+    # the process group kill (e.g. if the PID is not a PGID).
     for pid in sorted(pids):
         try:
             os.kill(pid, signal.SIGTERM)
@@ -155,6 +171,7 @@ def stop_bot(org_id: str) -> bool:
         except ProcessLookupError:
             continue
 
+    # Phase 3: Wait for graceful shutdown.
     deadline = time.time() + 5.0
     while time.time() < deadline:
         remaining = _find_live_pids(org_id)
@@ -162,7 +179,13 @@ def stop_bot(org_id: str) -> bool:
             break
         time.sleep(0.2)
 
+    # Phase 4: Force-kill any remaining processes (group first, then per-PID).
     for pid in sorted(_find_live_pids(org_id)):
+        try:
+            os.killpg(pid, signal.SIGKILL)
+            stopped = True
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
         try:
             os.kill(pid, signal.SIGKILL)
             stopped = True

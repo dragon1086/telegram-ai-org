@@ -120,29 +120,6 @@ done <<< "$BOT_ROWS"
 
 echo "=== 모든 조직 봇 시작 완료 ==="
 
-# agent_monitor 데몬 시작 (aiorg Claude agent 세션 stuck 감지 + 자동 응답)
-MONITOR_PID_FILE="/tmp/agent-monitor.pid"
-_monitor_running=false
-if [ -f "$MONITOR_PID_FILE" ]; then
-  _mpid="$(cat "$MONITOR_PID_FILE" 2>/dev/null)"
-  # PID가 살아있고, 실제로 agent_monitor 프로세스인지 확인
-  if [ -n "$_mpid" ] && ps -p "$_mpid" > /dev/null 2>&1 \
-     && ps -p "$_mpid" -o args= 2>/dev/null | grep -q "agent_monitor"; then
-    _monitor_running=true
-  fi
-fi
-
-if [ "$_monitor_running" = true ]; then
-  echo "✅ agent_monitor 이미 실행 중 (PID: $_mpid)"
-else
-  # 좀비 PID 파일 정리
-  [ -f "$MONITOR_PID_FILE" ] && rm -f "$MONITOR_PID_FILE"
-  nohup "$PYTHON_BIN" "$SCRIPT_DIR/agent_monitor.py" \
-    >> "$HOME/.ai-org/agent-monitor.log" 2>&1 &
-  echo $! > "$MONITOR_PID_FILE"
-  echo "▶ agent_monitor 시작 (PID: $!)"
-fi
-
 # bot_watchdog 데몬 시작 (봇 프로세스 crash 감지 + 자동 재시작 + Telegram 알림)
 WATCHDOG_PID_FILE="/tmp/bot-watchdog.pid"
 _watchdog_running=false

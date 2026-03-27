@@ -207,7 +207,7 @@ class TestEngineRoutingAllOrgs:
         ("aiorg_engineering_bot", "claude-code"),
         ("aiorg_design_bot", "claude-code"),
         ("aiorg_product_bot", "claude-code"),
-        ("aiorg_ops_bot", "codex"),
+        ("aiorg_ops_bot", "gemini-cli"),
         ("aiorg_growth_bot", "gemini-cli"),
         ("aiorg_research_bot", "gemini-cli"),
     ])
@@ -269,13 +269,13 @@ class TestBotEngineMapCompleteness:
                 f"{bot_id}: gemini-cli 사용 필수 (현재: {BOT_ENGINE_MAP[bot_id]})"
             )
 
-    def test_ops_bot_uses_codex_in_engine_map(self) -> None:
-        """운영실은 BOT_ENGINE_MAP에서 codex를 사용한다."""
+    def test_ops_bot_uses_gemini_cli_in_engine_map(self) -> None:
+        """운영실은 BOT_ENGINE_MAP에서 gemini-cli를 사용한다 (2026-03-26 codex rate limit 대응 전환)."""
         from core.constants import BOT_ENGINE_MAP
 
         assert "aiorg_ops_bot" in BOT_ENGINE_MAP, "aiorg_ops_bot: BOT_ENGINE_MAP 누락"
-        assert BOT_ENGINE_MAP["aiorg_ops_bot"] == "codex", (
-            f"운영실: codex 사용 필수 (현재: {BOT_ENGINE_MAP['aiorg_ops_bot']})"
+        assert BOT_ENGINE_MAP["aiorg_ops_bot"] == "gemini-cli", (
+            f"운영실: gemini-cli 사용 필수 (현재: {BOT_ENGINE_MAP['aiorg_ops_bot']})"
         )
 
 
@@ -637,7 +637,7 @@ class TestEngineDispatchRoutePathE2E:
     @pytest.mark.parametrize("dept_id,expected_engine,expected_cls_prefix", [
         # claude-code 엔진: ClaudeAgentRunner(SDK 설치) 또는 ClaudeSubprocessRunner(fallback)
         ("aiorg_engineering_bot", "claude-code", "Claude"),
-        ("aiorg_ops_bot", "codex", "Codex"),
+        ("aiorg_ops_bot", "gemini-cli", "GeminiCLI"),
         ("aiorg_research_bot", "gemini-cli", "GeminiCLI"),
     ])
     def test_dispatch_routing_path_org_to_engine_to_runner(
@@ -693,12 +693,17 @@ class TestEngineDispatchRoutePathE2E:
                     f"BOT_ENGINE_MAP='{BOT_ENGINE_MAP[org_id]}' — 불일치"
                 )
 
-    def test_three_engine_types_all_represented_in_dispatch_map(self) -> None:
-        """BOT_ENGINE_MAP에 3개 엔진 타입(claude-code/codex/gemini-cli)이 모두 존재한다."""
+    def test_two_engine_types_represented_in_dispatch_map(self) -> None:
+        """BOT_ENGINE_MAP에 2개 이상 엔진 타입이 존재한다.
+
+        Note: 2026-03-26 운영실(aiorg_ops_bot)이 codex → gemini-cli로 전환됨에 따라
+        현재 BOT_ENGINE_MAP에는 claude-code와 gemini-cli 2종만 포함된다.
+        codex는 RunnerFactory에서 여전히 지원되나 현재 조직 배정에서 제외됨.
+        """
         from core.constants import BOT_ENGINE_MAP
 
         engines_in_map = set(BOT_ENGINE_MAP.values())
-        required_engines = {"claude-code", "codex", "gemini-cli"}
+        required_engines = {"claude-code", "gemini-cli"}
         missing = required_engines - engines_in_map
         assert not missing, (
             f"BOT_ENGINE_MAP에 누락된 엔진 타입: {missing} — "

@@ -49,6 +49,34 @@ jobs:
       - name: Validate orchestration config
         run: python tools/orchestration_cli.py validate-config
 
+      - name: Assert infra-baseline version (pre-deploy check)
+        # ETC-02/ETC-03 재발 방지: 배포 전 infra-baseline.yaml 버전이 최소 기준(1.1.0) 이상인지 검증
+        run: |
+          python - <<'EOF'
+          import yaml, sys, re
+          from pathlib import Path
+
+          REQUIRED_VERSION = "1.1.0"
+
+          def version_tuple(v):
+              return tuple(int(x) for x in re.sub(r"[^0-9.]", "", v).split("."))
+
+          baseline_path = Path("infra-baseline.yaml")
+          if not baseline_path.exists():
+              print("::error::infra-baseline.yaml not found — abort deploy")
+              sys.exit(1)
+
+          data = yaml.safe_load(baseline_path.read_text())
+          actual = str(data.get("version", "0.0.0"))
+
+          if version_tuple(actual) < version_tuple(REQUIRED_VERSION):
+              print(f"::error::infra-baseline version {actual} < required {REQUIRED_VERSION}")
+              print("::error::ETC-02/ETC-03 기준 미달 — infra-baseline.yaml 업데이트 후 재배포하세요")
+              sys.exit(1)
+
+          print(f"✅ infra-baseline version OK: {actual} >= {REQUIRED_VERSION}")
+          EOF
+
       - name: Run E2E suite
         run: python -m pytest tests/e2e/ -q --tb=short
 

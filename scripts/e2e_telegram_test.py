@@ -1,6 +1,8 @@
 """
 실제 Telegram E2E 테스트 스크립트.
 Rocky 계정(MTProto)으로 그룹에 메시지를 보내고, 봇 응답을 수집해 평가한다.
+
+min_id 필터링: TelethonListenerHelper 를 사용하여 채팅방별 cross-contamination 방지.
 """
 from __future__ import annotations
 
@@ -13,6 +15,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
+
+from scripts.telethon_listener import CollectedMessage, TelethonListenerHelper
 
 # ── 환경 변수 ────────────────────────────────────────────────────────────────
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -92,25 +96,8 @@ async def run_e2e_tests() -> None:
     print("=" * 60)
 
     results: list[ScenarioResult] = []
-
-    # 단일 글로벌 핸들러 — 현재 수집 중인 시나리오 버퍼에 append
-    active_collected: list[dict] = []
-    active_collecting: bool = False
-
-    async def global_handler(event):
-        if not active_collecting:
-            return
-        sender = await event.get_sender()
-        if sender and getattr(sender, "bot", False):
-            entry = {
-                "bot": getattr(sender, "username", "unknown"),
-                "text": event.message.text or "",
-                "ts": time.time(),
-            }
-            active_collected.append(entry)
-            print(f"   📨 [{entry['bot']}] {entry['text'][:120]}")
-
-    client.add_event_handler(global_handler, events.NewMessage(chats=chat_entity))
+    # TelethonListenerHelper: 채팅방별 min_id dict로 cross-contamination 방지
+    listener = TelethonListenerHelper(client)
 
     for scenario in SCENARIOS:
         sid = scenario["id"]
@@ -128,48 +115,49 @@ async def run_e2e_tests() -> None:
             message_sent=msg,
         )
 
-        # 수집 버퍼 초기화
-        active_collected.clear()
-        active_collecting = True  # noqa: F841 — used via closure
+        # 수집 버퍼 + stop 플래그 초기화
+        collected: list[CollectedMessage] = []
+        stop_flag: list[bool] = [False]
 
-        # 리스너 초기화 시점의 최신 메시지 ID 기록 — cross-contamination 방지
-        _latest = await client.get_messages(chat_entity, limit=1)
-        _min_id: int = _latest[0].id if _latest else 0
+        # 리스너 활성화 전 최신 메시지 ID 기록 — cross-contamination 방지
+        await listener.record_min_id(chat_entity)
 
-        # Python closure workaround: use nonlocal trick via mutable container
-        _flag = [True]
-
-        async def _scoped_handler(event, _f=_flag, _c=active_collected, _mid=_min_id):
-            if not _f[0]:
-                return
-            if event.message.id <= _mid:  # 초기화 이전 메시지 skip (cross-contamination 방지)
-                return
+        # CollectedMessage 수집 + 콘솔 출력 커스텀 콜백
+        async def _print_and_collect(event, _c=collected):
             sender = await event.get_sender()
-            if sender and getattr(sender, "bot", False):
-                text = getattr(event.message, "text", None) or ""
-                entry = {
-                    "bot": getattr(sender, "username", "unknown"),
-                    "text": text,
-                    "ts": time.time(),
-                }
-                _c.append(entry)
-                print(f"   📨 [{entry['bot']}] {text[:120]}")
+            if not (sender and getattr(sender, "bot", False)):
+                return
+            text = getattr(event.message, "text", None) or ""
+            if not text:
+                return
+            entry = CollectedMessage(
+                bot=getattr(sender, "username", "unknown"),
+                text=text,
+            )
+            _c.append(entry)
+            print(f"   📨 [{entry.bot}] {text[:120]}")
 
-        client.remove_event_handler(global_handler)
-        client.add_event_handler(_scoped_handler, events.NewMessage(chats=chat_entity))
-        client.add_event_handler(_scoped_handler, events.MessageEdited(chats=chat_entity))
+        handler = listener.make_handler(
+            chat_entity,
+            collected,
+            stop_flag,
+            on_message=_print_and_collect,
+        )
+        client.add_event_handler(handler, events.NewMessage(chats=chat_entity))
+        client.add_event_handler(handler, events.MessageEdited(chats=chat_entity))
 
         t0 = time.time()
         await client.send_message(CHAT_ID, msg)
         print(f"   ⏳ 응답 대기 중 (최대 {timeout}초)…")
         await asyncio.sleep(timeout)
-        _flag[0] = False
+        stop_flag[0] = True
         result.elapsed_sec = time.time() - t0
 
-        client.remove_event_handler(_scoped_handler, events.NewMessage(chats=chat_entity))
-        client.remove_event_handler(_scoped_handler, events.MessageEdited(chats=chat_entity))
+        client.remove_event_handler(handler, events.NewMessage(chats=chat_entity))
+        client.remove_event_handler(handler, events.MessageEdited(chats=chat_entity))
 
-        result.responses = list(active_collected)
+        # CollectedMessage → dict 변환 (기존 평가 로직 호환)
+        result.responses = [{"bot": m.bot, "text": m.text, "ts": m.ts} for m in collected]
 
         # 평가
         all_text = " ".join(r["text"] for r in result.responses)
