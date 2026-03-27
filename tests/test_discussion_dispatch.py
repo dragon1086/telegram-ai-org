@@ -65,7 +65,8 @@ async def test_discussion_dispatch_creates_parent_and_subtasks() -> None:
     fake_org_b.dept_name = "마케팅실"
     fake_cfg.list_orgs.return_value = [fake_org_a, fake_org_b]
 
-    with patch("core.pm_orchestrator.load_orchestration_config", return_value=fake_cfg):
+    with patch("core.pm_orchestrator.load_orchestration_config", return_value=fake_cfg), \
+         patch("core.pm_discussion_mixin.load_orchestration_config", return_value=fake_cfg):
         result = await orc.discussion_dispatch(
             topic="AI 전략 토론",
             dept_hints=["bot_a", "bot_b"],
@@ -99,7 +100,8 @@ async def test_discussion_dispatch_insufficient_participants() -> None:
     fake_cfg.list_specialist_orgs.return_value = []  # 0 specialist orgs
     fake_cfg.list_orgs.return_value = []
 
-    with patch("core.pm_orchestrator.load_orchestration_config", return_value=fake_cfg):
+    with patch("core.pm_orchestrator.load_orchestration_config", return_value=fake_cfg), \
+         patch("core.pm_discussion_mixin.load_orchestration_config", return_value=fake_cfg):
         result = await orc.discussion_dispatch(
             topic="토론 주제",
             dept_hints=[],  # no dept hints

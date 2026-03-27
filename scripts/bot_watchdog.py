@@ -25,6 +25,8 @@ CHECK_INTERVAL = 30  # 초
 MAX_RESTART_PER_BOT = 5  # 연속 재시작 한도 (무한루프 방지)
 RESTART_COUNT_RESET_AFTER = 600  # 10분 동안 안정적이면 카운터 리셋
 LOG_STALENESS_THRESHOLD = 600  # 10분간 로그 갱신 없으면 hung으로 판단
+ORPHAN_CHECK_INTERVAL = 300  # 5분마다 고아 프로세스 점검
+ORPHAN_AGE_THRESHOLD = 3600  # 1시간 이상된 고아만 kill (작업중인 프로세스 보호)
 AI_ORG_LOG_DIR = Path.home() / ".ai-org"
 PID_FILE = Path("/tmp/bot-watchdog.pid")
 RESTART_FLAG = Path.home() / ".ai-org" / "restart_requested"
@@ -176,11 +178,58 @@ def restart_bot(org_id: str, token: str, chat_id: int) -> int | None:
         return None
 
 
+# ── 고아 프로세스 정리 ────────────────────────────────────────────────────────
+def cleanup_orphan_agent_processes() -> int:
+    """PPID=1인 claude_agent_sdk/codex 고아 프로세스를 찾아 종료.
+
+    봇이 재기동되면 자식 프로세스(claude_agent_sdk, codex)가 PPID=1로 떠서
+    영원히 살아있는 문제를 방지한다. ORPHAN_AGE_THRESHOLD(1시간) 이상된 것만 kill.
+    """
+    import subprocess
+    killed = 0
+    try:
+        # ps로 PPID=1인 claude_agent_sdk/codex 프로세스 조회
+        out = subprocess.check_output(
+            ["ps", "-eo", "pid,ppid,etimes,command"], text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return 0
+
+    for line in out.splitlines()[1:]:  # 헤더 스킵
+        parts = line.split(None, 3)
+        if len(parts) < 4:
+            continue
+        try:
+            pid, ppid, elapsed_sec = int(parts[0]), int(parts[1]), int(parts[2])
+        except ValueError:
+            continue
+        cmd = parts[3]
+
+        if ppid != 1:
+            continue
+        if "claude_agent_sdk" not in cmd and "codex" not in cmd:
+            continue
+        if elapsed_sec < ORPHAN_AGE_THRESHOLD:
+            continue
+
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed += 1
+            log.info(f"고아 프로세스 종료: PID={pid} (경과 {elapsed_sec}초)")
+        except OSError as e:
+            log.warning(f"고아 PID={pid} 종료 실패: {e}")
+
+    if killed:
+        log.info(f"고아 프로세스 {killed}개 정리 완료")
+    return killed
+
+
 # ── 메인 루프 ─────────────────────────────────────────────────────────────────
 class BotWatchdog:
     def __init__(self):
         self.restart_counts: dict[str, int] = {}  # org_id -> 연속 재시작 횟수
         self.last_restart_time: dict[str, float] = {}  # org_id -> 마지막 재시작 시각
+        self.last_orphan_check: float = 0.0  # 마지막 고아 점검 시각
         self.running = True
 
     def _handle_signal(self, signum, frame):
@@ -337,6 +386,18 @@ class BotWatchdog:
                         f"재시작된 봇: {', '.join(f'<code>{r}</code>' for r in restarted)}\n"
                         f"시각: {time.strftime('%H:%M:%S')}"
                     )
+
+                # 주기적 고아 프로세스 정리 (ORPHAN_CHECK_INTERVAL마다)
+                now = time.time()
+                if now - self.last_orphan_check >= ORPHAN_CHECK_INTERVAL:
+                    killed = cleanup_orphan_agent_processes()
+                    self.last_orphan_check = now
+                    if killed:
+                        notify_rocky(
+                            f"<b>고아 프로세스 자동 정리</b>\n"
+                            f"종료: {killed}개 (claude_agent_sdk/codex, PPID=1)\n"
+                            f"시각: {time.strftime('%H:%M:%S')}"
+                        )
 
                 if once:
                     break

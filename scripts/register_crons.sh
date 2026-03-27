@@ -222,8 +222,18 @@ ensure_job \
 
 echo "[OK] appstore_weekly_checklist 등록"
 
+# 15. 일일 AI 뉴스 파이프라인 — 매일 08:57 KST (리서치실 수명 업무)
+# 래퍼 스크립트: research → PM 필터링 → 텔레그램 보고 전 단계 포함
+ensure_job \
+  "daily_ai_news" \
+  "57 8 * * *" \
+  "일일 AI 뉴스 파이프라인: 매일 08:57 KST — 리서치(gemini-3-flash-preview) + PM 필터링 + Rocky 텔레그램 보고" \
+  "Repository: $PROJ. Run \`cd $PROJ && bash scripts/run_daily_ai_news.sh >> logs/daily_ai_news_cron.log 2>&1\` and finish with a one-line summary: HIGH items count, top actionable item, report path. Log: logs/daily_ai_news_cron.log"
+
+echo "[OK] daily_ai_news 등록"
+
 echo ""
-echo "=== 등록 완료 (총 14개) ==="
+echo "=== 등록 완료 (총 15개) ==="
 echo "확인: openclaw cron list"
 echo ""
 echo "등록된 크론 목록:"
@@ -241,3 +251,4 @@ echo " 11. goal_tracker_replan  — 매시 30분 KST"
 echo " 12. goal_tracker_dispatch — 매시 35분 KST"
 echo " 13. bot_deploy_healthcheck — 매시 12분/42분 KST"
 echo " 14. appstore_weekly_checklist — 매주 월요일 09:02 KST (PRISM 앱스토어 점검 알림)"
+echo " 15. daily_ai_news        — 매일 08:57 KST (AI 뉴스 리서치 + 적용 가능성 평가)"

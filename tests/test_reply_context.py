@@ -146,3 +146,62 @@ class TestRepliedContext:
         # "[bot] " 이후 본문이 500자
         body = rt[len("[bot] "):]
         assert len(body) == 500
+
+
+class TestRepliedToRaw:
+    """replied_to_raw (PM 메타데이터 페이로드용 원문 추출) 로직 테스트."""
+
+    def _extract_replied_to_raw(
+        self,
+        msg_text: str | None,
+        msg_caption: str | None,
+    ) -> str | None:
+        """telegram_relay.py 의 replied_to_raw 추출 로직 재현.
+
+        text → caption 순으로 fallback하여 원문을 추출.
+        둘 다 없으면 None 반환.
+        """
+        replied_text = msg_text or msg_caption or ""
+        if not replied_text:
+            return None
+        return replied_text[:2000]
+
+    def test_text_message_reply(self):
+        """텍스트 메시지 답장 시 text 필드 추출."""
+        raw = self._extract_replied_to_raw(
+            msg_text="안녕하세요, 이것은 봇 답변입니다.",
+            msg_caption=None,
+        )
+        assert raw == "안녕하세요, 이것은 봇 답변입니다."
+
+    def test_caption_message_reply(self):
+        """미디어 메시지 답장 시 caption 필드로 fallback."""
+        raw = self._extract_replied_to_raw(
+            msg_text=None,
+            msg_caption="이미지 캡션 원문",
+        )
+        assert raw == "이미지 캡션 원문"
+
+    def test_text_takes_priority_over_caption(self):
+        """text 와 caption 이 모두 있을 때 text 우선."""
+        raw = self._extract_replied_to_raw(
+            msg_text="텍스트 우선",
+            msg_caption="캡션 무시",
+        )
+        assert raw == "텍스트 우선"
+
+    def test_no_reply_returns_none(self):
+        """reply_to_message 없는 일반 메시지 → None."""
+        raw = self._extract_replied_to_raw(msg_text=None, msg_caption=None)
+        assert raw is None
+
+    def test_empty_text_and_caption_returns_none(self):
+        """text 와 caption 모두 빈 문자열이면 None."""
+        raw = self._extract_replied_to_raw(msg_text="", msg_caption="")
+        assert raw is None
+
+    def test_long_text_truncated_at_2000(self):
+        """2000자 초과 원문은 2000자로 잘림."""
+        raw = self._extract_replied_to_raw(msg_text="X" * 5000, msg_caption=None)
+        assert raw is not None
+        assert len(raw) == 2000

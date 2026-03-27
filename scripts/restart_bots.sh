@@ -28,6 +28,21 @@ fi
 
 sleep 1
 
+# 고아 claude_agent_sdk / codex 프로세스 정리 (PPID=1 = 부모 봇이 이미 죽은 자식)
+echo "--- 고아 에이전트 프로세스 정리 중 ---"
+_orphan_count=0
+while IFS= read -r _opid; do
+  [ -z "$_opid" ] && continue
+  kill "$_opid" 2>/dev/null && _orphan_count=$((_orphan_count + 1)) || true
+done < <(ps -eo pid,ppid,command | awk '(/claude_agent_sdk|codex/ && !/awk/) && $2==1 {print $1}')
+if [ "$_orphan_count" -gt 0 ]; then
+  echo "✅ 고아 프로세스 ${_orphan_count}개 종료"
+else
+  echo "· 고아 프로세스 없음"
+fi
+
+sleep 1
+
 # 모든 aiorg 봇 tmux 세션 종료 (메인 + claude 서브세션, context 완전 리셋)
 # aiorg_global 제외 — 전역 설정 세션
 echo "--- aiorg tmux 세션 정리 중 (context 완전 리셋) ---"

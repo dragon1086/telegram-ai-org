@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import UTC, datetime
@@ -131,6 +132,7 @@ def _collect_cycle(
         "goal_pipeline_report": str(pipeline_path.relative_to(PROJECT_ROOT)),
         "harness_audit_report": str(audit_path.relative_to(PROJECT_ROOT)),
         "alerts": alerts,
+        "infra_baseline_version": os.environ.get("INFRA_BASELINE_VERSION", "unknown"),
     }
     return cycle
 
