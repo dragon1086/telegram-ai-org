@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -12,11 +13,59 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from core.agent_persona_memory import AgentPersonaMemory
-from core.collaboration_tracker import CollaborationTracker
-from core.pm_orchestrator import PMOrchestrator
-from core.shoutout_system import ShoutoutSystem
-from tools.base_runner import RunContext
+from core.agent_persona_memory import AgentPersonaMemory  # noqa: E402
+from core.collaboration_tracker import CollaborationTracker  # noqa: E402
+from core.pm_orchestrator import PMOrchestrator  # noqa: E402
+from core.shoutout_system import ShoutoutSystem  # noqa: E402
+from tools.base_runner import RunContext  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# E2E pre-flight 체크 — pytest 세션 시작 전 자동 실행
+# infra-baseline.yaml 기반으로 timeout/filter/env 환경 유효성을 검사한다.
+# SKIP_PREFLIGHT=1 로 건너뛸 수 있다 (CI 디버깅 등 특수 상황 한정).
+# ---------------------------------------------------------------------------
+def _run_preflight() -> None:
+    if os.environ.get("SKIP_PREFLIGHT", "").lower() in ("1", "true", "yes"):
+        print("[pre-flight] SKIP_PREFLIGHT=1 — 체크 생략", flush=True)
+        return
+
+    # tests/e2e/preflight_check.py 모듈 방식 우선 사용
+    _here = Path(__file__).parent
+    _preflight_mod = _here / "preflight_check.py"
+    if _preflight_mod.exists():
+        # 동일 패키지 내 모듈을 직접 import해서 실행
+        import importlib.util as _ilu
+        spec = _ilu.spec_from_file_location("e2e_preflight", _preflight_mod)
+        if spec and spec.loader:
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            mod.run_preflight_checks(exit_on_fail=True)
+            return
+
+    # fallback: tools/preflight_check.py subprocess 방식
+    project_root = Path(__file__).parent.parent.parent
+    preflight_script = project_root / "tools" / "preflight_check.py"
+    if not preflight_script.exists():
+        print(
+            f"[pre-flight] 스크립트 없음: {preflight_script} — 체크 생략",
+            flush=True,
+        )
+        return
+    result = subprocess.run(
+        [sys.executable, str(preflight_script)],
+        cwd=str(project_root),
+        capture_output=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            "❌ E2E pre-flight 실패 — 환경을 점검 후 재실행하세요.\n"
+            f"   스크립트: {preflight_script}\n"
+            "   힌트: SKIP_PREFLIGHT=1 로 일시적으로 우회 가능."
+        )
+
+
+_run_preflight()
 
 
 class _FakeOrg:
