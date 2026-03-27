@@ -28,3 +28,11 @@ auto_actions:
   file_size_critical: "split_large_file"     # 대형 파일 → 모듈 분리 요청
   file_size_warn: "log_only"                 # warn → 로그만
   error_pattern: "fix_error_pattern"         # 반복 에러 → 자동 수정 시도
+
+# --- 파이프라인 blocking failure 여부 ---
+# false: 자동 수정이 불가능하거나 수동 조치가 필요한 경우 pipeline status를 "failed"로
+#        마킹하지 않는다. 플래그 파일 또는 경고 로그로만 기록한다.
+pipeline_blocking:
+  file_size_critical: false   # 자동 분리 실패 → needs_action 플래그만 생성 (non-blocking)
+  file_size_warn: false        # warn 수준 → non-blocking
+  error_pattern: true          # 반복 에러는 자동 수정 실패 시 blocking

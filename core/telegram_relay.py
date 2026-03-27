@@ -83,6 +83,12 @@ from core.telegram_formatting import (
 from core.telegram_sender import (  # Phase 1a 리팩토링 — 전송 모듈 분리
     ENABLE_REFACTORED_SENDER,
 )
+from core.bot_message_handler import (  # Phase 1b 리팩토링 — 메시지 처리 모듈 분리
+    ENABLE_REFACTORED_HANDLER,
+    AttachmentGroupState,
+    MessageClassifier,
+    download_attachment as _handler_download_attachment,
+)
 from core.telegram_sender import (
     auto_upload as _sender_auto_upload,
 )
@@ -106,15 +112,31 @@ PM_CHAT_REPLY_TIMEOUT_SEC = int(os.environ.get("PM_CHAT_REPLY_TIMEOUT_SEC", "300
 
 # /setup 마법사 ConversationHandler 상태
 SETUP_MENU, SETUP_AWAIT_TOKEN, SETUP_AWAIT_ENGINE, SETUP_AWAIT_IDENTITY = range(4)
-ATTACHMENT_GROUP_DEBOUNCE_SEC = 1.2
+ATTACHMENT_GROUP_DEBOUNCE_SEC = 1.2  # Phase 1b: bot_message_handler.ATTACHMENT_GROUP_DEBOUNCE_SEC와 동기화
+
+# Phase 1b 리팩토링 — AttachmentGroupState를 bot_message_handler로 이전
+# 하위 호환성을 위해 내부 별칭 유지
+_AttachmentGroupState = AttachmentGroupState
 
 
-@dataclass
-class _AttachmentGroupState:
-    items: list[AttachmentContext] = field(default_factory=list)
-    caption: str = ""
-    message: object | None = None
-    task: asyncio.Task | None = None
+def _fire_and_forget(coro, *, label: str = "task") -> asyncio.Task:
+    """비동기 코루틴을 fire-and-forget으로 실행하되 예외를 로깅한다.
+
+    FIX(critical): 기존 asyncio.create_task / ensure_future 직접 호출은
+    반환 태스크를 저장하지 않아 GC에 의해 임의 취소되고 예외가 무시될 수 있다.
+    이 헬퍼는 태스크에 done-callback을 붙여 예외를 반드시 logger.error로 남긴다.
+    """
+    task = asyncio.create_task(coro)
+
+    def _on_done(t: asyncio.Task) -> None:
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is not None:
+            logger.error(f"[fire-and-forget:{label}] 비동기 태스크 예외: {exc!r}")
+
+    task.add_done_callback(_on_done)
+    return task
 
 
 class TelegramRelay:
@@ -737,12 +759,19 @@ class TelegramRelay:
     def _complete_runbook(self, run_id: str | None, note: str) -> None:
         if not run_id:
             return
+        # FIX(critical): 무한루프 방지 — advance_phase가 completed 전환을 못 하는 경우
+        # 최대 20회 반복 후 강제 종료 (기존 while True는 CPU 점유 무한루프 위험)
+        _MAX_ADVANCE_ITER = 20
         try:
-            while True:
+            for _i in range(_MAX_ADVANCE_ITER):
                 state = self._runbook().get_state(run_id)
                 if state["status"] == "completed":
                     break
                 self._runbook().advance_phase(run_id, note=note)
+            else:
+                logger.warning(
+                    f"[runbook] {run_id} — {_MAX_ADVANCE_ITER}회 advance 후에도 완료 안 됨. 강제 종료."
+                )
         except Exception as e:
             logger.warning(f"[runbook] 완료 처리 실패 ({run_id}): {e}")
 
@@ -850,10 +879,14 @@ class TelegramRelay:
                 rows = await cur.fetchall()
             retry_ids = [r["id"] for r in rows]
             if retry_ids:
-                asyncio.create_task(
-                    self._store_pending_confirmation("retry_tasks", retry_ids, db_context)
+                # FIX(critical): 반환값 미저장 create_task → _fire_and_forget으로 교체
+                _fire_and_forget(
+                    self._store_pending_confirmation("retry_tasks", retry_ids, db_context),
+                    label="store_pending_confirmation",
                 )
-        except Exception:
+        except Exception as _rc_err:
+            # FIX(high): bare except + silent return → 예외 로깅 추가
+            logger.warning(f"[{self.org_id}] retry candidates 조회 실패: {_rc_err}")
             return
 
     async def _handle_set_bot_tone_nl(self, update: Update, text: str) -> None:
@@ -980,7 +1013,10 @@ class TelegramRelay:
             "- 링크, 경로, 내부 문서 위치만 던지지 말고 핵심 내용을 먼저 설명한다.\n"
             "- 필요한 경우 무엇을 확인했고 무엇을 바꿀지 다음 조치를 분명히 적는다.\n"
             "- 간단한 질문·확인·상태 문의는 직접 답하고 불필요한 위임을 하지 않는다.\n"
-            "- 단, 코드·스크립트·예제 작성 요청 및 REST API 설계·엔드포인트 설계 요청은 반드시 @aiorg_engineering_bot에 위임한다. PM이 직접 코드/API 설계 금지.\n\n"
+            "- 단, 코드·스크립트·예제 작성 요청 및 REST API 설계·엔드포인트 설계 요청은 반드시 @aiorg_engineering_bot에 위임한다. PM이 직접 코드/API 설계 금지.\n"
+            "- [자율 실행 원칙] 절대로 '어떤 건부터 처리할까요?', '어떤 작업을 먼저 할까요?', "
+            "'진행할까요?', '계속할까요?' 같은 확인 질문을 응답 끝에 붙이지 않는다. "
+            "우선순위는 PM이 자율적으로 결정하여 즉시 실행하고, 결과만 보고한다.\n\n"
             f"{context_packet}"
         )
         prompt = text + replied_context
@@ -1722,11 +1758,12 @@ class TelegramRelay:
             return
 
         # 대화 이력 캡처 (non-blocking, 실패해도 처리 계속)
+        # FIX(critical): create_task 반환값을 버리면 GC 임의 취소 + 예외 무시 위험.
+        # _fire_and_forget()으로 교체하여 예외를 반드시 logger.error로 기록.
         if self.context_db is not None:
             try:
-                import asyncio as _asyncio
                 _sender = update.effective_message.from_user
-                _asyncio.create_task(
+                _fire_and_forget(
                     self.context_db.insert_conversation_message(
                         msg_id=update.effective_message.message_id,
                         chat_id=str(update.effective_message.chat_id),
@@ -1736,19 +1773,20 @@ class TelegramRelay:
                         is_bot=bool(_sender and _sender.is_bot),
                         content=text[:4000],
                         timestamp=update.effective_message.date.isoformat(),
-                    )
+                    ),
+                    label="conversation_capture",
                 )
-            except Exception:
-                pass  # 캡처 실패해도 처리 계속
+            except Exception as _cap_err:
+                logger.warning(f"[{self.org_id}] 대화이력 캡처 태스크 생성 실패: {_cap_err}")
 
         # 명령어는 허용하되, PM 오케스트레이터 모드의 부서 봇은 일반 사용자 메시지를 처리하지 않는다.
-        if text.startswith("/"):
+        if MessageClassifier.is_command(text):
             await self._handle_command(text, update, context)
             return
 
         # 봇 메시지 처리 — 협업 요청, [PM_TASK:...], 토론 태그 수락
         sender = update.effective_message.from_user
-        if sender and sender.is_bot:
+        if MessageClassifier.is_bot_sender(sender):
             if is_collab_request(text):
                 await self._handle_collab_request(text, update, context)
             elif self._is_dept_org and "[PM_TASK:" in text:
@@ -1757,7 +1795,7 @@ class TelegramRelay:
                 await self._handle_discussion_message(text, update, context)
             # pm_bot: 워커봇 완료/실패 메시지 감지 → 즉시 합성 트리거 (이벤트 드리븐)
             # 실패(❌) 메시지도 포함: 서브태스크 실패 시 부모 합성이 누락되는 버그 수정
-            elif self._pm_orchestrator is not None and re.search(r"태스크\s+T-[A-Za-z0-9_]+-\d+\s+(완료|실패)", text):
+            elif self._pm_orchestrator is not None and MessageClassifier.is_pm_done_event(text):
                 await self._handle_pm_done_event(text)
             return
 
@@ -1769,15 +1807,16 @@ class TelegramRelay:
         # 봇 시작 이전 메시지 무시 (pending updates 방지)
         # 재시작에 30초+ 소요되므로 grace period를 120초로 설정
         _msg_ts = update.effective_message.date.timestamp() if update.effective_message.date else 0
-        if _msg_ts and _msg_ts < self._start_time - 120:
+        if MessageClassifier.is_old_message(_msg_ts, self._start_time):
             logger.debug(f"[{self.org_id}] 오래된 메시지 무시 (message_id={message_id}, age={self._start_time - _msg_ts:.0f}s)")
             return
-        if _msg_ts and _msg_ts < self._start_time:
+        if MessageClassifier.is_startup_recovery_message(_msg_ts, self._start_time):
             logger.info(f"[{self.org_id}] 재시작 중 수신 메시지 복구 처리 (message_id={message_id}, age={self._start_time - _msg_ts:.0f}s)")
         logger.info(f"텔레그램 수신 [{self.org_id}]: {text[:80]}")
 
         # LLM 기반 라우팅 (pm_bot 전용)
         _replied_context = ""
+        _replied_to_raw: str | None = None  # reply_to_message 원문 (metadata 키용)
         if self._pm_orchestrator is not None:
             _route_ctx = {
                 "pending_confirmation": self._pending_confirmation.get(self.allowed_chat_id),
@@ -1787,7 +1826,8 @@ class TelegramRelay:
             if (update.effective_message.reply_to_message
                     and update.effective_message.reply_to_message.from_user
                     and update.effective_message.reply_to_message.from_user.is_bot):
-                _pre_replied = update.effective_message.reply_to_message.text or ""
+                _pre_replied = (update.effective_message.reply_to_message.text
+                               or update.effective_message.reply_to_message.caption or "")
                 if _pre_replied:
                     _reply_sender = (
                         update.effective_message.reply_to_message.from_user.first_name
@@ -1822,9 +1862,10 @@ class TelegramRelay:
                 and update.effective_message.reply_to_message.from_user
                 and update.effective_message.reply_to_message.from_user.is_bot):
             replied_msg = update.effective_message.reply_to_message
-            replied_text = replied_msg.text or ""
+            replied_text = replied_msg.text or replied_msg.caption or ""
             # 재시도 아닌 답장 → 답장한 메시지 내용을 context로 주입 (발신자·message_id 포함)
             if replied_text:
+                _replied_to_raw = replied_text[:2000]  # PM 디스패치 페이로드용 원문
                 _reply_from = (
                     replied_msg.from_user.first_name
                     or replied_msg.from_user.username
@@ -2214,11 +2255,18 @@ class TelegramRelay:
                         phase_name="feedback",
                     )
                     self._complete_runbook(run_id, "로컬 실행 완료 및 피드백 반영")
+                    # FIX(high): ensure_future 반환값 미저장 → _fire_and_forget으로 교체
                     if self.bus:
-                        asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
+                        _fire_and_forget(
+                            self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"),
+                            label="p2p_notify_local_done",
+                        )
                     # 산출물 메타데이터 인덱싱 (비동기, 실패 시 스킵)
                     if response:
-                        asyncio.ensure_future(index_task_artifact(run_id or "", self.org_id, response))
+                        _fire_and_forget(
+                            index_task_artifact(run_id or "", self.org_id, response),
+                            label="artifact_index",
+                        )
                     return
 
                 if plan.interaction_mode == "collab" and ENABLE_DISCUSSION_PROTOCOL:
@@ -2315,6 +2363,7 @@ class TelegramRelay:
                         "rationale": plan.rationale,
                         "run_id": run_id,
                         "original_request": text[:2000],
+                        "replied_to_text": _replied_to_raw,
                         "conversation_context": conversation_context,
                         "user_expectations": user_expectations,
                         "source_message_id": update.effective_message.message_id,
@@ -2478,11 +2527,15 @@ class TelegramRelay:
             phase_name="feedback",
         )
         self._complete_runbook(run_id, "조직 직접 실행 완료")
+        # FIX(high): ensure_future 반환값 미저장 → _fire_and_forget
         if self.bus:
-            asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
+            _fire_and_forget(
+                self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"),
+                label="p2p_notify_dept_exec",
+            )
         # 산출물 메타데이터 인덱싱 (비동기, 실패 시 스킵)
         if response:
-            asyncio.ensure_future(index_task_artifact(run_id or "", self.org_id, response))
+            _fire_and_forget(index_task_artifact(run_id or "", self.org_id, response), label="artifact_index_dept")
 
     # ── 첨부파일 처리 ──────────────────────────────────────────────────────
 
@@ -2514,6 +2567,10 @@ class TelegramRelay:
         await self._process_attachment_bundle(AttachmentBundle(items=[attachment], caption=attachment.caption), msg)
 
     async def _download_attachment_context(self, msg, context, save_dir: Path) -> AttachmentContext | None:
+        # Phase 1b 리팩토링 — ENABLE_REFACTORED_HANDLER=True 시 신규 모듈로 위임
+        if ENABLE_REFACTORED_HANDLER:
+            return await _handler_download_attachment(msg, context, save_dir)
+        # 기존 코드 유지 (ENABLE_REFACTORED_HANDLER=False 시 그대로 실행)
         if msg.document:
             tg_file = await context.bot.get_file(msg.document.file_id)
             filename = msg.document.file_name or f"doc_{msg.message_id}"
@@ -2726,8 +2783,14 @@ class TelegramRelay:
             phase_name="feedback",
         )
         self._complete_runbook(run_id, "첨부파일 실행 완료")
+        # FIX(high): ensure_future 반환값 미저장 → _fire_and_forget
         if self.bus:
-            asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", locals().get("response", "첨부파일 처리 완료")[:200] if locals().get("response") else "첨부파일 처리 완료"))
+            _resp_preview = locals().get("response", "첨부파일 처리 완료")
+            _resp_preview = (_resp_preview[:200] if _resp_preview else "첨부파일 처리 완료")
+            _fire_and_forget(
+                self._p2p.notify_task_done(self.org_id, run_id or "", _resp_preview),
+                label="p2p_notify_attachment",
+            )
 
     # ── 명령 처리 ──────────────────────────────────────────────────────────
 
@@ -3677,7 +3740,8 @@ class TelegramRelay:
         try:
             task_info = await self.context_db.get_pm_task(task_id)
             if task_info and event_type == "완료":
-                asyncio.create_task(self._inject_collab_result(task_info))
+                # FIX(critical): create_task 반환값 미저장 → GC 취소 + 예외 무시 위험
+                _fire_and_forget(self._inject_collab_result(task_info), label="collab_inject_event")
             if not task_info or not task_info.get("parent_id"):
                 return
             parent_id = task_info["parent_id"]
@@ -3698,9 +3762,11 @@ class TelegramRelay:
                         parent_id, siblings, self.allowed_chat_id
                     )
                     # ACT-4: 부모 태스크 합성 완료 → P2P 알림 발송
+                    # FIX(high): ensure_future 반환값 미저장 → _fire_and_forget으로 교체
                     if self.bus:
-                        asyncio.ensure_future(
-                            self._p2p.notify_task_done(self.org_id, parent_id, "합성 완료")
+                        _fire_and_forget(
+                            self._p2p.notify_task_done(self.org_id, parent_id, "합성 완료"),
+                            label="p2p_notify_done_event",
                         )
                 finally:
                     self._synthesizing.discard(parent_id)
@@ -3759,6 +3825,15 @@ class TelegramRelay:
                     """)
                     candidates = [r[0] async for r in cursor]
 
+                # FIX(high): _synthesis_perm_skip 무제한 증가 방지 — 최대 200개 유지
+                _PERM_SKIP_MAX = 200
+                if len(self._synthesis_perm_skip) > _PERM_SKIP_MAX:
+                    _overflow = len(self._synthesis_perm_skip) - _PERM_SKIP_MAX
+                    _to_evict = list(self._synthesis_perm_skip)[:_overflow]
+                    for _eid in _to_evict:
+                        self._synthesis_perm_skip.discard(_eid)
+                    logger.info(f"[SynthesisPoller] perm_skip {_overflow}개 만료 제거")
+
                 for parent_id in candidates:
                     if parent_id in self._synthesizing:
                         continue
@@ -3770,7 +3845,11 @@ class TelegramRelay:
                             sibling.get("status") == "done"
                             and (sibling.get("metadata") or {}).get("collab")
                         ):
-                            asyncio.create_task(self._inject_collab_result(sibling))
+                            # FIX(critical): create_task 반환값 미저장 → _fire_and_forget
+                            _fire_and_forget(
+                                self._inject_collab_result(sibling),
+                                label="collab_inject_poller",
+                            )
                     if siblings and all(s["status"] in _TERMINAL_STATES for s in siblings):
                         self._synthesizing.add(parent_id)
                         logger.info(f"[SynthesisPoller] {parent_id} 전체 완료 감지 → 합성 시작")
@@ -3779,9 +3858,11 @@ class TelegramRelay:
                                 parent_id, siblings, self.allowed_chat_id
                             )
                             # ACT-4: 폴러 경로 합성 완료 → P2P 알림 발송
+                            # FIX(high): ensure_future 반환값 미저장 → _fire_and_forget
                             if self.bus:
-                                asyncio.ensure_future(
-                                    self._p2p.notify_task_done(self.org_id, parent_id, "합성 완료")
+                                _fire_and_forget(
+                                    self._p2p.notify_task_done(self.org_id, parent_id, "합성 완료"),
+                                    label="p2p_notify_done_poller",
                                 )
                         except Exception as _e:
                             logger.error(f"[SynthesisPoller] 합성 실패 {parent_id}: {_e}")
@@ -4191,11 +4272,15 @@ class TelegramRelay:
                 phase_name="feedback",
             )
             self._complete_runbook(run_id, "조직 위임 실행 완료")
+            # FIX(high): ensure_future 반환값 미저장 → _fire_and_forget
             if self.bus:
-                asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
+                _fire_and_forget(
+                    self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"),
+                    label="p2p_notify_polled_exec",
+                )
             # 산출물 메타데이터 인덱싱 (비동기, 실패 시 스킵)
             if response:
-                asyncio.ensure_future(index_task_artifact(run_id or "", self.org_id, response))
+                _fire_and_forget(index_task_artifact(run_id or "", self.org_id, response), label="artifact_index_polled")
 
         except Exception as e:
             logger.error(f"[{self.org_id}] PM_TASK {task_id} 실행 실패: {e}")
@@ -4227,7 +4312,8 @@ class TelegramRelay:
             import asyncio as _asyncio
 
             from core.pm_orchestrator import _record_bot_perf as _rbp
-            _asyncio.create_task(_rbp(self.context_db, task_id, success=False))
+            # FIX(critical): create_task 반환값 미저장 → _fire_and_forget
+            _fire_and_forget(_rbp(self.context_db, task_id, success=False), label="record_bot_perf_fail")
             # Post-task debrief: 실패 교훈 자동 기록
             try:
                 from core.lesson_memory import LessonMemory
@@ -4380,11 +4466,15 @@ class TelegramRelay:
             phase_name="feedback",
         )
         self._complete_runbook(run_id, "협업 요청 처리 완료")
+        # FIX(high): ensure_future 반환값 미저장 → _fire_and_forget
         if self.bus:
-            asyncio.ensure_future(self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"))
+            _fire_and_forget(
+                self._p2p.notify_task_done(self.org_id, run_id or "", response[:200] if response else "완료"),
+                label="p2p_notify_collab_done",
+            )
         # 산출물 메타데이터 인덱싱 (비동기, 실패 시 스킵)
         if response:
-            asyncio.ensure_future(index_task_artifact(run_id or "", self.org_id, response))
+            _fire_and_forget(index_task_artifact(run_id or "", self.org_id, response), label="artifact_index_collab")
 
     async def _handle_approve_code_fix(
         self, approval_id: str, update, ctx
@@ -4438,7 +4528,8 @@ class TelegramRelay:
             except Exception as exc:
                 logger.warning(f"[approve_code_fix] fix 실패: {exc}")
 
-        asyncio.ensure_future(_run_fix())
+        # FIX(high): ensure_future 반환값 미저장 → _fire_and_forget
+        _fire_and_forget(_run_fix(), label="approve_code_fix")
 
     async def _handle_reject_code_fix(
         self, approval_id: str, update, ctx

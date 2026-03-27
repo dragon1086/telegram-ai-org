@@ -35,6 +35,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -164,6 +165,7 @@ class HistoryEntry:
         failure_reason: str | None
         alert_sent: bool
         comparison_log_path: str
+        infra_baseline_version: str — 실험 시작 시 INFRA_BASELINE_VERSION 환경변수 값 (기본: "unknown")
     """
     run_id: str
     executed_at: str
@@ -176,6 +178,7 @@ class HistoryEntry:
     failure_reason: str | None
     alert_sent: bool
     comparison_log_path: str
+    infra_baseline_version: str = "unknown"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -399,6 +402,7 @@ class SelfImproveMonitor:
             comparison_log_path=str(
                 self._date_dir(diff.compared_at) / f"comparison-{diff.run_id}.json"
             ),
+            infra_baseline_version=os.environ.get("INFRA_BASELINE_VERSION", "unknown"),
         )
 
         if not self.dry_run:
