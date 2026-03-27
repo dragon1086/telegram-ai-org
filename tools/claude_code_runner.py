@@ -52,12 +52,18 @@ class ClaudeCodeRunner:
         self.workdir = workdir or str(_project_root)
         Path(self.workdir).mkdir(parents=True, exist_ok=True)
         self._last_run_metrics: dict[str, int | float | str] = {}
+        self._last_partial_output: str = ""  # 외부 취소 시 부분 결과 보존
 
     def get_last_run_metrics(self) -> dict[str, int | float | str]:
         return dict(self._last_run_metrics)
 
+    def get_last_partial_output(self) -> str:
+        """외부 CancelledError 취소 시 보존된 부분 결과 반환."""
+        return self._last_partial_output
+
     def _reset_last_run_metrics(self) -> None:
         self._last_run_metrics = {}
+        self._last_partial_output = ""
 
     @staticmethod
     def _extract_usage_metrics(event: dict) -> dict[str, int | float | str]:
@@ -621,6 +627,23 @@ class ClaudeCodeRunner:
             msg = f"❌ 타임아웃 ({self.timeout}s) 초과"
             logger.error(msg)
             return msg
+        except asyncio.CancelledError:
+            # 외부 watchdog(hang/total_timeout)에 의한 취소 — subprocess 정리 + 부분 결과 보존
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception as _kill_err:
+                logger.warning(f"[stream_json] CancelledError 시 proc.kill 실패: {_kill_err}")
+            # 지금까지 수집된 부분 결과 보존 (호출자가 get_last_partial_output()으로 조회 가능)
+            if final_result:
+                self._last_partial_output = final_result
+            elif raw_lines:
+                self._last_partial_output = "\n".join(raw_lines[-30:])
+            logger.warning(
+                f"[stream_json] 외부 취소로 subprocess 종료. "
+                f"부분 결과 {len(raw_lines)}줄 보존 ({len(self._last_partial_output)}자)."
+            )
+            raise  # CancelledError 재전파 (watchdog 루프로 전달)
         except Exception as exc:
             proc.kill()
             await proc.wait()
@@ -784,6 +807,20 @@ class ClaudeCodeRunner:
             msg = f"❌ 타임아웃 ({self.timeout}s) 초과: {' '.join(cmd[:3])}"
             logger.error(msg)
             return msg
+        except asyncio.CancelledError:
+            # 외부 watchdog에 의한 취소 — subprocess 정리 + 부분 결과 보존
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception as _kill_err:
+                logger.warning(f"[subprocess] CancelledError 시 proc.kill 실패: {_kill_err}")
+            if output_lines:
+                self._last_partial_output = "\n".join(output_lines[-30:])
+            logger.warning(
+                f"[subprocess] 외부 취소로 subprocess 종료. "
+                f"부분 결과 {len(output_lines)}줄 보존 ({len(self._last_partial_output)}자)."
+            )
+            raise  # CancelledError 재전파
         except Exception as exc:
             proc.kill()
             await proc.wait()

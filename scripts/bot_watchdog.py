@@ -179,18 +179,49 @@ def restart_bot(org_id: str, token: str, chat_id: int) -> int | None:
 
 
 # ── 고아 프로세스 정리 ────────────────────────────────────────────────────────
+_IS_MACOS = sys.platform == "darwin"
+
+
+def _parse_etime(etime_str: str) -> int:
+    """macOS ps etime 형식([[DD-]HH:]MM:SS)을 초 단위 정수로 변환.
+
+    Linux의 etimes(초 단위 정수 문자열)와 달리 macOS는 etime 형식을 사용하므로
+    직접 파싱이 필요하다.
+    """
+    total = 0
+    try:
+        s = etime_str.strip()
+        if "-" in s:
+            days_part, s = s.split("-", 1)
+            total += int(days_part) * 86400
+        time_parts = s.split(":")
+        if len(time_parts) == 3:
+            total += int(time_parts[0]) * 3600 + int(time_parts[1]) * 60 + int(time_parts[2])
+        elif len(time_parts) == 2:
+            total += int(time_parts[0]) * 60 + int(time_parts[1])
+        else:
+            total += int(time_parts[0])
+    except (ValueError, IndexError):
+        return 0
+    return total
+
+
 def cleanup_orphan_agent_processes() -> int:
     """PPID=1인 claude_agent_sdk/codex 고아 프로세스를 찾아 종료.
 
     봇이 재기동되면 자식 프로세스(claude_agent_sdk, codex)가 PPID=1로 떠서
     영원히 살아있는 문제를 방지한다. ORPHAN_AGE_THRESHOLD(1시간) 이상된 것만 kill.
+
+    macOS 호환성: macOS ps는 etimes(초) 대신 etime([[DD-]HH:]MM:SS)을 사용하므로
+    플랫폼에 따라 컬럼과 파싱 방식을 분기한다.
     """
     import subprocess
     killed = 0
     try:
-        # ps로 PPID=1인 claude_agent_sdk/codex 프로세스 조회
+        # macOS: etime ([[DD-]HH:]MM:SS), Linux: etimes (초 단위 정수)
+        ps_elapsed_col = "etime" if _IS_MACOS else "etimes"
         out = subprocess.check_output(
-            ["ps", "-eo", "pid,ppid,etimes,command"], text=True,
+            ["ps", "-eo", f"pid,ppid,{ps_elapsed_col},command"], text=True,
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return 0
@@ -200,7 +231,8 @@ def cleanup_orphan_agent_processes() -> int:
         if len(parts) < 4:
             continue
         try:
-            pid, ppid, elapsed_sec = int(parts[0]), int(parts[1]), int(parts[2])
+            pid, ppid = int(parts[0]), int(parts[1])
+            elapsed_sec = _parse_etime(parts[2]) if _IS_MACOS else int(parts[2])
         except ValueError:
             continue
         cmd = parts[3]
