@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
 SESSION_DIR = Path.home() / ".ai-org" / "sessions"
 DEFAULT_TELEGRAM_VERBOSITY = 1
+
+# 세션 자동 로테이션 기본값 (환경변수로 오버라이드 가능)
+SESSION_MAX_AGE_SEC: int = int(os.environ.get("SESSION_MAX_AGE_SEC", str(6 * 3600)))  # 6시간
+SESSION_MAX_CONTEXT_PCT: int = int(os.environ.get("SESSION_MAX_CONTEXT_PCT", "80"))   # 80%
+SESSION_MAX_MESSAGES: int = int(os.environ.get("SESSION_MAX_MESSAGES", "50"))         # 50턴
 
 
 class SessionStore:
@@ -66,6 +72,9 @@ class SessionStore:
     ) -> None:
         data = self.load()
         if session_id is not None:
+            # 새 세션 ID가 기존과 다를 때만 생성 시각 갱신
+            if session_id != data.get("session_id"):
+                data["session_created_at"] = datetime.now(UTC).isoformat()
             data["session_id"] = session_id
         if engine is not None:
             data["engine"] = engine
@@ -124,6 +133,50 @@ class SessionStore:
         data = self.load()
         data["last_alerted_health"] = health
         data["last_alerted_at"] = datetime.now(UTC).isoformat()
+        data["updated_at"] = datetime.now(UTC).isoformat()
+        self._data = data
+        self.path.write_text(json.dumps(self._data, indent=2))
+
+    def should_rotate(self) -> tuple[bool, str]:
+        """세션 자동 로테이션 필요 여부 판단.
+
+        Returns:
+            (True, reason) if rotation needed, (False, "") otherwise.
+        """
+        data = self.load()
+        if not data.get("session_id"):
+            return False, ""
+
+        # 1) 나이 체크
+        created_raw = data.get("session_created_at")
+        if created_raw:
+            try:
+                created_at = datetime.fromisoformat(created_raw)
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=UTC)
+                age_sec = (datetime.now(UTC) - created_at).total_seconds()
+                if age_sec > SESSION_MAX_AGE_SEC:
+                    return True, f"age={int(age_sec//3600)}h (max={SESSION_MAX_AGE_SEC//3600}h)"
+            except Exception:
+                pass
+
+        # 2) 컨텍스트 사용률 체크
+        ctx_pct = data.get("context_percent")
+        if ctx_pct is not None and int(ctx_pct) >= SESSION_MAX_CONTEXT_PCT:
+            return True, f"context_percent={ctx_pct}% (max={SESSION_MAX_CONTEXT_PCT}%)"
+
+        # 3) 메시지 수 체크
+        msg_count = int(data.get("msg_count", 0) or 0)
+        if msg_count >= SESSION_MAX_MESSAGES:
+            return True, f"msg_count={msg_count} (max={SESSION_MAX_MESSAGES})"
+
+        return False, ""
+
+    def clear_session_id(self) -> None:
+        """session_id만 제거 (다음 호출이 새 세션으로 시작되도록)."""
+        data = self.load()
+        data.pop("session_id", None)
+        data.pop("session_created_at", None)
         data["updated_at"] = datetime.now(UTC).isoformat()
         self._data = data
         self.path.write_text(json.dumps(self._data, indent=2))
