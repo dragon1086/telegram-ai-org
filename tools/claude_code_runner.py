@@ -428,6 +428,13 @@ class ClaudeCodeRunner:
         self._reset_last_run_metrics()
         # --resume 삽입 (기존 session_id 있으면 이전 대화 이어받기)
         if session_store:
+            # 자동 로테이션: 세션 나이/컨텍스트/메시지 수 초과 시 새 세션으로 시작
+            rotate, reason = session_store.should_rotate()
+            if rotate:
+                logger.warning(
+                    f"[stream_json] 세션 자동 로테이션 — {reason}. 새 세션으로 시작합니다."
+                )
+                session_store.clear_session_id()
             existing_id = session_store.get_session_id()
             if existing_id:
                 new_cmd: list[str] = []
