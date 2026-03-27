@@ -133,6 +133,25 @@ EXIT_CODE_RE = re.compile(r"__EXIT_CODE__:\d+\s*", re.MULTILINE)
 # PM 메타 태그: [TEAM:...], [COLLAB:...] 등 봇 내부 제어 태그 — 사용자에게 노출 금지
 _META_TAG_RE = re.compile(r"\[(?:TEAM|COLLAB|SOLO|ARTIFACT)[^\]]*\]")
 
+# PM 확인 질문 패턴 — 자율 실행 원칙 위반 문구 자동 제거
+# orchestration.yaml global_instructions에서 금지되었으나 LLM이 여전히 생성하는 경우 대비
+_PM_CONFIRM_Q_RE = re.compile(
+    r"(?:^|\n)[^\n]*(?:"
+    r"어떤 건부터 처리할까요|"
+    r"어떤 건부터 먼저 처리|"
+    r"먼저 처리할 작업을 선택|"
+    r"어떤 항목을 먼저|"
+    r"어떤 것부터 진행|"
+    r"진행할까요\?|"
+    r"계속할까요\?|"
+    r"어디서부터 시작할까요|"
+    r"우선순위를 알려주세요|"
+    r"먼저 진행하고 싶은|"
+    r"어떤 순서로 진행"
+    r")[^\n]*\??",
+    re.MULTILINE,
+)
+
 
 def _heuristic_cleanup(
     text: str,
@@ -143,6 +162,8 @@ def _heuristic_cleanup(
     cleaned = EXIT_CODE_RE.sub("", cleaned).strip()
     cleaned = LOCAL_PATH_RE.sub("", cleaned).strip()
     cleaned = _META_TAG_RE.sub("", cleaned).strip()
+    # PM 확인 질문 자동 제거 (자율 실행 원칙 — orchestration.yaml global_instructions 보완)
+    cleaned = _PM_CONFIRM_Q_RE.sub("", cleaned).strip()
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     if artifact_names:
