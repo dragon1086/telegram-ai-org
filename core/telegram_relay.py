@@ -519,11 +519,20 @@ class TelegramRelay:
         recent_conv = ""
         if self.context_db is not None:
             try:
+                # 봇 메시지(PM 지시 등)도 포함하되, 무의미한 상태 메시지(🤔 처리 중...)는 필터링
                 recent_msgs = await self.context_db.get_conversation_messages(
-                    chat_id=str(self.allowed_chat_id), is_bot=False, limit=8
+                    chat_id=str(self.allowed_chat_id), limit=15
                 )
                 if recent_msgs:
-                    lines = [f"[{m['timestamp'][:16]}] {m['content'][:200]}" for m in recent_msgs[:8]]
+                    filtered = [
+                        m for m in recent_msgs
+                        if "🤔 처리 중..." not in m["content"]
+                        and "⚙️ 협업 작업 중..." not in m["content"]
+                    ]
+                    lines = [
+                        f"[{m.get('role', 'unknown')}] {m['content'][:200]}"
+                        for m in filtered[:10]  # 필터링 후 상위 10개만 사용
+                    ]
                     recent_conv = "\n".join(lines)
             except Exception:
                 pass
