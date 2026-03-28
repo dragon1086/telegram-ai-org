@@ -11,12 +11,11 @@ import hashlib
 import os
 import re
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -61,17 +60,35 @@ from core.pm_router import PMRouter
 from core.session_manager import SessionManager
 from core.session_registry import SessionRegistry
 from core.session_store import SessionStore
-from core.setup_registration import (
-    default_identity_for_org,
-    parse_setup_identity,
-    refresh_legacy_bot_configs,
-    refresh_pm_identity_files,
-    upsert_org_in_canonical_config,
-    upsert_runtime_env_var,
-)
 
 if TYPE_CHECKING:
     from core.context_db import ContextDB
+import core.relay_command_handlers as _cmd  # Phase 1c 리팩토링 — 명령어 핸들러 모듈 분리
+from core.bot_dispatcher import (  # Phase 1c 리팩토링 — 봇 메시지 디스패치 모듈 분리
+    ENABLE_REFACTORED_DISPATCHER,
+)
+from core.bot_dispatcher import (
+    dispatch_bot_message as _dispatch_bot_message,
+)
+from core.bot_message_handler import (  # Phase 1b 리팩토링 — 메시지 처리 모듈 분리
+    ENABLE_REFACTORED_HANDLER,
+    AttachmentGroupState,
+    MessageClassifier,
+)
+from core.bot_message_handler import (
+    download_attachment as _handler_download_attachment,
+)
+from core.pm_message_handler import (  # Phase 1c 리팩토링 — PM 전용 메시지 처리 모듈 분리
+    ENABLE_REFACTORED_PM_HANDLER,
+)
+from core.pm_message_handler import (
+    handle_bot_message as _pm_handle_bot_message,
+)
+from core.relay_bot_setup import (  # Phase 1c 리팩토링 — 봇 설정 유틸 모듈 분리
+    _refresh_legacy_bot_configs,
+    _sync_identity_to_canonical_config,
+    register_all_bot_commands,
+)
 from core.task_poller import TaskPoller
 from core.telegram_delivery import resolve_delivery_target
 from core.telegram_formatting import (
@@ -82,30 +99,6 @@ from core.telegram_formatting import (
 )
 from core.telegram_sender import (  # Phase 1a 리팩토링 — 전송 모듈 분리
     ENABLE_REFACTORED_SENDER,
-)
-from core.bot_message_handler import (  # Phase 1b 리팩토링 — 메시지 처리 모듈 분리
-    ENABLE_REFACTORED_HANDLER,
-    AttachmentGroupState,
-    MessageClassifier,
-    download_attachment as _handler_download_attachment,
-)
-import core.relay_command_handlers as _cmd  # Phase 1c 리팩토링 — 명령어 핸들러 모듈 분리
-from core.bot_dispatcher import (  # Phase 1c 리팩토링 — 봇 메시지 디스패치 모듈 분리
-    ENABLE_REFACTORED_DISPATCHER,
-    dispatch_bot_message as _dispatch_bot_message,
-)
-from core.pm_message_handler import (  # Phase 1c 리팩토링 — PM 전용 메시지 처리 모듈 분리
-    ENABLE_REFACTORED_PM_HANDLER,
-    handle_bot_message as _pm_handle_bot_message,
-)
-from core.relay_bot_setup import (  # Phase 1c 리팩토링 — 봇 설정 유틸 모듈 분리
-    _set_org_bot_commands,
-    register_all_bot_commands,
-    _validate_bot_token,
-    _profile_bundle_for_org,
-    _launch_bot_subprocess,
-    _refresh_legacy_bot_configs,
-    _sync_identity_to_canonical_config,
 )
 from core.telegram_sender import (
     auto_upload as _sender_auto_upload,
@@ -129,7 +122,13 @@ ARTIFACT_MARKER_RE = re.compile(r"\[ARTIFACT:([^\]]+)\]")
 PM_CHAT_REPLY_TIMEOUT_SEC = int(os.environ.get("PM_CHAT_REPLY_TIMEOUT_SEC", "300"))
 
 # /setup 마법사 ConversationHandler 상태 — relay_bot_setup.py에서 가져옴
-from core.relay_bot_setup import SETUP_MENU, SETUP_AWAIT_TOKEN, SETUP_AWAIT_ENGINE, SETUP_AWAIT_IDENTITY  # noqa: E402
+from core.relay_bot_setup import (  # noqa: E402
+    SETUP_AWAIT_ENGINE,
+    SETUP_AWAIT_IDENTITY,
+    SETUP_AWAIT_TOKEN,
+    SETUP_MENU,
+)
+
 ATTACHMENT_GROUP_DEBOUNCE_SEC = 1.2  # Phase 1b: bot_message_handler.ATTACHMENT_GROUP_DEBOUNCE_SEC와 동기화
 
 # Phase 1b 리팩토링 — AttachmentGroupState를 bot_message_handler로 이전
@@ -3607,6 +3606,16 @@ class TelegramRelay:
             except Exception as _be:
                 logger.debug(f"[{self.org_id}] briefing 조회 실패 (무시): {_be}")
 
+            # JIT Context Refresh: 실행 직전 최신 대화 맥락 주입 (Stale Context 방지)
+            try:
+                _latest_ctx = await self._build_conversation_context_packet(description)
+                if _latest_ctx:
+                    if "metadata" not in task_info:
+                        task_info["metadata"] = {}
+                    task_info["metadata"]["conversation_context"] = _latest_ctx
+            except Exception as _ctx_err:
+                logger.debug(f"[{self.org_id}] JIT context refresh 실패 (무시): {_ctx_err}")
+
             system_prompt = self.identity.build_system_prompt()
             task_packet = await self._build_delegated_task_packet(task_info)
             system_prompt += (
@@ -3669,21 +3678,27 @@ class TelegramRelay:
             _hb_interval_pm = int(os.environ.get("BOT_HB_INTERVAL_SEC", "30"))
 
             async def _pm_heartbeat_loop() -> None:
-                """PM 태스크 실행 중 주기적 on_progress 호출 → hang watchdog 오탐 방지.
+                """PM 태스크 실행 중 주기적 on_progress 호출 + DB lease 갱신 → hang 오탐 방지.
 
-                pytest 등 stdout 없이 오래 걸리는 작업이 hang으로 오탐되는 것을 막는다.
                 진짜 hang은 TASK_EXEC_TOTAL_TIMEOUT_SEC 절대 타임아웃이 잡는다.
                 """
                 await asyncio.sleep(_hb_interval_pm)
                 while True:
                     try:
+                        # 1) UI 갱신 (on_progress)
                         await on_progress("🤔 처리 중...")
-                    except Exception:
-                        pass
+                        # 2) DB 하트비트 갱신 (StalenessChecker 오탐 방지)
+                        if self.context_db:
+                            await self.context_db.heartbeat_pm_task_lease(
+                                task_id, self.org_id, ttl_seconds=180.0
+                            )
+                    except Exception as _hb_err:
+                        logger.debug(f"[{self.org_id}] heartbeat 갱신 실패 (무시): {_hb_err}")
                     await asyncio.sleep(_hb_interval_pm)
 
             watchdog_task = asyncio.create_task(_hang_watchdog())
             heartbeat_pm_task = asyncio.create_task(_pm_heartbeat_loop())
+
             try:
                 _exec_task = asyncio.current_task()
                 response = await self._execute_with_team_config(
@@ -3857,7 +3872,6 @@ class TelegramRelay:
             except Exception as _cascade_err:
                 logger.warning(f"[{self.org_id}] cascade 취소 실패: {_cascade_err}")
             # Performance DB 업데이트 (실패)
-            import asyncio as _asyncio
 
             from core.pm_orchestrator import _record_bot_perf as _rbp
             # FIX(critical): create_task 반환값 미저장 → _fire_and_forget

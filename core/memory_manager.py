@@ -231,11 +231,26 @@ class MemoryManager:
 
     @staticmethod
     def _summarize_entries_fallback(entries: list[LogEntry]) -> str:
-        """LOG 항목들을 첫 항목 기반으로 한 줄 요약 (키워드 폴백)."""
+        """LOG 항목들을 최근 5개 기반으로 핵심 키워드 추출하여 한 줄 요약."""
         if not entries:
             return ""
-        dates = f"{entries[0].timestamp[:7]}~{entries[-1].timestamp[:7]}"
-        return f"{dates}: {entries[0].content[:80]}"
+
+        recent = entries[-5:]
+        dates = f"{recent[0].timestamp[:10]}~{recent[-1].timestamp[:10]}"
+
+        # 키워드 추출 (2글자 이상, 단순 토큰화)
+        all_text = " ".join(e.content for e in recent)
+        words = re.findall(r"\w{2,}", all_text)
+
+        # 불용어 간단히 필터링
+        stopwords = {"작업", "완료", "결과", "태스크", "진행", "수행", "내용"}
+        filtered = [w for w in words if w not in stopwords]
+
+        from collections import Counter
+        top_k = [w for w, c in Counter(filtered).most_common(5)]
+
+        topics = ", ".join(top_k) if top_k else recent[-1].content[:50]
+        return f"[{dates}] 주요 작업: {topics}"
 
     # ── 컨텍스트 생성 ─────────────────────────────────────────────────────
 
@@ -300,11 +315,6 @@ class MemoryManager:
 
         rank_bm25 미설치 시 keyword 폴백.
         """
-        try:
-            from rank_bm25 import BM25Okapi
-        except ImportError:
-            return self._keyword_search(query, top_k)
-
         # 1) LOG 항목
         doc = self.load()
         log_entries = [e.content for e in doc.log]
@@ -324,18 +334,20 @@ class MemoryManager:
         if not corpus:
             return []
 
-        tokenized = [entry.split() for entry in corpus]
-        bm25 = BM25Okapi(tokenized)
-        scores = bm25.get_scores(query.split())
-        top_indices = sorted(range(len(corpus)), key=lambda i: scores[i], reverse=True)[:top_k]
-        return [corpus[i] for i in top_indices if scores[i] > 0]
+        try:
+            from rank_bm25 import BM25Okapi
+            tokenized = [entry.split() for entry in corpus]
+            bm25 = BM25Okapi(tokenized)
+            scores = bm25.get_scores(query.split())
+            top_indices = sorted(range(len(corpus)), key=lambda i: scores[i], reverse=True)[:top_k]
+            return [corpus[i] for i in top_indices if scores[i] > 0]
+        except ImportError:
+            return self._keyword_search_on_corpus(query, corpus, top_k)
 
-    def _keyword_search(self, query: str, top_k: int) -> list[str]:
-        """BM25 없을 때 fallback keyword 검색."""
-        doc = self.load()
-        entries = [e.content for e in doc.log]
+    def _keyword_search_on_corpus(self, query: str, corpus: list[str], top_k: int) -> list[str]:
+        """BM25 없을 때 주어진 코퍼스에 대해 keyword 검색."""
         query_words = set(query.lower().split())
-        scored = [(e, len(query_words & set(e.lower().split()))) for e in entries]
+        scored = [(e, len(query_words & set(e.lower().split()))) for e in corpus]
         return [e for e, s in sorted(scored, key=lambda x: -x[1]) if s > 0][:top_k]
 
     # ── 유틸 ─────────────────────────────────────────────────────────────
