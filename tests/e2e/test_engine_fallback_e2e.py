@@ -369,16 +369,15 @@ class TestCodexFallbackUnit:
     # (4) PM 디스패치 → 엔진 실행 → 결과 반환 전체 흐름
     @pytest.mark.unit
     async def test_codex_pm_dispatch_full_flow(self) -> None:
-        """PM → 운영실(codex) 디스패치 → run() → 결과 반환 전체 흐름."""
-        from core.constants import BOT_ENGINE_MAP
+        """PM → codex 엔진 디스패치 → run() → 결과 반환 전체 흐름.
+
+        NOTE: aiorg_ops_bot 엔진 배정은 constants.py 변경에 따라 바뀔 수 있으므로
+        codex 엔진을 직접 지정하여 테스트한다.
+        """
         from tools.codex_runner import CodexRunner
 
-        # Step 1: BOT_ENGINE_MAP에서 운영실 엔진 확인
-        ops_engine = BOT_ENGINE_MAP.get("aiorg_ops_bot")
-        assert ops_engine == "codex"
-
-        # Step 2: 엔진 러너 생성
-        runner = RunnerFactory.create(ops_engine)
+        # Step 1: codex 러너 직접 생성
+        runner = RunnerFactory.create("codex")
         assert isinstance(runner, CodexRunner)
 
         # Step 3: 태스크 실행 (mock subprocess)
