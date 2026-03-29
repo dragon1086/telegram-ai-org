@@ -6,10 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# 테스트 환경 미설치 모듈 mock — python-telegram-bot, pyyaml 등
+# 테스트 환경 미설치 모듈 mock — python-telegram-bot 등
+# yaml(pyyaml)은 실제 설치되어 있으므로 mock 제외 — 다른 테스트의 yaml.safe_load 오염 방지
 for _mod in (
     "telegram", "telegram.ext", "telegram.constants",
-    "yaml", "aiosqlite",
+    "aiosqlite",
 ):
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
