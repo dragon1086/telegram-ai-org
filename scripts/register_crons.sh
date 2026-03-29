@@ -106,14 +106,18 @@ ensure_job \
 
 echo "[OK] weekly_standup 등록"
 
-# 2. 일일 회고 — 매일 23:30 KST
-ensure_job \
-  "daily_retro" \
-  "30 23 * * *" \
-  "일일 회고: 매일 23:30 KST" \
-  "Repository: $PROJ. Run \`cd $PROJ && ./.venv/bin/python scripts/daily_retro.py >> logs/retro.log 2>&1\` and finish with a one-line success/failure summary."
+# 2. 일일 회고 — 비활성화 (2026-03-29)
+# ⚠️ 이 openclaw cron은 scripts/daily_retro.py를 독립 세션으로 실행하며
+# goal_tracker.auto_register 모듈 미존재로 GoalTracker 등록 실패 (ImportError).
+# 동일 23:30 KST에 APScheduler(core/scheduler.py daily_retro)가 RetroDiscussion으로
+# 정상 실행하므로 이 크론은 중복 + 오류만 발생시킴 → 등록하지 않음.
+# ensure_job \
+#   "daily_retro" \
+#   "30 23 * * *" \
+#   "일일 회고: 매일 23:30 KST" \
+#   "Repository: $PROJ. Run \`cd $PROJ && ./.venv/bin/python scripts/daily_retro.py >> logs/retro.log 2>&1\` and finish with a one-line success/failure summary."
 
-echo "[OK] daily_retro 등록"
+echo "[SKIP] daily_retro — APScheduler(core/scheduler.py)가 처리하므로 openclaw cron 등록 생략"
 
 # 3. 일일 메트릭 — 매일 08:00 KST
 ensure_job \

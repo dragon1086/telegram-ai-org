@@ -487,7 +487,44 @@ class OrgScheduler:
                     pm_chat_id=self._pm_chat_id,
                     goal_tracker=self._goal_tracker,
                 )
-                await rd.run_retro(meeting_type="daily_retro")
+                session = await rd.run_retro(meeting_type="daily_retro")
+
+                # ── Top3 자가개선 태스크 GoalTracker 명시적 배분 ──────────────
+                # RetroDiscussion 내부 _register_self_improvement()가 silent fail할 경우
+                # 스케줄러 레벨에서 top3 항목을 직접 GoalTracker에 배분 (belt-and-suspenders).
+                # start_goal()의 중복 감지 로직이 이미 등록된 항목은 자동 건너뜀.
+                if (
+                    self._goal_tracker is not None
+                    and session is not None
+                    and session.todo_items
+                ):
+                    top3 = session.todo_items[:3]
+                    dispatched_ids: list[str] = []
+                    for item in top3:
+                        try:
+                            gid = await self._goal_tracker.start_goal(
+                                title=f"[회고개선|{session.session_date}] {item[:55]}",
+                                description=item,
+                                meta={
+                                    "source": "daily_retro",
+                                    "auto_from_retro": True,
+                                    "session_date": session.session_date,
+                                },
+                                chat_id=self._pm_chat_id,
+                            )
+                            dispatched_ids.append(gid)
+                            logger.info(
+                                f"[OrgScheduler] 회고 top3 GoalTracker 배분: {gid} — {item[:50]}"
+                            )
+                        except Exception as e_top3:
+                            logger.warning(
+                                f"[OrgScheduler] 회고 top3 dispatch 실패 (무시): {e_top3}"
+                            )
+                    if dispatched_ids:
+                        await self._safe_send(
+                            f"🚀 **회고 Top3 개선건** {len(dispatched_ids)}개를 GoalTracker에 자동 배분했습니다.\n"
+                            + "\n".join(f"  • {gid}" for gid in dispatched_ids)
+                        )
             else:
                 await self._safe_send("⚠️ [일일 회고] PM Orchestrator 미초기화 — 회고를 실행할 수 없습니다.")
                 return

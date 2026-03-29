@@ -59,12 +59,26 @@ async def test_morning_standup_no_crash(scheduler: OrgScheduler) -> None:
 
 
 @pytest.mark.asyncio
-async def test_daily_retro_no_crash(scheduler: OrgScheduler) -> None:
-    """daily_retro() 호출 시 크래시 없는지 확인 (스크립트 mock)."""
-    mock_main = AsyncMock()
-    with patch("scripts.daily_retro.main", mock_main):
+async def test_daily_retro_no_crash(scheduler: OrgScheduler, send_text_mock: AsyncMock) -> None:
+    """daily_retro() 호출 시 크래시 없는지 확인.
+
+    pm_orchestrator가 None(테스트 기본값)이면 경고 메시지를 보내고 종료.
+    pm_orchestrator가 있으면 RetroDiscussion.run_retro()를 호출.
+    """
+    # Case 1: pm_orchestrator 없음 → 경고 메시지 전송 후 종료
+    await scheduler.daily_retro()
+    send_text_mock.assert_awaited()  # ⚠️ 메시지가 전송됐는지 확인
+
+    # Case 2: pm_orchestrator 있음 → RetroDiscussion.run_retro() 호출
+    send_text_mock.reset_mock()
+    mock_session = type("S", (), {"todo_items": [], "session_date": "2026-03-29"})()
+    mock_run_retro = AsyncMock(return_value=mock_session)
+    mock_pm_orch = object()  # non-None sentinel
+    scheduler._pm_orchestrator = mock_pm_orch
+    with patch("core.retro_discussion.RetroDiscussion.run_retro", mock_run_retro):
         await scheduler.daily_retro()
-    mock_main.assert_awaited_once()
+    mock_run_retro.assert_awaited_once()
+    scheduler._pm_orchestrator = None  # 원복
 
 
 # ── 오류 복원력 테스트 ────────────────────────────────────────────────────────
