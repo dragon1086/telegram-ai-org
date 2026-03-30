@@ -1684,6 +1684,17 @@ class TelegramRelay:
         if not collab_requester:
             logger.warning(f"[collab_inject:{self.org_id}] {task_id} — collab_requester 없음")
             return
+        # 회의 태스크(parent_id=MEETING-*)는 개별 결과 주입을 생략한다.
+        # 각 부서 보고마다 PM이 에코 메시지를 보내는 것을 방지.
+        # 최종 취합은 _post_meeting_summary()가 담당한다.
+        parent_id = task_info.get("parent_id") or ""
+        if parent_id.startswith("MEETING-"):
+            logger.info(
+                f"[collab_inject:{self.org_id}] {task_id} — "
+                f"회의 태스크 개별 주입 생략 (parent={parent_id})"
+            )
+            await self.context_db.update_pm_task_metadata(task_id, {"result_injected": True})
+            return
         if task_id in self._collab_injecting:
             return
         self._collab_injecting.add(task_id)

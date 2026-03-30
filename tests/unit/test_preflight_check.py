@@ -575,3 +575,99 @@ class TestLoadDotenv:
         mod = _load_preflight()
         result = mod._load_dotenv(tmp_path / "nonexistent.env")
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# 테스트 11: tools/preflight_check.py — run_preflight_dict() 단위 테스트
+# RETRO-09/10: E2E 로그 헤더 삽입용 dict 반환 인터페이스 검증
+# ---------------------------------------------------------------------------
+
+import importlib.util as _ilu_tools
+from pathlib import Path as _Path
+
+_TOOLS_PREFLIGHT_PATH = _Path(__file__).parent.parent.parent / "tools" / "preflight_check.py"
+
+
+def _load_tools_preflight() -> "ModuleType":
+    """tools/preflight_check.py 를 동적 import 한다."""
+    spec = _ilu_tools.spec_from_file_location("tools_preflight_check", _TOOLS_PREFLIGHT_PATH)
+    assert spec and spec.loader, f"모듈 로드 실패: {_TOOLS_PREFLIGHT_PATH}"
+    mod = _ilu_tools.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+class TestRunPreflightDict:
+    """tools/preflight_check.py — run_preflight_dict() 반환 구조 및 내용 검증.
+
+    RETRO-09/10: pre-flight 체크 결과를 E2E 로그 헤더에 삽입하기 위한
+    표준 dict 인터페이스가 올바르게 작동하는지 확인한다.
+    """
+
+    def test_returns_dict_with_required_keys(self):
+        """run_preflight_dict() 가 필수 키 6개를 포함한 dict를 반환한다."""
+        mod = _load_tools_preflight()
+        result = mod.run_preflight_dict()
+        required_keys = ("baseline_version", "timeout", "filter", "env_vars", "checked_at", "status")
+        for key in required_keys:
+            assert key in result, f"필수 키 '{key}' 없음: {result.keys()}"
+
+    def test_status_is_pass_or_fail(self):
+        """status 필드가 'PASS' 또는 'FAIL' 이다."""
+        mod = _load_tools_preflight()
+        result = mod.run_preflight_dict()
+        assert result["status"] in ("PASS", "FAIL"), f"유효하지 않은 status: {result['status']}"
+
+    def test_timeout_is_integer(self):
+        """timeout 필드가 정수 타입이다."""
+        mod = _load_tools_preflight()
+        result = mod.run_preflight_dict()
+        assert isinstance(result["timeout"], int), f"timeout이 int가 아님: {type(result['timeout'])}"
+
+    def test_filter_is_string(self):
+        """filter 필드가 문자열 타입이다."""
+        mod = _load_tools_preflight()
+        result = mod.run_preflight_dict()
+        assert isinstance(result["filter"], str), f"filter가 str이 아님: {type(result['filter'])}"
+
+    def test_env_vars_is_list(self):
+        """env_vars 필드가 리스트 타입이다."""
+        mod = _load_tools_preflight()
+        result = mod.run_preflight_dict()
+        assert isinstance(result["env_vars"], list), f"env_vars가 list가 아님: {type(result['env_vars'])}"
+
+    def test_checked_at_is_iso8601_string(self):
+        """checked_at 필드가 ISO8601 형식 문자열이다."""
+        import re
+        mod = _load_tools_preflight()
+        result = mod.run_preflight_dict()
+        assert isinstance(result["checked_at"], str)
+        # ISO8601 기본 형식: YYYY-MM-DDTHH:MM:SS
+        assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", result["checked_at"]), (
+            f"checked_at가 ISO8601 형식이 아님: {result['checked_at']}"
+        )
+
+    def test_baseline_version_from_yaml(self, tmp_path):
+        """infra-baseline.yaml 의 baseline_version 필드를 정확히 읽는다."""
+        baseline = tmp_path / "infra-baseline.yaml"
+        baseline.write_text(
+            "baseline_version: v2.0\nversion: 2.0.0\ntimeout: 120\nfilter: \"\"\nenv:\n  required: []\n  optional: []\n"
+        )
+        mod = _load_tools_preflight()
+        result = mod.run_preflight_dict(baseline_path=baseline)
+        assert result["baseline_version"] == "v2.0", (
+            f"baseline_version 불일치: 기대 'v2.0', 실제 '{result['baseline_version']}'"
+        )
+
+    def test_fail_status_on_low_timeout(self, tmp_path):
+        """timeout < 60 이면 status='FAIL' 을 반환한다."""
+        baseline = tmp_path / "infra-baseline.yaml"
+        baseline.write_text(
+            "version: v0.1\ntimeout: 30\nfilter: \"\"\nenv:\n  required: []\n  optional: []\n"
+        )
+        mod = _load_tools_preflight()
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = mod.run_preflight_dict(baseline_path=baseline)
+        assert result["status"] == "FAIL", "timeout=30 이면 FAIL이어야 함"

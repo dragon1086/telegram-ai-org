@@ -129,6 +129,24 @@ jobs:
       - name: Validate orchestration config
         run: python tools/orchestration_cli.py validate-config
 
+      - name: Pre-flight Check (RETRO-01 — bash)
+        # timeout/filter/env 인프라 파라미터 자동 검증 — FAIL 시 E2E 중단
+        # SKIP_PREFLIGHT=1 로 일시적 우회 가능 (CI 디버깅 한정)
+        # --strict: WARN도 FAIL로 처리 (CI 환경에서 엄격 모드)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          CI: "true"
+        run: bash scripts/preflight_check.sh
+
+      - name: Pre-flight check (RETRO-01 — python)
+        # Python 버전 검증 (JSON 출력 + infra-baseline.yaml 파라미터 심층 검증)
+        # SKIP_PREFLIGHT=1 로 일시적 우회 가능 (CI 디버깅 한정)
+        env:
+          SKIP_PREFLIGHT: "0"
+        run: python scripts/preflight_check.py --quiet
+
       - name: Assert infra-baseline version (pre-merge check)
         # ETC-02/ETC-03 재발 방지: PR 머지 전 infra-baseline.yaml 버전 1.1.0 이상 확인
         run: |

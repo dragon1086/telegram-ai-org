@@ -45,7 +45,18 @@ if ls dist/*.tar.gz &>/dev/null; then
 fi
 
 echo "▶ 첨부 산출물: ${#ASSETS[@]}개"
-for a in "${ASSETS[@]}"; do echo "  - $a"; done
+for a in "${ASSETS[@]+"${ASSETS[@]}"}"; do echo "  - $a"; done
+
+# 3b. dist 버전 불일치 경고
+TAG_VER="${TAG#v}"  # v1.0.0 → 1.0.0
+for a in "${ASSETS[@]+"${ASSETS[@]}"}"; do
+  if [[ "$a" != *"$TAG_VER"* ]]; then
+    echo "⚠️  버전 불일치 경고: $a 파일명에 $TAG_VER 이 포함되지 않습니다."
+    echo "   릴리스 첨부 전 dist/ 재빌드를 권장합니다 (python -m build)."
+    echo "   계속 진행하려면 Enter, 중단하려면 Ctrl+C"
+    read -r || true
+  fi
+done
 
 # 4. 기존 릴리스 확인 (중복 방지)
 echo "▶ 기존 릴리스 확인..."
@@ -59,12 +70,20 @@ fi
 # 5. GitHub Release 생성
 echo "▶ GitHub Release $TAG 생성 중..."
 
-gh release create "$TAG" \
-  "${ASSETS[@]}" \
-  --repo "$REPO" \
-  --title "telegram-ai-org $TAG" \
-  --notes-file "$NOTES_FILE" \
-  --verify-tag
+if [ ${#ASSETS[@]} -gt 0 ]; then
+  gh release create "$TAG" \
+    "${ASSETS[@]}" \
+    --repo "$REPO" \
+    --title "telegram-ai-org $TAG" \
+    --notes-file "$NOTES_FILE" \
+    --verify-tag
+else
+  gh release create "$TAG" \
+    --repo "$REPO" \
+    --title "telegram-ai-org $TAG" \
+    --notes-file "$NOTES_FILE" \
+    --verify-tag
+fi
 
 echo ""
 echo "✅ GitHub Release $TAG 생성 완료!"

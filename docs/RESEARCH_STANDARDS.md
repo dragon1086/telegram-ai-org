@@ -1,7 +1,7 @@
 # 리서치 산출물 표준 (Research Standards)
 
-> **버전**: 1.0.0 | **최초 작성**: 2026-03-26 | **소유**: 리서치실 / PM
-> **관련 파일**: `docs/research_context_template.yaml`, `docs/infra-baseline.yaml`
+> **버전**: 1.1.0 | **최초 작성**: 2026-03-26 | **최종 수정**: 2026-03-29 | **소유**: 리서치실 / PM
+> **관련 파일**: `docs/research_context_template.yaml`, `docs/infra-baseline.yaml`, `docs/research/research_context_schema.yaml`
 
 ---
 
@@ -50,7 +50,9 @@ cp docs/research_context_template.yaml <산출물_디렉토리>/research_context
 | `infra_baseline_version` | ✅ 필수 | 인프라 기준 버전 (`unversioned` 임시 허용) |
 | `query_summary` | ✅ 필수 | 조사 질의 요약 (100자 이내) |
 | `data_sources` | ✅ 필수 | 참조 소스 1개 이상 |
-| `context_notes` | ⚠️ 권장 | 환경 특이사항·조사 한계 |
+| `context_notes` | ⚠️ 권장 | 환경 특이사항·조사 한계·변수 교차 구간 명시 |
+| `variables_context` | ✅ 필수 | **RETRO-14/20 핵심** — 활성 변수 스냅샷 + 교차 구간 명시 (`active_variables`, `cross_variable_periods`, `isolation_confidence` 포함) |
+| `cross_variable_periods` | ⚠️ 권장 | `variables_context` 내 서브 필드 — 복수 변수 동시 변경 시 이분 분석 지원 |
 
 ### Step 3 — 산출물과 함께 커밋
 
@@ -123,6 +125,33 @@ docs/research/<조사명>/
 - [ ] `query_summary`가 100자 이내로 작성되었는가?
 - [ ] `data_sources`에 1개 이상의 소스가 기재되었는가?
 - [ ] `context_notes`에 조사 한계 또는 환경 특이사항이 기재되었는가?
+- [ ] `variables_context.active_variables`에 model_version·infra_baseline_version·research_date 스냅샷이 기재되었는가?
+- [ ] `variables_context.cross_variable_periods`에 교차 구간이 기재되었는가? (교차 없으면 `[]`로 명시)
+- [ ] `variables_context.isolation_confidence`에 원인 이분 신뢰도가 기재되었는가?
+
+---
+
+## cross_variable_periods 필드 작성법 (v1.1.0 신규)
+
+조사 시점과 모델 버전이 동시에 변경된 구간이 있을 경우 `context_notes` 내에 아래 형식으로 명시한다.
+
+```yaml
+context_notes: |
+  cross_variable_periods:
+    - period: "<이전 조사명> → <현재 조사명>"
+      variables_changed:
+        - name: "model_version"
+          from: "gemini-2.5-flash"
+          to: "gemini-3.x-flash"
+          changed_at: "YYYY-MM-DD"
+        - name: "infra_baseline_version"
+          from: "v1.2.0"
+          to: "v1.3.0"
+          changed_at: "YYYY-MM-DD"
+      impact_note: "이 기간 결과 차이는 복합 원인 가능성 있음"
+```
+
+**변수 교차가 없는 경우**에도 명시적으로 "교차 없음"을 기재해 추적 신뢰성을 확보한다.
 
 ---
 
@@ -131,3 +160,4 @@ docs/research/<조사명>/
 | 버전 | 날짜 | 변경 내용 |
 |------|------|----------|
 | 1.0.0 | 2026-03-26 | 최초 작성 — RETRO-08 이행 (리서치 산출물 재현성 표준화) |
+| 1.1.0 | 2026-03-29 | RETRO-14/20 이행 — `variables_context` 최상위 필드 추가 (active_variables·cross_variable_periods·isolation_confidence), `research_context_schema.yaml` 공식화, 체크리스트 4항목 추가 |

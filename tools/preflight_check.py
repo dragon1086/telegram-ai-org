@@ -102,14 +102,22 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 # 검증 함수
 # ---------------------------------------------------------------------------
 
+_MIN_E2E_TIMEOUT = 60  # E2E S-P1 기준 최솟값 (infra-baseline.yaml ETC-02 반영)
+
+
 def _check_timeout(timeout: Any) -> tuple[bool, str]:
-    """① timeout 값이 0보다 큰 정수인지 검사."""
+    """① timeout 값이 0보다 큰 정수이며 E2E 최솟값(60s) 이상인지 검사."""
     try:
         val = int(timeout)
     except (TypeError, ValueError):
         return False, f"timeout 값이 정수가 아닙니다: {timeout!r}"
     if val <= 0:
         return False, f"timeout 값이 0 이하입니다: {val}"
+    if val < _MIN_E2E_TIMEOUT:
+        return False, (
+            f"timeout={val}s 는 E2E 최솟값({_MIN_E2E_TIMEOUT}s) 미만입니다. "
+            "infra-baseline.yaml에서 timeout >= 60 으로 올려주세요."
+        )
     return True, f"timeout={val}s ✔"
 
 
@@ -236,6 +244,112 @@ def run_preflight(
             print(f"   → {issue}", file=sys.stderr, flush=True)
 
     return all_passed
+
+
+def run_preflight_dict(
+    baseline_path: Path | None = None,
+    strict: bool = False,
+) -> dict[str, Any]:
+    """pre-flight 검증 결과를 표준 dict 형태로 반환한다.
+
+    RETRO-09/10: pre-flight 체크 결과를 E2E 로그 헤더에 자동 삽입하기 위한
+    구조화된 반환 인터페이스를 제공한다.
+
+    Parameters
+    ----------
+    baseline_path:
+        infra-baseline.yaml 경로. None이면 프로젝트 루트 기본값 사용.
+    strict:
+        True이면 optional 환경변수도 필수로 검사.
+
+    Returns
+    -------
+    dict
+        검증 결과 dict::
+
+            {
+                "baseline_version": str,   # yaml 의 version 필드
+                "timeout": int,            # yaml 의 timeout 값
+                "filter": str,             # yaml 의 filter 값 (없으면 "")
+                "env_vars": list[str],     # optional 환경변수 전체 목록
+                "checked_at": str,         # ISO8601 타임스탬프 (UTC)
+                "status": "PASS" | "FAIL", # 종합 결과
+            }
+
+    체크 실패 시 pytest warning 을 발생시키되 테스트를 중단하지 않는다(soft-fail).
+    """
+    path = baseline_path or _DEFAULT_BASELINE_PATH
+
+    data: dict[str, Any] = {}
+    if path.exists():
+        try:
+            data = _load_yaml(path)
+        except Exception as exc:  # noqa: BLE001
+            _err(f"infra-baseline.yaml 파싱 실패: {exc}")
+            # soft-fail: try/except 가능하도록 dict 반환
+            import warnings
+            warnings.warn(
+                f"[pre-flight] infra-baseline.yaml 파싱 실패: {exc}",
+                stacklevel=2,
+            )
+            return {
+                "baseline_version": "unknown",
+                "timeout": _DEFAULT_TIMEOUT,
+                "filter": _DEFAULT_FILTER,
+                "env_vars": [],
+                "checked_at": datetime.now(tz=timezone.utc).isoformat(),
+                "status": "FAIL",
+            }
+    else:
+        import warnings
+        warnings.warn(
+            f"[pre-flight] infra-baseline.yaml 없음: {path} — 기본값 사용",
+            stacklevel=2,
+        )
+
+    version = data.get("baseline_version") or data.get("version", "unknown")
+    timeout_val = int(data.get("timeout", _DEFAULT_TIMEOUT))
+    filter_val = str(data.get("filter", _DEFAULT_FILTER) or "")
+    env_section = data.get("env", {})
+    required_env: list[str] = (
+        env_section.get("required", _DEFAULT_REQUIRED_ENV)
+        if isinstance(env_section, dict)
+        else []
+    )
+    optional_env: list[str] = (
+        env_section.get("optional", _DEFAULT_OPTIONAL_ENV)
+        if isinstance(env_section, dict)
+        else []
+    )
+    env_vars: list[str] = list(required_env) + list(optional_env)
+
+    t_ok, _ = _check_timeout(timeout_val)
+    f_ok, _ = _check_filter(filter_val)
+    e_ok, e_errors, _ = _check_env(required_env, optional_env, strict=strict)
+
+    passed = t_ok and f_ok and e_ok
+    if not passed:
+        import warnings
+        issues = []
+        if not t_ok:
+            issues.append(f"timeout={timeout_val}s 검증 실패")
+        if not f_ok:
+            issues.append(f"filter={filter_val!r} 검증 실패")
+        if not e_ok:
+            issues.extend(e_errors)
+        warnings.warn(
+            "[pre-flight] 검증 실패 (soft-fail): " + "; ".join(issues),
+            stacklevel=2,
+        )
+
+    return {
+        "baseline_version": str(version),
+        "timeout": timeout_val,
+        "filter": filter_val,
+        "env_vars": env_vars,
+        "checked_at": datetime.now(tz=timezone.utc).isoformat(),
+        "status": "PASS" if passed else "FAIL",
+    }
 
 
 def _log(msg: str) -> None:

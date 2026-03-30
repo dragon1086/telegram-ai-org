@@ -7,15 +7,26 @@
 # 변경 시 PR 필수 (운영 원칙: 2026-03-26 채택)
 # =============================================================================
 
-version: "1.1.0"
-updated_at: "2026-03-26"
+last_updated: "2026-03-29"
+baseline_version: "v1.2.0"
+version: "1.2.0"
+updated_at: "2026-03-29"
 
 # ---------------------------------------------------------------------------
-# timeout: E2E 테스트 전체 타임아웃 (초 단위, 0보다 큰 정수)
+# e2e_timeout_sec: E2E 테스트 전체 타임아웃 (초 단위, 0보다 큰 정수)
 # pytest --timeout 플래그에 전달된다.
 # ETC-02: 60s → 120s 상향 적용 (2026-03-26)
 # ---------------------------------------------------------------------------
-timeout: 120
+e2e_timeout_sec: 120
+timeout: 120  # 하위 호환 유지 (preflight_check.py 참조용)
+
+# ---------------------------------------------------------------------------
+# telethon_min_id_filter: Telethon 리스너 min_id 필터 전략
+# ETC-03: cross-contamination 방지 (2026-03-26)
+# ---------------------------------------------------------------------------
+telethon_min_id_filter: "record_on_activation"
+# 설명: 리스너 활성화 직전의 최신 message.id 를 min_id 로 기록.
+#       이후 수신 메시지 id <= min_id 이면 skip → 크로스 컨테미네이션 방지.
 
 # ---------------------------------------------------------------------------
 # filter: pytest -k 패턴 (빈 문자열 = 필터 없음)
@@ -24,7 +35,13 @@ timeout: 120
 filter: ""
 
 # ---------------------------------------------------------------------------
-# env: E2E 실행에 필수인 환경변수 목록
+# required_env_vars: E2E 실행에 필수인 환경변수 목록 (최상위 참조용)
+# CI 환경에서도 반드시 존재해야 하는 최소 집합. 현재는 빈 목록 (Mock 기반).
+# ---------------------------------------------------------------------------
+required_env_vars: []
+
+# ---------------------------------------------------------------------------
+# env: E2E 실행에 필수인 환경변수 목록 (수준별 분류)
 #
 # 검증 수준별 분류:
 #   required  — 없으면 exit(1)
@@ -51,6 +68,28 @@ env:
 # changelog — 변경 이력 (최신 항목이 상단)
 # ---------------------------------------------------------------------------
 changelog:
+  - version: "1.2.0"
+    date: "2026-03-29"
+    tasks: [RETRO-09, RETRO-10]
+    changes:
+      - field: baseline_version
+        before: "v1.2"
+        after: "v1.2.0"
+        reason: "버전 형식 v1.2 → v1.2.0 통일 (semver 준수)"
+      - field: e2e_timeout_sec
+        before: "(없음)"
+        after: "120"
+        reason: "RETRO-10: timeout 필드를 e2e_timeout_sec 로 명시적 추가"
+      - field: telethon_min_id_filter
+        before: "(없음)"
+        after: "record_on_activation"
+        reason: "ETC-03 전략값 루트 yaml에 명세화"
+      - field: required_env_vars
+        before: "(없음)"
+        after: "[]"
+        reason: "Phase 2 현행화: 최상위 참조 필드 추가"
+    reason: "RETRO-09/10: baseline_version/last_updated 필드 추가; pre-flight 체크 결과 E2E 로그 헤더 자동 삽입 기준선 반영"
+
   - version: "1.1.0"
     date: "2026-03-26"
     tasks: [ETC-02, ETC-03]

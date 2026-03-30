@@ -1,19 +1,13 @@
-"""telegram_sender.py 단위 테스트 — Phase 1a 분리 검증."""
+"""telegram_sender.py 단위 테스트 — Phase 1a 분리 검증.
+
+Note: telegram/aiosqlite mock은 tests/unit/conftest.py의 session fixture가 처리한다.
+      이 파일에는 모듈 레벨 sys.modules 주입 코드가 없어야 한다 (R-02 오염 패턴 수정).
+"""
 from __future__ import annotations
 
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-# 테스트 환경 미설치 모듈 mock — python-telegram-bot 등
-# yaml(pyyaml)은 실제 설치되어 있으므로 mock 제외 — 다른 테스트의 yaml.safe_load 오염 방지
-for _mod in (
-    "telegram", "telegram.ext", "telegram.constants",
-    "aiosqlite",
-):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from core.telegram_sender import (  # noqa: E402
     ENABLE_REFACTORED_SENDER,

@@ -4,6 +4,19 @@
 
 ---
 
+## [2026-03-29] Phase 2-A: FastAPI REST API + TaskRepository (T-823)
+
+### 핵심 변경
+AIMesh productization Phase 2-A — HTTP API 채널 추가. Telegram 봇 영향 없음 (feature flag).
+
+**신규 파일**: `core/api/` 패키지 (app, auth, routes/health, routes/tasks), `tests/test_api_app.py`, `tests/test_task_repository.py`, `docs/plans/phase2a-rest-api-design.md`
+**수정**: `core/repositories/task_repository.py` — NotImplementedError 스텁 → SQLite 실구현
+**테스트**: 26/26 신규 + 2178/2178 기존 회귀 없음
+
+**활성화**: `ENABLE_REST_API=true ENABLE_REPOSITORY_PATTERN=1 uvicorn core.api.app:create_app --factory --port 8000`
+
+---
+
 ## [2026-03-23] PM 최종보고 품질 개선 (T-353)
 
 ### 핵심 변경 요약

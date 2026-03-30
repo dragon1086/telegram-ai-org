@@ -1,0 +1,80 @@
+# =============================================================================
+# research_context.yaml — RETRO-14 리서치실 회고 분석 메타데이터
+# =============================================================================
+# 연결 태스크: RETRO-14 (L1 Active, 2026-03-27 pending)
+# 조사 주제: 리서치 산출물 맥락 자동화 — research_context.yaml 표준화 이행
+# 참조 표준: docs/RESEARCH_STANDARDS.md v1.1.0
+# 스키마 정의: docs/research/research_context_schema.yaml v1.1.0
+# =============================================================================
+
+# 1. 조사 수행 일시 (KST ISO 8601)
+research_date: "2026-03-27T10:00:00+09:00"
+
+# 2. 조사 수행 에이전트
+researcher_agent: "리서치실/aiorg_research_bot"
+
+# 3. 사용 모델 버전
+model_version: "gemini-2.5-flash"
+
+# 4. 인프라 기준 버전
+infra_baseline_version: "v1.2.0"
+
+# 5. 조사 질의 요약 (100자 이내)
+query_summary: "리서치 산출물 재현성 확보를 위한 research_context.yaml 표준화 이행 현황 파악 (RETRO-14)"
+
+# 6. 출처 목록 (최소 1개 이상)
+data_sources:
+  - type: "internal_doc"
+    ref: "docs/retros/2026-03-27-retro.md"
+    title: "2026-W13 주간 회고 원문 — 리서치실 START/STOP/CONTINUE 발언 포함"
+  - type: "internal_doc"
+    ref: "docs/RESEARCH_STANDARDS.md"
+    title: "리서치 산출물 표준 문서 v1.0.0 (RETRO-08 이행 결과)"
+  - type: "internal_doc"
+    ref: "docs/research_context_template.yaml"
+    title: "research_context.yaml 기준 템플릿"
+  - type: "internal_doc"
+    ref: "infra-baseline.yaml"
+    title: "인프라 기준선 v1.2.0 — infra_baseline_version 참조 기준"
+
+# 7. 환경 특이사항 및 조사 한계
+context_notes: |
+  - 회고 세션 기반 분석으로 외부 소스 없이 내부 문서만 참조.
+  - RETRO-08(2026-03-26)에서 이미 template 및 RESEARCH_STANDARDS.md 생성 완료.
+  - RETRO-14는 RETRO-08 이행 확인 및 전 조직 공통 패턴 수렴 확인이 핵심.
+  - 변수 교차 맥락 누락 문제는 RETRO-20에서 후속 조치 완료됨 (2026-03-29).
+
+# 8. 변수 교차 맥락 (RETRO-14/20 핵심 필드)
+variables_context:
+
+  # 이 조사 시점의 활성 변수 스냅샷
+  active_variables:
+    model_version: "gemini-2.5-flash"
+    infra_baseline_version: "v1.2.0"
+    research_date: "2026-03-27T10:00:00+09:00"
+    external_dependencies: []
+
+  # 이전 조사(RETRO-08, 2026-03-26) 대비 변수 교차 구간
+  # RETRO-08은 research_context 표준 최초 생성 — 비교 기준점으로 설정
+  cross_variable_periods:
+    - period: "RETRO-08(2026-03-26) → RETRO-14(2026-03-27)"
+      variables_changed:
+        - name: "research_date"
+          from: "2026-03-26T09:00:00+09:00"
+          to: "2026-03-27T10:00:00+09:00"
+          changed_at: "2026-03-27"
+        # model_version: 변경 없음 (gemini-2.5-flash 유지)
+        # infra_baseline_version: 변경 없음 (v1.2.0 유지)
+      variables_unchanged:
+        - model_version: "gemini-2.5-flash"    # 두 조사 동일
+        - infra_baseline_version: "v1.2.0"     # 두 조사 동일
+      impact_note: |
+        RETRO-08 → RETRO-14 구간에서 변경된 변수는 research_date(조사 시점)만 1일 경과.
+        model_version과 infra_baseline_version은 동일하므로, 두 조사 간 결과 차이는
+        오직 조사 시점(1일) 차이에만 귀속 가능 — 원인 이분 신뢰도: HIGH.
+
+  # 원인 이분 신뢰도 판정
+  isolation_confidence: "high"
+  isolation_reason: |
+    model_version(gemini-2.5-flash)과 infra_baseline_version(v1.2.0) 모두 불변.
+    단일 변수(research_date) 변화만 있어 결과 편차 발생 시 원인 이분 가능.

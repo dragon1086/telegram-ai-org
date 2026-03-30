@@ -26,6 +26,7 @@ RESET='\033[0m'
 
 QUIET=false
 FAIL_FAST=false
+STRICT=false   # --strict: WARN도 FAIL로 처리 (RETRO-01)
 FAIL_COUNT=0
 WARN_COUNT=0
 PASS_COUNT=0
@@ -34,24 +35,30 @@ for arg in "$@"; do
     case "$arg" in
         --quiet)    QUIET=true ;;
         --fail-fast) FAIL_FAST=true ;;
+        --strict)   STRICT=true ;;
     esac
 done
 
 log_pass() {
     PASS_COUNT=$((PASS_COUNT + 1))
     if [ "$QUIET" = false ]; then
-        printf "  ${GREEN}[PASS]${RESET}  %s\n" "$1"
+        printf "${GREEN}[PASS]${RESET} ✓ %s\n" "$1"
     fi
 }
 
 log_warn() {
+    # --strict 모드에서는 WARN을 FAIL로 처리 (RETRO-01)
+    if [ "$STRICT" = true ]; then
+        log_fail "[strict] $1"
+        return
+    fi
     WARN_COUNT=$((WARN_COUNT + 1))
-    printf "  ${YELLOW}[WARN]${RESET}  %s\n" "$1"
+    printf "  ${YELLOW}[WARN]${RESET}  ⚠ %s\n" "$1"
 }
 
 log_fail() {
     FAIL_COUNT=$((FAIL_COUNT + 1))
-    printf "  ${RED}[FAIL]${RESET}  %s\n" "$1" >&2
+    printf "${RED}[FAIL]${RESET} ✗ %s\n" "$1" >&2
     if [ "$FAIL_FAST" = true ]; then
         echo ""
         printf "${RED}pre-flight ABORTED (fail-fast)${RESET}\n" >&2
@@ -60,7 +67,7 @@ log_fail() {
 }
 
 log_section() {
-    printf "\n${CYAN}── %s ${DIM}%s${RESET}\n" "$1" "$2"
+    printf "\n${CYAN}[PREFLIGHT] %s: %s${RESET}\n" "$1" "$2"
 }
 
 # ---------------------------------------------------------------------------
@@ -69,10 +76,12 @@ log_section() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-printf "\n${CYAN}╔══════════════════════════════════════════════════╗${RESET}\n"
-printf "${CYAN}║  telegram-ai-org  Pre-Flight Check               ║${RESET}\n"
-printf "${CYAN}║  $(date '+%Y-%m-%d %H:%M:%S KST')                        ║${RESET}\n"
-printf "${CYAN}╚══════════════════════════════════════════════════╝${RESET}\n"
+printf "\n"
+printf "[PREFLIGHT] E2E Infrastructure Check\n"
+printf "=====================================\n"
+if [ "$STRICT" = true ]; then
+    printf "  ${YELLOW}Mode: --strict (WARN treated as FAIL)${RESET}\n"
+fi
 
 # ---------------------------------------------------------------------------
 # CHECK 1: Python venv 존재 및 활성화 여부
@@ -221,14 +230,40 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# CHECK 5: infra-baseline.yaml 존재 여부
+# CHECK 5: infra-baseline.yaml 존재 및 파라미터 검증 (RETRO-01)
 # ---------------------------------------------------------------------------
-log_section "CHECK 5" "infra-baseline.yaml"
+log_section "CHECK 5" "infra-baseline.yaml + 파라미터 검증"
 
 BASELINE="$PROJECT_ROOT/infra-baseline.yaml"
 if [ -f "$BASELINE" ]; then
     VERSION=$(grep -E "^version:" "$BASELINE" 2>/dev/null | head -1 | awk '{print $2}' || echo "unknown")
     log_pass "infra-baseline.yaml 존재 (version: $VERSION)"
+
+    # --- timeout 범위 검사: E2E_TIMEOUT >= 60 (RETRO-01) ---
+    TIMEOUT_VAL=$(grep -E "^timeout:" "$BASELINE" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"' || echo "")
+    if [ -z "$TIMEOUT_VAL" ]; then
+        log_warn "infra-baseline.yaml에 timeout 키 없음 — 기본값(120s) 사용"
+        TIMEOUT_VAL=120
+    fi
+    if echo "$TIMEOUT_VAL" | grep -qE '^[0-9]+$'; then
+        if [ "$TIMEOUT_VAL" -ge 60 ]; then
+            log_pass "timeout=${TIMEOUT_VAL}s (>= 60s) ✔"
+        else
+            log_fail "timeout=${TIMEOUT_VAL}s 는 E2E 최솟값(60s) 미만 — infra-baseline.yaml timeout >= 60 으로 수정 필요"
+        fi
+    else
+        log_fail "timeout 값이 정수가 아닙니다: '${TIMEOUT_VAL}'"
+    fi
+
+    # --- filter 파라미터 검사: 빈 문자열 또는 안전한 패턴 ---
+    FILTER_VAL=$(grep -E "^filter:" "$BASELINE" 2>/dev/null | head -1 | sed 's/^filter:[[:space:]]*//' | tr -d '"' || echo "")
+    if [ -z "$FILTER_VAL" ]; then
+        log_pass "filter=<없음> (전체 실행) ✔"
+    elif echo "$FILTER_VAL" | grep -qE '[;&|`$]'; then
+        log_fail "filter 패턴에 허용되지 않는 문자 포함: '${FILTER_VAL}'"
+    else
+        log_pass "filter='${FILTER_VAL}' ✔"
+    fi
 else
     log_fail "infra-baseline.yaml 없음 — 인프라 파라미터 기준 미정의 (RETRO-03 참조)"
 fi
@@ -303,22 +338,34 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# CI 환경 시크릿 누락 가이드 (RETRO-01 Phase 4)
+# ---------------------------------------------------------------------------
+if [ "${CI:-}" = "true" ]; then
+    for ci_var in TELEGRAM_BOT_TOKEN API_ID API_HASH; do
+        eval "ci_val=\"\${$ci_var:-}\""
+        if [ -z "$ci_val" ]; then
+            printf "[ERROR] GitHub Secret %s is not configured.\n" "$ci_var" >&2
+            printf "  → Go to: Repository Settings > Secrets and variables > Actions\n" >&2
+            printf "  → Add secret: %s\n" "$ci_var" >&2
+        fi
+    done
+fi
+
+# ---------------------------------------------------------------------------
 # 최종 요약
 # ---------------------------------------------------------------------------
-printf "\n${CYAN}════════════════════════════════════════════════════${RESET}\n"
-printf "  PASS: ${GREEN}%d${RESET}  WARN: ${YELLOW}%d${RESET}  FAIL: ${RED}%d${RESET}\n" \
-    "$PASS_COUNT" "$WARN_COUNT" "$FAIL_COUNT"
+printf "=====================================\n"
+printf "[PREFLIGHT] Result: %d FAIL(s), %d WARN(s)\n" "$FAIL_COUNT" "$WARN_COUNT"
 
 if [ "$FAIL_COUNT" -eq 0 ]; then
     if [ "$WARN_COUNT" -gt 0 ]; then
-        printf "  ${YELLOW}STATUS: WARN — 실행 가능하나 위 경고 항목 확인 권장${RESET}\n"
+        printf "${YELLOW}[PREFLIGHT] STATUS: WARN — 실행 가능하나 위 경고 항목 확인 권장${RESET}\n"
     else
-        printf "  ${GREEN}STATUS: PASS — 모든 체크 통과${RESET}\n"
+        printf "${GREEN}[PREFLIGHT] STATUS: PASS — 모든 체크 통과${RESET}\n"
     fi
-    printf "${CYAN}════════════════════════════════════════════════════${RESET}\n\n"
     exit 0
 else
-    printf "  ${RED}STATUS: FAIL — 위 FAIL 항목 해결 후 재실행${RESET}\n"
-    printf "${CYAN}════════════════════════════════════════════════════${RESET}\n\n"
+    printf "${RED}[PREFLIGHT] STATUS: FAIL — 위 FAIL 항목 해결 후 재실행${RESET}\n"
+    printf "Exiting with code 1\n"
     exit 1
 fi

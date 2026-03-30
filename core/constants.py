@@ -13,11 +13,12 @@ from loguru import logger
 _BOTS_DIR = Path(__file__).parent.parent / "bots"
 
 _FALLBACK_ENGINES: dict[str, str] = {
-    "aiorg_engineering_bot": "codex",
-    "aiorg_design_bot": "codex",
+    "aiorg_engineering_bot": "claude-code",
+    "aiorg_design_bot": "claude-code",
     "aiorg_product_bot": "claude-code",
-    "aiorg_growth_bot": "claude-code",
-    "aiorg_ops_bot": "claude-code",
+    "aiorg_growth_bot": "gemini-cli",
+    "aiorg_ops_bot": "gemini-cli",
+    "aiorg_research_bot": "gemini-cli",
 }
 
 _FALLBACK_ROLES: dict[str, str] = {
