@@ -90,17 +90,33 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_TIMEOUT = 120
+_MIN_E2E_TIMEOUT = 60       # E2E_TIMEOUT 최솟값 (RETRO-01 기준)
 _WARN_DEFAULT_TIMEOUT = True  # 기본값 사용 시 경고 출력 여부
 
 
 def _check_timeout(timeout: Any) -> dict[str, Any]:
-    """timeout 검증. 0보다 큰 정수여야 한다."""
+    """timeout 검증. E2E_TIMEOUT >= 60 조건 확인 (RETRO-01).
+
+    - 정수로 변환 불가 → FAIL
+    - 0 이하 → FAIL
+    - 60 미만 → FAIL  (E2E_TIMEOUT < 60 은 불안정 실행 원인)
+    - 기본값(120) 그대로 → WARN (명시적 설정 권장)
+    """
     try:
         val = int(timeout)
     except (TypeError, ValueError):
         return {"ok": False, "msg": f"timeout 값이 정수가 아닙니다: {timeout!r}", "value": None}
     if val <= 0:
         return {"ok": False, "msg": f"timeout 값이 0 이하입니다: {val}", "value": val}
+    if val < _MIN_E2E_TIMEOUT:
+        return {
+            "ok": False,
+            "msg": (
+                f"timeout={val}s 는 E2E 최솟값({_MIN_E2E_TIMEOUT}s) 미만입니다. "
+                "infra-baseline.yaml에서 timeout >= 60 으로 올려주세요."
+            ),
+            "value": val,
+        }
     if val == _DEFAULT_TIMEOUT and _WARN_DEFAULT_TIMEOUT:
         import warnings
         warnings.warn(
@@ -108,7 +124,7 @@ def _check_timeout(timeout: Any) -> dict[str, Any]:
             "infra-baseline.yaml에서 명시적으로 설정했는지 확인하세요.",
             stacklevel=4,
         )
-    return {"ok": True, "msg": f"timeout={val}s ✔", "value": val}
+    return {"ok": True, "msg": f"timeout={val}s (>= {_MIN_E2E_TIMEOUT}s) ✔", "value": val}
 
 
 def _check_filter(filter_val: Any) -> dict[str, Any]:

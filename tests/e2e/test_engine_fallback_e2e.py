@@ -480,18 +480,12 @@ class TestClaudeCodeFallbackUnit:
 
         from tools.claude_subprocess_runner import ClaudeSubprocessRunner
 
-        original = sys.modules.get("tools.claude_agent_runner", ...)
-        sys.modules["tools.claude_agent_runner"] = None  # type: ignore[assignment]
-        try:
+        # patch.dict 방식 — try/finally 수동 복구 대신 cleanup-safe 컨텍스트 사용
+        with patch.dict(sys.modules, {"tools.claude_agent_runner": None}):  # type: ignore[dict-item]
             runner = RunnerFactory._create_claude_runner()
             assert isinstance(runner, ClaudeSubprocessRunner), (
                 "SDK 없을 때 ClaudeSubprocessRunner로 폴백되어야 함"
             )
-        finally:
-            if original is ...:
-                del sys.modules["tools.claude_agent_runner"]
-            else:
-                sys.modules["tools.claude_agent_runner"] = original
 
     @pytest.mark.unit
     async def test_claude_code_runner_error_wraps_inner_exception(self) -> None:

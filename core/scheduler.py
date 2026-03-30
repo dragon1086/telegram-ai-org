@@ -562,15 +562,9 @@ class OrgScheduler:
             )
             if responses:
                 await self._post_meeting_summary(responses, "weekly_standup", topic)
-            # GroupChatHub 연동: 그룹방에서 멀티봇 자율 참가 회의 실행 (참가자 있을 때만)
-            if self._group_chat_hub is not None and self._group_chat_hub.participant_ids:
-                logger.info("[OrgScheduler] GroupChatHub를 통한 멀티봇 주간 스탠드업 실행")
-                await self._group_chat_hub.start_meeting(
-                    topic=topic,
-                    participants=self._group_chat_hub.participant_ids,
-                )
-            from scripts.weekly_standup import main as _weekly_main
-            await _weekly_main()
+            # NOTE: broadcast_meeting_start 내부에서 group_chat_hub.start_meeting을 이미 호출함.
+            # 이 아래 두 블록(GroupChatHub 재호출 / weekly_standup.py 스크립트)은
+            # 중복 실행을 유발하므로 제거함.
             # Phase 2: LessonMemory 교훈 통계
             try:
                 from core.lesson_memory import LessonMemory
@@ -950,21 +944,10 @@ class OrgScheduler:
         """매주 월요일 09:00 KST — 주간회의 자동화 뼈대.
 
         ST-11: 전 조직 주간회의를 자율적으로 진행한다.
-        TODO: weekly_meeting_multibot.py 로직을 여기에 통합하고
-              COLLAB dispatch로 부서별 현황 수집 → 종합 요약 전송.
+        NOTE: 실제 주간회의는 09:05 KST weekly_standup()이 처리한다.
+              stub 메시지 중복 발송 방지를 위해 이 잡은 no-op으로 유지.
         """
-        logger.info("[OrgScheduler] weekly_meeting_automation 시작")
-        try:
-            await self._safe_send(
-                "📅 *[자동] 주간회의 시작*\n"
-                "매주 월요일 자동 진행 — 각 조직 현황 수집 중...\n"
-                "*(ST-11 자동화 뼈대 — 실제 다중봇 협업 로직 연결 예정)*"
-            )
-            # TODO: broadcast_meeting_start("weekly_meeting_automation") 호출
-            # TODO: COLLAB dispatch로 각 부서 주간 현황 수집
-            logger.info("[OrgScheduler] weekly_meeting_automation 완료 (stub)")
-        except Exception as e:
-            logger.error(f"[OrgScheduler] weekly_meeting_automation 실패: {e}")
+        logger.info("[OrgScheduler] weekly_meeting_automation — weekly_standup(09:05)에 통합됨, 스킵")
 
     async def _monthly_audit_automation(self) -> None:
         """매월 1일 09:30 KST — 감사 자동화 뼈대.

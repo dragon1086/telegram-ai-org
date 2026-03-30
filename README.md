@@ -514,6 +514,13 @@ cp .env.example .env
 ./.venv/bin/pytest -q
 ```
 
+### Phase 1 단위 테스트 (2026-03-29 추가)
+
+```bash
+# Phase 1 스캐폴딩 단위 테스트 실행
+.venv/bin/python -m pytest tests/unit/test_phase1_*.py -v
+```
+
 ### 브랜치 전략
 
 ```

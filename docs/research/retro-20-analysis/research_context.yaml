@@ -1,0 +1,119 @@
+# =============================================================================
+# research_context.yaml — RETRO-20 리서치실 최종 보고서 메타데이터
+# =============================================================================
+# 연결 태스크: RETRO-20 (resolved, 2026-03-29)
+# 조사 주제: 변수 교차 맥락 가시화 + 레퍼런스·경쟁사 분석 완료
+# 참조 표준: docs/RESEARCH_STANDARDS.md v1.1.0
+# 스키마 정의: docs/research/research_context_schema.yaml v1.1.0
+# =============================================================================
+
+# 1. 조사 수행 일시 (KST ISO 8601)
+research_date: "2026-03-29T14:00:00+09:00"
+
+# 2. 조사 수행 에이전트
+researcher_agent: "리서치실/aiorg_research_bot"
+
+# 3. 사용 모델 버전
+model_version: "claude-sonnet-4-5"
+
+# 4. 인프라 기준 버전
+infra_baseline_version: "v1.2.0"
+
+# 5. 조사 질의 요약 (100자 이내)
+query_summary: "변수 교차 맥락 가시화 — research_context에 cross_variable_periods 설계 및 이행 (RETRO-20)"
+
+# 6. 출처 목록 (최소 1개 이상)
+data_sources:
+  - type: "internal_doc"
+    ref: "docs/retros/2026-03-29.md"
+    title: "2026-03-29 일일 회고 원문 — 리서치실 잘못한 것/해야 할 것 발언 포함"
+  - type: "internal_doc"
+    ref: "docs/research/retro-14-analysis/research_context.yaml"
+    title: "RETRO-14 분석 메타데이터 — 전 단계 맥락 연결"
+  - type: "internal_doc"
+    ref: "docs/RESEARCH_STANDARDS.md"
+    title: "리서치 산출물 표준 문서 v1.1.0"
+  - type: "external_url"
+    url: "https://github.com/pahen/madge"
+    title: "Madge — JS/TS 모듈 의존성 그래프 생성 도구"
+    accessed_at: "2026-03-29"
+  - type: "external_url"
+    url: "https://dvc.org/doc/command-reference/dag"
+    title: "DVC DAG Command Reference — YAML 기반 ML 파이프라인 의존성 그래프"
+    accessed_at: "2026-03-29"
+  - type: "external_url"
+    url: "https://arxiv.org/html/2405.20455v5"
+    title: "DepsRAG — 에이전트 기반 소프트웨어 의존성 관리 AI (arXiv 2024)"
+    accessed_at: "2026-03-29"
+  - type: "external_url"
+    url: "https://santanub.medium.com/directed-acyclic-graphs-the-backbone-of-modern-multi-agent-ai-d9a0fe842780"
+    title: "DAGs: Backbone of Modern Multi-Agent AI (Medium 2025)"
+    accessed_at: "2026-03-29"
+  - type: "external_url"
+    url: "https://zuul-ci.org/docs/zuul/11.0.0/developer/specs/circular-dependencies.html"
+    title: "Zuul CI Circular Dependencies Specification (v11.0)"
+    accessed_at: "2026-03-29"
+  - type: "external_url"
+    url: "https://docs.crewai.com/en/concepts/agents"
+    title: "CrewAI Concepts — Agents (공식 문서 2025~2026)"
+    accessed_at: "2026-03-29"
+  - type: "external_url"
+    url: "https://www.langchain.com/langgraph"
+    title: "LangGraph Official — 2025 GA"
+    accessed_at: "2026-03-29"
+  - type: "external_url"
+    url: "https://github.com/FoundationAgents/MetaGPT"
+    title: "MetaGPT GitHub — Assembly Line 멀티에이전트 시스템"
+    accessed_at: "2026-03-29"
+  - type: "external_url"
+    url: "https://arxiv.org/abs/2308.10848"
+    title: "AgentVerse — Dynamic Agent Group (ICLR 2024)"
+    accessed_at: "2026-03-29"
+  - type: "external_url"
+    url: "https://learn.microsoft.com/en-us/agent-framework/overview/"
+    title: "Microsoft Agent Framework Overview (2025~2026)"
+    accessed_at: "2026-03-29"
+
+# 7. 환경 특이사항 및 조사 한계
+context_notes: |
+  - 회고 세션 기반 분석. 외부 소스 없이 내부 문서 참조.
+  - RESEARCH_STANDARDS.md v1.1.0 업데이트 완료 (2026-03-29) — cross_variable_periods 섹션 반영됨.
+  - 이 파일 자체가 RETRO-20 "변수 교차 사전 가시화" ACTION의 구현 예시임.
+  - research_context_schema.yaml을 신규 생성하여 스키마를 공식화함.
+
+# 8. 변수 교차 맥락 (RETRO-20 핵심 필드 — 이 파일이 직접 구현 예시)
+variables_context:
+
+  # 이 조사 시점의 활성 변수 스냅샷
+  active_variables:
+    model_version: "gemini-2.5-flash"
+    infra_baseline_version: "v1.2.0"
+    research_date: "2026-03-29T10:00:00+09:00"
+    external_dependencies: []
+
+  # 이전 조사(RETRO-14, 2026-03-27) 대비 변수 교차 구간 명시
+  cross_variable_periods:
+    - period: "RETRO-14(2026-03-27) → RETRO-20(2026-03-29)"
+      variables_changed:
+        - name: "research_date"
+          from: "2026-03-27T10:00:00+09:00"
+          to: "2026-03-29T10:00:00+09:00"
+          changed_at: "2026-03-29"
+        # model_version: 변경 없음 — gemini-2.5-flash 유지
+        # infra_baseline_version: 변경 없음 — v1.2.0 유지
+      variables_unchanged:
+        - model_version: "gemini-2.5-flash"    # RETRO-14와 동일 — 교차 없음
+        - infra_baseline_version: "v1.2.0"     # RETRO-14와 동일 — 교차 없음
+      impact_note: |
+        RETRO-14 → RETRO-20 구간에서 변경된 변수는 research_date(조사 시점)만 2일 경과.
+        model_version(gemini-2.5-flash)과 infra_baseline_version(v1.2.0)은 동일하게 유지.
+        따라서 두 조사 간 결과 차이는 오직 조사 시점(2일) 차이에만 귀속 가능.
+        이 구간에서 model_version 또는 infra 버전이 변경되었다면 "원인 이분 불가" 상태가
+        되었을 것이므로, 향후 모델 업그레이드 시 반드시 단독 조사 시점으로 분리할 것.
+
+  # 원인 이분 신뢰도 판정
+  isolation_confidence: "high"
+  isolation_reason: |
+    model_version(gemini-2.5-flash)과 infra_baseline_version(v1.2.0) 모두 불변.
+    단일 변수(research_date, 2일 경과)만 변경되어 결과 차이 발생 시 원인 이분 가능.
+    gemini-2.5-flash + v1.2.0 조합이 안정적으로 유지되는 한 결과 신뢰도 HIGH 유지.

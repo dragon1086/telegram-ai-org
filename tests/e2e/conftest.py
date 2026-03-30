@@ -25,6 +25,46 @@ from tools.base_runner import RunContext  # noqa: E402
 # infra-baseline.yaml 기반으로 timeout/filter/env 환경 유효성을 검사한다.
 # SKIP_PREFLIGHT=1 로 건너뛸 수 있다 (CI 디버깅 등 특수 상황 한정).
 # ---------------------------------------------------------------------------
+def _print_preflight_header(result: dict) -> None:
+    """pre-flight 체크 결과를 E2E 로그 최상단 헤더 블록으로 출력한다.
+
+    출력 형식 (RETRO-09/10)::
+
+        ╔══════════════════════════════════════════╗
+        ║          === PRE-FLIGHT CHECK ===         ║
+        ╚══════════════════════════════════════════╝
+        baseline_version : v1.2
+        timeout          : 120s
+        filter           : <없음>
+        env_vars         : [TELEGRAM_BOT_TOKEN, ...]
+        checked_at       : 2026-03-29T00:00:00+00:00
+        status           : PASS
+        ─────────────────────────────────────────────
+    """
+    sep = "=" * 50
+    thin = "-" * 50
+    env_vars = result.get("env_vars", [])
+    env_display = (
+        ", ".join(env_vars[:5]) + ("..." if len(env_vars) > 5 else "")
+        if env_vars
+        else "<없음>"
+    )
+    filter_display = result.get("filter") or "<없음>"
+    status = result.get("status", "UNKNOWN")
+    status_icon = "✅ PASS" if status == "PASS" else "❌ FAIL"
+
+    print(f"\n{sep}", flush=True)
+    print("=== PRE-FLIGHT CHECK ===", flush=True)
+    print(sep, flush=True)
+    print(f"  baseline_version : {result.get('baseline_version', 'unknown')}", flush=True)
+    print(f"  timeout          : {result.get('timeout', '?')}s", flush=True)
+    print(f"  filter           : {filter_display}", flush=True)
+    print(f"  env_vars         : [{env_display}]", flush=True)
+    print(f"  checked_at       : {result.get('checked_at', '?')}", flush=True)
+    print(f"  status           : {status_icon}", flush=True)
+    print(f"{thin}\n", flush=True)
+
+
 def _run_preflight() -> None:
     if os.environ.get("SKIP_PREFLIGHT", "").lower() in ("1", "true", "yes"):
         print("[pre-flight] SKIP_PREFLIGHT=1 — 체크 생략", flush=True)
@@ -34,13 +74,97 @@ def _run_preflight() -> None:
     _here = Path(__file__).parent
     _preflight_mod = _here / "preflight_check.py"
     if _preflight_mod.exists():
-        # 동일 패키지 내 모듈을 직접 import해서 실행
         import importlib.util as _ilu
         spec = _ilu.spec_from_file_location("e2e_preflight", _preflight_mod)
         if spec and spec.loader:
             mod = _ilu.module_from_spec(spec)
             spec.loader.exec_module(mod)  # type: ignore[union-attr]
-            mod.run_preflight_checks(exit_on_fail=True)
+            # exit_on_fail=False 로 결과 dict 를 받아 헤더 출력 후 실패 처리
+            result = mod.run_preflight_checks(exit_on_fail=False)
+            # --- E2E 로그 헤더 자동 삽입 (RETRO-09/10) ---
+            # run_preflight_checks 반환값을 run_preflight_dict 형식으로 변환
+            # baseline_version: infra-baseline.yaml 직접 읽어서 정확히 반영 (버그 수정 RETRO-10)
+            _baseline_version = "unknown"
+            try:
+                import yaml as _yaml_bv
+                _bv_path = Path(__file__).parent.parent.parent / "infra-baseline.yaml"
+                if _bv_path.exists():
+                    _bv_data = _yaml_bv.safe_load(_bv_path.read_text(encoding="utf-8")) or {}
+                    _baseline_version = (
+                        _bv_data.get("baseline_version") or _bv_data.get("version", "unknown")
+                    )
+            except Exception:  # noqa: BLE001
+                pass
+            header_result = {
+                "baseline_version": _baseline_version,
+                "timeout": (result.get("timeout") or {}).get("value", 120),
+                "filter": (result.get("filter") or {}).get("value", ""),
+                "env_vars": (result.get("env") or {}).get("missing_optional", []),
+                "checked_at": __import__("datetime").datetime.now(
+                    __import__("datetime").timezone.utc
+                ).isoformat(),
+                "status": "PASS" if result.get("passed", False) else "FAIL",
+            }
+            # tools/preflight_check.py 가 있으면 더 정확한 값으로 덮어쓴다
+            _project_root = Path(__file__).parent.parent.parent
+            _tools_preflight = _project_root / "tools" / "preflight_check.py"
+            if _tools_preflight.exists():
+                try:
+                    import importlib.util as _ilu2
+                    spec2 = _ilu2.spec_from_file_location("tools_preflight", _tools_preflight)
+                    if spec2 and spec2.loader:
+                        mod2 = _ilu2.module_from_spec(spec2)
+                        spec2.loader.exec_module(mod2)  # type: ignore[union-attr]
+                        rich = mod2.run_preflight_dict()
+                        header_result.update({
+                            "baseline_version": rich.get("baseline_version", header_result["baseline_version"]),
+                            "timeout": rich.get("timeout", header_result["timeout"]),
+                            "filter": rich.get("filter", header_result["filter"]),
+                            "env_vars": rich.get("env_vars", header_result["env_vars"]),
+                            "checked_at": rich.get("checked_at", header_result["checked_at"]),
+                        })
+                except Exception:  # noqa: BLE001
+                    pass  # tools 버전 로드 실패해도 계속
+            _print_preflight_header(header_result)
+            # --- E2E 로그 파일에 헤더 저장 (RETRO-10) ---
+            # logs/ 디렉토리가 없으면 자동 생성
+            _logs_dir = Path(__file__).parent.parent.parent / "logs"
+            _logs_dir.mkdir(parents=True, exist_ok=True)
+            _log_path = _logs_dir / "e2e_preflight_latest.log"
+            try:
+                import datetime as _dt
+                _ts = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
+                _sep = "=" * 50
+                _thin = "-" * 50
+                _env_vars = header_result.get("env_vars", [])
+                _env_display = (
+                    ", ".join(_env_vars[:5]) + ("..." if len(_env_vars) > 5 else "")
+                    if _env_vars else "<없음>"
+                )
+                _status = header_result.get("status", "UNKNOWN")
+                _lines = [
+                    f"\n{_sep}",
+                    "=== PRE-FLIGHT CHECK ===",
+                    _sep,
+                    f"  baseline_version : {header_result.get('baseline_version', 'unknown')}",
+                    f"  timeout          : {header_result.get('timeout', '?')}s",
+                    f"  filter           : {header_result.get('filter') or '<없음>'}",
+                    f"  env_vars         : [{_env_display}]",
+                    f"  checked_at       : {header_result.get('checked_at', '?')}",
+                    f"  status           : {'✅ PASS' if _status == 'PASS' else '❌ FAIL'}",
+                    f"{_thin}\n",
+                ]
+                _log_path.write_text("\n".join(_lines), encoding="utf-8")
+                # 타임스탬프 포함 이력 파일도 저장
+                _ts_path = _logs_dir / f"e2e_preflight_{_ts}.log"
+                _ts_path.write_text("\n".join(_lines), encoding="utf-8")
+            except Exception:  # noqa: BLE001
+                pass  # 로그 저장 실패는 테스트 실행에 영향 없음
+            if not result.get("passed", True):
+                raise SystemExit(
+                    "❌ E2E pre-flight 실패 — 환경을 점검 후 재실행하세요.\n"
+                    "   힌트: SKIP_PREFLIGHT=1 로 일시적으로 우회 가능."
+                )
             return
 
     # fallback: tools/preflight_check.py subprocess 방식
@@ -52,12 +176,12 @@ def _run_preflight() -> None:
             flush=True,
         )
         return
-    result = subprocess.run(
+    proc_result = subprocess.run(
         [sys.executable, str(preflight_script)],
         cwd=str(project_root),
         capture_output=False,
     )
-    if result.returncode != 0:
+    if proc_result.returncode != 0:
         raise SystemExit(
             "❌ E2E pre-flight 실패 — 환경을 점검 후 재실행하세요.\n"
             f"   스크립트: {preflight_script}\n"
@@ -66,6 +190,199 @@ def _run_preflight() -> None:
 
 
 _run_preflight()
+
+
+# ---------------------------------------------------------------------------
+# 디자인 pre-flight 체크 — RETRO-11
+# design-baseline.yaml 기반 렌더링 환경 유효성을 검사한다.
+# SKIP_DESIGN_PREFLIGHT=1 또는 SKIP_PREFLIGHT=1 로 건너뛸 수 있다.
+# ---------------------------------------------------------------------------
+
+def _print_design_preflight_header(result: dict) -> None:
+    """디자인 pre-flight 결과를 E2E 로그 헤더 블록으로 출력.
+
+    Parameters
+    ----------
+    result : dict
+        {
+          "design_baseline_version": "v1.2",
+          "viewport": "desktop (1024px)",
+          "font": "Pretendard / 16px",
+          "base_font_size": 16,
+          "theme": "light (WCAG AA, 4.5:1)",
+          "wcag_level": "AA",
+          "token_version": "v1.0",
+          "component_lib_version": "@aiorg/design-system@1.4.2",
+          "blocking_pass": 6,
+          "blocking_total": 6,
+          "warning_pass": 8,
+          "warning_total": 8,
+          "checked_at": "2026-03-29T00:00:00+00:00",
+          "status": "PASS"  # "PASS" | "FAIL" | "SKIP"
+        }
+    """
+    sep = "=" * 50
+    thin = "-" * 50
+
+    status = result.get("status", "UNKNOWN")
+    if status == "SKIP":
+        status_icon = "⏭ SKIP"
+    elif status == "PASS":
+        status_icon = "✅ PASS"
+    else:
+        status_icon = "❌ FAIL"
+
+    blocking_pass = result.get("blocking_pass", 0)
+    blocking_total = result.get("blocking_total", 0)
+    warning_pass = result.get("warning_pass", 0)
+    warning_total = result.get("warning_total", 0)
+
+    blocking_icon = "✅ PASS" if blocking_pass == blocking_total else "❌ FAIL"
+    warning_icon = "✅ PASS" if warning_pass == warning_total else "⚠ WARN"
+
+    print(f"\n{sep}", flush=True)
+    print("=== DESIGN PRE-FLIGHT CHECK ===", flush=True)
+    print(sep, flush=True)
+    print(f"  design_baseline  : {result.get('design_baseline_version', 'unknown')}", flush=True)
+    print(f"  viewport         : {result.get('viewport', '?')}", flush=True)
+    print(f"  font             : {result.get('font', '?')}", flush=True)
+    print(f"  theme            : {result.get('theme', '?')}", flush=True)
+    print(f"  token_version    : {result.get('token_version', '?')}", flush=True)
+    print(f"  component_lib    : {result.get('component_lib_version', '?')}", flush=True)
+    print(
+        f"  blocking_checks  : {blocking_pass} / {blocking_total} {blocking_icon}",
+        flush=True,
+    )
+    print(
+        f"  warning_checks   : {warning_pass} / {warning_total} {warning_icon}",
+        flush=True,
+    )
+    print(f"  checked_at       : {result.get('checked_at', '?')}", flush=True)
+    print(f"  status           : {status_icon}", flush=True)
+    print(f"{thin}\n", flush=True)
+
+
+def _run_design_preflight() -> None:
+    """디자인 pre-flight 체크 실행 및 E2E 로그 헤더 출력 (RETRO-11)."""
+    if os.environ.get("SKIP_PREFLIGHT", "").lower() in ("1", "true", "yes"):
+        return  # 인프라 체크와 함께 통합 skip 됨
+    if os.environ.get("SKIP_DESIGN_PREFLIGHT", "").lower() in ("1", "true", "yes"):
+        print("[design pre-flight] SKIP_DESIGN_PREFLIGHT=1 — 체크 생략", flush=True)
+        return
+
+    _project_root = Path(__file__).parent.parent.parent
+    _design_preflight_mod = _project_root / "tools" / "design_preflight_check.py"
+
+    if not _design_preflight_mod.exists():
+        print(
+            f"[design pre-flight] 모듈 없음: {_design_preflight_mod} — 체크 생략",
+            flush=True,
+        )
+        return
+
+    try:
+        import importlib.util as _ilu_d
+        spec_d = _ilu_d.spec_from_file_location("design_preflight_check", _design_preflight_mod)
+        if spec_d and spec_d.loader:
+            mod_d = _ilu_d.module_from_spec(spec_d)
+            spec_d.loader.exec_module(mod_d)  # type: ignore[union-attr]
+            check_result = mod_d.run_design_preflight_checks(exit_on_fail=False)
+            header_result = mod_d.build_design_preflight_header_result(check_result)
+            _print_design_preflight_header(header_result)
+            # --- design pre-flight 로그 파일 저장 ---
+            _logs_dir = _project_root / "logs"
+            _logs_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                import datetime as _dt_d
+                _ts_d = _dt_d.datetime.now(_dt_d.timezone.utc).strftime("%Y%m%d_%H%M%S")
+                _sep_d = "=" * 50
+                _thin_d = "-" * 50
+                _status_d = header_result.get("status", "UNKNOWN")
+                _b_pass = header_result.get("blocking_pass", 0)
+                _b_total = header_result.get("blocking_total", 0)
+                _w_pass = header_result.get("warning_pass", 0)
+                _w_total = header_result.get("warning_total", 0)
+                _lines_d = [
+                    f"\n{_sep_d}",
+                    "=== DESIGN PRE-FLIGHT CHECK ===",
+                    _sep_d,
+                    f"  design_baseline  : {header_result.get('design_baseline_version', 'unknown')}",
+                    f"  viewport         : {header_result.get('viewport', '?')}",
+                    f"  font             : {header_result.get('font', '?')}",
+                    f"  theme            : {header_result.get('theme', '?')}",
+                    f"  token_version    : {header_result.get('token_version', '?')}",
+                    f"  component_lib    : {header_result.get('component_lib_version', '?')}",
+                    f"  blocking_checks  : {_b_pass} / {_b_total}",
+                    f"  warning_checks   : {_w_pass} / {_w_total}",
+                    f"  checked_at       : {header_result.get('checked_at', '?')}",
+                    f"  status           : {'✅ PASS' if _status_d == 'PASS' else '❌ FAIL'}",
+                    f"{_thin_d}\n",
+                ]
+                _log_content = "\n".join(_lines_d)
+                (_logs_dir / "e2e_design_preflight_latest.log").write_text(
+                    _log_content, encoding="utf-8"
+                )
+                (_logs_dir / f"e2e_design_preflight_{_ts_d}.log").write_text(
+                    _log_content, encoding="utf-8"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            if not check_result.get("passed", True) and not check_result.get("skipped"):
+                raise SystemExit(
+                    "❌ design pre-flight 실패 — 디자인 환경을 점검 후 재실행하세요.\n"
+                    "   힌트: SKIP_DESIGN_PREFLIGHT=1 로 일시적으로 우회 가능."
+                )
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        print(f"[design pre-flight] 체크 중 오류 발생 (비중단): {exc}", flush=True)
+
+
+_run_design_preflight()
+
+
+# ---------------------------------------------------------------------------
+# preflight_check fixture — E2E 테스트에 자동 적용 (RETRO-01)
+# autouse=True: tests/e2e/ 하위 모든 테스트에 자동 실행
+# 세션 레벨 _run_preflight()와 함께 이중 검증 구조로 운영.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session", autouse=True)
+def preflight_check():
+    """E2E pre-flight 검증 결과를 dict로 반환하는 fixture.
+
+    사용 예::
+
+        def test_something(preflight_check):
+            assert preflight_check["passed"], preflight_check["errors"]
+
+    SKIP_PREFLIGHT=1 환경변수로 우회 가능 (CI 디버깅 한정).
+    """
+    if os.environ.get("SKIP_PREFLIGHT", "").lower() in ("1", "true", "yes"):
+        return {"passed": True, "skipped": True, "errors": [], "timeout": {}, "filter": {}, "env": {}}
+
+    _here = Path(__file__).parent
+    _preflight_mod = _here / "preflight_check.py"
+
+    if not _preflight_mod.exists():
+        pytest.skip(f"preflight_check.py 없음: {_preflight_mod}")
+
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location("e2e_preflight", _preflight_mod)
+    if spec is None or spec.loader is None:
+        pytest.skip("preflight_check.py 로드 실패")
+
+    mod = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    result = mod.run_preflight_checks(exit_on_fail=False)
+
+    if not result.get("passed", True):
+        pytest.fail(
+            "E2E pre-flight 실패:\n" + "\n".join(f"  - {e}" for e in result.get("errors", [])),
+            pytrace=False,
+        )
+
+    return result
 
 
 class _FakeOrg:

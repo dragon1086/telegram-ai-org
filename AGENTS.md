@@ -315,6 +315,15 @@ glob.glob(os.environ.get('AI_ORG_DATA_DIR', str(Path.home() / 'telegram-ai-org-d
 - 스코프 외 작업이 필요하다고 판단되면: PM에게 보고하거나 `[COLLAB]` 태그로 적절한 조직에 위임 요청.
 - 글로벌 적용 위치: `orchestration.yaml` → `global_instructions`
 
+## Phase 2-A: FastAPI REST API (2026-03-29)
+
+- `core/api/` — REST API 패키지 (ENABLE_REST_API=true로 활성화)
+- `core/repositories/task_repository.py` — SQLite 기반 TaskRepository (Phase 2a 구현 완료)
+- 주요 엔드포인트: `GET /api/v1/health`, `POST /api/v1/tasks`, `GET/DELETE /api/v1/tasks/{id}`
+- 인증: `X-API-Key` 헤더 (ENABLE_API_AUTH=true 시 활성)
+- 테스트: `tests/test_api_app.py`, `tests/test_task_repository.py` (총 26개)
+- 설계: `docs/plans/phase2a-rest-api-design.md`
+
 ## 개발 규칙
 
 - 변경 범위를 최소화. 타깃 이외 영역 리팩토링 금지.
@@ -349,3 +358,22 @@ git worktree remove .worktrees/<task-slug>
 | 성장실 (aiorg_growth_bot) | gemini-cli | Google 검색 내장, 시장 데이터 |
 | 리서치실 (aiorg_research_bot) | gemini-cli | 실시간 웹 검색, 경쟁사 분석 |
 | 운영실 (aiorg_ops_bot) | gemini-cli | codex rate limit 대응 전환 (2026-03-26) |
+
+## Phase 1 구현 완료 및 단위 테스트 현황 (2026-03-29)
+
+### 구현 완료 모듈
+- `core/types.py` — 공유 타입 별칭, TypedDict, Literal 정의
+- `core/interfaces.py` — BaseRunner, TelegramInterface, TaskRepositoryInterface Protocol
+- `core/repositories/task_repository.py` — SQLite CRUD (aiosqlite, :memory: 지원)
+- `core/api/` — FastAPI REST API (health + tasks CRUD + API Key 인증)
+
+### 단위 테스트 추가 (tests/unit/test_phase1_*.py)
+- `tests/unit/test_phase1_types.py` — 타입 정의 11개 케이스
+- `tests/unit/test_phase1_interfaces.py` — Protocol 검증 8개 케이스
+- `tests/unit/test_phase1_task_repository.py` — SQLite CRUD 15개 케이스
+- `tests/unit/test_phase1_api.py` — FastAPI 엔드포인트 16개 케이스
+
+### 테스트 실행
+```bash
+.venv/bin/python -m pytest tests/unit/test_phase1_*.py -v
+```

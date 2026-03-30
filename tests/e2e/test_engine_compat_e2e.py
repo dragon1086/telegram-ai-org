@@ -346,19 +346,15 @@ class TestRunnerFactoryExtended:
     def test_create_claude_runner_actual_fallback(self) -> None:
         """ClaudeAgentRunner 임포트 실패 시 ClaudeSubprocessRunner로 폴백한다."""
         import sys
+        from unittest.mock import patch
 
+        from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+
+        # patch.dict 방식 — try/finally 수동 복구 대신 cleanup-safe 컨텍스트 사용
         # sys.modules에 None 을 주입하면 import 시 ImportError 발생
-        original = sys.modules.get("tools.claude_agent_runner", ...)
-        sys.modules["tools.claude_agent_runner"] = None  # type: ignore[assignment]
-        try:
+        with patch.dict(sys.modules, {"tools.claude_agent_runner": None}):  # type: ignore[dict-item]
             runner = RunnerFactory._create_claude_runner()
-            from tools.claude_subprocess_runner import ClaudeSubprocessRunner
             assert isinstance(runner, ClaudeSubprocessRunner)
-        finally:
-            if original is ...:
-                del sys.modules["tools.claude_agent_runner"]
-            else:
-                sys.modules["tools.claude_agent_runner"] = original
 
 
 class TestGeminiCLIRunnerDispatch:

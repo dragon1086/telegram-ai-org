@@ -454,6 +454,51 @@ PM 봇은 작업 배분 판단 시 최근 대화 이력을 `[CONTEXT]...[/CONTEX
 - 모호한 경우에도 임의로 확장하지 말고 PM에게 확인을 구한다.
 - 글로벌 적용 위치: `orchestration.yaml` → `global_instructions` (모든 엔진에 자동 주입)
 
+## Phase 2-A: FastAPI REST API 레이어 (2026-03-29 구현 완료)
+
+### 개요
+AIMesh productization 로드맵 Phase 2-A — Telegram 외 HTTP 채널 지원.
+기존 Telegram 봇에 영향 없이 REST API를 선택적으로 활성화합니다.
+
+### 환경변수
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `ENABLE_REST_API` | `false` | FastAPI 라우터 활성화 |
+| `ENABLE_REPOSITORY_PATTERN` | `0` | SQLite TaskRepository 활성화 |
+| `ENABLE_API_AUTH` | `false` | X-API-Key 인증 활성화 |
+| `AIMESH_API_KEYS` | `""` | 허용 API Key 목록 (콤마 구분) |
+| `AIMESH_DB_PATH` | `data/tasks.db` | SQLite DB 파일 경로 |
+
+### 엔드포인트 (ENABLE_REST_API=true 시 활성)
+```
+GET  /api/v1/health           # 헬스체크 (인증 불필요)
+GET  /api/v1/ready            # 준비 상태 + DB 체크
+POST /api/v1/tasks            # 태스크 생성 → 201
+GET  /api/v1/tasks            # 목록 조회 (?status=pending 필터)
+GET  /api/v1/tasks/{task_id}  # 단일 조회 → 200/404
+DELETE /api/v1/tasks/{task_id} # 삭제 → 204/404
+```
+
+### 실행 예시
+```bash
+ENABLE_REST_API=true ENABLE_REPOSITORY_PATTERN=1 \
+  uvicorn core.api.app:create_app --factory --host 0.0.0.0 --port 8000
+```
+
+### 관련 파일
+- `core/api/app.py` — FastAPI 앱 팩토리
+- `core/api/auth.py` — API Key 인증
+- `core/api/routes/health.py` — 헬스체크 라우터
+- `core/api/routes/tasks.py` — 태스크 CRUD 라우터
+- `core/repositories/task_repository.py` — SQLite TaskRepository (Phase 2a 구현)
+- `tests/test_api_app.py` — FastAPI 단위 테스트 (26개)
+- `tests/test_task_repository.py` — TaskRepository 단위 테스트
+
+### 설계 문서
+`docs/plans/phase2a-rest-api-design.md`
+
+---
+
 ## 개발 규칙
 
 - 변경 범위를 최소화. 타깃 이외 영역 리팩토링 금지.
@@ -516,3 +561,22 @@ PM/라우팅 수정 시:
 - `core/shoutout_system.py`
 - `core/collaboration_tracker.py`
 - `core/agent_persona_memory.py`
+
+## Phase 1 구현 완료 및 단위 테스트 현황 (2026-03-29)
+
+### 구현 완료 모듈
+- `core/types.py` — 공유 타입 별칭, TypedDict, Literal 정의
+- `core/interfaces.py` — BaseRunner, TelegramInterface, TaskRepositoryInterface Protocol
+- `core/repositories/task_repository.py` — SQLite CRUD (aiosqlite, :memory: 지원)
+- `core/api/` — FastAPI REST API (health + tasks CRUD + API Key 인증)
+
+### 단위 테스트 추가 (tests/unit/test_phase1_*.py)
+- `tests/unit/test_phase1_types.py` — 타입 정의 11개 케이스
+- `tests/unit/test_phase1_interfaces.py` — Protocol 검증 8개 케이스
+- `tests/unit/test_phase1_task_repository.py` — SQLite CRUD 15개 케이스
+- `tests/unit/test_phase1_api.py` — FastAPI 엔드포인트 16개 케이스
+
+### 테스트 실행
+```bash
+.venv/bin/python -m pytest tests/unit/test_phase1_*.py -v
+```

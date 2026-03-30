@@ -1,0 +1,200 @@
+# =============================================================================
+# research_context_schema.yaml — 리서치 메타데이터 표준 스키마 정의
+# =============================================================================
+# 버전: 1.1.0
+# 최초 작성: 2026-03-29
+# 연결 태스크: RETRO-08 (원본), RETRO-14 (이행 확인), RETRO-20 (변수 교차 가시화)
+# 참조 표준: docs/RESEARCH_STANDARDS.md
+# =============================================================================
+# 목적:
+#   - 모든 리서치 산출물에 첨부되는 research_context.yaml의 필드를 명시적으로 정의
+#   - 필드 타입, 필수 여부, 유효값 예시를 한 곳에서 관리
+#   - RETRO-14 "조사 산출물에 맥락 자동화" + RETRO-20 "변수 교차 사전 가시화" 직접 반영
+# =============================================================================
+
+schema_version: "1.1.0"
+schema_updated: "2026-03-29"
+owner: "리서치실/aiorg_research_bot"
+
+# ------------------------------------------------------------------------------
+# 필드 정의
+# ------------------------------------------------------------------------------
+fields:
+
+  research_date:
+    type: string
+    required: true
+    format: "YYYY-MM-DDTHH:MM:SS+09:00"
+    description: "조사 시작 일시 (KST ISO 8601). 재현 시 기준 시점으로 사용됨."
+    example: "2026-03-29T10:00:00+09:00"
+    retro_origin: "RETRO-08"
+    invalid:
+      - "오늘"
+      - "2026-03-29"  # 날짜만 기재 금지 — 시각 포함 필수
+
+  researcher_agent:
+    type: string
+    required: true
+    format: "<조직>/<에이전트명>"
+    description: "조사를 수행한 에이전트 식별자. 조직 접두어 포함 권장."
+    examples:
+      - "리서치실/product-trend-researcher"
+      - "리서치실/aiorg_research_bot"
+      - "성장실/marketing-growth-hacker"
+    retro_origin: "RETRO-08"
+
+  model_version:
+    type: string
+    required: true
+    description: "조사에 사용된 언어 모델 구체적 버전 문자열."
+    examples:
+      - "gemini-2.5-flash"       # 리서치실/성장실 기본값 (2026-03-26 GA)
+      - "claude-sonnet-4-5"      # 개발실/기획실/디자인실/PM 기본값
+    forbidden:
+      - "gemini-2.0-flash"       # 2026-06-01 서비스 종료 예정
+      - "최신 모델"              # 추상 표현 금지
+    retro_origin: "RETRO-08"
+    variables_context_note: |
+      model_version 변경 시 반드시 variables_context.cross_variable_periods에 기재.
+      이전 조사와 모델이 다르면 결과 차이 원인 이분이 불가하므로 교차 기록이 핵심.
+
+  infra_baseline_version:
+    type: string
+    required: true
+    format: "v<MAJOR>.<MINOR>.<PATCH>"
+    description: |
+      조사 시점의 인프라 기준 버전. docs/infra-baseline.yaml의 version 필드값.
+      변경 시 결과 차이 원인 추적에 필수.
+    examples:
+      - "v1.2.0"
+      - "unversioned"  # infra-baseline.yaml 미생성 기간 한시적 허용
+    retro_origin: "RETRO-08"
+    variables_context_note: |
+      infra_baseline_version 변경 시 반드시 variables_context.cross_variable_periods에 기재.
+      timeout/filter/env 등 인프라 파라미터 변경이 조사 결과에 미치는 영향을 사후 추적 가능하게 함.
+
+  query_summary:
+    type: string
+    required: true
+    max_length: 100
+    description: "조사 질의 핵심 요약 (100자 이내). 무엇을 알기 위해 조사했는가?"
+    example: "리서치 산출물 재현성 확보를 위한 research_context.yaml 표준화 이행 현황 파악"
+    retro_origin: "RETRO-08"
+
+  topic:
+    type: string
+    required: false
+    description: "조사 주제 키워드 (query_summary 보완용). 태그 형식 허용."
+    example: "research-context-standardization, retro-action-follow-up"
+
+  data_sources:
+    type: list
+    required: true
+    min_items: 1
+    description: "참조 출처 목록. 최소 1개 이상 기재 필수."
+    item_fields:
+      type:
+        values: ["web", "internal_doc", "db", "interview", "external_report"]
+      url:
+        description: "외부 소스 URL (web 타입 시 필수)"
+      ref:
+        description: "내부 문서 상대 경로 (internal_doc 타입 시 필수)"
+      title:
+        description: "출처 제목 또는 설명"
+      accessed_at:
+        description: "접근 일시 (web 타입 시 권장 — 시점 추적용)"
+    retro_origin: "RETRO-08"
+
+  summary:
+    type: string
+    required: false
+    description: "조사 결과 핵심 요약 (선택). query_summary 대비 결과 중심."
+
+  context_notes:
+    type: string
+    required: false
+    description: |
+      환경 특이사항, 조사 한계, 변수 교차 구간 명시 (자유 텍스트).
+      변수 교차가 없어도 "교차 없음"을 명시하여 추적 신뢰성을 확보한다.
+    retro_origin: "RETRO-08"
+
+  variables_context:
+    type: object
+    required: true
+    description: |
+      RETRO-14 "조사 산출물에 맥락 자동화" + RETRO-20 "변수 교차 사전 가시화"의 핵심 필드.
+      조사 시점에 활성화된 변수 상태와, 이전 조사 대비 교차 변화 구간을 명시한다.
+      단순 나열이 아닌 "어떤 조합에서 결과 편차가 발생할 수 있는가"를 기술해야 한다.
+    retro_origin: "RETRO-14, RETRO-20"
+    sub_fields:
+
+      active_variables:
+        type: object
+        required: true
+        description: "이 조사 시점의 활성 변수 스냅샷"
+        fields:
+          model_version:
+            description: "조사에 사용된 모델 버전 (model_version 필드와 동일값)"
+          infra_baseline_version:
+            description: "조사 시점 인프라 버전 (infra_baseline_version 필드와 동일값)"
+          research_date:
+            description: "조사 일시 (research_date 필드와 동일값)"
+          external_dependencies:
+            type: list
+            description: "외부 의존성 목록 (API, 데이터 소스 등)"
+
+      cross_variable_periods:
+        type: list
+        required: false
+        description: |
+          이전 조사 대비 복수 변수가 동시에 변경된 구간 목록.
+          변수 교차가 없으면 빈 리스트([])로 명시 (생략 금지 — 교차 없음을 증명해야 함).
+        item_fields:
+          period:
+            description: "비교 구간 (예: 'RETRO-14 → RETRO-20')"
+          variables_changed:
+            type: list
+            description: "변경된 변수 목록"
+            item_fields:
+              name: "변수명"
+              from: "이전 값"
+              to: "현재 값"
+              changed_at: "변경 일시"
+          impact_note:
+            description: |
+              이 교차 구간에서 발생 가능한 결과 편차 설명.
+              예: "model_version + infra 동시 변경으로 인해 이 기간 결과 차이는 단일 원인으로 귀속 불가"
+
+      isolation_confidence:
+        type: string
+        values: ["high", "medium", "low", "n/a"]
+        description: |
+          이 조사 결과의 원인 이분 신뢰도.
+          - high: 변수 교차 없음, 단일 변수 변화로 결과 차이 귀속 가능
+          - medium: 교차 변수 있으나 영향 범위 제한적
+          - low: 복수 변수 동시 변경으로 원인 이분 불가
+          - n/a: 이전 조사 없음 (최초 조사)
+
+# ------------------------------------------------------------------------------
+# 전체 파일 구조 예시 (완성본)
+# ------------------------------------------------------------------------------
+example_complete: |
+  research_date: "2026-03-29T10:00:00+09:00"
+  researcher_agent: "리서치실/aiorg_research_bot"
+  model_version: "gemini-2.5-flash"
+  infra_baseline_version: "v1.2.0"
+  query_summary: "변수 교차 맥락 가시화 — cross_variable_periods 설계 방안 수립"
+  data_sources:
+    - type: "internal_doc"
+      ref: "docs/RESEARCH_STANDARDS.md"
+      title: "리서치 산출물 표준 v1.1.0"
+  context_notes: |
+    조사 한계: 내부 문서 기반 분석, 외부 소스 없음.
+  variables_context:
+    active_variables:
+      model_version: "gemini-2.5-flash"
+      infra_baseline_version: "v1.2.0"
+      research_date: "2026-03-29T10:00:00+09:00"
+      external_dependencies: []
+    cross_variable_periods: []  # 변수 교차 없음 — 이전 조사 대비 단일 변수(시점)만 변경
+    isolation_confidence: "high"
