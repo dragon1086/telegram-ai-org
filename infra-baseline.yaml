@@ -63,6 +63,12 @@ env:
     - CODEX_CLI_PATH              # codex 엔진 바이너리 경로
     - OPENAI_API_KEY              # codex 엔진 API 키
     - ADMIN_CHAT_ID               # 관리자 알림 채팅 ID
+    - DESIGN_BOT_CHAT_ID          # 디자인실 봇 채팅 ID (COLLAB 배분, 2026-03-31 추가)
+    - ENGINEERING_BOT_CHAT_ID     # 개발실 봇 채팅 ID
+    - PRODUCT_BOT_CHAT_ID         # 기획실 봇 채팅 ID
+    - GROWTH_BOT_CHAT_ID          # 성장실 봇 채팅 ID
+    - OPS_BOT_CHAT_ID             # 운영실 봇 채팅 ID
+    - RESEARCH_BOT_CHAT_ID        # 리서치실 봇 채팅 ID
 
 # ---------------------------------------------------------------------------
 # changelog — 변경 이력 (최신 항목이 상단)
