@@ -251,7 +251,7 @@ class RetroDiscussion:
                 task_id=parent_task_id,
                 description=prompt[:200],
                 assigned_dept="pm",
-                chat_id=self._chat_id,
+                created_by="retro_discussion",
             )
 
             task_ids = await self._pm.dispatch(
