@@ -9,7 +9,7 @@
 
 [project]
 name = "telegram-ai-org"
-version = "0.1.0"
+version = "1.1.0"
 description = "AI organization on Telegram — PM bot coordinates AI teams with shared context"
 readme = "README.md"
 license = "MIT"
@@ -126,6 +126,7 @@ markers = [
     "unit: pure unit tests with no external dependencies",
     "integration: integration tests requiring real CLI binaries (claude-code/codex/gemini-cli)",
     "slow: slow-running tests (timeout > 30s)",
+    "preflight: pre-flight infrastructure checks (timeout/filter/env validation, RETRO-01)",
 ]
 filterwarnings = [
     # Python 3.14 GC 레벨에서 AsyncMock 미수거 경고 — 테스트 결과에 영향 없음

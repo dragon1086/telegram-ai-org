@@ -68,16 +68,19 @@ def test_all_st11_jobs_registered(scheduler):
 
 @pytest.mark.asyncio
 async def test_weekly_meeting_automation_sends_message():
-    """_weekly_meeting_automation 핸들러가 Telegram 메시지를 전송해야 한다."""
+    """_weekly_meeting_automation 핸들러는 no-op이어야 한다.
+
+    실제 주간회의는 09:05 KST weekly_standup()이 처리하므로,
+    중복 발송 방지를 위해 이 잡은 메시지 전송 없이 완료해야 한다.
+    """
     send_mock = AsyncMock()
     from core.scheduler import OrgScheduler
     sched = OrgScheduler(send_text=send_mock)
 
+    # should complete without error and without sending a message
     await sched._weekly_meeting_automation()
 
-    send_mock.assert_called_once()
-    call_text = send_mock.call_args[0][0]
-    assert "주간회의" in call_text or "weekly" in call_text.lower()
+    send_mock.assert_not_called()
 
 
 @pytest.mark.asyncio

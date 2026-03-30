@@ -67,7 +67,8 @@ class RetroMemory:
             )
 
     def get_week_entries(self, week_offset: int = 0) -> list[RetroEntry]:
-        today = datetime.now(timezone.utc).date()
+        from datetime import date as _date
+        today = _date.today()  # local date — consistent with save_daily callers
         # Monday of the target week
         week_start = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
         week_end = week_start + timedelta(days=6)
@@ -158,7 +159,8 @@ class RetroMemory:
             ]
 
         # ISO week string e.g. "2026-W11"
-        today = datetime.now(timezone.utc).date()
+        from datetime import date as _date
+        today = _date.today()  # local date for ISO week string
         target_date = today + timedelta(weeks=week_offset)
         iso_year, iso_week, _ = target_date.isocalendar()
         period = f"{iso_year}-W{iso_week:02d}"
