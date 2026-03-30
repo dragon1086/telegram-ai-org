@@ -488,8 +488,60 @@ def _register_todos_to_memory(speeches: list[dict[str, Any]], date_str: str) -> 
 
 # ── Phase 7: GoalTracker 등록 (기존 로직 유지) ───────────────────────────
 
+async def _bootstrap_retro_registrar():
+    """GoalTracker + MeetingActionRegistrar 인스턴스를 생성하여 반환.
+
+    weekly_meeting_multibot._bootstrap_registrar() 패턴 동일 적용.
+    실패 시 None 반환 — auto_register_from_report는 registrar=None으로도 동작 (파싱만).
+
+    2026-03-31: daily_retro GoalTracker 미연결 버그 수정 — registrar 주입 경로 활성화
+    """
+    try:
+        from core.claim_manager import ClaimManager
+        from core.context_db import ContextDB
+        from core.goal_tracker import GoalTracker
+        from core.memory_manager import MemoryManager
+        from core.pm_orchestrator import PMOrchestrator
+        from core.task_graph import TaskGraph
+        from goal_tracker.registrar import MeetingActionRegistrar
+
+        async def _noop_send(*_args: object, **_kwargs: object) -> None:
+            return None
+
+        db = ContextDB()
+        await db.initialize()
+        orchestrator = PMOrchestrator(
+            context_db=db,
+            task_graph=TaskGraph(db),
+            claim_manager=ClaimManager(),
+            memory=MemoryManager("aiorg_pm_bot"),
+            org_id="aiorg_pm_bot",
+            telegram_send_func=_noop_send,
+        )
+        tracker = GoalTracker(
+            context_db=db,
+            orchestrator=orchestrator,
+            telegram_send_func=_noop_send,
+            org_id="aiorg_pm_bot",
+        )
+        registrar = MeetingActionRegistrar(
+            goal_tracker=tracker,
+            org_id="aiorg_pm_bot",
+        )
+        print("[retro] GoalTracker registrar 초기화 완료")
+        # (1) goal_tracker + registrar 둘 다 반환 — DI 완전 주입
+        return tracker, registrar
+    except Exception as e:
+        print(f"[retro] registrar 초기화 실패 (파싱만 수행): {e}")
+        return None, None
+
+
 async def _register_retro_actions(md_content: str) -> None:
-    """일일회고 마크다운에서 조치사항을 파싱하여 GoalTracker에 자동 등록."""
+    """일일회고 마크다운에서 조치사항을 파싱하여 GoalTracker에 자동 등록.
+
+    2026-03-31: _bootstrap_retro_registrar() 추가 — registrar 주입으로 실제 등록 활성화
+    2026-03-31: dispatch_func 주입 — noop 대신 실제 COLLAB 전송
+    """
     import sys
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -497,10 +549,15 @@ async def _register_retro_actions(md_content: str) -> None:
         from goal_tracker.auto_register import auto_register_from_report
         from goal_tracker.loop_runner import run_meeting_cycle
 
+        # (1) goal_tracker + registrar 동시 주입 — DI 완전 연결 (2026-03-31 버그 수정)
+        goal_tracker, registrar = await _bootstrap_retro_registrar()
+
         register_result = await auto_register_from_report(
             report_text=md_content,
             report_type="daily_retro",
             org_id="aiorg_pm_bot",
+            goal_tracker=goal_tracker,   # (1) 직접 DI 주입 — registrar=None 시 fallback
+            registrar=registrar,          # (1) registrar 경로 우선
         )
 
         print(
@@ -513,15 +570,51 @@ async def _register_retro_actions(md_content: str) -> None:
             return
 
         if not register_result.registered_ids:
+            # (2) 등록 건수 0 시 ERROR 알림 — 조치사항이 있는데도 등록 안 된 경우만 오류 처리
+            from loguru import logger as _retro_logger
+            _retro_logger.error(
+                "[retro] GoalTracker 등록 건수 0 — "
+                f"조치사항 {register_result.action_items_found}개 파싱 완료했으나 "
+                "GoalTracker 미연결 또는 등록 실패. "
+                f"errors={register_result.errors}"
+            )
             print(
-                f"[retro] GoalTracker 미연결 — 파싱 완료 ({register_result.action_items_found}개), "
+                f"[retro] ❌ ERROR: GoalTracker 등록 건수 0 — "
+                f"파싱 완료 ({register_result.action_items_found}개), "
                 "실제 등록 없음 → 루프 생략"
             )
             return
 
+        # 2026-03-31: dispatch_func 주입 — noop 대신 실제 COLLAB 전송
+        async def _dispatch_to_telegram(task_ids: list[str]) -> None:
+            """등록된 task_id를 Telegram COLLAB 요청으로 발송."""
+            if not BOT_TOKEN:
+                print(f"[retro] dispatch: PM_BOT_TOKEN 없음 — {len(task_ids)}개 noop")
+                return
+            try:
+                from telegram import Bot
+                from core.telegram_formatting import markdown_to_html
+                async with Bot(token=BOT_TOKEN) as dispatch_bot:
+                    dispatch_summary = "\n".join(f"  - {t}" for t in task_ids[:10])
+                    msg = (
+                        f"📬 **일일회고 조치사항 배분**\n\n"
+                        f"GoalTracker 자율 루프 dispatch 완료:\n"
+                        f"{dispatch_summary}"
+                        + (f"\n  ... 외 {len(task_ids) - 10}개" if len(task_ids) > 10 else "")
+                    )
+                    await dispatch_bot.send_message(
+                        chat_id=GROUP_CHAT_ID,
+                        text=markdown_to_html(msg),
+                        parse_mode="HTML",
+                    )
+                    print(f"[retro] dispatch 완료 — {len(task_ids)}개 Telegram 전송")
+            except Exception as e:
+                print(f"[retro] dispatch Telegram 전송 실패: {e}")
+
         loop_result = await run_meeting_cycle(
             meeting_type="daily_retro",
             registered_ids=register_result.registered_ids,
+            dispatch_func=_dispatch_to_telegram,  # 2026-03-31: dispatch_func 추가
         )
 
         print(
