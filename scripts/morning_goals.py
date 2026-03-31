@@ -142,7 +142,7 @@ async def _register_goals_to_tracker(goals_text: str, today_str: str) -> None:
         from core.pm_orchestrator import PMOrchestrator
         from core.task_graph import TaskGraph
 
-        async def _noop_send(_chat_id: int, _text: str) -> None:
+        async def _noop_send(_chat_id: int, _text: str, **_kwargs: object) -> None:
             pass
 
         db = ContextDB()
