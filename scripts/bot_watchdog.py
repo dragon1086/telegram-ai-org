@@ -24,7 +24,7 @@ from pathlib import Path
 CHECK_INTERVAL = 30  # 초
 MAX_RESTART_PER_BOT = 5  # 연속 재시작 한도 (무한루프 방지)
 RESTART_COUNT_RESET_AFTER = 600  # 10분 동안 안정적이면 카운터 리셋
-LOG_STALENESS_THRESHOLD = 600  # 10분간 로그 갱신 없으면 hung으로 판단
+LOG_STALENESS_THRESHOLD = 1200  # 20분간 로그 갱신 없으면 hung으로 판단 (BOT_IDLE_TIMEOUT_SEC=900s보다 충분히 높게)
 ORPHAN_CHECK_INTERVAL = 300  # 5분마다 고아 프로세스 점검
 ORPHAN_AGE_THRESHOLD = 3600  # 1시간 이상된 고아만 kill (작업중인 프로세스 보호)
 AI_ORG_LOG_DIR = Path.home() / ".ai-org"
@@ -113,7 +113,7 @@ def check_log_hung(org_id: str) -> bool:
 
     조건:
       - 프로세스는 살아있지만
-      - heartbeat 파일이 LOG_STALENESS_THRESHOLD(10분) 이상 갱신되지 않음
+      - heartbeat 파일이 LOG_STALENESS_THRESHOLD(20분) 이상 갱신되지 않음
       - heartbeat 파일이 1시간 이내에 존재한 적 있음 (장기 미시작 봇 오판 방지)
 
     NOTE: 봇은 idle/active 무관하게 60초마다 heartbeat 파일을 touch한다.
