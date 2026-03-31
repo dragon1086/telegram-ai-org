@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 ENABLE_ORCHESTRATION_SERVICE: bool = (
-    os.environ.get("ENABLE_ORCHESTRATION_SERVICE", "0") == "1"
+    os.environ.get("ENABLE_ORCHESTRATION_SERVICE", "1") == "1"
 )
 """True일 때 신규 OrchestrationService 코드 경로를 활성화합니다."""
 

@@ -6,7 +6,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
 import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -938,55 +942,177 @@ class OrgScheduler:
         except Exception as e:
             logger.error(f"[OrgScheduler] routing_optimizer_daily 실패: {e}")
 
-    # ── 자동화 협업 프로세스 핸들러 (ST-11 뼈대, TODO: 실제 로직 구현) ──────────
+    # ── 자동화 협업 프로세스 핸들러 ──────────────────────────────────────────
 
     async def _weekly_meeting_automation(self) -> None:
-        """매주 월요일 09:00 KST — 주간회의 자동화 뼈대.
+        """매주 월요일 09:00 KST — 주간회의 자동화 (no-op).
 
-        ST-11: 전 조직 주간회의를 자율적으로 진행한다.
-        NOTE: 실제 주간회의는 09:05 KST weekly_standup()이 처리한다.
-              stub 메시지 중복 발송 방지를 위해 이 잡은 no-op으로 유지.
+        실제 주간회의는 09:05 KST weekly_standup()이 담당한다.
+        이 잡은 중복 발송을 피하기 위해 no-op으로 유지한다.
         """
         logger.info("[OrgScheduler] weekly_meeting_automation — weekly_standup(09:05)에 통합됨, 스킵")
 
     async def _monthly_audit_automation(self) -> None:
-        """매월 1일 09:30 KST — 감사 자동화 뼈대.
+        """매월 1일 09:30 KST — 월간 harness-audit 자동 실행.
 
-        ST-11: 월간 시스템 감사를 자율적으로 실행한다.
-        TODO: harness-audit 확장판으로 연결 — COLLAB 발동률, 목표 달성률,
-              태스크 실패 패턴을 집계하고 자동 개선 트리거를 발동.
+        scripts/run_harness_audit.py 의 main() 로직을 직접 호출하여
+        목표 달성률·COLLAB 활성도를 집계하고 STALE 목표에 대해 자동
+        재개 트리거를 발동한다.  결과 리포트는 Telegram으로도 전송된다.
         """
         logger.info("[OrgScheduler] monthly_audit_automation 시작")
         try:
             await self._safe_send(
                 "🔍 *[자동] 월간 감사 시작*\n"
-                "매월 1일 자동 진행 — 시스템 건강도 점검 중...\n"
-                "*(ST-11 자동화 뼈대 — harness-audit 연동 예정)*"
+                "매월 1일 자동 진행 — 시스템 건강도 점검 중..."
             )
-            # TODO: run_harness_audit.py 로직 통합
-            # TODO: COLLAB 발동 성공률 집계 및 개선 트리거
-            logger.info("[OrgScheduler] monthly_audit_automation 완료 (stub)")
+
+            # ── harness-audit 로직 직접 실행 ────────────────────────────────
+            from scripts.run_harness_audit import (
+                _build_audit_report,
+                _build_auto_resume_message,
+                _count_collab_usage,
+                _find_progress_guide,
+                _parse_goals,
+                _save_audit_report,
+            )
+
+            loop = asyncio.get_event_loop()
+
+            guide_path = await loop.run_in_executor(None, _find_progress_guide)
+            goals: list[dict] = []
+            if guide_path:
+                content = await loop.run_in_executor(
+                    None, lambda: guide_path.read_text(encoding="utf-8")
+                )
+                goals = await loop.run_in_executor(None, _parse_goals, content)
+                logger.info(f"[OrgScheduler] monthly_audit: 활성 목표 {len(goals)}개")
+
+            collab_count = await loop.run_in_executor(None, _count_collab_usage, 30)
+            logger.info(f"[OrgScheduler] monthly_audit: COLLAB 사용 횟수 (30일): {collab_count}")
+
+            report = await loop.run_in_executor(None, _build_audit_report, goals, collab_count)
+            await loop.run_in_executor(None, _save_audit_report, report)
+
+            # 리포트 Telegram 전송 (self._safe_send 경유)
+            await self._safe_send(report[:4000])
+
+            # STALE 목표 자동 재개 트리거
+            stale_goals = [g for g in goals if g.get("is_stale")]
+            if stale_goals:
+                resume_msg = await loop.run_in_executor(
+                    None, _build_auto_resume_message, stale_goals
+                )
+                await self._safe_send(resume_msg[:4000])
+                logger.info(
+                    f"[OrgScheduler] monthly_audit: STALE {len(stale_goals)}개 — "
+                    "자동 재개 트리거 전송"
+                )
+
+                # GoalTracker에 STALE 목표 재개 등록
+                if self._goal_tracker is not None:
+                    for g in stale_goals:
+                        try:
+                            await self._goal_tracker.start_goal(
+                                title=f"[monthly_audit] {g['id']} STALE 재개",
+                                description=(
+                                    f"harness-audit STALE 감지 — {g['name']} "
+                                    f"(달성률 {g['completion_pct']}%, "
+                                    f"마지막 iter: {g.get('last_iter_date', '없음')}). "
+                                    "목표 진행 현황을 점검하고 다음 iter 태스크를 재배분하세요."
+                                ),
+                                meta={
+                                    "source": "monthly_audit",
+                                    "goal_id": g["id"],
+                                    "completion_pct": g["completion_pct"],
+                                    "auto_registered": True,
+                                },
+                                chat_id=self._pm_chat_id,
+                            )
+                        except Exception as ge:
+                            logger.warning(
+                                f"[OrgScheduler] monthly_audit GoalTracker 등록 실패 ({g['id']}): {ge}"
+                            )
+
+            logger.info("[OrgScheduler] monthly_audit_automation 완료")
         except Exception as e:
             logger.error(f"[OrgScheduler] monthly_audit_automation 실패: {e}")
+            await self._safe_send(f"⚠️ [월간 감사] 실행 중 오류: {e}")
 
     async def _weekly_audit_report(self) -> None:
-        """매주 금요일 17:00 KST — 감사 리포트 뼈대.
+        """매주 금요일 17:00 KST — 주간 감사 리포트 생성.
 
-        ST-11: 주간 감사 결과를 자율적으로 취합하여 보고한다.
-        TODO: 로그 분석 → COLLAB 활성도 + 태스크 성공률 집계 → 리포트 생성
-              STALE 감지 시 → PM 봇 iter 재개 트리거.
+        구현 내용:
+        1. logs/ 디렉토리에서 지난 7일 이내 .jsonl / .log 파일 스캔
+        2. 파일 수, 최근 에러 수, COLLAB 태그 발동 횟수, STALE 감지 카운트
+        3. 리포트 포맷 생성 후 docs/audits/YYYY-MM-DD-weekly-audit.md 저장
+        4. Telegram 전송
         """
         logger.info("[OrgScheduler] weekly_audit_report 시작")
         try:
-            await self._safe_send(
-                "📊 *[자동] 주간 감사 리포트*\n"
-                "매주 금요일 자동 생성 — 이번 주 시스템 지표 취합 중...\n"
-                "*(ST-11 자동화 뼈대 — 로그 분석 및 STALE 감지 연동 예정)*"
+            today_str = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
+            cutoff = datetime.now(tz=timezone.utc) - timedelta(days=7)
+
+            # ── 1. logs/ 스캔 ──────────────────────────────────────────────
+            logs_dir = Path(os.environ.get("AI_ORG_DATA_DIR", str(Path.home() / "telegram-ai-org-data"))) / "logs"
+            project_logs_dir = Path(__file__).resolve().parent.parent / "logs"
+
+            log_files: list[Path] = []
+            for scan_dir in (logs_dir, project_logs_dir):
+                if scan_dir.exists():
+                    log_files.extend(scan_dir.glob("*.jsonl"))
+                    log_files.extend(scan_dir.glob("*.log"))
+
+            # 지난 7일 이내 파일만 필터
+            recent_files = [
+                f for f in log_files
+                if datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc) >= cutoff
+            ]
+
+            # ── 2. 메트릭 집계 ────────────────────────────────────────────
+            error_count = 0
+            collab_count = 0
+            for log_file in recent_files:
+                try:
+                    content = log_file.read_text(encoding="utf-8", errors="replace")
+                    error_count += len(re.findall(r"\bERROR\b|\bERROR:\b", content))
+                    collab_count += len(re.findall(r"\[COLLAB\]", content))
+                except Exception as read_err:
+                    logger.warning("[OrgScheduler] 로그 파일 읽기 실패 %s: %s", log_file, read_err)
+
+            # ── 3. STALE 감지: pm_progress_guide.md 기반 ──────────────────
+            stale_count = 0
+            guide_path = Path(__file__).resolve().parent.parent / "memory" / "pm_progress_guide.md"
+            if guide_path.exists():
+                guide_content = guide_path.read_text(encoding="utf-8")
+                # 각 목표 블록에서 updated_at 필드 확인
+                stale_count = _count_stale_goals(guide_content, cutoff_days=3)
+
+            # ── 4. 리포트 문서 생성 ───────────────────────────────────────
+            report_text = (
+                f"# 주간 감사 리포트 ({today_str})\n\n"
+                f"- 로그 파일: {len(recent_files)}개 (지난 7일 기준)\n"
+                f"- 최근 7일 에러: {error_count}건\n"
+                f"- COLLAB 발동: {collab_count}건\n"
+                f"- STALE 감지: {stale_count}건\n"
             )
-            # TODO: logs/ 분석 → 지난 7일 COLLAB/태스크 지표 집계
-            # TODO: docs/audits/YYYY-MM-DD-weekly-audit.md 저장
-            # TODO: STALE 감지 → PM 봇 자동 트리거
-            logger.info("[OrgScheduler] weekly_audit_report 완료 (stub)")
+
+            audits_dir = Path(__file__).resolve().parent.parent / "docs" / "audits"
+            audits_dir.mkdir(parents=True, exist_ok=True)
+            audit_file = audits_dir / f"{today_str}-weekly-audit.md"
+            audit_file.write_text(report_text, encoding="utf-8")
+            logger.info("[OrgScheduler] weekly_audit_report 저장: %s", audit_file)
+
+            # ── 5. Telegram 전송 ──────────────────────────────────────────
+            telegram_msg = (
+                f"📊 *주간 감사 리포트* ({today_str})\n"
+                f"- 로그 파일: {len(recent_files)}개\n"
+                f"- 최근 7일 에러: {error_count}건\n"
+                f"- COLLAB 발동: {collab_count}건\n"
+                f"- STALE 감지: {stale_count}건"
+            )
+            await self._safe_send(telegram_msg)
+            logger.info("[OrgScheduler] weekly_audit_report 완료")
+
         except Exception as e:
             logger.error(f"[OrgScheduler] weekly_audit_report 실패: {e}")
 
@@ -1011,3 +1137,50 @@ class OrgScheduler:
 
     def get_job_ids(self) -> list[str]:
         return [j.id for j in self.scheduler.get_jobs()]
+
+
+# ---------------------------------------------------------------------------
+# 모듈 레벨 헬퍼 — weekly_audit_report 지원
+# ---------------------------------------------------------------------------
+
+
+def _count_stale_goals(guide_content: str, cutoff_days: int = 3) -> int:
+    """pm_progress_guide.md 내 IN_PROGRESS 목표 중 updated_at이 cutoff_days 이상 지난 항목을 카운트합니다.
+
+    updated_at 필드가 없는 IN_PROGRESS 항목도 stale로 계산합니다.
+    (갱신 일자 미기재 = 방치로 간주)
+    """
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=cutoff_days)
+    header_pat = re.compile(r"^###\s+(GOAL-\w+):", re.MULTILINE)
+    stale = 0
+
+    for m in header_pat.finditer(guide_content):
+        block_start = m.end()
+        next_h = header_pat.search(guide_content, block_start)
+        block = guide_content[block_start : next_h.start() if next_h else len(guide_content)]
+
+        # IN_PROGRESS / TODO 인 항목만 대상
+        status_m = re.search(r"^[-*]\s+현재상태:\s*(.+)$", block, re.MULTILINE)
+        if not status_m:
+            continue
+        status = status_m.group(1).strip()
+        if status not in ("IN_PROGRESS", "TODO"):
+            continue
+
+        # updated_at 파싱
+        updated_m = re.search(r"^[-*]\s+updated_at:\s*(.+)$", block, re.MULTILINE)
+        if not updated_m:
+            # 갱신 일자 없음 → stale
+            stale += 1
+            continue
+
+        try:
+            updated_at = datetime.fromisoformat(updated_m.group(1).strip())
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+            if updated_at < cutoff:
+                stale += 1
+        except ValueError:
+            stale += 1  # 날짜 파싱 실패 → stale
+
+    return stale

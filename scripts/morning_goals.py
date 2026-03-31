@@ -135,10 +135,32 @@ async def _register_goals_to_tracker(goals_text: str, today_str: str) -> None:
     sys.path.insert(0, str(PROJECT_ROOT))
     try:
 
+        from core.claim_manager import ClaimManager
+        from core.context_db import ContextDB
         from core.goal_tracker import GoalTracker
+        from core.memory_manager import MemoryManager
+        from core.pm_orchestrator import PMOrchestrator
+        from core.task_graph import TaskGraph
 
-        db_path = PROJECT_ROOT / "ai_org.db"
-        tracker = GoalTracker(db_path=str(db_path), org_id="aiorg_pm_bot")
+        async def _noop_send(_chat_id: int, _text: str) -> None:
+            pass
+
+        db = ContextDB()
+        await db.initialize()
+        orchestrator = PMOrchestrator(
+            context_db=db,
+            task_graph=TaskGraph(db),
+            claim_manager=ClaimManager(),
+            memory=MemoryManager("aiorg_pm_bot"),
+            org_id="aiorg_pm_bot",
+            telegram_send_func=_noop_send,
+        )
+        tracker = GoalTracker(
+            context_db=db,
+            orchestrator=orchestrator,
+            telegram_send_func=_noop_send,
+            org_id="aiorg_pm_bot",
+        )
 
         # 목표 텍스트를 줄 단위로 파싱 (형식: "N. 목표내용")
         lines = [line.strip() for line in goals_text.splitlines() if line.strip()]

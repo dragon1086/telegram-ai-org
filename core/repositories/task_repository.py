@@ -29,10 +29,10 @@ def _is_enabled(db_path: str) -> bool:
     """ENABLE_REPOSITORY_PATTERN=1 이거나 :memory: DB면 True를 반환합니다."""
     if db_path == ":memory:":
         return True
-    return os.environ.get("ENABLE_REPOSITORY_PATTERN", "0") == "1"
+    return os.environ.get("ENABLE_REPOSITORY_PATTERN", "1") == "1"
 
 
-ENABLE_REPOSITORY_PATTERN: bool = os.environ.get("ENABLE_REPOSITORY_PATTERN", "0") == "1"
+ENABLE_REPOSITORY_PATTERN: bool = os.environ.get("ENABLE_REPOSITORY_PATTERN", "1") == "1"
 """True일 때 신규 Repository 패턴 코드 경로를 활성화합니다. (하위 호환용 상수)"""
 
 # ---------------------------------------------------------------------------

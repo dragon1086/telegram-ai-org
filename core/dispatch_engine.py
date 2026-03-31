@@ -14,7 +14,7 @@ from core.context_db import ContextDB
 from core.pm_orchestrator import KNOWN_DEPTS
 from core.task_graph import TaskGraph
 
-ENABLE_AUTO_DISPATCH = os.environ.get("ENABLE_AUTO_DISPATCH", "0") == "1"
+ENABLE_AUTO_DISPATCH = os.environ.get("ENABLE_AUTO_DISPATCH", "1") == "1"
 
 # 정체 판정 기준 (분)
 DEFAULT_STALL_MINUTES = 30

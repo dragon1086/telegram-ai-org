@@ -39,7 +39,7 @@ from core.api.routes.tasks import router as tasks_router
 # 피처 플래그
 # ---------------------------------------------------------------------------
 
-ENABLE_REST_API: bool = os.environ.get("ENABLE_REST_API", "false").lower() in ("true", "1")
+ENABLE_REST_API: bool = os.environ.get("ENABLE_REST_API", "true").lower() in ("true", "1")
 """True일 때 전체 REST API 라우터를 활성화합니다."""
 
 DEFAULT_DB_PATH: str = os.environ.get("AIMESH_DB_PATH", "data/tasks.db")

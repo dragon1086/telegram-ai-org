@@ -77,17 +77,19 @@ class TestPMTaskParsing:
 class TestFeatureFlag:
     """ENABLE_PM_ORCHESTRATOR 플래그 동작 테스트."""
 
-    def test_flag_default_off(self):
-        """기본값 = 비활성."""
-        # 환경변수 없을 때
+    def test_flag_default_on(self):
+        """기본값 = 활성 (Phase 2a 이후 모든 안전한 enable_* 기본값=1).
+
+        ENABLE_PM_ORCHESTRATOR 기본값이 "1"로 변경됨 (2026-03-31).
+        환경변수 미설정 시 True를 반환해야 한다.
+        """
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("ENABLE_PM_ORCHESTRATOR", None)
-            # 모듈 재로드
             import importlib
 
             import core.pm_orchestrator as mod
             importlib.reload(mod)
-            assert mod.ENABLE_PM_ORCHESTRATOR is False
+            assert mod.ENABLE_PM_ORCHESTRATOR is True
 
     def test_flag_on(self):
         """ENABLE_PM_ORCHESTRATOR=1 → True."""

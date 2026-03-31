@@ -364,6 +364,10 @@ def _format_markdown(
         "",
     ]
 
+    # 조직별 발언 섹션 + ACTION 표준 포맷 생성
+    all_action_items: list[tuple[str, str, str]] = []  # (org_name, org_id, action_desc)
+    action_counter = 1
+
     for sp in speeches:
         lines.append(f"### {sp['emoji']} {sp['name']}")
         lines.append(f"- **잘한 것**: {sp.get('잘한것', '')}")
@@ -373,6 +377,17 @@ def _format_markdown(
             lines.append("- **해야 할 것**:")
             for item in todos:
                 lines.append(f"  - {item}")
+                # ACTION N: 형식으로도 기록 (파서 인식용)
+                lines.append(f"  ACTION {action_counter}: **{item}**")
+                all_action_items.append((sp["name"], sp["org_id"], item))
+                action_counter += 1
+        lines.append("")
+
+    # 조치사항 통합 섹션 (action_parser 우선 파싱 대상)
+    if all_action_items:
+        lines += ["## 조치사항", ""]
+        for org_name, org_id, action_desc in all_action_items:
+            lines.append(f"- [{org_name}] {action_desc}")
         lines.append("")
 
     lines += [

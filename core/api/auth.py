@@ -22,6 +22,7 @@ from fastapi.security import APIKeyHeader
 # 설정
 # ---------------------------------------------------------------------------
 
+# 주의: AIMESH_API_KEYS 미설정 시 true로 변경하면 모든 API 접근이 차단됨 — 기본 비활성화 유지
 ENABLE_API_AUTH: bool = os.environ.get("ENABLE_API_AUTH", "false").lower() in ("true", "1")
 """True일 때 X-API-Key 헤더 검증을 활성화합니다."""
 

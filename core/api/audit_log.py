@@ -12,7 +12,7 @@ import os
 import time
 from pathlib import Path
 
-ENABLE_AUDIT_LOG: bool = os.environ.get("ENABLE_AUDIT_LOG", "false").lower() in ("true", "1")
+ENABLE_AUDIT_LOG: bool = os.environ.get("ENABLE_AUDIT_LOG", "true").lower() in ("true", "1")
 DEFAULT_AUDIT_LOG_PATH: Path = Path(os.environ.get("AIMESH_AUDIT_LOG_PATH", "data/audit.log"))
 
 

@@ -9,7 +9,7 @@ from loguru import logger
 from core.context_db import ContextDB
 from core.message_bus import Event, EventType, MessageBus
 
-ENABLE_DISCUSSION_PROTOCOL = os.environ.get("ENABLE_DISCUSSION_PROTOCOL", "0") == "1"
+ENABLE_DISCUSSION_PROTOCOL = os.environ.get("ENABLE_DISCUSSION_PROTOCOL", "1") == "1"
 
 VALID_MSG_TYPES = {"PROPOSE", "COUNTER", "OPINION", "REVISE", "DECISION"}
 

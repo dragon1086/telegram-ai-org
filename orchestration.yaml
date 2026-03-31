@@ -83,6 +83,11 @@ global_instructions: |
   - 스킬 로그 경로: ${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}/skills/<skill-name>/data/
   - 금지: ../telegram-ai-org-data/ 상대 경로 하드코딩 (오픈소스 사용자 경로 불일치 유발)
 
+  ## 평가 모드 인지 (전체 조직 공통)
+  EVAL_SESSION=1 또는 IS_EVAL_RUN=1 환경변수가 설정된 경우, 봇은 자신이 품질 평가 중임을 인지한다.
+  평가 중에도 평소와 동일하게 행동하되, 응답의 완결성·정확도·판단 품질에 특별히 신경 쓴다.
+  평가 컨텍스트는 core/eval_context.py의 inject_eval_context()로 세션 프롬프트에 주입된다.
+
 phase_policies:
   default:
     order:
@@ -157,8 +162,8 @@ team_profiles:
     max_team_size: 3
     guidance: 출처와 비교 기준을 명확히 남긴다.
   engineering_delivery:
-    preferred_engine: gemini-cli
-    fallback_engine: claude-code
+    preferred_engine: claude-code  # organizations.yaml aiorg_engineering_bot과 일치 (2026-03-30 수정)
+    fallback_engine: gemini-cli
     fallback_model: gemini-2.5-flash
     execution_mode: sequential
     preferred_agents:

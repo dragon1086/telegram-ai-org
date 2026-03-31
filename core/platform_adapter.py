@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 def _is_enabled() -> bool:
     """Return True if the platform adapter feature flag is enabled."""
-    return os.environ.get("ENABLE_PLATFORM_ADAPTER", "false").lower() in ("true", "1", "yes")
+    return os.environ.get("ENABLE_PLATFORM_ADAPTER", "true").lower() in ("true", "1", "yes")
 
 
 # ---------------------------------------------------------------------------
@@ -302,3 +302,9 @@ def list_adapters() -> List[str]:
     if not _is_enabled():
         return []
     return list(_adapters.keys())
+
+
+# ---------------------------------------------------------------------------
+# Module-level startup log — emitted once on import
+# ---------------------------------------------------------------------------
+logger.info("PlatformAdapter feature flag: %s", "ENABLED" if _is_enabled() else "DISABLED")

@@ -8,6 +8,7 @@ from telegram import Update
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 from core.context_db import ContextDB
+from core.eval_context import inject_eval_context
 from core.message_schema import OrgMessage
 from core.telegram_formatting import markdown_to_html
 
@@ -100,6 +101,11 @@ class WorkerBot:
         prompt = content
         if context:
             prompt = f"[배경 컨텍스트]\n{context.get('content', '')}\n\n[태스크]\n{content}"
+
+        # 평가 컨텍스트 주입 — ENABLE_EVAL_CONTEXT=1 + EVAL_ALWAYS=1/EVAL_SESSION=1 시 활성화
+        eval_notice = inject_eval_context()
+        if eval_notice:
+            prompt = f"{eval_notice}\n\n{prompt}"
 
         from tools.base_runner import RunContext, RunnerError, RunnerFactory
 

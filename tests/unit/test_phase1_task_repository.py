@@ -203,11 +203,20 @@ class TestTaskRepositoryFeatureFlag:
         from core.repositories.task_repository import _is_enabled
         assert _is_enabled(":memory:") is True
 
-    def test_file_db_disabled_by_default(self, tmp_path):
-        """파일 DB는 ENABLE_REPOSITORY_PATTERN=0이면 비활성이어야 한다."""
+    def test_file_db_enabled_by_default(self, tmp_path):
+        """파일 DB는 ENABLE_REPOSITORY_PATTERN 미설정 시 기본 활성화(default=1)된다.
+
+        Phase 2a 이후 모든 안전한 enable_* 기본값=1 (2026-03-31 변경).
+        """
         import os
         from core.repositories.task_repository import _is_enabled
         os.environ.pop("ENABLE_REPOSITORY_PATTERN", None)
+        assert _is_enabled(str(tmp_path / "test.db")) is True
+
+    def test_file_db_disabled_explicitly(self, tmp_path, monkeypatch):
+        """ENABLE_REPOSITORY_PATTERN=0이면 파일 DB가 비활성화된다."""
+        monkeypatch.setenv("ENABLE_REPOSITORY_PATTERN", "0")
+        from core.repositories.task_repository import _is_enabled
         assert _is_enabled(str(tmp_path / "test.db")) is False
 
     def test_file_db_enabled_when_flag_set(self, tmp_path, monkeypatch):

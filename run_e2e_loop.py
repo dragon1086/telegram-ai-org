@@ -49,7 +49,7 @@ def _load_env() -> None:
 
 _load_env()
 
-ENABLE_GOAL_TRACKER = os.environ.get("ENABLE_GOAL_TRACKER", "0") == "1"
+ENABLE_GOAL_TRACKER = os.environ.get("ENABLE_GOAL_TRACKER", "1") == "1"
 GROUP_CHAT_ID = int(os.environ.get("TELEGRAM_GROUP_CHAT_ID", "0"))
 PM_BOT_TOKEN = os.environ.get("PM_BOT_TOKEN", "")
 

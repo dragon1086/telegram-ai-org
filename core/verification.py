@@ -13,7 +13,7 @@ from loguru import logger
 from core.constants import BOT_ENGINE_MAP
 from core.context_db import ContextDB
 
-ENABLE_CROSS_VERIFICATION = os.environ.get("ENABLE_CROSS_VERIFICATION", "0") == "1"
+ENABLE_CROSS_VERIFICATION = os.environ.get("ENABLE_CROSS_VERIFICATION", "1") == "1"
 
 
 @dataclass
@@ -163,7 +163,7 @@ class CrossModelVerifier:
 
         고위험 태스크 (코드 변경, 아키텍처 결정 등)에 대해 True.
         """
-        if os.environ.get("ENABLE_CROSS_VERIFICATION", "0") != "1":
+        if os.environ.get("ENABLE_CROSS_VERIFICATION", "1") != "1":
             return False
 
         desc = (task.get("description") or "").lower()

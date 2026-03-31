@@ -34,6 +34,11 @@ ACTION_HEADER_PATTERNS = [
     r"결정\s*사항\s*[:：]?",
     r"후속\s*조치\s*[:：]?",
     r"follow\s*[-\s]?up\s*[:：]?",
+    # 일일회고 "해야 할 것" 섹션 (daily_retro 형식)
+    r"\*\*해야\s*할\s*것\*\*\s*[:：]?",
+    r"해야\s*할\s*것\s*[:：]?",
+    # ACTION N: 형식 (일일회고 ACTION 1: / ACTION 2: 등)
+    r"ACTION\s*\d+\s*[:：]",
 ]
 
 # 담당자 패턴
@@ -44,6 +49,10 @@ ASSIGNEE_PATTERNS = [
     r"\[(aiorg_\w+)\]",
     r"→\s*(aiorg_\w+)",
     r"assigned\s+to\s*[:：]?\s*([^\n,]+)",
+    # [조직명] 인라인 접두어 (예: [개발실] 파이프라인 구현)
+    r"^\[(" + "|".join(re.escape(k) for k in [
+        "개발실", "운영실", "디자인실", "기획실", "성장실", "리서치실", "PM", "pm",
+    ]) + r")\]\s+",
 ]
 
 # 마감일 패턴

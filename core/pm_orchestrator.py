@@ -31,7 +31,7 @@ from core.telegram_user_guardrail import ensure_user_friendly_output, extract_lo
 if TYPE_CHECKING:
     from core.discussion import DiscussionManager
 
-ENABLE_PM_ORCHESTRATOR = os.environ.get("ENABLE_PM_ORCHESTRATOR", "0") == "1"
+ENABLE_PM_ORCHESTRATOR = os.environ.get("ENABLE_PM_ORCHESTRATOR", "1") == "1"
 MAX_REWORK_RETRIES = int(os.environ.get("MAX_REWORK_RETRIES", "2"))
 MAX_CONCURRENT_PARENT_TASKS = int(os.environ.get("MAX_CONCURRENT_PARENT_TASKS", "10"))
 
