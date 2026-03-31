@@ -1,5 +1,7 @@
 # telegram-ai-org (aimesh)
 
+![logo](assets/logo.png)
+
 > **"10분 안에 텔레그램에서 당신만의 AI 조직을 운영하세요"**
 
 텔레그램 그룹 채팅방을 AI 조직의 오피스로 만드는 오픈소스 멀티봇 오케스트레이션 시스템.
@@ -89,6 +91,8 @@ telegram-ai-org/
 ---
 
 ## 아키텍처 개요
+
+![architecture](assets/architecture_diagram.png)
 
 aimesh는 **오케스트레이터(PM 봇) + 7개 전문 부서봇 + 3개 AI 엔진**의 3계층 구조로 동작합니다.
 
@@ -242,7 +246,9 @@ gemini --version
 
 ## 원클릭 설치 가이드
 
-`scripts/setup.sh`는 설치된 엔진을 자동으로 감지하고 Python 환경 구성, `.env` 파일 생성, 검증까지 한 번에 수행합니다.
+![onboarding](assets/onboarding_banner.png)
+
+`install.sh`는 설치된 엔진을 자동으로 감지하고 Python 환경 구성, `.env` 파일 생성, 검증까지 한 번에 수행하는 **권장 진입점**입니다.
 
 ### 빠른 시작
 
@@ -251,8 +257,8 @@ gemini --version
 git clone https://github.com/dragon1086/aimesh.git
 cd aimesh
 
-# 2. 원클릭 설치 실행
-bash scripts/setup.sh
+# 2. 원클릭 설치 실행 (권장)
+bash install.sh
 
 # 3. .env 파일에 Telegram 봇 토큰 입력
 nano .env
@@ -262,22 +268,31 @@ nano .env
 bash scripts/start_all.sh
 ```
 
+또는 설치 후 봇까지 자동 기동:
+
+```bash
+bash install.sh --start   # 헬스체크 통과 시 봇 자동 기동
+```
+
 또는 curl 원라이너 (저장소 클론 없이):
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/dragon1086/aimesh/main/scripts/setup.sh | bash
+curl -sSL https://raw.githubusercontent.com/dragon1086/aimesh/main/install.sh | bash
 ```
 
-### setup.sh 옵션
+### install.sh 옵션
 
 | 옵션 | 설명 |
 |------|------|
-| `bash scripts/setup.sh` | 기본 실행 (대화형) |
-| `bash scripts/setup.sh --yes` | CI/자동화 환경 무인 설치 (프롬프트 건너뜀) |
-| `bash scripts/setup.sh --docker` | Docker 환경 감지 후 `docker compose up` 자동 실행 |
-| `bash scripts/setup.sh --yes --docker` | CI + Docker Compose 완전 비대화형 |
-| `bash scripts/setup.sh --skip-verify` | 검증 단계 건너뜀 (빠른 재설치) |
-| `bash scripts/setup.sh --no-venv` | 가상환경 생성 건너뜀 (기존 환경 재사용) |
+| `bash install.sh` | 기본 실행 (권장) |
+| `bash install.sh --yes` | CI/자동화 환경 무인 설치 (프롬프트 건너뜀) |
+| `bash install.sh --start` | 헬스체크 통과 후 봇 자동 기동 |
+| `bash install.sh --yes --start` | CI 환경 + 봇 자동 기동 |
+| `bash install.sh --health-only` | 헬스체크만 실행 (설치 없음) |
+| `bash install.sh --skip-verify` | 헬스체크 단계 건너뜀 (빠른 재설치) |
+| `bash install.sh --no-venv` | 가상환경 생성 건너뜀 (기존 환경 재사용) |
+
+> **고급 옵션** (Docker Compose, 엔진 자동 설치, 대화형 토큰 수집): `bash scripts/setup.sh [--docker] [--yes]`
 
 ### 실행 예시 출력
 

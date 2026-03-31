@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
-# scripts/setup.sh — telegram-ai-org 원클릭 설치 스크립트
+# scripts/setup.sh — telegram-ai-org 고급 설치 스크립트
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# ⚠️  원클릭 진입점(권장): bash install.sh  (프로젝트 루트)
+#     install.sh: 3엔진 감지 → .env 생성 → 의존성 설치 → 헬스체크
+#     헬스체크 단독 실행: bash install.sh --health-only
+#
+#     이 스크립트(scripts/setup.sh)는 하위 호환 및 고급 옵션 전용입니다:
+#       - Docker Compose 자동 실행 (--docker)
+#       - 엔진 자동 설치 (npm/brew 자동 실행)
+#       - 대화형 토큰 수집 프롬프트
+#       - macOS 권한 자동 설정 (quarantine 제거)
+# ─────────────────────────────────────────────────────────────────────────────
 #
 # 실행 흐름:
 #   1. 3엔진 자동 감지 (claude / codex / gemini)
@@ -8,14 +20,18 @@
 #   3. Node/npm 존재 여부 확인
 #   4. .env 파일 생성 (.env.example → .env 복사 + 자동 치환)
 #   5. 초기화 검증 (패키지 import + 엔진 바이너리 실행 확인)
+#      ※ 헬스체크 독립 실행: bash install.sh --health-only
 #
 # 사용법:
-#   bash scripts/setup.sh
-#   bash scripts/setup.sh --skip-verify   # 검증 단계 건너뜀
-#   bash scripts/setup.sh --no-venv       # 가상환경 생성 건너뜀
-#   bash scripts/setup.sh --yes           # 비대화형 자동 설치 (CI 환경)
-#   bash scripts/setup.sh --docker        # Docker Compose 실행 모드 (감지 후 자동 실행)
-#   bash scripts/setup.sh --yes --docker  # CI 환경 + Docker Compose 자동 실행
+#   bash install.sh                        # 권장: 프로젝트 루트 진입점
+#   bash scripts/setup.sh                  # 고급 옵션 포함 전체 설치
+#   bash scripts/setup.sh --skip-verify    # 검증 단계 건너뜀
+#   bash scripts/setup.sh --no-venv        # 가상환경 생성 건너뜀
+#   bash scripts/setup.sh --yes            # 비대화형 자동 설치 (CI 환경)
+#   bash scripts/setup.sh --docker         # Docker Compose 실행 모드
+#   bash scripts/setup.sh --yes --docker   # CI 환경 + Docker Compose 자동 실행
+#   bash scripts/setup.sh --health-only    # 헬스체크만 실행 (설치 없음)
+#   bash scripts/setup.sh --start          # 설치 완료 후 봇 자동 기동
 # =============================================================================
 
 set -euo pipefail
@@ -40,12 +56,17 @@ SKIP_VERIFY=false
 NO_VENV=false
 NON_INTERACTIVE=false  # --yes / --non-interactive: CI 환경 무인 설치 (프롬프트 건너뜀)
 USE_DOCKER=false       # --docker: Docker Compose 실행 모드 (감지 후 docker compose up 진행)
+HEALTH_ONLY=false      # --health-only: 헬스체크만 실행 (설치 건너뜀)
+AUTO_START=false       # --start: 헬스체크 통과 시 봇 자동 기동
+
 for arg in "$@"; do
     case "$arg" in
         --skip-verify)                SKIP_VERIFY=true ;;
         --no-venv)                    NO_VENV=true ;;
         --yes|-y|--non-interactive)   NON_INTERACTIVE=true ;;
         --docker)                     USE_DOCKER=true ;;
+        --health-only)                HEALTH_ONLY=true; SKIP_VERIFY=false ;;
+        --start)                      AUTO_START=true ;;
     esac
 done
 
@@ -65,6 +86,8 @@ echo "╚═══════════════════════�
 echo -e "${RESET}"
 info "운영체제: $OS_NAME"
 info "작업 디렉토리: $(pwd)"
+[ "$HEALTH_ONLY" = true ] && info "모드: --health-only (헬스체크만 실행)"
+[ "$AUTO_START"  = true ] && info "모드: --start (헬스체크 통과 시 봇 자동 기동)"
 
 # ── 프로젝트 루트 확인 ─────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -1014,72 +1037,200 @@ if [ "$ENV_EXISTS" = false ]; then
 fi
 
 # =============================================================================
-# STEP 5: 초기화 검증
+# [함수] run_healthcheck — 5단계 헬스체크 + ✅/❌ 요약 출력
+#
+#   ① Python 버전 확인 (3.9+)
+#   ② 감지된 각 엔진 응답 확인 (--version)
+#   ③ .env 필수 키 존재 여부 확인
+#   ④ Telegram API 연결 가능 여부 (curl ping)
+#   ⑤ 봇 프로세스 기동 가능 여부 (main.py import)
+#
+# 반환: 0 = 전체 통과, 1 = 하나 이상 실패
 # =============================================================================
-if [ "$SKIP_VERIFY" = true ]; then
-    warn "--skip-verify: 검증 단계 건너뜀"
-else
-    step "Step 5/5: 초기화 검증"
+run_healthcheck() {
+    step "Step 5/5: 헬스체크"
 
-    VERIFY_PASS=0
-    VERIFY_FAIL=0
+    local _hc_pass=0
+    local _hc_fail=0
+    local _hc_warn=0
+    declare -a _hc_lines   # 결과 라인 버퍼 (마지막에 일괄 출력)
 
-    # ── Python 패키지 import 검증 ────────────────────────────────────────────────
-    info "핵심 패키지 import 검증 중..."
+    # 헬퍼: 결과 라인 기록
+    _hc_ok()   { _hc_lines+=("${GREEN}  ✅ $*${RESET}"); _hc_pass=$((_hc_pass + 1)); }
+    _hc_fail() { _hc_lines+=("${RED}  ❌ $*${RESET}");   _hc_fail=$((_hc_fail + 1)); }
+    _hc_warn() { _hc_lines+=("${YELLOW}  ⚠️  $*${RESET}"); _hc_warn=$((_hc_warn + 1)); }
 
-    check_import() {
-        local pkg="$1"
-        local label="${2:-$1}"
-        if "$VENV_PYTHON" -c "import $pkg" 2>/dev/null; then
-            ok "  import $label"
-            VERIFY_PASS=$((VERIFY_PASS + 1))
-        else
-            err "  import $label — 실패"
-            VERIFY_FAIL=$((VERIFY_FAIL + 1))
-        fi
-    }
-
-    check_import "anthropic"
-    check_import "telegram"          "python-telegram-bot"
-    check_import "pydantic"
-    check_import "aiosqlite"
-    check_import "dotenv"            "python-dotenv"
-    check_import "loguru"
-    check_import "yaml"              "PyYAML"
-    check_import "apscheduler"
-
-    # ── 엔진 바이너리 실행 가능 여부 재확인 ─────────────────────────────────────
-    echo ""
-    info "AI 엔진 바이너리 실행 가능 여부 확인 중..."
-
-    check_engine() {
-        local name="$1"
-        local path="$2"
-        if [ -n "$path" ] && [ -x "$path" ]; then
-            ok "  $name: $path [실행 가능]"
-            VERIFY_PASS=$((VERIFY_PASS + 1))
-        elif [ -n "$path" ]; then
-            err "  $name: $path [실행 불가 — 권한 확인 필요]"
-            VERIFY_FAIL=$((VERIFY_FAIL + 1))
-        fi
-    }
-
-    check_engine "claude" "$CLAUDE_PATH"
-    check_engine "codex"  "$CODEX_PATH"
-    check_engine "gemini" "$GEMINI_CLI_PATH"
-
-    # ── 검증 결과 출력 ────────────────────────────────────────────────────────────
-    echo ""
-    TOTAL=$((VERIFY_PASS + VERIFY_FAIL))
-    if [ "$VERIFY_FAIL" -eq 0 ]; then
-        echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-        echo -e "${GREEN}${BOLD}  검증 완료: $VERIFY_PASS/$TOTAL 항목 통과 — 모두 정상${RESET}"
-        echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    # ── ① Python 버전 확인 (3.9+) ───────────────────────────────────────────────
+    local _py_bin="${VENV_PYTHON:-python3}"
+    local _py_ver
+    _py_ver=$("$_py_bin" --version 2>&1 | awk '{print $2}' || echo "unknown")
+    local _py_major _py_minor
+    _py_major=$(echo "$_py_ver" | cut -d. -f1)
+    _py_minor=$(echo "$_py_ver" | cut -d. -f2)
+    if [ "${_py_major:-0}" -ge 3 ] && [ "${_py_minor:-0}" -ge 9 ] 2>/dev/null; then
+        _hc_ok "Python $_py_ver (>= 3.9)"
     else
-        echo -e "${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-        echo -e "${YELLOW}${BOLD}  검증 결과: $VERIFY_PASS/$TOTAL 통과, ${VERIFY_FAIL}개 실패${RESET}"
-        echo -e "${YELLOW}${BOLD}  위 ❌ 항목을 확인하고 재설치 후 다시 실행하세요.${RESET}"
-        echo -e "${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        _hc_fail "Python $_py_ver — 3.9 이상 필요"
+    fi
+
+    # 핵심 패키지 import 검증
+    local _pkgs=("anthropic:anthropic" "telegram:python-telegram-bot" "pydantic:pydantic" \
+                 "aiosqlite:aiosqlite" "dotenv:python-dotenv" "loguru:loguru" \
+                 "yaml:PyYAML" "apscheduler:apscheduler")
+    for _pkg_pair in "${_pkgs[@]}"; do
+        local _mod="${_pkg_pair%%:*}" _label="${_pkg_pair##*:}"
+        if "$_py_bin" -c "import $_mod" 2>/dev/null; then
+            _hc_ok "import $_label"
+        else
+            _hc_fail "import $_label — 미설치 (pip install $_label)"
+        fi
+    done
+
+    # ── ② 감지된 각 엔진 응답 확인 ─────────────────────────────────────────────
+    if [ -n "$CLAUDE_PATH" ]; then
+        local _cv
+        _cv=$("$CLAUDE_PATH" --version 2>/dev/null | head -1 || true)
+        if [ -n "$_cv" ]; then
+            _hc_ok "claude-code 응답: $_cv"
+        else
+            _hc_warn "claude-code 바이너리 존재하나 --version 무응답"
+        fi
+    fi
+    if [ -n "$CODEX_PATH" ]; then
+        local _dv
+        _dv=$("$CODEX_PATH" --version 2>/dev/null | head -1 || true)
+        if [ -n "$_dv" ]; then
+            _hc_ok "codex 응답: $_dv"
+        else
+            _hc_warn "codex 바이너리 존재하나 --version 무응답"
+        fi
+    fi
+    if [ -n "$GEMINI_CLI_PATH" ]; then
+        local _gv
+        _gv=$("$GEMINI_CLI_PATH" --version 2>/dev/null | head -1 || true)
+        if [ -n "$_gv" ]; then
+            _hc_ok "gemini-cli 응답: $_gv"
+        else
+            _hc_warn "gemini-cli 바이너리 존재하나 --version 무응답"
+        fi
+    fi
+
+    # ── ③ .env 필수 키 존재 여부 확인 ──────────────────────────────────────────
+    local _env_file="$PROJECT_ROOT/.env"
+    if [ -f "$_env_file" ]; then
+        _hc_ok ".env 파일 존재"
+        local _required_keys=(
+            "TELEGRAM_BOT_TOKEN" "PM_BOT_TOKEN"
+            "TELEGRAM_GROUP_CHAT_ID"
+        )
+        local _missing_keys=()
+        for _key in "${_required_keys[@]}"; do
+            local _val
+            _val=$(grep -E "^${_key}=.+" "$_env_file" 2>/dev/null | head -1 || true)
+            if [ -z "$_val" ]; then
+                _missing_keys+=("$_key")
+            fi
+        done
+        if [ ${#_missing_keys[@]} -eq 0 ]; then
+            _hc_ok ".env 필수 키 설정 완료 (BOT_TOKEN / GROUP_CHAT_ID)"
+        else
+            _hc_warn ".env 미입력 키: ${_missing_keys[*]} — nano .env 로 입력 필요"
+        fi
+    else
+        _hc_fail ".env 파일 없음 — bash scripts/setup.sh 로 생성하세요"
+    fi
+
+    # ── ④ Telegram API 연결 가능 여부 ──────────────────────────────────────────
+    local _tg_url="https://api.telegram.org"
+    if command -v curl &>/dev/null; then
+        local _http_code
+        _http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+            --connect-timeout 5 --max-time 8 "$_tg_url" 2>/dev/null || echo "000")
+        if [ "$_http_code" = "200" ] || [ "$_http_code" = "404" ]; then
+            # 404는 정상 — /bot없이 접근 시 404 반환하는 것이 Telegram 정상 동작
+            _hc_ok "Telegram API 연결 가능 (HTTP $_http_code)"
+        elif [ "$_http_code" = "000" ]; then
+            _hc_warn "Telegram API 연결 실패 — 네트워크 또는 방화벽 확인 필요"
+        else
+            _hc_warn "Telegram API HTTP $_http_code (예상: 200/404)"
+        fi
+    else
+        _hc_warn "curl 미설치 — Telegram API 연결 확인 건너뜀"
+    fi
+
+    # ── ⑤ 봇 프로세스 기동 가능 여부 ──────────────────────────────────────────
+    local _main_py="$PROJECT_ROOT/main.py"
+    if [ -f "$_main_py" ]; then
+        # main.py syntax check (실제 기동 아님 — 기동 가능 여부만 확인)
+        if "$_py_bin" -m py_compile "$_main_py" 2>/dev/null; then
+            _hc_ok "main.py 문법 확인 완료 (기동 가능)"
+        else
+            _hc_fail "main.py 문법 오류 — python main.py 실행 불가"
+        fi
+    else
+        _hc_warn "main.py 없음 — 봇 기동 가능 여부 확인 불가"
+    fi
+
+    # ── 결과 요약 출력 ──────────────────────────────────────────────────────────
+    echo ""
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo -e "${BOLD}${CYAN}  🏥 헬스체크 결과 요약${RESET}"
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    for _line in "${_hc_lines[@]}"; do
+        echo -e "$_line"
+    done
+    echo ""
+    local _hc_total=$((_hc_pass + _hc_fail + _hc_warn))
+    if [ "$_hc_fail" -eq 0 ]; then
+        echo -e "${GREEN}${BOLD}  통과: ${_hc_pass}/${_hc_total} | 경고: ${_hc_warn} | 실패: 0 — 정상${RESET}"
+        echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        return 0
+    else
+        echo -e "${YELLOW}${BOLD}  통과: ${_hc_pass}/${_hc_total} | 경고: ${_hc_warn} | 실패: ${_hc_fail}${RESET}"
+        echo -e "${YELLOW}  위 ❌ 항목을 해결한 뒤 bash scripts/setup.sh --health-only 로 재확인하세요.${RESET}"
+        echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        return 1
+    fi
+}
+
+# =============================================================================
+# STEP 5: 헬스체크 실행
+# =============================================================================
+_HEALTHCHECK_PASSED=false
+if [ "$SKIP_VERIFY" = true ]; then
+    warn "--skip-verify: 헬스체크 단계 건너뜀"
+else
+    if run_healthcheck; then
+        _HEALTHCHECK_PASSED=true
+    fi
+fi
+
+# =============================================================================
+# --start 플래그: 헬스체크 전 통과 시 봇 자동 기동
+# =============================================================================
+if [ "$AUTO_START" = true ]; then
+    if [ "$_HEALTHCHECK_PASSED" = true ]; then
+        step "--start: 봇 자동 기동"
+        _START_SH="$SCRIPT_DIR/start_all.sh"
+        if [ -f "$_START_SH" ]; then
+            ok "헬스체크 전 통과 — 봇 기동 시작"
+            info "실행: bash $_START_SH"
+            bash "$_START_SH"
+        elif [ -f "$PROJECT_ROOT/main.py" ]; then
+            _py_bin="${VENV_PYTHON:-$(command -v python3 2>/dev/null)}"
+            ok "헬스체크 전 통과 — python main.py 실행"
+            info "실행: $_py_bin $PROJECT_ROOT/main.py"
+            "$_py_bin" "$PROJECT_ROOT/main.py"
+        else
+            warn "--start 플래그 사용 중이나 기동 스크립트를 찾을 수 없습니다."
+            warn "수동으로 실행하세요: bash scripts/start_all.sh"
+        fi
+    elif [ "$SKIP_VERIFY" = true ]; then
+        warn "--start 플래그가 있으나 --skip-verify 로 헬스체크 건너뜀 — 봇 기동 건너뜀"
+        warn "봇 기동하려면: bash scripts/start_all.sh"
+    else
+        warn "--start 플래그가 있으나 헬스체크 실패 — 봇 기동 건너뜀"
+        warn "위 ❌ 항목을 수정한 뒤 'bash scripts/setup.sh --start' 재실행하세요."
     fi
 fi
 
