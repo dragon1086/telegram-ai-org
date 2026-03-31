@@ -848,6 +848,54 @@ def step_python_deps(deps_missing: list[str]) -> None:
         warn(f"일부 패키지 설치 실패:\n{out[-500:]}")
 
 
+# ─── Step 7.5: 스케줄러 자동 등록 ────────────────────────────────────────────
+
+def step_register_schedulers() -> None:
+    step_header("7.5", "장기목표 시스템 스케줄러 등록")
+    print(f"""
+  {bold('장기목표 자율 실행에 필요한 스케줄러를 등록합니다.')}
+
+  {dim('내장 APScheduler (PM봇 프로세스 내):')}
+    {green('✓')} daily_retro, weekly_meeting — core/scheduler.py에서 이미 처리됨
+
+  {dim('외부 크론 (openclaw 경유):')}
+    • morning_goals          — 매일 아침 장기목표 브리핑
+    • daily_goal_pipeline    — 일일 목표 실행 파이프라인
+    • GoalTracker 4단계      — 목표 추적 단계별 자동 실행
+    • bot_deploy_healthcheck — 봇 배포 헬스체크
+""")
+
+    openclaw_bin = shutil.which("openclaw")
+    if not openclaw_bin:
+        warn("openclaw 바이너리를 찾을 수 없습니다.")
+        info("외부 크론은 수동으로 설정하세요. 내장 스케줄러(APScheduler)가 핵심 기능을 커버합니다.")
+        return
+
+    ok(f"openclaw 발견: {dim(openclaw_bin)}")
+
+    if not ask_yes("외부 크론을 자동 등록하시겠어요?"):
+        info("건너뜀 — 내장 APScheduler만 활성화됩니다")
+        return
+
+    register_script = PROJECT_ROOT / "scripts" / "register_crons.sh"
+    if not register_script.exists():
+        warn(f"register_crons.sh 미존재: {register_script}")
+        info("수동으로 크론을 등록하세요.")
+        return
+
+    print(f"\n  {dim('register_crons.sh 실행 중...')}\n")
+    rc, out = run_cmd(["bash", str(register_script)], capture=True)
+    if out:
+        for line in out.splitlines()[:20]:
+            print(f"  {dim(line)}")
+
+    if rc == 0:
+        ok("외부 크론 등록 완료 — 장기목표 자율 실행 스케줄러 활성화")
+    else:
+        warn("크론 등록 중 오류 발생 (설정 자체는 저장됨)")
+        info("register_crons.sh를 수동으로 실행하거나 내장 APScheduler를 사용하세요.")
+
+
 # ─── Step 7: 시뮬레이션 검증 ─────────────────────────────────────────────────
 
 def step_simulation() -> None:
@@ -991,6 +1039,9 @@ def main() -> None:
 
     # Step 7: 시뮬레이션 검증
     step_simulation()
+
+    # Step 7.5: 스케줄러 자동 등록
+    step_register_schedulers()
 
     # Step 8: 봇 자동 기동
     _auto_start_bots()

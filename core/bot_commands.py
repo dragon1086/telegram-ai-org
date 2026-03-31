@@ -29,6 +29,7 @@ ORCHESTRATOR_ONLY_COMMANDS = [
     BotCommand("restart", "봇 전체 재시작"),
     BotCommand("engine", "현재 엔진 확인"),
     BotCommand("set_engine", "엔진 변경 (예: /set_engine claude-code [engineering ops])"),
+    BotCommand("set_goal", "장기목표 등록 (예: /set_goal 매출 2배 달성)"),
     BotCommand("schedule", "자연어 반복 업무 등록 (예: 매일 오전 9시에 뉴스 요약)"),
     BotCommand("schedules", "등록된 스케줄 목록 보기"),
     BotCommand("cancel_schedule", "스케줄 취소 (예: /cancel_schedule 3)"),

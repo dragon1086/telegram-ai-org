@@ -97,14 +97,16 @@ echo "=== openclaw cron 등록 시작 ==="
 
 # ── 기존 크론 (협업 프로세스) ────────────────────────────────────────────────
 
-# 1. 주간 회의 — 매주 월요일 09:00 KST
-ensure_job \
-  "weekly_standup" \
-  "0 9 * * 1" \
-  "주간 회의: 매주 월요일 09:00 KST" \
-  "Repository: $PROJ. Run \`cd $PROJ && ./.venv/bin/python scripts/weekly_standup.py >> logs/standup.log 2>&1\` and finish with a one-line success/failure summary."
+# 1. 주간 회의 — weekly_meeting_multibot으로 통합됨 (2026-03-31)
+# ⚠️ weekly_meeting_multibot(#6, 09:03 KST)이 상위호환이므로 weekly_standup은 중복.
+# openclaw cron 등록 제거. scripts/weekly_standup.py 파일은 참고용으로 유지.
+# ensure_job \
+#   "weekly_standup" \
+#   "0 9 * * 1" \
+#   "주간 회의: 매주 월요일 09:00 KST" \
+#   "Repository: $PROJ. Run \`cd $PROJ && ./.venv/bin/python scripts/weekly_standup.py >> logs/standup.log 2>&1\` and finish with a one-line success/failure summary."
 
-echo "[OK] weekly_standup 등록"
+echo "[SKIP] weekly_standup — weekly_meeting_multibot으로 통합됨, openclaw cron 등록 생략"
 
 # 2. 일일 회고 — 비활성화 (2026-03-29)
 # ⚠️ 이 openclaw cron은 scripts/daily_retro.py를 독립 세션으로 실행하며
@@ -237,11 +239,11 @@ ensure_job \
 echo "[OK] daily_ai_news 등록"
 
 echo ""
-echo "=== 등록 완료 (총 15개) ==="
+echo "=== 등록 완료 (총 14개) ==="
 echo "확인: openclaw cron list"
 echo ""
 echo "등록된 크론 목록:"
-echo "  1. weekly_standup       — 매주 월요일 09:00 KST"
+echo "  1. weekly_standup       — (통합됨) weekly_meeting_multibot으로 대체"
 echo "  2. daily_retro          — 매일 23:30 KST"
 echo "  3. daily_metrics        — 매일 08:00 KST"
 echo "  4. monthly_review       — 매월 1일 10:00 KST"

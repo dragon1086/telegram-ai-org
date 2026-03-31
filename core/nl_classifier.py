@@ -22,6 +22,7 @@ class Intent(Enum):
     CANCEL = "cancel"
     CHAT = "chat"
     SET_BOT_TONE = "set_bot_tone"
+    SET_GOAL = "set_goal"
 
 
 COMMAND_PATTERNS: dict[Intent, list[str]] = {
@@ -30,6 +31,14 @@ COMMAND_PATTERNS: dict[Intent, list[str]] = {
     Intent.REJECT: ["반려", "reject", "다시 해", "수정해줘", "고쳐줘"],
     Intent.CANCEL: ["취소", "cancel", "그만", "중단", "멈춰"],
 }
+
+# 장기목표 설정 의도 감지 키워드
+_GOAL_KEYWORDS = [
+    "장기목표", "장기 목표", "목표를 세", "목표 세", "목표 설정",
+    "목표를 설정", "목표를 만들", "목표 만들", "목표를 잡",
+    "goal 설정", "set goal", "set_goal", "새 목표", "새로운 목표",
+    "목표를 추가", "목표 추가", "장기적으로",
+]
 
 # 말투/성격 설정 의도 감지 키워드 (봇 이름 + 말투 지시가 함께 있는 경우)
 _TONE_KEYWORDS = [
@@ -53,7 +62,11 @@ class NLClassifier:
     def classify(self, text: str) -> ClassifyResult:
         text_stripped = text.strip()
 
-        # 0) 말투/성격 설정 의도 감지 (우선순위 높음)
+        # 0-a) 장기목표 설정 의도 감지 (최우선)
+        if any(kw in text_stripped for kw in _GOAL_KEYWORDS):
+            return ClassifyResult(Intent.SET_GOAL, 0.95, "keyword")
+
+        # 0-b) 말투/성격 설정 의도 감지 (우선순위 높음)
         if any(kw in text_stripped for kw in _TONE_KEYWORDS):
             return ClassifyResult(Intent.SET_BOT_TONE, 0.95, "keyword")
 
