@@ -5,6 +5,25 @@
 > **3개 컨텍스트 파일 동기화 원칙**: CLAUDE.md / AGENTS.md / GEMINI.md 는 항상 동시에 수정한다.
 > 이 파일을 수정하면 반드시 CLAUDE.md와 AGENTS.md도 같은 내용으로 업데이트한다.
 
+## 원클릭 셋업 (신규 사용자)
+
+```bash
+# 1. 저장소 클론
+git clone https://github.com/dragon1086/aimesh.git && cd aimesh
+
+# 2. 원클릭 설치 (권장 진입점)
+bash install.sh
+
+# 3. .env에 Telegram 토큰 입력 후 봇 기동
+nano .env && bash scripts/start_all.sh
+
+# 또는 설치 + 봇 기동 한 번에
+bash install.sh --start
+```
+
+> `install.sh` 주요 옵션: `--yes`(CI 무인), `--start`(봇 자동기동), `--health-only`(헬스체크만), `--skip-verify`, `--no-venv`
+> 고급 옵션(Docker, 자동 엔진 설치): `bash scripts/setup.sh [--docker] [--yes]`
+
 ## Gemini CLI 특화 정보
 
 - **인증**: OAuth 2.0 기반 (`~/.gemini/oauth_creds.json`). API Key 사용 금지.
@@ -369,6 +388,7 @@ glob.glob(os.environ.get('AI_ORG_DATA_DIR', str(Path.home() / 'telegram-ai-org-d
 - async 동작과 기존 public 메서드 시그니처 유지.
 - 시크릿/봇 토큰 하드코딩 금지. 환경변수만 사용.
 - 줄 길이: Ruff 설정 기준 100자.
+- **[2026-03-31] 코드 수정 작업 중 틈틈이 커밋하고 main에 머지한다.** 의미 있는 단위(기능 1개, 버그 1개)로 자주 커밋해 작업 소실을 방지한다. 산출물(문서·보고서·데이터) 생성 작업은 예외. 세션 종료 전 반드시 커밋 + main 머지 완료.
 - **컨텍스트 파일 변경 시**: CLAUDE.md / AGENTS.md / GEMINI.md 모두 업데이트.
 
 ## Git 워크트리 워크플로 (필수)
