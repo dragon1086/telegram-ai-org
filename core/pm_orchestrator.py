@@ -814,19 +814,21 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
     async def _next_task_id(self) -> str:
         """DB 최대값 기반 고유 태스크 ID 생성 (재시작 후 중복 방지)."""
         if self._task_counter is None:
-            # DB에서 현재 org의 최대 counter 값 로드
+            # DB에서 현재 org의 최대 counter 값을 숫자로 추출하여 로드
+            # 주의: ORDER BY id DESC는 문자열 정렬이라 "999" > "1027"로 평가됨
+            # CAST를 사용해 숫자 기준 최대값을 구해야 정확함
             try:
                 import aiosqlite
                 async with aiosqlite.connect(self._db.db_path) as db:
                     prefix = f"T-{self._org_id}-"
+                    prefix_len = len(prefix)
                     cursor = await db.execute(
-                        "SELECT id FROM pm_tasks WHERE id LIKE ? ORDER BY id DESC LIMIT 1",
-                        (prefix + "%",),
+                        "SELECT MAX(CAST(substr(id, ?) AS INTEGER)) FROM pm_tasks WHERE id LIKE ?",
+                        (prefix_len + 1, prefix + "%"),
                     )
                     row = await cursor.fetchone()
-                if row:
-                    m = re.search(r"-(\d+)$", row[0])
-                    self._task_counter = int(m.group(1)) if m else 0
+                if row and row[0] is not None:
+                    self._task_counter = int(row[0])
                 else:
                     self._task_counter = 0
                 logger.debug(f"[PM] task_counter 초기화: {self._task_counter}")
