@@ -1,0 +1,146 @@
+# assets/asset_prompts.yaml
+# telegram-ai-org 이미지 자산 생성 설정
+# 재생성: python tools/generate_assets.py
+# 작성일: 2026-03-30
+
+images:
+  # ── Phase 2: 나노바나나2 캐릭터 로고 ──────────────────────────────────────
+
+  - id: nanobunny2_logo
+    output_path: assets/logo/nanobunny2_logo.png
+    model: gemini-3.1-flash-image-preview
+    thinking_mode: true
+    width: 1024
+    height: 1024
+    prompt: >
+      A cute futuristic AI organization bot mascot logo called NanoBunny2.
+      The character is a small adorable banana-shaped robot with big expressive eyes,
+      a warm smile, tiny antenna on top, and digital circuit board patterns on its body.
+      Color scheme: bright yellow body, purple and blue digital accents, glowing blue eyes.
+      The character stands confidently, holding a small holographic phone or tablet.
+      Style: clean vector illustration, flat design with subtle gradients, white circular background.
+      High resolution PNG, professional logo quality, no text.
+
+  - id: nanobunny2_logo_sm
+    output_path: assets/logo/nanobunny2_logo_sm.png
+    model: gemini-3.1-flash-image-preview
+    thinking_mode: true
+    width: 256
+    height: 256
+    prompt: >
+      A cute futuristic AI organization bot mascot logo called NanoBunny2.
+      Small simple icon version: adorable banana-shaped robot face with big eyes,
+      antenna, digital circuit accents. Yellow and purple colors.
+      Style: minimal flat icon, clean edges, transparent-friendly white background.
+      Icon size optimized, 256x256 equivalent quality.
+
+  # ── Phase 3: 아키텍처 다이어그램 ──────────────────────────────────────────
+
+  - id: architecture_overview
+    output_path: assets/diagrams/architecture_overview.png
+    model: gemini-3.1-flash-image-preview
+    thinking_mode: true
+    width: 1920
+    height: 1080
+    prompt: >
+      A clean professional software architecture diagram for a multi-bot AI organization system.
+      White background with Korean and English labels.
+      Layout (top to bottom):
+      TOP ROW: Single box labeled "PM봇 (Project Manager Bot)" in center, highlighted in blue.
+      MIDDLE ROW: Six department boxes connected by arrows from PM봇:
+        개발실(Dev), 운영실(Ops), 디자인실(Design), 기획실(Planning), 성장실(Growth), 리서치실(Research)
+        Each box has a different pastel color. Korean labels with small English subtitles.
+      BOTTOM ROW: Three engine boxes connected from department boxes:
+        "Claude Code (claude-code)" in orange, "Gemini CLI (gemini-cli)" in blue, "Codex (codex)" in green.
+      Arrows show clear flow: PM봇 → Departments → Engines.
+      Style: clean corporate diagram, rounded boxes, colored arrows, drop shadows, professional look.
+      Title at top: "telegram-ai-org 멀티봇 아키텍처". No decorative elements, focused information design.
+
+  - id: engine_compat
+    output_path: assets/diagrams/engine_compat.png
+    model: gemini-3.1-flash-image-preview
+    thinking_mode: true
+    width: 1920
+    height: 1080
+    prompt: >
+      A clean compatibility matrix diagram showing 3-engine support for an AI organization platform.
+      White background, professional style with Korean and English labels.
+      Title: "3엔진 호환 구조 (3-Engine Compatibility)"
+      Main table/matrix layout:
+      Rows: 6 departments (개발실, 운영실, 디자인실, 기획실, 성장실, 리서치실)
+      Columns: 3 engines (Claude Code, Gemini CLI, Codex)
+      Cell content: checkmarks (✓) or colored indicators showing which engine each department uses.
+      Primary assignments shown with filled colored circles:
+        개발실/디자인실/기획실/PM → Claude Code (orange)
+        운영실/성장실/리서치실 → Gemini CLI (blue)
+        All departments → Codex (green, fallback)
+      Below the matrix: Feature comparison table with rows for: 검색 능력, 코드 추론, 이미지 생성, 실시간 웹 접근
+      Style: clean data table design, alternating row colors, icon indicators, no clutter.
+
+  # ── Phase 4: 온보딩 시각 자료 ─────────────────────────────────────────────
+
+  - id: install_flow
+    output_path: assets/onboarding/install_flow.png
+    model: gemini-3.1-flash-image-preview
+    thinking_mode: true
+    width: 1200
+    height: 800
+    prompt: >
+      A friendly step-by-step installation flow infographic for an open source AI bot system.
+      White background, friendly illustration style with numbered steps.
+      Korean and English mixed labels ("설치 흐름 / Install Flow" as title).
+      4 sequential steps with icons and brief descriptions:
+      Step 1: "setup.sh 실행 / Run setup.sh" - terminal/computer icon, arrow pointing right
+      Step 2: ".env 설정 / Configure .env" - gear/settings icon, arrow pointing right
+      Step 3: "엔진 선택 / Choose Engine" - three engine logos (Claude, Gemini, Codex), arrow pointing right
+      Step 4: "봇 실행 / Start Bots" - robot/telegram icon with speech bubble, success checkmark
+      Each step in a rounded card with pastel background color (blue, green, orange, purple).
+      Friendly approachable style, cartoon-like icons, warm color palette.
+      Bottom note: "완료! 봇이 텔레그램에서 응답합니다 / Done! Bots respond on Telegram"
+
+  - id: skill_guide
+    output_path: assets/onboarding/skill_guide.png
+    model: gemini-3.1-flash-image-preview
+    thinking_mode: true
+    width: 1200
+    height: 800
+    prompt: >
+      A friendly directory structure visualization infographic for adding skills to an AI bot system.
+      White background, illustration style with numbered annotations.
+      Title: "스킬 추가 가이드 / Skill Addition Guide"
+      Main visual: A folder tree diagram showing:
+        skills/ (root folder icon)
+          ├── my-new-skill/ (highlighted new folder)
+          │   ├── skill.md (description file icon)
+          │   └── prompt.txt (optional, text icon)
+          ├── gemini-image-gen/ (existing example)
+          └── e2e-regression/ (existing example)
+      Annotation callouts with Korean+English labels pointing to each file:
+        - skill.md: "스킬 정의 파일 / Skill definition (required)"
+        - prompt.txt: "프롬프트 템플릿 / Prompt template (optional)"
+        - my-new-skill/: "새 스킬 폴더 / New skill folder"
+      Step badges (①②③) showing the order: 폴더생성 → skill.md작성 → 봇재시작
+      Friendly approachable style, pastel colors, clear arrows and callouts.
+
+  - id: e2e_flow
+    output_path: assets/onboarding/e2e_flow.png
+    model: gemini-3.1-flash-image-preview
+    thinking_mode: true
+    width: 1200
+    height: 800
+    prompt: >
+      A clean E2E test flow diagram for an AI multi-bot organization platform.
+      White background, professional but friendly style.
+      Title: "E2E 테스트 흐름도 / E2E Test Flow"
+      Flowchart showing the test process from left to right:
+      START: "pytest 실행 / Run pytest" (terminal icon)
+        → "Pre-flight 체크 / Pre-flight Check" (checklist icon) [orange box]
+        → "PM봇 라우팅 / PM Bot Routing" (robot icon) [blue box]
+        → "조직 디스패치 / Org Dispatch" (arrow fan to 6 boxes) [green section]
+        → "엔진 호출 / Engine Call" (3 engine logos) [purple box]
+        → "응답 검증 / Validate Response" (checkmark icon) [teal box]
+        → "보고서 저장 / Save Report" (document icon) [gray box]
+      END: "✓ PASS / ✗ FAIL" (green/red indicator)
+      Each box has numbered badge (①~⑦).
+      Korean labels with English subtitles below each box.
+      Clean flowchart style, colored boxes with drop shadows, clear directional arrows.

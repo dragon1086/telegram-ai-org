@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+=============================================================================
+  ngrok-dashboard.plist — macOS LaunchAgent
+  Label  : com.telegram-ai-org.ngrok-dashboard
+  역할   : FastAPI 대시보드(포트 8000)를 ngrok으로 외부에 노출
+=============================================================================
+
+[설치 절차]
+  1. ngrok 설치 (미설치 시):
+       brew install ngrok/ngrok/ngrok
+
+  2. ngrok 인증토큰 설정:
+       ngrok config add-authtoken <YOUR_AUTHTOKEN>
+       (https://dashboard.ngrok.com/get-started/your-authtoken)
+
+  3. plist를 LaunchAgents 디렉토리에 복사:
+       cp /Users/rocky/telegram-ai-org/infra/ngrok-dashboard.plist \
+          ~/Library/LaunchAgents/com.telegram-ai-org.ngrok-dashboard.plist
+
+  4. LaunchAgent 등록 및 시작:
+       launchctl load ~/Library/LaunchAgents/com.telegram-ai-org.ngrok-dashboard.plist
+
+  5. 상태 확인:
+       launchctl list | grep ngrok
+       cat /Users/rocky/telegram-ai-org/logs/ngrok.log
+
+  6. URL 발급 및 .env 갱신:
+       bash /Users/rocky/telegram-ai-org/scripts/issue_dashboard_url.sh
+
+[중지 방법]
+  launchctl unload ~/Library/LaunchAgents/com.telegram-ai-org.ngrok-dashboard.plist
+
+[로그 위치]
+  stdout: /Users/rocky/telegram-ai-org/logs/ngrok.log
+  stderr: /Users/rocky/telegram-ai-org/logs/ngrok.error.log
+=============================================================================
+-->
+<plist version="1.0">
+<dict>
+    <!-- 서비스 식별자 -->
+    <key>Label</key>
+    <string>com.telegram-ai-org.ngrok-dashboard</string>
+
+    <!-- 실행 명령: ngrok http 8000 --log=stdout -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/ngrok</string>
+        <string>http</string>
+        <string>8000</string>
+        <string>--log=stdout</string>
+    </array>
+
+    <!-- 로그인 시 자동 시작 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- 프로세스 종료 시 자동 재시작 -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- stdout 로그 파일 -->
+    <key>StandardOutPath</key>
+    <string>/Users/rocky/telegram-ai-org/logs/ngrok.log</string>
+
+    <!-- stderr 로그 파일 -->
+    <key>StandardErrorPath</key>
+    <string>/Users/rocky/telegram-ai-org/logs/ngrok.error.log</string>
+
+    <!-- 작업 디렉토리 -->
+    <key>WorkingDirectory</key>
+    <string>/Users/rocky/telegram-ai-org</string>
+
+    <!-- 환경변수 (필요 시 ngrok authtoken 경로 설정) -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/rocky</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <!--
+    재시작 스로틀링: 10초 이내에 재시작이 반복되면 대기
+    비정상 종료 루프 방지
+    -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>
