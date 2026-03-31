@@ -16,17 +16,15 @@ from core.constants import DEPT_INSTRUCTIONS, DEPT_ROLES, KNOWN_DEPTS
 from core.context_db import ContextDB
 from core.memory_manager import MemoryManager
 from core.orchestration_config import load_orchestration_config
-from core.orchestration_runbook import OrchestrationRunbook
 from core.pm_decision import DecisionClientProtocol
+from core.pm_discussion_mixin import PMDiscussionMixin
 from core.pm_identity import PMIdentity
-from core.result_synthesizer import ResultSynthesizer, SynthesisJudgment, SynthesisResult
+from core.pm_synthesis_mixin import PMSynthesisMixin
+from core.result_synthesizer import ResultSynthesizer, SynthesisResult
 from core.staleness_checker import SUBTASK_TIMEOUT_SEC, StalenessChecker
 from core.structured_prompt import StructuredPromptGenerator
 from core.task_graph import TaskGraph
-from core.pm_discussion_mixin import PMDiscussionMixin
-from core.pm_synthesis_mixin import PMSynthesisMixin
 from core.telegram_formatting import markdown_to_html
-from core.telegram_user_guardrail import ensure_user_friendly_output, extract_local_artifact_paths
 
 if TYPE_CHECKING:
     from core.discussion import DiscussionManager
@@ -956,20 +954,29 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
         dept_hints: list[str],
         workdir: str | None = None,
     ) -> list[SubTask]:
-        """LLM으로 태스크 분해. 실패 시 빈 리스트 반환."""
+        """LLM으로 태스크 분해. 실패 시 빈 리스트 반환. 최대 3회 retry."""
         if self._decision_client is None:
             return []
 
         prompt = self._build_decompose_prompt(user_message, dept_hints)
-        try:
-            response = await asyncio.wait_for(
-                self._decision_client.complete(prompt, workdir=workdir),
-                timeout=45.0,
-            )
-            return self._parse_decompose(response)
-        except Exception as e:
-            logger.warning(f"[PM] LLM 분해 실패, 키워드 fallback: {e}")
-            return []
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                response = await asyncio.wait_for(
+                    self._decision_client.complete(prompt, workdir=workdir),
+                    timeout=45.0,
+                )
+                return self._parse_decompose(response)
+            except Exception as e:
+                last_exc = e
+                logger.warning(
+                    f"[PM] LLM 분해 실패 (시도 {attempt + 1}/3) "
+                    f"{type(e).__name__}: {e}"
+                )
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)  # 1s, 2s
+        logger.warning(f"[PM] LLM 분해 3회 모두 실패, 키워드 fallback: {last_exc}")
+        return []
 
     # 유효한 태스크 유형 8종 (Step 0 판단 체인 기준)
     _VALID_TASK_TYPES = frozenset(["조사", "분석", "기획", "설계", "검토", "수정", "구현", "운영"])
