@@ -1098,10 +1098,11 @@ class TestConstantsLoaderFallbacks:
 # 전용 TEST_ 환경변수를 사용해 프로덕션 변수와 충돌 방지.
 
 
-# 테스트 봇 토큰 상수 (프로덕션 env 변수와 완전 분리)
-_TEST_PM_TOKEN = "7341804021:AAGsQpqS_CEUlQrzVoOi9SYdzokob7dEoSM"
-_TEST_PRODUCT_TOKEN = "8399399379:AAHOHmmSymkRO1Jg28eON7YHv1-FDrDVOuY"
-_TEST_ENGINEERING_TOKEN = "8645105804:AAE2uckOX-0DaZ_4YimzVrFh1nUoB6zq74Y"
+# 테스트 봇 토큰: 환경변수 필수 (하드코딩 금지 — GitHub secret scanning 대응)
+# .env 또는 CI secrets에 TEST_BOT_TOKEN_PM, TEST_BOT_TOKEN_PRODUCT, TEST_BOT_TOKEN_ENGINEERING 설정 필요
+_TEST_PM_TOKEN = os.environ.get("TEST_BOT_TOKEN_PM", "")
+_TEST_PRODUCT_TOKEN = os.environ.get("TEST_BOT_TOKEN_PRODUCT", "")
+_TEST_ENGINEERING_TOKEN = os.environ.get("TEST_BOT_TOKEN_ENGINEERING", "")
 
 
 class TestMultiBotRoutingE2E:
@@ -1113,13 +1114,13 @@ class TestMultiBotRoutingE2E:
 
     # ── 헬퍼: 테스트 봇 토큰 확인 ────────────────────────────────────────────
     def _pm_token(self) -> str:
-        return os.environ.get("TEST_BOT_TOKEN_PM", _TEST_PM_TOKEN)
+        return _TEST_PM_TOKEN
 
     def _product_token(self) -> str:
-        return os.environ.get("TEST_BOT_TOKEN_PRODUCT", _TEST_PRODUCT_TOKEN)
+        return _TEST_PRODUCT_TOKEN
 
     def _engineering_token(self) -> str:
-        return os.environ.get("TEST_BOT_TOKEN_ENGINEERING", _TEST_ENGINEERING_TOKEN)
+        return _TEST_ENGINEERING_TOKEN
 
     # ── TC-MB-1: 테스트 봇 토큰 등록 검증 ───────────────────────────────────
     def test_test_bot_tokens_registered(self) -> None:
@@ -1329,10 +1330,10 @@ class TestMultiBotRoutingE2E:
         product_bot_id = self._product_token().split(":")[0]
         engineering_bot_id = self._engineering_token().split(":")[0]
 
-        # bot_id로 조직 식별 (숫자로 시작하는 고유 ID)
-        assert pm_bot_id == "7341804021", f"글로벌 PM bot_id 불일치: {pm_bot_id}"
-        assert product_bot_id == "8399399379", f"기획실 bot_id 불일치: {product_bot_id}"
-        assert engineering_bot_id == "8645105804", f"개발실 bot_id 불일치: {engineering_bot_id}"
+        # bot_id 형식 검증 (숫자 문자열이어야 함 — 실제 값은 환경변수에 따라 달라짐)
+        assert pm_bot_id.isdigit(), f"글로벌 PM bot_id가 숫자가 아님: {pm_bot_id}"
+        assert product_bot_id.isdigit(), f"기획실 bot_id가 숫자가 아님: {product_bot_id}"
+        assert engineering_bot_id.isdigit(), f"개발실 bot_id가 숫자가 아님: {engineering_bot_id}"
 
     # ── TC-MB-7: validate-config 기반 멀티봇 설정 일관성 ───────────────────
     def test_multibot_config_consistency(self) -> None:
