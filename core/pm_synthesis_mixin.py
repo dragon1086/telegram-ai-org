@@ -422,14 +422,10 @@ class PMSynthesisMixin:
                 await self._db.update_pm_task_status(
                     parent_task_id, "done", result=report,
                 )
-            # Goal(G-*) parent는 pm_goals 테이블도 업데이트해야
-            # SynthesisPoller가 재합성 루프에 빠지지 않는다.
+            # Goal(G-*) pm_goals 상태는 GoalTracker가 단독 관리.
+            # pm_tasks 상태(done)만 업데이트하면 SynthesisPoller 재합성 루프 방지됨.
             if parent_task_id.startswith("G-"):
-                try:
-                    await self._db.update_goal(parent_task_id, status="completed")
-                    logger.info(f"[PM] Goal {parent_task_id} → completed")
-                except Exception as _ge:
-                    logger.warning(f"[PM] Goal 상태 업데이트 실패 {parent_task_id}: {_ge}")
+                logger.info(f"[PM] Goal {parent_task_id} 서브태스크 합성 완료 (pm_goals 상태는 GoalTracker 관할)")
         elif synthesis.judgment == SynthesisJudgment.INSUFFICIENT:
             rework_count = int(parent_meta.get("rework_count", 0))
             if run_id:
@@ -488,11 +484,7 @@ class PMSynthesisMixin:
                         parent_task_id, "done", result=synthesis.summary,
                     )
                     if parent_task_id.startswith("G-"):
-                        try:
-                            await self._db.update_goal(parent_task_id, status="completed")
-                            logger.info(f"[PM] Goal {parent_task_id} → completed (insufficient, no follow-up)")
-                        except Exception as _ge:
-                            logger.warning(f"[PM] Goal 상태 업데이트 실패 {parent_task_id}: {_ge}")
+                        logger.info(f"[PM] Goal {parent_task_id} 서브태스크 합성 완료 — insufficient, no follow-up (pm_goals 상태는 GoalTracker 관할)")
             else:
                 # 최대 재시도 횟수 도달 — 최선의 결과로 done 처리
                 try:
@@ -510,11 +502,7 @@ class PMSynthesisMixin:
                     parent_task_id, "done", result=synthesis.summary,
                 )
                 if parent_task_id.startswith("G-"):
-                    try:
-                        await self._db.update_goal(parent_task_id, status="max_iterations_reached")
-                        logger.info(f"[PM] Goal {parent_task_id} → max_iterations_reached (insufficient)")
-                    except Exception as _ge:
-                        logger.warning(f"[PM] Goal 상태 업데이트 실패 {parent_task_id}: {_ge}")
+                    logger.info(f"[PM] Goal {parent_task_id} 서브태스크 합성 완료 — max rework reached (pm_goals 상태는 GoalTracker 관할)")
         elif synthesis.judgment == SynthesisJudgment.CONFLICTING:
             await self._send(
                 chat_id,
@@ -530,13 +518,9 @@ class PMSynthesisMixin:
             await self._db.update_pm_task_status(
                 parent_task_id, "needs_review", result=synthesis.summary,
             )
-            # Goal도 needs_review로 업데이트 → SynthesisPoller 무한루프 방지
+            # Goal pm_goals 상태는 GoalTracker가 단독 관리
             if parent_task_id.startswith("G-"):
-                try:
-                    await self._db.update_goal(parent_task_id, status="needs_review")
-                    logger.info(f"[PM] Goal {parent_task_id} → needs_review (conflicting)")
-                except Exception as _ge:
-                    logger.warning(f"[PM] Goal 상태 업데이트 실패 {parent_task_id}: {_ge}")
+                logger.info(f"[PM] Goal {parent_task_id} 서브태스크 결과 충돌 (pm_goals 상태는 GoalTracker 관할)")
         else:  # NEEDS_INTEGRATION
             report = _synthesis_team_header + user_friendly_report
             _artifact_suffix = (
@@ -557,10 +541,6 @@ class PMSynthesisMixin:
             await self._db.update_pm_task_status(
                 parent_task_id, "done", result=report,
             )
-            # Goal(G-*) parent는 pm_goals 테이블도 업데이트 (SynthesisPoller 재합성 루프 방지)
+            # Goal pm_goals 상태는 GoalTracker가 단독 관리
             if parent_task_id.startswith("G-"):
-                try:
-                    await self._db.update_goal(parent_task_id, status="completed")
-                    logger.info(f"[PM] Goal {parent_task_id} → completed (needs_integration)")
-                except Exception as _ge:
-                    logger.warning(f"[PM] Goal 상태 업데이트 실패 {parent_task_id}: {_ge}")
+                logger.info(f"[PM] Goal {parent_task_id} 서브태스크 통합 완료 (pm_goals 상태는 GoalTracker 관할)")
