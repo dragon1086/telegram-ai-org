@@ -280,7 +280,7 @@ class GoalTracker:
         Returns:
             복구된 목표 수.
         """
-        from datetime import datetime, timedelta
+        from datetime import UTC, datetime, timedelta
 
         cutoff = datetime.now(UTC) - timedelta(hours=max_age_hours)
 
