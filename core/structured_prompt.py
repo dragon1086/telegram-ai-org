@@ -203,26 +203,35 @@ class StructuredPromptGenerator:
             task_type_context=task_type_context,
         )
 
-        try:
-            response = await asyncio.wait_for(
-                self._decision_client.complete(prompt),
-                timeout=35.0,
-            )
-            phases = self._parse_phases(response)
-            if not phases:
-                return None
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            try:
+                response = await asyncio.wait_for(
+                    self._decision_client.complete(prompt),
+                    timeout=35.0,
+                )
+                phases = self._parse_phases(response)
+                if not phases:
+                    return None
 
-            return StructuredPrompt(
-                complexity=complexity,
-                phases=phases,
-                context=context,
-                constraints=["엔진 특화 명령어 사용 금지", "단계별 산출물 명시"],
-                task_type=task_type,
-                allow_file_change=allow_file_change,
-            )
-        except Exception as e:
-            logger.warning(f"[StructuredPrompt] LLM 생성 실패, fallback: {e}")
-            return None
+                return StructuredPrompt(
+                    complexity=complexity,
+                    phases=phases,
+                    context=context,
+                    constraints=["엔진 특화 명령어 사용 금지", "단계별 산출물 명시"],
+                    task_type=task_type,
+                    allow_file_change=allow_file_change,
+                )
+            except Exception as e:
+                last_exc = e
+                logger.warning(
+                    f"[StructuredPrompt] LLM 생성 실패 (시도 {attempt + 1}/2) "
+                    f"{type(e).__name__}: {e}"
+                )
+                if attempt < 1:
+                    await asyncio.sleep(2)
+        logger.warning(f"[StructuredPrompt] LLM 생성 2회 모두 실패, fallback: {last_exc}")
+        return None
 
     @staticmethod
     def _parse_phases(response: str) -> list[Phase]:
