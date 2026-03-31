@@ -269,48 +269,29 @@ class GoalTracker:
             resumed += 1
         return resumed
 
-    async def recover_interrupted_goals(self, max_age_hours: int = 12) -> int:
+    async def recover_interrupted_goals(self, **_kwargs: object) -> int:
         """봇 재시작으로 중단된 목표를 자동 복구.
 
-        재시작 시 엔진 프로세스가 죽으면 런이 고아 상태가 되고,
-        evaluate_progress가 이를 "완료"로 오판할 수 있다.
-        최근 completed(non-achieved/cancelled) 목표 중
-        실행 중이 아닌 것을 active로 복원하고 루프를 재시작한다.
+        status="active"인 목표만 복구 대상. completed 목표는 절대 되살리지 않는다.
+        (이전 로직은 completed + updated_at 기반이었으나, recovery 자체가
+         updated_at을 갱신하여 무한 부활 루프를 일으킴.)
 
         Returns:
             복구된 목표 수.
         """
-        from datetime import UTC, datetime, timedelta
-
-        cutoff = datetime.now(UTC) - timedelta(hours=max_age_hours)
-
-        completed_goals = await self._db.get_goals_by_status("completed")
+        active_goals = await self._db.get_goals_by_status("active")
         recovered = 0
 
-        for goal in completed_goals:
+        for goal in active_goals:
             goal_id = goal["id"]
 
             # 이미 실행 중이면 스킵
             if goal_id in self._cancel_events:
                 continue
 
-            # 너무 오래된 목표는 스킵 (정상 완료로 간주)
-            updated_str = goal.get("updated_at", "")
-            if updated_str:
-                try:
-                    updated = datetime.fromisoformat(updated_str)
-                    if updated.tzinfo is None:
-                        updated = updated.replace(tzinfo=UTC)
-                    if updated < cutoff:
-                        continue
-                except (ValueError, TypeError):
-                    continue
-
-            # completed → active 복원
-            await self._db.update_goal(goal_id, status="active")
             logger.info(
-                f"[GoalTracker] 중단 목표 복구: {goal_id} "
-                f"({goal.get('title', '')[:40]}) completed → active"
+                f"[GoalTracker] active 목표 루프 재시작: {goal_id} "
+                f"({goal.get('title', '')[:40]})"
             )
 
             # 루프 재시작
