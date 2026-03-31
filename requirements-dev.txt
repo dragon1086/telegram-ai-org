@@ -1,0 +1,25 @@
+# =============================================================================
+# requirements-dev.txt — 개발/테스트 환경 추가 의존성
+#
+# 설치: pip install -e .[dev]
+# 또는: pip install -r requirements-dev.txt
+# =============================================================================
+
+# 테스트 프레임워크 (requirements-test.txt 포함)
+-r requirements-test.txt
+
+# HTTP 클라이언트 (테스트 전용)
+httpx>=0.25
+
+# 코드 품질 (ruff가 lint + format 모두 담당 — flake8/black 중복 제거)
+ruff>=0.1
+mypy>=1.10
+
+# 패키지 빌드/배포
+build>=1.0
+twine>=5.0
+
+# 엔진 SDK (선택적 — 엔진별 테스트 시 필요)
+openai>=2.0
+anthropic>=0.80
+google-genai>=1.0
