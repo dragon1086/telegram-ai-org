@@ -3735,6 +3735,8 @@ class TelegramRelay:
                 await asyncio.sleep(_hb_interval_pm)
                 while True:
                     try:
+                        # 0) 로그 파일 갱신 (외부 watchdog hung 오탐 방지)
+                        logger.info(f"[{self.org_id}] heartbeat: 태스크 {task_id} 실행 중")
                         # 1) UI 갱신 (on_progress)
                         await on_progress("🤔 처리 중...")
                         # 2) DB 하트비트 갱신 (StalenessChecker 오탐 방지)
