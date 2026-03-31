@@ -3425,6 +3425,9 @@ class TelegramRelay:
                             )
                         finally:
                             self._synthesizing.discard(parent_id)
+            except _asyncio.CancelledError:
+                logger.info("[SynthesisPoller] 종료 신호 수신 — graceful shutdown")
+                return
             except Exception as _e:
                 logger.warning(f"[SynthesisPoller] 폴링 오류: {_e}")
 
