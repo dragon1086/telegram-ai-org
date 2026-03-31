@@ -605,7 +605,7 @@ async def on_command_set_engine(
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
         if proc.returncode == 0:
             await update.message.reply_text(
-                f"✅ 재시작 요청 완료 — watchdog가 안전하게 처리합니다.",
+                "✅ 재시작 요청 완료 — watchdog가 안전하게 처리합니다.",
                 parse_mode="HTML",
             )
         else:
@@ -617,6 +617,135 @@ async def on_command_set_engine(
     except Exception as exc:
         logger.error(f"[set_engine] 재시작 요청 실패: {exc}")
         await update.message.reply_text(f"❌ 재시작 요청 실패: {escape_html(str(exc))}", parse_mode="HTML")
+
+
+# ---------------------------------------------------------------------------
+# /set_goal — 장기목표 등록 (명령어 + 자연어 지원)
+# ---------------------------------------------------------------------------
+
+async def on_command_set_goal(
+    relay: CommandRelayProtocol,
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """/set_goal <자연어> — LLM이 자연어를 장기목표로 정리 후 GoalTracker에 등록."""
+    from core.telegram_formatting import escape_html
+
+    if update.message is None:
+        return
+
+    # PM 봇에서만 동작
+    if not relay._is_pm_org:
+        await update.message.reply_text("⚠️ 장기목표 설정은 PM 봇에서만 가능합니다.")
+        return
+
+    goal_tracker = getattr(relay, "_goal_tracker", None)
+    if goal_tracker is None:
+        await update.message.reply_text("⚠️ GoalTracker가 비활성 상태입니다. ENABLE_GOAL_TRACKER=1 확인.")
+        return
+
+    # /set_goal 뒤의 텍스트 추출
+    raw_text = (update.message.text or "").strip()
+    # "/set_goal" 접두사 제거
+    if raw_text.lower().startswith("/set_goal"):
+        raw_text = raw_text[len("/set_goal"):].strip()
+
+    if not raw_text:
+        await update.message.reply_text(
+            "📝 <b>장기목표 등록</b>\n\n"
+            "사용법: <code>/set_goal 매출 2배 달성하고 싶어</code>\n"
+            "또는 자연어로 말씀하세요 — AI가 목표로 정리합니다.\n\n"
+            "예시:\n"
+            "• <code>/set_goal 올해 안에 MAU 10만 달성</code>\n"
+            "• <code>/set_goal 앱 리뷰 평점을 4.5 이상으로 올리기</code>\n"
+            "• \"장기목표를 세우자 — 3분기까지 신규 시장 진출\"",
+            parse_mode="HTML",
+        )
+        return
+
+    # LLM으로 자연어 → 구조화
+    await update.message.reply_text("🔄 목표를 분석 중...")
+
+    decision_client = getattr(relay, "_pm_decision_client", None)
+    if decision_client is None:
+        # fallback: 사용자 입력 그대로 사용
+        title = raw_text[:50]
+        description = raw_text
+    else:
+        from core.goal_nlp import parse_goal_from_text
+        parsed = await parse_goal_from_text(raw_text, decision_client)
+        if parsed is None:
+            # LLM 실패 시 fallback
+            title = raw_text[:50]
+            description = raw_text
+        else:
+            title = parsed.title
+            description = parsed.description
+
+    # GoalTracker에 등록 + 자율 루프 시작
+    chat_id = update.effective_chat.id if update.effective_chat else 0
+    try:
+        goal_id = await goal_tracker.start_goal(
+            title=title,
+            description=description,
+            chat_id=chat_id,
+        )
+        await update.message.reply_text(
+            f"✅ <b>장기목표 등록 완료</b>\n\n"
+            f"📌 <b>{escape_html(title)}</b>\n"
+            f"📝 {escape_html(description)}\n\n"
+            f"🆔 <code>{goal_id}</code>\n"
+            f"🔄 자율 루프가 시작되었습니다.",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.error(f"[set_goal] GoalTracker.start_goal 실패: {e}")
+        await update.message.reply_text(f"❌ 목표 등록 실패: {e}")
+
+
+async def handle_nl_set_goal(
+    relay: CommandRelayProtocol,
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+) -> bool:
+    """자연어에서 장기목표 의도 감지 시 호출. 성공하면 True 반환."""
+    if not relay._is_pm_org:
+        return False
+
+    goal_tracker = getattr(relay, "_goal_tracker", None)
+    if goal_tracker is None:
+        return False
+
+    decision_client = getattr(relay, "_pm_decision_client", None)
+    if decision_client is None:
+        return False
+
+    from core.goal_nlp import parse_goal_from_text
+    parsed = await parse_goal_from_text(text, decision_client)
+    if parsed is None:
+        return False
+
+    chat_id = update.effective_chat.id if update.effective_chat else 0
+    try:
+        goal_id = await goal_tracker.start_goal(
+            title=parsed.title,
+            description=parsed.description,
+            chat_id=chat_id,
+        )
+        from core.telegram_formatting import escape_html
+        await update.message.reply_text(
+            f"🎯 <b>장기목표로 등록했습니다</b>\n\n"
+            f"📌 <b>{escape_html(parsed.title)}</b>\n"
+            f"📝 {escape_html(parsed.description)}\n\n"
+            f"🆔 <code>{goal_id}</code>\n"
+            f"🔄 자율 달성 루프가 시작됩니다.",
+            parse_mode="HTML",
+        )
+        return True
+    except Exception as e:
+        logger.error(f"[handle_nl_set_goal] start_goal 실패: {e}")
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -654,6 +783,7 @@ async def _setup_callback_menu(
 ) -> int:
     """메뉴 버튼 선택 처리."""
     from telegram.ext import ConversationHandler
+
     from core.telegram_formatting import markdown_to_html
 
     query = update.callback_query
@@ -698,6 +828,7 @@ async def _setup_receive_token(
 ) -> int:
     """토큰 수신 → 검증 → 다음 단계(엔진 선택)."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
     from core.telegram_formatting import markdown_to_html
 
     if update.message is None:
@@ -791,7 +922,7 @@ async def _setup_receive_identity(
 ) -> int:
     """조직 정체성 수신 → 등록 완료."""
     from telegram.ext import ConversationHandler
-    from core.telegram_formatting import escape_html, markdown_to_html
+
     from core.setup_registration import (
         parse_setup_identity,
         refresh_legacy_bot_configs,
@@ -799,6 +930,7 @@ async def _setup_receive_identity(
         upsert_org_in_canonical_config,
         upsert_runtime_env_var,
     )
+    from core.telegram_formatting import escape_html, markdown_to_html
 
     if update.message is None:
         return SETUP_AWAIT_IDENTITY

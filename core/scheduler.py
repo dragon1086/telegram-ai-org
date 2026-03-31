@@ -8,7 +8,6 @@ import asyncio
 import logging
 import os
 import re
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
@@ -122,12 +121,14 @@ class OrgScheduler:
             id="daily_retro", misfire_grace_time=300,
             replace_existing=True,
         )
-        self.scheduler.add_job(
-            self.weekly_standup,
-            CronTrigger(day_of_week="mon", hour=9, minute=5, timezone=KST),
-            id="weekly_standup", misfire_grace_time=300,
-            replace_existing=True,
-        )
+        # weekly_standup APScheduler 잡 제거 (2026-03-31)
+        # weekly_meeting_multibot(openclaw cron, 09:03 KST)이 상위호환이므로 중복 제거.
+        # self.scheduler.add_job(
+        #     self.weekly_standup,
+        #     CronTrigger(day_of_week="mon", hour=9, minute=5, timezone=KST),
+        #     id="weekly_standup", misfire_grace_time=300,
+        #     replace_existing=True,
+        # )
         self.scheduler.add_job(
             self.friday_retro,
             CronTrigger(day_of_week="fri", hour=18, minute=0, timezone=KST),

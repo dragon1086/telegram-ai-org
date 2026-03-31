@@ -1941,6 +1941,15 @@ class TelegramRelay:
             is_greeting = False
             _ = len(text) > 5
 
+        # 1-0. 장기목표 설정 의도 → PM 봇만 처리
+        if USE_NL_CLASSIFIER and _intent == Intent.SET_GOAL and self._is_pm_org:
+            if not self.claim_manager.try_claim(message_id, self.org_id):
+                return
+            handled = await _cmd.handle_nl_set_goal(self, update, context, text)
+            if handled:
+                return
+            # fallback: 일반 태스크로 처리
+
         # 1-A. 말투/성격 설정 의도 → PM 봇만 처리
         if USE_NL_CLASSIFIER and _intent == Intent.SET_BOT_TONE and self._is_pm_org:
             if not self.claim_manager.try_claim(message_id, self.org_id):
@@ -2896,6 +2905,10 @@ class TelegramRelay:
         """/set_engine — relay_command_handlers 위임."""
         await _cmd.on_command_set_engine(self, update, context)
 
+    async def on_command_set_goal(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/set_goal — relay_command_handlers 위임."""
+        await _cmd.on_command_set_goal(self, update, context)
+
     async def on_command_setup(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """/setup 마법사 — relay_command_handlers 위임."""
         return await _cmd.on_command_setup(self, update, context)
@@ -3451,6 +3464,7 @@ class TelegramRelay:
         self.app.add_handler(CommandHandler("restart", self.on_command_restart))
         self.app.add_handler(CommandHandler("engine", self.on_command_engine))
         self.app.add_handler(CommandHandler("set_engine", self.on_command_set_engine))
+        self.app.add_handler(CommandHandler("set_goal", self.on_command_set_goal))
         # 사용자 정의 스케줄 커맨드 (pm_org 전용)
         if self._is_pm_org:
             self.app.add_handler(CommandHandler("schedule", self.on_command_schedule))
