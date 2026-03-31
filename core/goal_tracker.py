@@ -269,6 +269,60 @@ class GoalTracker:
             resumed += 1
         return resumed
 
+    async def recover_interrupted_goals(self, max_age_hours: int = 12) -> int:
+        """봇 재시작으로 중단된 목표를 자동 복구.
+
+        재시작 시 엔진 프로세스가 죽으면 런이 고아 상태가 되고,
+        evaluate_progress가 이를 "완료"로 오판할 수 있다.
+        최근 completed(non-achieved/cancelled) 목표 중
+        실행 중이 아닌 것을 active로 복원하고 루프를 재시작한다.
+
+        Returns:
+            복구된 목표 수.
+        """
+        from datetime import timedelta
+
+        cutoff = datetime.now(UTC) - timedelta(hours=max_age_hours)
+
+        completed_goals = await self._db.get_goals_by_status("completed")
+        recovered = 0
+
+        for goal in completed_goals:
+            goal_id = goal["id"]
+
+            # 이미 실행 중이면 스킵
+            if goal_id in self._cancel_events:
+                continue
+
+            # 너무 오래된 목표는 스킵 (정상 완료로 간주)
+            updated_str = goal.get("updated_at", "")
+            if updated_str:
+                try:
+                    updated = datetime.fromisoformat(updated_str)
+                    if updated.tzinfo is None:
+                        updated = updated.replace(tzinfo=UTC)
+                    if updated < cutoff:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+
+            # completed → active 복원
+            await self._db.update_goal(goal_id, status="active")
+            logger.info(
+                f"[GoalTracker] 중단 목표 복구: {goal_id} "
+                f"({goal.get('title', '')[:40]}) completed → active"
+            )
+
+            # 루프 재시작
+            self._cancel_events[goal_id] = asyncio.Event()
+            asyncio.create_task(
+                self._run_loop_inner(goal_id, goal.get("chat_id", 0)),
+                name=f"goal-loop-recover-{goal_id}",
+            )
+            recovered += 1
+
+        return recovered
+
     def cancel_goal(self, goal_id: str) -> None:
         """특정 목표의 루프를 취소."""
         event = self._cancel_events.get(goal_id)

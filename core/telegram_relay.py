@@ -3010,19 +3010,32 @@ class TelegramRelay:
             logger.info(f"[{self.org_id}] WarmSessionPool 예열 시작 (engine={self.engine})")
 
     async def _resume_goals_on_startup(self) -> None:
-        """봇 재시작 시 DB의 활성 GoalTracker 목표를 루프 재개."""
+        """봇 재시작 시 DB의 활성 GoalTracker 목표를 루프 재개 + 중단 목표 자동 복구."""
         if self._goal_tracker is None:
             return
         try:
             # 짧게 대기 후 재개 (startup race condition 방지)
             import asyncio as _asyncio
             await _asyncio.sleep(5)
+
+            # 1) 활성 목표 재개
             resumed = await self._goal_tracker.resume_active_goals()
             if resumed:
                 logger.info(f"[{self.org_id}] GoalTracker 목표 {resumed}개 재개됨")
                 await self._pm_send_message(
                     self.allowed_chat_id,
                     f"♻️ [GoalTracker] 재시작 복구: 활성 목표 {resumed}개 루프 재개됨.",
+                )
+
+            # 2) 고아 런으로 중단된 목표 자동 복구
+            recovered = await self._goal_tracker.recover_interrupted_goals()
+            if recovered:
+                logger.info(
+                    f"[{self.org_id}] GoalTracker 중단 목표 {recovered}개 자동 복구됨"
+                )
+                await self._pm_send_message(
+                    self.allowed_chat_id,
+                    f"🔄 [GoalTracker] 재시작 복구: 중단된 목표 {recovered}개 자동 재활성화됨.",
                 )
         except Exception as e:
             logger.error(f"[{self.org_id}] GoalTracker 재개 실패: {e}")
