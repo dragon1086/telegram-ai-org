@@ -3898,29 +3898,28 @@ class TelegramRelay:
         except Exception as e:
             logger.error(f"[{self.org_id}] PM_TASK {task_id} 실행 실패: {e}")
             await self.context_db.update_pm_task_status(task_id, "failed", result=str(e))
-            # 의존 태스크 cascade 취소 + Rocky에게 블록 현황 보고
+            # 의존 태스크 블록 현황 로그 — cascade 취소 제거 (cancelled는 재시도 불가 → 영구 dead)
+            # ORDER-GUARD가 이미 pending 태스크를 차단하므로 강제 취소 불필요.
+            # 실패한 태스크가 StalenessChecker 후속 태스크 또는 수동 재시도로 복구되면
+            # pending 의존 태스크가 자동으로 배분됨.
             try:
                 blocked_ids = await self.context_db.get_tasks_depending_on(task_id)
                 if blocked_ids:
-                    for _dep_id in blocked_ids:
-                        await self.context_db.update_pm_task_status(
-                            _dep_id, "cancelled",
-                            result=f"{task_id} 실패로 인한 자동 취소",
-                        )
                     logger.warning(
-                        f"[{self.org_id}] {task_id} 실패 → 의존 태스크 {len(blocked_ids)}건 자동 취소: "
-                        f"{blocked_ids}"
+                        f"[{self.org_id}] {task_id} 실패 → 의존 태스크 {len(blocked_ids)}건 블록됨 "
+                        f"(cascade 취소 안 함 — 재시도 가능): {blocked_ids}"
                     )
                     if self.app and self.app.bot:
                         _blocked_list = "\n".join(f"  • {i}" for i in blocked_ids)
                         await self.display.send_to_chat(
                             self.app.bot,
                             self.allowed_chat_id,
-                            f"⚠️ [{dept_name}] 태스크 {task_id} 실패로 다음 태스크가 자동 취소됩니다:\n"
-                            f"{_blocked_list}\n\n원인: {str(e)[:200]}",
+                            f"⚠️ [{dept_name}] 태스크 {task_id} 실패 — 의존 태스크 {len(blocked_ids)}건 대기 중:\n"
+                            f"{_blocked_list}\n\n원인: {str(e)[:200]}\n"
+                            f"(태스크 재시도 시 자동 재개됩니다)",
                         )
             except Exception as _cascade_err:
-                logger.warning(f"[{self.org_id}] cascade 취소 실패: {_cascade_err}")
+                logger.warning(f"[{self.org_id}] 의존 태스크 조회 실패: {_cascade_err}")
             # Performance DB 업데이트 (실패)
 
             from core.pm_orchestrator import _record_bot_perf as _rbp
