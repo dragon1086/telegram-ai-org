@@ -33,7 +33,8 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    preferred_engine: claude-code
+    # gemini-cli: WebDev Arena 1위 (2026-03) → UI/UX 디자인·프로토타입에 최적
+    preferred_engine: gemini-cli
     fallback_engine: claude-code
     team_profile: design_strategy
     verification_profile: specialist_default
@@ -79,8 +80,9 @@ organizations:
     orchestration_mode: skill_cli
   execution:
     # claude-code: 복잡한 코드 아키텍처, 멀티스텝 디버깅, 테스트 작성에 최적
+    # codex fallback: 대규모 레포 안정성, 85.5% 자율 PR, 코드 리뷰 특화
     preferred_engine: claude-code
-    fallback_engine: gemini-cli
+    fallback_engine: codex
     team_profile: engineering_delivery
     verification_profile: specialist_default
     phase_policy: default
@@ -171,9 +173,9 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    # gemini-cli: codex rate limit 대응으로 전환 (2026-03-26). DevOps 스크립트·인프라 자동화 처리
-    preferred_engine: gemini-cli
-    fallback_engine: claude-code
+    # codex: 샌드박스 격리 실행(안전성 1위) → 운영 스크립트·인프라 변경에 최적
+    preferred_engine: codex
+    fallback_engine: gemini-cli
     team_profile: ops_delivery
     verification_profile: specialist_default
     phase_policy: default
@@ -216,7 +218,7 @@ organizations:
     orchestration_mode: skill_cli
   execution:
     preferred_engine: claude-code
-    fallback_engine: claude-code
+    fallback_engine: gemini-cli
     team_profile: global_orchestrator
     verification_profile: orchestrator_default
     phase_policy: default
@@ -263,7 +265,7 @@ organizations:
     orchestration_mode: skill_cli
   execution:
     preferred_engine: claude-code
-    fallback_engine: claude-code
+    fallback_engine: gemini-cli
     team_profile: product_strategy
     verification_profile: specialist_default
     phase_policy: default
