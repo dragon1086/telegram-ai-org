@@ -6,14 +6,12 @@ import time
 
 import pytest
 
-import core.api.metrics as metrics_module
 from core.api.metrics import (
     EndpointMetric,
     get_metrics_snapshot,
     record_request,
     reset_metrics,
 )
-
 
 # ---------------------------------------------------------------------------
 # 픽스처
@@ -104,7 +102,6 @@ def test_reset_metrics_clears_all():
 @pytest.mark.asyncio
 async def test_metrics_endpoint_returns_200():
     """GET /api/v1/metrics 엔드포인트가 200 반환."""
-    import os
 
     os.environ["ENABLE_REST_API"] = "true"
     try:

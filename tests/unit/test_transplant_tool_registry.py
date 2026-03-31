@@ -8,11 +8,9 @@ Tests cover:
 from __future__ import annotations
 
 import os
-import pytest
-
-import importlib
 import sys
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -306,7 +306,6 @@ class TurnManager:
             action_items: list[str] = []
             last_round = all_rounds[-1] if all_rounds else None
             if last_round:
-                import re as _re
                 for resp_text in last_round.responses.values():
                     for line in resp_text.splitlines():
                         stripped = line.strip()

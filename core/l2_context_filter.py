@@ -10,7 +10,7 @@ Phase 2: L2 항목을 점수 기준으로 필터링하고,
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

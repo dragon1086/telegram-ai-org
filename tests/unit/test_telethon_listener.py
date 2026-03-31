@@ -5,9 +5,7 @@
 """
 from __future__ import annotations
 
-import asyncio
 import sys
-import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -20,7 +18,6 @@ from scripts.telethon_listener import (
     TelethonListenerHelper,
     _resolve_chat_id,
 )
-
 
 # ---------------------------------------------------------------------------
 # 테스트용 픽스처 & 헬퍼

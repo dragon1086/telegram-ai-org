@@ -7,9 +7,6 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
-
 # ── 픽스처 ─────────────────────────────────────────────────────────────────
 
 class MockRelay:
@@ -261,9 +258,9 @@ class TestHandlerRegistry:
 
     def test_registry_changes_with_flags(self, monkeypatch):
         """Feature Flag에 따라 핸들러 레지스트리가 달라진다."""
-        from core.bot_dispatcher import get_handler_registry
-        import core.pm_message_handler as pmh
         import core.bot_dispatcher as bd
+        import core.pm_message_handler as pmh
+        from core.bot_dispatcher import get_handler_registry
 
         # 플래그 활성화
         monkeypatch.setattr(pmh, "ENABLE_REFACTORED_PM_HANDLER", True)

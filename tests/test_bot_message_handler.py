@@ -1,10 +1,8 @@
 """bot_message_handler.py 스모크 테스트 — Phase 1b 리팩토링 검증."""
 from __future__ import annotations
 
-import asyncio
 from dataclasses import fields
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

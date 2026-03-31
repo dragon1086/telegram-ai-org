@@ -1,11 +1,14 @@
 """Tests for PMJudgmentGate."""
 from __future__ import annotations
-import pytest
+
 import sys
 from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.pm_judgment_gate import PMJudgmentGate, JudgmentVerdict, JudgmentResult
+from core.pm_judgment_gate import JudgmentResult, JudgmentVerdict, PMJudgmentGate
 
 
 class TestEvaluateSync:

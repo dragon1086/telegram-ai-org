@@ -173,9 +173,9 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    # codex: 샌드박스 격리 실행(안전성 1위) → 운영 스크립트·인프라 변경에 최적
-    preferred_engine: codex
-    fallback_engine: gemini-cli
+    # gemini-cli: Google 검색 내장 → 운영 모니터링/인프라 분석에 최적 (2026-03-26 전환)
+    preferred_engine: gemini-cli
+    fallback_engine: claude-code
     team_profile: ops_delivery
     verification_profile: specialist_default
     phase_policy: default

@@ -12,8 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.tool_registry import ToolRegistry, get_registry, reset_registry
-
+from core.tool_registry import get_registry, reset_registry
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -43,7 +42,6 @@ class TestToolRegistryActiveFlow:
             reg = get_registry()
 
             # register
-            results: list[int] = []
             reg.register(
                 name="sum_tool",
                 description="두 수를 더한다",

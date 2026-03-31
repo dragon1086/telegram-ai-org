@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # =============================================================================
-# scripts/create_release.sh — GitHub Release v1.0.0 생성 스크립트
+# scripts/create_release.sh — GitHub Release v1.1.0 생성 스크립트
 #
 # 사전 조건:
 #   1. gh auth login 완료
 #   2. 이 스크립트 실행: bash scripts/create_release.sh
 #
 # 동작:
-#   - v1.0.0 태그 기반 GitHub Release 생성
-#   - docs/RELEASE_NOTES_v1.0.0.md 릴리스 노트 사용
+#   - v1.1.0 태그 기반 GitHub Release 생성
+#   - docs/RELEASE_NOTES_v1.1.0.md 릴리스 노트 사용
 #   - dist/ 빌드 산출물 첨부 (whl + tar.gz)
 # =============================================================================
 
 set -euo pipefail
 
 REPO="dragon1086/telegram-ai-org"
-TAG="v1.0.0"
-NOTES_FILE="docs/RELEASE_NOTES_v1.0.0.md"
+TAG="v1.1.0"
+NOTES_FILE="docs/RELEASE_NOTES_v1.1.0.md"
 
 # 1. gh auth 확인
 echo "▶ GitHub CLI 인증 확인..."

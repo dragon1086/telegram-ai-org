@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -424,7 +424,7 @@ class TestChatIdFailureHandling:
 
         send_mock.assert_not_awaited()
         lines = log_path.read_text(encoding="utf-8").splitlines()
-        statuses = {json.loads(l)["status"] for l in lines}
+        statuses = {json.loads(line)["status"] for line in lines}
         assert "skipped_no_chat_id_permanent" in statuses
         assert "skipped_no_chat_id_transient" in statuses
 

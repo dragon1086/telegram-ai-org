@@ -321,8 +321,8 @@ def check_pc_d_010(data: dict[str, Any]) -> dict[str, Any]:
     if not re.match(r"^v\d+\.\d+$", str(val)):
         return _result("PC-D-010", _LEVEL_WARN, target,
                        f"형식 오류: {val!r} (경고)",
-                       f"vX.Y 형식이 아닙니다 (예: 'v1.0', 'v2.3'). "
-                       f"버전 형식 불일치 시 이상치 추적 자동화가 실패할 수 있습니다.")
+                       "vX.Y 형식이 아닙니다 (예: 'v1.0', 'v2.3'). "
+                       "버전 형식 불일치 시 이상치 추적 자동화가 실패할 수 있습니다.")
     return _result("PC-D-010", _LEVEL_PASS, target, f"color_token_version={val!r} ✔")
 
 
@@ -360,8 +360,8 @@ def check_pc_d_012(data: dict[str, Any]) -> dict[str, Any]:
     if val is not True and str(val).lower() != "true":
         return _result("PC-D-012", _LEVEL_WARN, target,
                        f"motion_safe={val!r} — false (경고)",
-                       f"prefers-reduced-motion 미디어 쿼리를 준수하지 않는 설정입니다. "
-                       f"WCAG 2.3.3에 따라 애니메이션 대안 제공이 필수입니다.")
+                       "prefers-reduced-motion 미디어 쿼리를 준수하지 않는 설정입니다. "
+                       "WCAG 2.3.3에 따라 애니메이션 대안 제공이 필수입니다.")
     return _result("PC-D-012", _LEVEL_PASS, target, "motion_safe=true ✔ (WCAG 2.3.3)")
 
 

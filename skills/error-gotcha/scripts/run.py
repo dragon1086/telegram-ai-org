@@ -135,7 +135,7 @@ def cmd_list(skill: str | None) -> None:
         gotchas_path = SKILLS_DIR / skill_name / "gotchas.md"
         if gotchas_path.exists():
             content = gotchas_path.read_text(encoding="utf-8")
-            entries = [l for l in content.splitlines() if l.startswith("## Gotcha ")]
+            entries = [line for line in content.splitlines() if line.startswith("## Gotcha ")]
             if entries:
                 found_any = True
                 print(f"\n### {skill_name} ({len(entries)}개)")

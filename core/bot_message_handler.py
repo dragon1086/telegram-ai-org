@@ -16,7 +16,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from core.attachment_manager import AttachmentBundle, AttachmentContext
+from core.attachment_manager import AttachmentContext
 
 # ─── Feature Flag ───────────────────────────────────────────────────────────
 # True 시 telegram_relay.py가 이 모듈에 메시지 처리를 위임.

@@ -4,8 +4,6 @@
 """
 from __future__ import annotations
 
-import pytest
-
 
 def test_core_types_importable():
     from core import types as _
@@ -22,7 +20,7 @@ def test_core_interfaces_importable():
 
 
 def test_repositories_importable():
-    from core.repositories import TaskRepository, MessageRepository, BotStateRepository
+    from core.repositories import BotStateRepository, MessageRepository, TaskRepository
     assert TaskRepository is not None
     assert MessageRepository is not None
     assert BotStateRepository is not None
@@ -35,9 +33,9 @@ def test_services_importable():
 
 
 def test_existing_handlers_still_importable():
-    from core.bot_message_handler import MessageClassifier, ENABLE_REFACTORED_HANDLER
-    from core.pm_message_handler import handle_bot_message, ENABLE_REFACTORED_PM_HANDLER
-    from core.bot_dispatcher import dispatch_command, ENABLE_REFACTORED_DISPATCHER
+    from core.bot_dispatcher import dispatch_command
+    from core.bot_message_handler import MessageClassifier
+    from core.pm_message_handler import handle_bot_message
     assert MessageClassifier is not None
     assert handle_bot_message is not None
     assert dispatch_command is not None

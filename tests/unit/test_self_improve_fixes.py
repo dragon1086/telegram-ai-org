@@ -14,8 +14,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # 프로젝트 루트를 sys.path에 추가
 REPO_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -49,7 +47,6 @@ class TestFlagFileCreation:
     def test_creates_flag_file_when_auto_split_fails(self, tmp_path):
         """자동 분리(fix) 실패 시 data/.refactor_needed_*.flag 파일이 생성된다."""
         from core.improvement_actions.split_large_file import (
-            SplitLargeFileAction,
             _create_refactor_flag,
         )
 

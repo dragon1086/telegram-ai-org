@@ -9,7 +9,7 @@ import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core.interfaces import TaskRepositoryInterface, BaseRunner
+    from core.interfaces import BaseRunner, TaskRepositoryInterface
 
 # ---------------------------------------------------------------------------
 # 피처 플래그

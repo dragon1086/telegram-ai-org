@@ -11,12 +11,12 @@ memory_ttl_checker.py — L2 TTL 만료 체크 및 L3 자동 이동 스크립트
   3. 이동 내역을 logs/memory_ttl.log에 기록
 """
 
+import logging
 import re
 import sys
-import logging
 from datetime import date, datetime
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Dict, Optional
 
 # ── 경로 설정 ──────────────────────────────────────────────────────────────
 MEMORY_MD = Path("/Users/rocky/.claude/projects/-Users-rocky-telegram-ai-org/memory/MEMORY.md")
@@ -227,7 +227,6 @@ def run():
                     new_row = format_l3_task_row(item, today)
                     new_lines.append(new_row + "\n")
                     logger.info(f"[ARCHIVE] L3 기록 완료: {item['id']}")
-                expired_items_written = True
                 # 빈 줄도 유지
                 new_lines.append(raw_line)
                 expired_items = []  # 중복 방지
@@ -247,9 +246,8 @@ def run():
     new_content = "".join(new_lines)
     MEMORY_MD.write_text(new_content, encoding="utf-8")
 
-    moved_count = sum(1 for line in new_lines if "archived_at" not in line)  # 단순 카운트 대신
-    logger.info(f"=== 완료: MEMORY.md 업데이트. 만료 처리 항목 없음 (오늘 기준) ===")
-    logger.info(f"=== memory_ttl_checker 종료 ===")
+    logger.info("=== 완료: MEMORY.md 업데이트. 만료 처리 항목 없음 (오늘 기준) ===")
+    logger.info("=== memory_ttl_checker 종료 ===")
     return 0
 
 

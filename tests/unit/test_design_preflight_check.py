@@ -10,7 +10,6 @@ T-PERM-002: 원인 로그 테스트 (2026-03-27, 디자인실)
 from __future__ import annotations
 
 import importlib.util
-import sys
 from pathlib import Path
 from types import ModuleType
 

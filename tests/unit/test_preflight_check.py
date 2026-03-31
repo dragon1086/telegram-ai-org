@@ -9,13 +9,9 @@ from __future__ import annotations
 
 import importlib.util
 import os
-import sys
-import tempfile
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # 모듈 동적 로드 헬퍼
@@ -582,17 +578,14 @@ class TestLoadDotenv:
 # RETRO-09/10: E2E 로그 헤더 삽입용 dict 반환 인터페이스 검증
 # ---------------------------------------------------------------------------
 
-import importlib.util as _ilu_tools
-from pathlib import Path as _Path
-
-_TOOLS_PREFLIGHT_PATH = _Path(__file__).parent.parent.parent / "tools" / "preflight_check.py"
+_TOOLS_PREFLIGHT_PATH = Path(__file__).parent.parent.parent / "tools" / "preflight_check.py"
 
 
 def _load_tools_preflight() -> "ModuleType":
     """tools/preflight_check.py 를 동적 import 한다."""
-    spec = _ilu_tools.spec_from_file_location("tools_preflight_check", _TOOLS_PREFLIGHT_PATH)
+    spec = importlib.util.spec_from_file_location("tools_preflight_check", _TOOLS_PREFLIGHT_PATH)
     assert spec and spec.loader, f"모듈 로드 실패: {_TOOLS_PREFLIGHT_PATH}"
-    mod = _ilu_tools.module_from_spec(spec)
+    mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
     return mod
 

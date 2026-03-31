@@ -6,8 +6,6 @@
 """
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, Request
 
 from core.api import API_VERSION

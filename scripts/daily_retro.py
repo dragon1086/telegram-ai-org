@@ -17,7 +17,6 @@ import json
 import os
 import re
 import sqlite3
-import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -409,6 +408,7 @@ async def send_telegram(text: str) -> None:
         import sys
         sys.path.insert(0, str(PROJECT_ROOT))
         from telegram import Bot
+
         from core.telegram_formatting import markdown_to_html
 
         bot = Bot(token=BOT_TOKEN)
@@ -608,6 +608,7 @@ async def _register_retro_actions(md_content: str) -> None:
                 return
             try:
                 from telegram import Bot
+
                 from core.telegram_formatting import markdown_to_html
                 async with Bot(token=BOT_TOKEN) as dispatch_bot:
                     dispatch_summary = "\n".join(f"  - {t}" for t in task_ids[:10])

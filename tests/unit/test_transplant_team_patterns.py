@@ -12,13 +12,11 @@ import pytest
 
 from core.team_design_patterns import (
     TeamPattern,
-    TeamSpec,
-    register_pattern,
+    build_team_spec,
     get_pattern,
     list_patterns,
     recommend_pattern,
-    build_team_spec,
-    _pattern_registry,
+    register_pattern,
 )
 
 # ---------------------------------------------------------------------------

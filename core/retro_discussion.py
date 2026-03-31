@@ -13,12 +13,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
-import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Coroutine, Optional
+from typing import TYPE_CHECKING, Callable, Coroutine
 
 if TYPE_CHECKING:
     from core.pm_orchestrator import PMOrchestrator
@@ -229,8 +227,9 @@ class RetroDiscussion:
         타임아웃 시 "(발언 없음)" 반환.
         """
         try:
-            from core.pm_orchestrator import SubTask
             import uuid as _uuid
+
+            from core.pm_orchestrator import SubTask
 
             subtask = SubTask(
                 assigned_dept=org_id,
