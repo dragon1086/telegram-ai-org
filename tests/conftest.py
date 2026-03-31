@@ -8,13 +8,10 @@ RETRO-01: pre-flight 체크 자동화 (2026-03-29)
 from __future__ import annotations
 
 import os
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Pre-flight check fixture (RETRO-01)

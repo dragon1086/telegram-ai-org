@@ -1,8 +1,10 @@
 """PM Judgment Gate — COLLAB 결과 품질 평가 및 재진입 판단."""
 from __future__ import annotations
+
+from dataclasses import dataclass
 from enum import Enum
-from dataclasses import dataclass, field
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+
 from loguru import logger
 
 if TYPE_CHECKING:
@@ -91,7 +93,8 @@ class PMJudgmentGate:
                 "\"rework_prompt\":\"보완 지시 or empty\"}"
             )
             raw = await decision_client.ask(prompt)
-            import json, re
+            import json
+            import re
             m = re.search(r"\{.*\}", raw, re.DOTALL)
             if m:
                 data = json.loads(m.group())

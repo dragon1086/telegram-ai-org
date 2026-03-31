@@ -12,8 +12,6 @@ run_design_preflight_checks() / build_design_preflight_header_result() 인터페
 from __future__ import annotations
 
 import importlib.util
-import os
-import sys
 from pathlib import Path
 from types import ModuleType
 

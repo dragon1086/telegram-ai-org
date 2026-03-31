@@ -7,14 +7,11 @@
 """
 from __future__ import annotations
 
-import asyncio
 import os
-import time
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-
 
 # ---------------------------------------------------------------------------
 # 앱 팩토리 및 클라이언트 Fixture
@@ -168,7 +165,7 @@ class TestTasksRead:
     @pytest.mark.asyncio
     async def test_list_tasks_status_filter(self, client):
         """status 쿼리 파라미터로 필터링이 돼야 한다."""
-        resp = await client.post("/api/v1/tasks", json={"description": "필터 테스트"})
+        _ = await client.post("/api/v1/tasks", json={"description": "필터 테스트"})
         # 막 생성된 태스크는 pending 상태
         resp_filtered = await client.get("/api/v1/tasks?status=pending")
         assert resp_filtered.status_code == 200
@@ -222,7 +219,6 @@ class TestApiAuth:
     @pytest.mark.asyncio
     async def test_auth_enabled_without_key_returns_401(self, app_with_repo):
         """ENABLE_API_AUTH=true이면 키 없이 요청 시 401이 반환돼야 한다."""
-        import importlib
         import core.api.auth as auth_module
 
         # 인증 활성화 패치

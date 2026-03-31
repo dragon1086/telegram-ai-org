@@ -5,12 +5,10 @@ ENABLE_REPOSITORY_PATTERN=1 환경변수를 autouse fixture에서 설정합니�
 """
 from __future__ import annotations
 
-import os
 import time
 import uuid
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -58,7 +56,7 @@ async def test_initialize_creates_table(repo) -> None:
     """initialize() 호출 후 tasks 테이블이 존재해야 한다."""
     import aiosqlite
 
-    async with aiosqlite.connect(":memory:") as db:
+    async with aiosqlite.connect(":memory:"):
         from core.repositories.task_repository import TaskRepository
         r = TaskRepository(db_path=":memory:")
         await r.initialize()

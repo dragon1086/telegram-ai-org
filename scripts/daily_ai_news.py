@@ -222,8 +222,8 @@ def _call_cli(prompt: str) -> str:
 
     # 노이즈 라인 제거
     lines = [
-        l for l in result.stdout.splitlines()
-        if not any(l.lower().strip().startswith(p) for p in (
+        line for line in result.stdout.splitlines()
+        if not any(line.lower().strip().startswith(p) for p in (
             "loaded cached credentials", "loaded credentials", "warning:"
         ))
     ]
@@ -234,7 +234,6 @@ def generate_report(date_str: str) -> str:
     """AI 뉴스 리포트를 생성하고 마크다운 문자열을 반환한다."""
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     prompt = _build_prompt(date_str)
-    used_model = MODEL_NAME
     method = "unknown"
 
     # 인증 방식 자동 선택
@@ -248,7 +247,7 @@ def generate_report(date_str: str) -> str:
             content = _call_cli(prompt)
             method = "gemini-cli (OAuth 폴백)"
     else:
-        print(f"[INFO] GEMINI_API_KEY 없음, gemini-cli OAuth 방식 사용...", file=sys.stderr)
+        print("[INFO] GEMINI_API_KEY 없음, gemini-cli OAuth 방식 사용...", file=sys.stderr)
         content = _call_cli(prompt)
         method = "gemini-cli (OAuth)"
 

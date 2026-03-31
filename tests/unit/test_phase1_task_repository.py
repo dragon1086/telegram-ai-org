@@ -10,7 +10,6 @@ import time
 import pytest
 import pytest_asyncio
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -209,6 +208,7 @@ class TestTaskRepositoryFeatureFlag:
         Phase 2a 이후 모든 안전한 enable_* 기본값=1 (2026-03-31 변경).
         """
         import os
+
         from core.repositories.task_repository import _is_enabled
         os.environ.pop("ENABLE_REPOSITORY_PATTERN", None)
         assert _is_enabled(str(tmp_path / "test.db")) is True

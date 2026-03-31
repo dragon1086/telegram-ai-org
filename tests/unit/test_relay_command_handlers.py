@@ -8,8 +8,6 @@ Phase 1c 분리 결과 검증:
 """
 from __future__ import annotations
 
-import pytest
-
 
 class TestRelayCommandHandlersImport:
     """모듈 임포트 기본 검증."""
@@ -152,6 +150,7 @@ class TestCodeHealthFlaggedFiles:
     def test_flagged_critical_file_becomes_warn(self, tmp_path):
         """refactor flag가 있는 파일은 critical → warn으로 강등된다."""
         import json
+
         from core.code_health import CodeHealthMonitor
 
         # core 디렉토리에 큰 파일 생성 (> 150KB)

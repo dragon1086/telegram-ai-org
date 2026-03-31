@@ -14,7 +14,6 @@ import pytest
 
 from core.l2_context_filter import L2Item, filter_l2_items, inject_l2_context, serialize_context
 
-
 # ──────────────────────────────────────────────
 # Fixtures & helpers
 # ──────────────────────────────────────────────

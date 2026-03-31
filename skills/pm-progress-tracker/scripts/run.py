@@ -20,8 +20,6 @@ PM 목표 진척 현황을 조회하고 이터레이션 루프를 관리합니�
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,10 +41,7 @@ def _resolve_memory_file(filename: str) -> Path:
     if local.exists():
         return local
 
-    # 2. Claude 프로젝트 메모리 (~/.claude/projects/<slug>/memory/)
-    project_slug = "-".join(str(PROJECT_ROOT).replace("/", "-").lstrip("-").split("-"))
-    claude_mem = Path.home() / ".claude" / "projects" / f"-{project_slug[1:]}" / "memory" / filename
-    # 경로가 너무 복잡하므로 glob으로 탐색
+    # 2. Claude 프로젝트 메모리 (~/.claude/projects/<slug>/memory/) — glob으로 탐색
     claude_base = Path.home() / ".claude" / "projects"
     if claude_base.exists():
         for candidate in claude_base.glob(f"*/memory/{filename}"):
@@ -97,7 +92,7 @@ def cmd_status() -> None:
     if guide:
         print("## 목표 현황 (pm_progress_guide.md)")
         # IN_PROGRESS 항목 추출
-        in_progress = [l for l in guide.splitlines() if "IN_PROGRESS" in l or "GOAL-" in l]
+        in_progress = [line for line in guide.splitlines() if "IN_PROGRESS" in line or "GOAL-" in line]
         if in_progress:
             for line in in_progress[:10]:
                 print(f"  {line.strip()}")
@@ -108,9 +103,9 @@ def cmd_status() -> None:
     if tasks:
         print("## 태스크 진척 (project_pending_tasks.md)")
         # pending/in_progress 행 추출
-        active = [l for l in tasks.splitlines()
-                  if ("pending" in l.lower() or "in_progress" in l.lower())
-                  and "|" in l]
+        active = [line for line in tasks.splitlines()
+                  if ("pending" in line.lower() or "in_progress" in line.lower())
+                  and "|" in line]
         if active:
             print(f"  활성 태스크: {len(active)}개")
             for line in active[:5]:
@@ -129,7 +124,7 @@ def cmd_list() -> None:
         return
 
     print("=== 전체 목표 목록 ===\n")
-    goal_lines = [l for l in guide.splitlines() if l.strip().startswith("| GOAL-")]
+    goal_lines = [line for line in guide.splitlines() if line.strip().startswith("| GOAL-")]
     if goal_lines:
         print("| ID | 목표명 | 상태 |")
         print("|-----|--------|------|")
@@ -217,7 +212,7 @@ def cmd_report() -> None:
             blocked += 1
 
     pct = int(done / total * 100) if total > 0 else 0
-    print(f"## 요약")
+    print("## 요약")
     print(f"- 전체: {total}개")
     print(f"- 완료: {done}개 ({pct}%)")
     print(f"- 진행 중: {in_progress}개")

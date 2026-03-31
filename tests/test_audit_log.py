@@ -2,15 +2,12 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
 
 import core.api.audit_log as audit_module
 from core.api.audit_log import read_audit_events, write_audit_event
-
 
 # ---------------------------------------------------------------------------
 # 픽스처

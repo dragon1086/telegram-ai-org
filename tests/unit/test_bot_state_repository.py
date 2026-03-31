@@ -8,9 +8,8 @@ Tests cover:
 from __future__ import annotations
 
 import os
-import pytest
-import pytest_asyncio
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers — force flag value per test
@@ -23,7 +22,6 @@ def _make_repo(enabled: bool, db_path: str = ":memory:"):
     # Re-import to pick up the flag at module level (env var matters at import time
     # for the module-level constant, but the class reads it at call time via the
     # global ENABLE_REPOSITORY_PATTERN re-checked each method).
-    import importlib
     import sys
     mod_name = "core.repositories.bot_state_repository"
     if mod_name in sys.modules:

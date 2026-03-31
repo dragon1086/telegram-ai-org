@@ -12,7 +12,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -176,6 +176,7 @@ class TestTelethonMinIdGuard:
     def test_handler_skips_old_messages(self):
         """반환된 핸들러가 min_id 이하 메시지를 skip한다."""
         import asyncio
+
         from scripts.telethon_listener import CollectedMessage, TelethonListenerHelper
 
         client = MagicMock()

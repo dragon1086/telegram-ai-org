@@ -203,7 +203,12 @@ class PMSynthesisMixin:
         _skip_discussion_gate=True 는 _discussion_summarize 최종 라운드에서
         재귀 호출 없이 전체 synthesis를 수행할 때만 사용한다.
         """
-        from core.pm_orchestrator import MAX_REWORK_RETRIES, SubTask, aggregate_results, should_delegate_further
+        from core.pm_orchestrator import (
+            MAX_REWORK_RETRIES,
+            SubTask,
+            aggregate_results,
+            should_delegate_further,
+        )
 
         # 원래 요청 복원
         parent = await self._db.get_pm_task(parent_task_id)

@@ -4,9 +4,6 @@
 """
 from __future__ import annotations
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # 타입 별칭 존재 확인
 # ---------------------------------------------------------------------------
@@ -27,6 +24,7 @@ class TestTypeAliases:
     def test_engine_type_literal_exists(self):
         """EngineType Literal 타입이 정의되어 있어야 한다."""
         import typing
+
         from core.types import EngineType
         args = typing.get_args(EngineType)
         assert "claude-code" in args
@@ -35,6 +33,7 @@ class TestTypeAliases:
 
     def test_task_status_literal_exists(self):
         import typing
+
         from core.types import TaskStatusLiteral
         args = typing.get_args(TaskStatusLiteral)
         expected = {"pending", "in_progress", "done", "failed", "cancelled"}
@@ -80,8 +79,9 @@ class TestMessageEnvelope:
         assert msg["content"] == ""
 
     def test_message_envelope_task_id_is_str(self):
-        from core.types import MessageEnvelope
         import typing
+
+        from core.types import MessageEnvelope
         hints = typing.get_type_hints(MessageEnvelope)
         assert hints["task_id"] is str
 
@@ -124,6 +124,7 @@ class TestBotState:
     def test_bot_state_engine_values(self):
         """BotState.engine 필드 타입이 EngineType Literal임을 확인."""
         import typing
+
         from core.types import BotState, EngineType
         hints = typing.get_type_hints(BotState)
         # EngineType 이 engine 필드 어노테이션 타입과 같아야 한다

@@ -7,18 +7,13 @@ Tests cover:
 """
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from core.skill_gotcha_manager import (
     GotchaEntry,
     append_gotcha,
-    list_gotchas,
     get_gotchas_text,
+    list_gotchas,
     list_skills_with_gotchas,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

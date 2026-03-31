@@ -16,7 +16,6 @@ E2E 로그 헤더 삽입을 위한 표준 인터페이스를 제공한다.
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import re
 import sys

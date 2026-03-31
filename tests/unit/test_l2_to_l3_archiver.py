@@ -9,7 +9,6 @@ import json
 import os
 import sys
 from datetime import date
-from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -22,7 +21,6 @@ from core.l2_to_l3_archiver import (
     archive_expired_items,
     is_expired,
 )
-
 
 # ──────────────────────────────────────────────
 # Fixtures & helpers

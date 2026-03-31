@@ -17,8 +17,8 @@ from typing import Awaitable, Callable
 
 from loguru import logger
 
-from core.context_db import ContextDB
 from core.constants import KNOWN_DEPTS
+from core.context_db import ContextDB
 from core.pm_orchestrator import PMOrchestrator
 
 ENABLE_GOAL_TRACKER = os.environ.get("ENABLE_GOAL_TRACKER", "1") == "1"

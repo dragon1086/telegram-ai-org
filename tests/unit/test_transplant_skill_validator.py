@@ -13,14 +13,11 @@ from pathlib import Path
 import pytest
 
 from core.skill_validator import (
-    ValidationIssue,
-    SkillValidationResult,
-    validate_skill_file,
-    validate_skill,
-    validate_all_skills,
     audit_report,
+    validate_all_skills,
+    validate_skill,
+    validate_skill_file,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures — write temp skill files

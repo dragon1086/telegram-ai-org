@@ -232,6 +232,7 @@ async def _send_collab_dispatch(dry_run: bool = False) -> None:
 
     try:
         from telegram import Bot
+
         from core.telegram_formatting import markdown_to_html
         async with Bot(token=BOT_TOKEN) as bot:
             await bot.send_message(

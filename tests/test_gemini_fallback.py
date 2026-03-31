@@ -7,13 +7,12 @@ from __future__ import annotations
 
 import json
 import os
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from tools.base_runner import RunContext, RunnerError
 from tools.gemini_cli_runner import GeminiCLIRunner
-
 
 # ---------------------------------------------------------------------------
 # 헬퍼

@@ -443,7 +443,7 @@ async def test_dispatch_sequential_research_eng_ops(setup):
 @pytest.mark.asyncio
 async def test_synthesize_and_act_includes_team_header_sufficient(setup, monkeypatch):
     """경로 B(다부서 합성 SUFFICIENT): 최종 보고 메시지에 팀 구성 헤더가 포함되어야 한다."""
-    from unittest.mock import AsyncMock, MagicMock, patch
+    from unittest.mock import AsyncMock, patch
 
     from core.result_synthesizer import SynthesisJudgment, SynthesisResult
 

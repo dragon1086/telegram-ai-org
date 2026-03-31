@@ -19,11 +19,9 @@
 from __future__ import annotations
 
 import os
-from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import AsyncGenerator
-
 import time as _time
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware

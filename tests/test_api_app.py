@@ -5,10 +5,7 @@ httpx.AsyncClient + ASGITransport를 사용해 실제 서버 없이 테스트합
 """
 from __future__ import annotations
 
-import os
-
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

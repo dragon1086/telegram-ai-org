@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+
 # ── 환경변수 로드 (.env fallback) ───────────────────────────────────────────
 def _load_env() -> None:
     env_path = Path(__file__).parent.parent / ".env"

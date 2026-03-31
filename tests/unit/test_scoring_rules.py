@@ -7,8 +7,8 @@ scoring_rules.py 단위 테스트:
   - apply_scoring_rules(): 통합 파이프라인 (승급·유지·점수만료·하드만료)
 """
 
-import sys
 import os
+import sys
 from datetime import date, datetime, timedelta
 
 import pytest
@@ -24,7 +24,6 @@ from core.scoring_rules import (
     calculate_score,
     get_level_transition,
 )
-
 
 # ================================================================
 # calculate_score 테스트
