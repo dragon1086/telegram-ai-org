@@ -5,6 +5,10 @@
 #   --interval N  : 확인 주기 (초, 기본 30)
 #
 # 백그라운드 실행: nohup bash scripts/watchdog.sh > ~/.ai-org/watchdog.log 2>&1 &
+#
+# CHANGELOG:
+#   2026-03-30: 감시 범위 확대 — get_bot_ids 실패 시 전체 7개 봇 하드코딩 폴백으로 교체,
+#               재시도 로직(3회) 추가, 5분 갱신 실패 시 WARN 로그 출력.
 
 set -euo pipefail
 
@@ -55,16 +59,52 @@ send_alert() {
     echo "[watchdog] ALERT: $msg"
 }
 
-# 봇 목록 로드
+# 봇 목록 로드 — 실패 시 빈 문자열 반환 (에러는 caller가 처리)
 get_bot_ids() {
     cd "$PROJECT_DIR"
-    ./.venv/bin/python3 - 2>/dev/null <<'PY' || echo ""
+    # .env 로드 (환경변수가 필요한 경우 대비)
+    if [ -f .env ]; then set -a; source .env > /dev/null 2>&1; set +a; fi
+    ./.venv/bin/python3 - 2>&1 <<'PY' || true
 from core.orchestration_config import load_orchestration_config
 cfg = load_orchestration_config(force_reload=True)
+result = []
 for org in cfg.list_orgs():
     if org.token and org.chat_id is not None:
-        print(org.id)
+        result.append(org.id)
+if result:
+    print('\n'.join(result))
+else:
+    import sys; sys.exit(1)
 PY
+}
+
+# 전체 봇 목록 하드코딩 폴백 (orchestration.yaml 기반, get_bot_ids 실패 시 사용)
+# 신규 봇 추가 시 이 목록도 함께 업데이트 필요
+FALLBACK_BOT_IDS="aiorg_design_bot
+aiorg_engineering_bot
+aiorg_growth_bot
+aiorg_ops_bot
+aiorg_pm_bot
+aiorg_product_bot
+aiorg_research_bot"
+
+# 봇 목록 로드 (재시도 포함)
+load_bot_ids() {
+    local attempt result
+    for attempt in 1 2 3; do
+        result=$(get_bot_ids 2>/dev/null)
+        # Python 에러 출력(Traceback 등) 제외하고 실제 봇 ID만 필터링
+        result=$(echo "$result" | grep -E '^aiorg_[a-z_]+$' || true)
+        if [ -n "$result" ]; then
+            echo "$result"
+            return 0
+        fi
+        echo "[watchdog] WARN: get_bot_ids 시도 ${attempt}/3 실패" >&2
+        [ "$attempt" -lt 3 ] && sleep 3
+    done
+    echo "[watchdog] WARN: get_bot_ids 3회 모두 실패 — 하드코딩 폴백 사용 (7개 봇 전체)" >&2
+    echo "$FALLBACK_BOT_IDS"
+    return 0  # set -e에 의한 스크립트 종료 방지 — 폴백 사용은 정상 처리
 }
 
 # 봇 생존 확인
@@ -121,9 +161,8 @@ disable_bot() {
 
 echo "[watchdog] 시작 — 확인 주기: ${CHECK_INTERVAL}초"
 
-# 초기 봇 목록
-BOT_IDS_LIST=$(get_bot_ids)
-[ -z "$BOT_IDS_LIST" ] && BOT_IDS_LIST="aiorg_pm_bot"
+# 초기 봇 목록 (실패 시 전체 7개 봇 폴백)
+BOT_IDS_LIST=$(load_bot_ids)
 echo "[watchdog] 감시 봇: $(echo "$BOT_IDS_LIST" | tr '\n' ' ')"
 
 LOOP_COUNT=0
@@ -131,9 +170,17 @@ while true; do
     sleep "$CHECK_INTERVAL"
     LOOP_COUNT=$((LOOP_COUNT + 1))
 
-    # 5분마다 봇 목록 갱신
+    # 5분마다 봇 목록 갱신 (동적 추가/제거 반영)
     if (( LOOP_COUNT % (300 / CHECK_INTERVAL) == 0 )); then
-        NEW_LIST=$(get_bot_ids 2>/dev/null) && [ -n "$NEW_LIST" ] && BOT_IDS_LIST="$NEW_LIST"
+        NEW_LIST=$(get_bot_ids 2>/dev/null | grep -E '^aiorg_[a-z_]+$' || true)
+        if [ -n "$NEW_LIST" ]; then
+            if [ "$NEW_LIST" != "$BOT_IDS_LIST" ]; then
+                echo "[watchdog] $(date '+%Y-%m-%d %H:%M:%S') 봇 목록 갱신: $(echo "$NEW_LIST" | tr '\n' ' ')"
+                BOT_IDS_LIST="$NEW_LIST"
+            fi
+        else
+            echo "[watchdog] $(date '+%Y-%m-%d %H:%M:%S') WARN: 봇 목록 갱신 실패 — 기존 목록 유지 ($(echo "$BOT_IDS_LIST" | wc -w | tr -d ' ')개)"
+        fi
     fi
 
     while IFS= read -r org_id; do

@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 def _is_enabled() -> bool:
     """Return True if the context compressor feature flag is enabled."""
-    return os.environ.get("ENABLE_CONTEXT_COMPRESSOR", "false").lower() in ("true", "1", "yes")
+    return os.environ.get("ENABLE_CONTEXT_COMPRESSOR", "true").lower() in ("true", "1", "yes")
 
 
 # ---------------------------------------------------------------------------

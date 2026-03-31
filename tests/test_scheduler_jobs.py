@@ -85,16 +85,25 @@ async def test_weekly_meeting_automation_sends_message():
 
 @pytest.mark.asyncio
 async def test_monthly_audit_automation_sends_message():
-    """_monthly_audit_automation 핸들러가 Telegram 메시지를 전송해야 한다."""
+    """_monthly_audit_automation 핸들러가 Telegram 메시지를 전송해야 한다.
+
+    구현 변경(2026-03-30): 시작 알림 + 감사 리포트 최소 2개 메시지 전송.
+    전체 전송 텍스트 중 "감사" 또는 "audit" 키워드가 포함되어야 한다.
+    """
     send_mock = AsyncMock()
     from core.scheduler import OrgScheduler
     sched = OrgScheduler(send_text=send_mock)
 
     await sched._monthly_audit_automation()
 
-    send_mock.assert_called_once()
-    call_text = send_mock.call_args[0][0]
-    assert "감사" in call_text or "audit" in call_text.lower()
+    # 최소 1회 이상 호출 (시작 알림 + 리포트 등 복수 가능)
+    assert send_mock.call_count >= 1, (
+        f"메시지 전송 없음 (call_count={send_mock.call_count})"
+    )
+    all_texts = " ".join(c.args[0] for c in send_mock.call_args_list if c.args)
+    assert "감사" in all_texts or "audit" in all_texts.lower(), (
+        f"'감사'/'audit' 키워드 없음: {all_texts[:200]}"
+    )
 
 
 @pytest.mark.asyncio

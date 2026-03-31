@@ -624,12 +624,45 @@ class ContextDB:
                         result.append(task)
                     else:
                         # [ORDER-VIOLATION-GUARD] 순서 위반 방지 — deps 미완료 태스크 차단
-                        logger.warning(
-                            f"[ORDER-GUARD] 태스크 {task['id']} ({dept_id}) 차단: "
-                            f"의존 태스크 {blocking_row[0] if blocking_row else '?'} "
-                            f"상태={blocking_row[1] if blocking_row else '?'} (미완료). "
-                            "레이스 컨디션 차단 정상 동작."
-                        )
+                        # B-02 수정: ORDER-GUARD 최대 대기 시간 상한선 — 600초(10분) 초과 시 자동 failed 처리
+                        blocking_dep_id = blocking_row[0] if blocking_row else "?"
+                        blocking_dep_status = blocking_row[1] if blocking_row else "?"
+                        task_created_at_str = task.get("created_at", "")
+                        order_guard_timed_out = False
+                        if task_created_at_str:
+                            try:
+                                task_created_at = datetime.fromisoformat(task_created_at_str)
+                                if task_created_at.tzinfo is None:
+                                    task_created_at = task_created_at.replace(tzinfo=UTC)
+                                wait_seconds = (now - task_created_at).total_seconds()
+                                if wait_seconds > self.ORDER_GUARD_MAX_WAIT_SECONDS:
+                                    order_guard_timed_out = True
+                                    logger.error(
+                                        f"[ORDER-GUARD-TIMEOUT] 태스크 {task['id']} ({dept_id}) "
+                                        f"대기시간 {wait_seconds:.0f}s > 상한선 "
+                                        f"{self.ORDER_GUARD_MAX_WAIT_SECONDS}s — "
+                                        f"의존 태스크 {blocking_dep_id} 상태={blocking_dep_status}. "
+                                        "자동 failed 처리."
+                                    )
+                            except (ValueError, TypeError):
+                                pass
+                        if order_guard_timed_out:
+                            await self.update_pm_task_status(
+                                task["id"], "failed",
+                                result=(
+                                    f"[ORDER-GUARD-TIMEOUT] 의존 태스크 {blocking_dep_id} "
+                                    f"(상태={blocking_dep_status})가 "
+                                    f"{self.ORDER_GUARD_MAX_WAIT_SECONDS}초 이상 미완료 — "
+                                    "자동 failed 처리. 재기동 또는 PM 수동 해제 필요."
+                                ),
+                            )
+                        else:
+                            logger.warning(
+                                f"[ORDER-GUARD] 태스크 {task['id']} ({dept_id}) 차단: "
+                                f"의존 태스크 {blocking_dep_id} "
+                                f"상태={blocking_dep_status} (미완료). "
+                                "레이스 컨디션 차단 정상 동작."
+                            )
                     continue
                 if task["status"] != "running":
                     continue
@@ -661,6 +694,10 @@ class ContextDB:
     # total_attempt_count(MAX=15)로 전체 시도를 절대 제한하여
     # 무한 재시작 루프를 이중으로 방지한다.
     RECOVER_MAX_AGE_SECONDS = 86400  # 복구 대상 최대 나이: 24시간 (좀비 방지)
+    # B-02 수정 (2026-03-30): ORDER-GUARD 최대 대기 시간 상한선.
+    # pending 태스크가 deps 미완료로 이 시간 이상 차단되면 자동 failed 처리.
+    # 긴급 재기동 태스크가 stuck 의존성으로 무한 차단되는 상황 방지.
+    ORDER_GUARD_MAX_WAIT_SECONDS = 600  # 10분
 
     async def claim_pm_task_lease(
         self,

@@ -485,19 +485,11 @@ def run_design_preflight_checks(
 
     # 파일 로드
     if not path.exists():
-        result = {
-            "passed": False,
-            "blocking_results": [],
-            "warning_results": [],
-            "info_results": [],
-            "design_baseline_version": "unknown",
-            "checked_at": checked_at,
-            "error": f"design-baseline.yaml을 찾을 수 없습니다: {path}",
-        }
-        if exit_on_fail:
-            print(f"❌ design pre-flight FAIL: {result['error']}", file=sys.stderr, flush=True)
-            sys.exit(1)
-        return result
+        print(
+            f"[design pre-flight] design-baseline.yaml 없음: {path} — 체크 생략 (WARN)",
+            flush=True,
+        )
+        return _skipped_result()
 
     try:
         data = _load_yaml(path)

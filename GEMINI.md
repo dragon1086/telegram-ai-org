@@ -134,6 +134,12 @@ Gemini CLI가 배정된 조직과 그 이유:
 
 > 세션 시작 시 반드시 확인. 실수가 발생할 때마다 여기에 추가한다.
 
+### gotchas.md 포맷 혼용 금지 (2026-03-31)
+- error-gotcha 스킬은 `## Gotcha X:` 형식으로 항목 추가
+- 기존 `## 1.` 번호 형식 파일에 추가하면 test_gotchas_have_minimum_content 실패
+- **규칙**: gotchas.md에 `## Gotcha` 항목은 항상 3개 이상 유지
+- **규칙**: design-baseline.yaml 미존재 시 E2E conftest가 SystemExit 발생 → worktree는 config/design-baseline.yaml 심볼릭 링크 필수
+
 ### [2026-03-27] Gemini Preview 모델 폴백 정책 (gemini-cli 조직 공통)
 
 - **구현**: `tools/gemini_cli_runner.py` — Preview 모델 호출 실패(`RunnerError`) 시 `GEMINI_FALLBACK_MODEL`(기본값: `gemini-2.5-flash` GA)로 자동 재시도

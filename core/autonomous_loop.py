@@ -22,7 +22,7 @@ from typing import Awaitable, Callable
 from loguru import logger
 
 # GoalTracker와 동일 feature flag
-ENABLE_GOAL_TRACKER = os.environ.get("ENABLE_GOAL_TRACKER", "0") == "1"
+ENABLE_GOAL_TRACKER = os.environ.get("ENABLE_GOAL_TRACKER", "1") == "1"
 
 # 기본 idle sleep (orchestration.yaml에서 오버라이드 가능)
 DEFAULT_IDLE_SLEEP_SEC = 300   # 5분

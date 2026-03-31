@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from core.eval_context import inject_eval_context
 from core.orchestration_config import load_orchestration_config
 from core.pm_identity import PMIdentity
 from core.session_store import SessionStore
@@ -54,7 +55,7 @@ class PMDecisionClient:
         role = data.get("role", "") or "총괄 PM"
         specialties = ", ".join(data.get("specialties", []) or []) or "없음"
         direction = data.get("direction", "") or "조직 정체성에 맞게 판단"
-        return (
+        base = (
             "당신은 사용자를 대신해 실행하는 PM의 내부 판단 엔진이다.\n"
             "이 호출에서는 실제 작업을 수행하지 말고, 요청된 분류/계획/판단만 하라.\n"
             "반드시 요청된 형식만 출력하고 군더더기 설명을 추가하지 마라.\n\n"
@@ -63,6 +64,11 @@ class PMDecisionClient:
             f"전문 분야: {specialties}\n"
             f"방향성: {direction}"
         )
+        # 평가 컨텍스트 주입 — ENABLE_EVAL_CONTEXT=1/EVAL_ALWAYS=1 설정 시 항상 포함
+        eval_notice = inject_eval_context()
+        if eval_notice:
+            base = f"{eval_notice}\n\n{base}"
+        return base
 
     def _get_runner(self):
         if self._runner is not None:

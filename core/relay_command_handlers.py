@@ -480,7 +480,13 @@ async def on_command_set_engine(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    """/set_engine <engine> — bots/*.yaml 엔진 변경 후 재시작. PM봇 전용."""
+    """/set_engine <engine> [org] — 엔진 변경 후 재시작 요청. PM봇 전용.
+
+    Examples:
+        /set_engine claude-code          — 전체 조직 일괄 변경
+        /set_engine codex engineering    — engineering 봇만 변경
+        /set_engine gemini-cli ops design — ops, design 봇만 변경
+    """
     from core.telegram_formatting import escape_html
 
     if update.message is None:
@@ -491,7 +497,9 @@ async def on_command_set_engine(
     args = (update.message.text or "").split()
     if len(args) < 2:
         await update.message.reply_text(
-            "사용법: /set_engine &lt;engine&gt;\n예: /set_engine claude-code",
+            "사용법: /set_engine &lt;engine&gt; [org1 org2 ...]\n"
+            "예: /set_engine claude-code\n"
+            "예: /set_engine codex engineering ops",
             parse_mode="HTML",
         )
         return
@@ -505,6 +513,18 @@ async def on_command_set_engine(
         )
         return
 
+    # 조직 필터: 지정하지 않으면 전체, 지정하면 해당 조직만
+    target_orgs: list[str] | None = None
+    if len(args) >= 3:
+        raw_targets = [t.strip().lower() for t in args[2:]]
+        # 축약명 → org_id 매핑 (engineering → aiorg_engineering_bot)
+        target_orgs = []
+        for t in raw_targets:
+            if t.startswith("aiorg_"):
+                target_orgs.append(t)
+            else:
+                target_orgs.append(f"aiorg_{t}_bot")
+
     import yaml as _yaml
     project_dir = Path(__file__).parent.parent
     bots_dir = project_dir / "bots"
@@ -512,6 +532,11 @@ async def on_command_set_engine(
     errors = []
 
     for yaml_path in sorted(bots_dir.glob("*.yaml")):
+        if yaml_path.stem.startswith("default"):
+            continue
+        # 조직 필터가 있으면 해당 봇만 수정
+        if target_orgs and yaml_path.stem not in target_orgs:
+            continue
         try:
             data = _yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
             if data.get("engine") != engine:
@@ -530,12 +555,13 @@ async def on_command_set_engine(
         org_data = _yaml.safe_load(org_yaml_path.read_text(encoding="utf-8")) or {}
         org_changed = False
         for org in org_data.get("organizations", []):
+            org_id = org.get("org_id", "")
+            # 조직 필터가 있으면 해당 조직만 수정
+            if target_orgs and org_id not in target_orgs:
+                continue
             exec_block = org.setdefault("execution", {})
             if exec_block.get("preferred_engine") != engine:
                 exec_block["preferred_engine"] = engine
-                org_changed = True
-            if exec_block.get("fallback_engine") != engine:
-                exec_block["fallback_engine"] = engine
                 org_changed = True
         if org_changed:
             org_yaml_path.write_text(
@@ -548,38 +574,49 @@ async def on_command_set_engine(
         errors.append("organizations")
 
     if not updated and not errors:
+        scope = ", ".join(t.replace("aiorg_", "").replace("_bot", "") for t in target_orgs) if target_orgs else "전체"
         await update.message.reply_text(
-            f"ℹ️ 모든 봇이 이미 {escape_html(engine)} 엔진을 사용 중입니다.",
+            f"ℹ️ {escape_html(scope)} 봇이 이미 {escape_html(engine)} 엔진을 사용 중입니다.",
             parse_mode="HTML",
         )
         return
 
-    from core.telegram_formatting import markdown_to_html
-    msg = f"⚙️ 엔진 변경: {engine}\n"
+    scope_label = ", ".join(t.replace("aiorg_", "").replace("_bot", "") for t in target_orgs) if target_orgs else "전체"
+    msg = f"⚙️ 엔진 변경: {engine} (대상: {scope_label})\n"
     if updated:
         msg += f"• 업데이트: {', '.join(updated)}\n"
     if errors:
         msg += f"• 실패: {', '.join(errors)}\n"
-    msg += "\n🔄 재시작 중..."
-    await update.message.reply_text(markdown_to_html(msg), parse_mode="HTML")
+    msg += "\n🔄 watchdog에 재시작 요청 중..."
+    await update.message.reply_text(msg, parse_mode="HTML")
 
-    restart_script = project_dir / "scripts" / "restart_bots.sh"
+    # restart_bots.sh 직접 실행 대신 request_restart.sh 사용 (타임아웃 방지)
+    restart_script = project_dir / "scripts" / "request_restart.sh"
+    restart_target = target_orgs[0] if target_orgs and len(target_orgs) == 1 else "all"
     try:
         proc = await asyncio.create_subprocess_exec(
             "bash", str(restart_script),
+            restart_target,
+            "--reason", f"set_engine {engine}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(project_dir),
         )
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-        if proc.returncode != 0:
-            logger.error(f"[set_engine] 재시작 실패 (rc={proc.returncode}): {stderr.decode()[:200]}")
-            await update.message.reply_text(f"❌ 재시작 실패 (rc={proc.returncode})", parse_mode="HTML")
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+        if proc.returncode == 0:
+            await update.message.reply_text(
+                f"✅ 재시작 요청 완료 — watchdog가 안전하게 처리합니다.",
+                parse_mode="HTML",
+            )
+        else:
+            logger.error(f"[set_engine] 재시작 요청 실패 (rc={proc.returncode}): {stderr.decode()[:200]}")
+            await update.message.reply_text(f"❌ 재시작 요청 실패 (rc={proc.returncode})", parse_mode="HTML")
     except asyncio.TimeoutError:
-        logger.warning("[set_engine] 재시작 타임아웃 — 백그라운드에서 계속 실행 중일 수 있음")
+        logger.warning("[set_engine] 재시작 요청 타임아웃")
+        await update.message.reply_text("⚠️ 재시작 요청 타임아웃", parse_mode="HTML")
     except Exception as exc:
-        logger.error(f"[set_engine] 재시작 실패: {exc}")
-        await update.message.reply_text(f"❌ 재시작 실패: {escape_html(str(exc))}", parse_mode="HTML")
+        logger.error(f"[set_engine] 재시작 요청 실패: {exc}")
+        await update.message.reply_text(f"❌ 재시작 요청 실패: {escape_html(str(exc))}", parse_mode="HTML")
 
 
 # ---------------------------------------------------------------------------

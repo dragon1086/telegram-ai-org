@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ⚠️  경고: 이 스크립트를 Claude Code Bash 툴로 직접 실행하면 120초 타임아웃(exit 143)이 발생합니다.
+#    봇 재기동은 반드시 아래 경로로 실행하세요:
+#
+#      bash scripts/request_restart.sh --reason "변경 사유"
+#
+#    watchdog(bot_watchdog.py)가 플래그를 감지하여 안전하게 재기동합니다.
+#    이 스크립트를 직접 실행해야 하는 경우 터미널(tmux 등)에서 실행하세요.
+#
+# WARNING: Direct execution via Claude Code Bash tool will timeout (exit 143 / 120s limit).
+#          Use scripts/request_restart.sh instead — watchdog handles the actual restart.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== 봇 안전 재시작 시작 ==="

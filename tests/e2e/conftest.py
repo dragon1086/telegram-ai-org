@@ -28,7 +28,7 @@ from tools.base_runner import RunContext  # noqa: E402
 def _print_preflight_header(result: dict) -> None:
     """pre-flight 체크 결과를 E2E 로그 최상단 헤더 블록으로 출력한다.
 
-    출력 형식 (RETRO-09/10)::
+    출력 형식 (RETRO-09/10/22)::
 
         ╔══════════════════════════════════════════╗
         ║          === PRE-FLIGHT CHECK ===         ║
@@ -39,6 +39,7 @@ def _print_preflight_header(result: dict) -> None:
         env_vars         : [TELEGRAM_BOT_TOKEN, ...]
         checked_at       : 2026-03-29T00:00:00+00:00
         status           : PASS
+        blocked          : false
         ─────────────────────────────────────────────
     """
     sep = "=" * 50
@@ -52,6 +53,9 @@ def _print_preflight_header(result: dict) -> None:
     filter_display = result.get("filter") or "<없음>"
     status = result.get("status", "UNKNOWN")
     status_icon = "✅ PASS" if status == "PASS" else "❌ FAIL"
+    # RETRO-22: blocked 필드 — pre-flight 미통과 시 배포 차단 여부를 명시적으로 기록
+    blocked = result.get("blocked", status != "PASS")
+    blocked_display = "true ⛔" if blocked else "false ✅"
 
     print(f"\n{sep}", flush=True)
     print("=== PRE-FLIGHT CHECK ===", flush=True)
@@ -62,6 +66,7 @@ def _print_preflight_header(result: dict) -> None:
     print(f"  env_vars         : [{env_display}]", flush=True)
     print(f"  checked_at       : {result.get('checked_at', '?')}", flush=True)
     print(f"  status           : {status_icon}", flush=True)
+    print(f"  blocked          : {blocked_display}", flush=True)
     print(f"{thin}\n", flush=True)
 
 
@@ -95,6 +100,7 @@ def _run_preflight() -> None:
                     )
             except Exception:  # noqa: BLE001
                 pass
+            _preflight_passed = result.get("passed", False)
             header_result = {
                 "baseline_version": _baseline_version,
                 "timeout": (result.get("timeout") or {}).get("value", 120),
@@ -103,7 +109,9 @@ def _run_preflight() -> None:
                 "checked_at": __import__("datetime").datetime.now(
                     __import__("datetime").timezone.utc
                 ).isoformat(),
-                "status": "PASS" if result.get("passed", False) else "FAIL",
+                "status": "PASS" if _preflight_passed else "FAIL",
+                # RETRO-22: blocked — pre-flight 미통과 시 배포 차단 여부 명시
+                "blocked": not _preflight_passed,
             }
             # tools/preflight_check.py 가 있으면 더 정확한 값으로 덮어쓴다
             _project_root = Path(__file__).parent.parent.parent
@@ -142,6 +150,7 @@ def _run_preflight() -> None:
                     if _env_vars else "<없음>"
                 )
                 _status = header_result.get("status", "UNKNOWN")
+                _blocked = header_result.get("blocked", _status != "PASS")
                 _lines = [
                     f"\n{_sep}",
                     "=== PRE-FLIGHT CHECK ===",
@@ -152,6 +161,8 @@ def _run_preflight() -> None:
                     f"  env_vars         : [{_env_display}]",
                     f"  checked_at       : {header_result.get('checked_at', '?')}",
                     f"  status           : {'✅ PASS' if _status == 'PASS' else '❌ FAIL'}",
+                    # RETRO-22: blocked 필드 — 배포 차단 여부 명시적 기록
+                    f"  blocked          : {'true ⛔' if _blocked else 'false ✅'}",
                     f"{_thin}\n",
                 ]
                 _log_path.write_text("\n".join(_lines), encoding="utf-8")
@@ -339,6 +350,91 @@ def _run_design_preflight() -> None:
 
 
 _run_design_preflight()
+
+
+# ---------------------------------------------------------------------------
+# Telethon 세션 파일 존재 여부 체크 — E2E 세션 시작 전 자동 실행
+# .e2e_session 파일이 없으면 명확한 안내 메시지를 출력한다.
+# SKIP_SESSION_CHECK=1 로 건너뛸 수 있다.
+# ---------------------------------------------------------------------------
+_SESSION_FILE = Path(__file__).parent.parent.parent / ".e2e_session"
+_SESSION_FILE_SQLITE = Path(str(_SESSION_FILE) + ".session")
+
+
+def _check_e2e_session_file() -> None:
+    """Telethon 세션 파일 존재 여부를 검사하고 없으면 안내 메시지를 출력한다.
+
+    weekly_meeting_multibot.py 의 _collect_dept_responses() 는
+    SESSION_FILE.exists() == False 시 즉시 [] 를 반환하므로
+    세션 파일이 없으면 부서 응답 수집 전체가 차단된다.
+
+    세션 파일 생성 방법::
+
+        cd ~/telegram-ai-org
+        .venv/bin/python scripts/tg_auth.py
+        # 전화번호 인증 코드 입력 → .e2e_session.session 자동 생성
+    """
+    if os.environ.get("SKIP_SESSION_CHECK", "").lower() in ("1", "true", "yes"):
+        return
+
+    session_exists = _SESSION_FILE.exists() or _SESSION_FILE_SQLITE.exists()
+    if not session_exists:
+        msg = (
+            "\n"
+            "╔══════════════════════════════════════════════════════════════╗\n"
+            "║          ⚠️  TELETHON SESSION FILE MISSING  ⚠️               ║\n"
+            "╚══════════════════════════════════════════════════════════════╝\n"
+            f"  찾는 위치 : {_SESSION_FILE_SQLITE}\n"
+            "  상태     : ❌ 파일 없음\n"
+            "\n"
+            "  📌 주간회의 부서 응답 수집이 완전히 차단됩니다.\n"
+            "     (weekly_meeting_multibot.py _collect_dept_responses → 즉시 return [])\n"
+            "\n"
+            "  ✅ 해결 방법 (Rocky 직접 실행, 최초 1회):\n"
+            "     cd ~/telegram-ai-org\n"
+            "     .venv/bin/python scripts/tg_auth.py\n"
+            "     → 전화번호 인증 코드 입력 후 .e2e_session.session 자동 생성됨\n"
+            "\n"
+            "  ⏭  세션 체크 건너뛰기: SKIP_SESSION_CHECK=1 pytest ...\n"
+            "──────────────────────────────────────────────────────────────\n"
+        )
+        print(msg, flush=True)
+        # Telethon 의존 E2E 테스트는 세션 없이 실행 불가 — 경고만 출력하고 계속 진행
+        # (세션이 필요한 개별 테스트는 requires_session fixture 로 skip 처리)
+
+
+_check_e2e_session_file()
+
+
+@pytest.fixture(scope="session")
+def e2e_session_available() -> bool:
+    """Telethon 세션 파일 존재 여부를 반환하는 픽스처.
+
+    세션이 필요한 E2E 테스트에서 조건부 skip 에 활용한다::
+
+        def test_weekly_collab(e2e_session_available):
+            if not e2e_session_available:
+                pytest.skip("Telethon 세션 없음 — scripts/tg_auth.py 실행 필요")
+            ...
+    """
+    return _SESSION_FILE.exists() or _SESSION_FILE_SQLITE.exists()
+
+
+@pytest.fixture(scope="session")
+def requires_session(e2e_session_available: bool) -> None:
+    """세션 파일이 없으면 즉시 pytest.skip() 을 호출하는 픽스처.
+
+    Telethon 의존 테스트에 사용::
+
+        def test_dept_response_collection(requires_session):
+            # 세션 없으면 이 줄 이전에 skip 처리됨
+            ...
+    """
+    if not e2e_session_available:
+        pytest.skip(
+            "Telethon 세션 파일 없음 — 해결: cd ~/telegram-ai-org && "
+            ".venv/bin/python scripts/tg_auth.py"
+        )
 
 
 # ---------------------------------------------------------------------------

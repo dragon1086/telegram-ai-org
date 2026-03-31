@@ -49,6 +49,21 @@ jobs:
       - name: Validate orchestration config
         run: python tools/orchestration_cli.py validate-config
 
+      - name: Pre-flight Check (RETRO-22 — bash)
+        # RETRO-22: pre-flight 미통과 시 배포 차단 — exit code 1로 후속 배포 잡 중단
+        # SKIP_PREFLIGHT=1 환경변수 우회는 CI 디버깅 한정 (프로덕션 배포 시 절대 사용 금지)
+        # --strict: WARN도 FAIL로 처리
+        env:
+          CI: "true"
+        run: bash scripts/preflight_check.sh --strict
+
+      - name: Pre-flight Check (RETRO-22 — python)
+        # Python 기반 심층 검증 (infra-baseline.yaml 파라미터 + JSON 출력)
+        # 실패 시 exit 1 → verify 잡 전체 실패 → build-and-push 잡 blocked
+        env:
+          SKIP_PREFLIGHT: "0"
+        run: python scripts/preflight_check.py --quiet
+
       - name: Assert infra-baseline version (pre-deploy check)
         # ETC-02/ETC-03 재발 방지: 배포 전 infra-baseline.yaml 버전이 최소 기준(1.1.0) 이상인지 검증
         run: |

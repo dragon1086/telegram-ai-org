@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 def _is_enabled() -> bool:
     """Return True if the tool registry feature flag is enabled."""
-    return os.environ.get("ENABLE_TOOL_REGISTRY", "false").lower() in ("true", "1", "yes")
+    return os.environ.get("ENABLE_TOOL_REGISTRY", "true").lower() in ("true", "1", "yes")
 
 
 @dataclass
@@ -250,3 +250,9 @@ def reset_registry() -> None:
     """Replace the singleton with a fresh instance.  Intended for tests only."""
     global _registry
     _registry = ToolRegistry()
+
+
+# ---------------------------------------------------------------------------
+# Module-level startup log — emitted once on import
+# ---------------------------------------------------------------------------
+logger.info("ToolRegistry feature flag: %s", "ENABLED" if _is_enabled() else "DISABLED")

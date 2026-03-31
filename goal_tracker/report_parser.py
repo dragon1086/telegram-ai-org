@@ -34,6 +34,8 @@ _DAILY_PRIORITY_SECTIONS = [
     r"액션\s*아이템",
     r"후속\s*조치",
     r"할\s*일",
+    # 일일회고 다부서 토론 형식: "해야 할 것" 섹션
+    r"해야\s*할\s*것",
 ]
 
 _WEEKLY_PRIORITY_SECTIONS = [
@@ -119,6 +121,60 @@ def _extract_priority_sections(text: str, priority_re: re.Pattern) -> list[str]:
     return sections
 
 
+# ── 일일회고 전용: 조직별 섹션 파싱 (다부서 토론 형식) ───────────────────────
+
+# 조직 섹션 헤더 패턴 (### ⚙️ 개발실 / ### 🔧 운영실 등)
+_ORG_SECTION_RE = re.compile(
+    r"^#{2,3}\s*(?:[^\w\s]*\s*)?"   # ## / ### + emoji
+    r"(?P<org_name>" + "|".join(re.escape(k) for k in ORG_NAME_MAP) + r")"
+    r"\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+# ACTION N: 패턴 (일일회고에서 조직별 ACTION 아이템)
+_ACTION_ITEM_RE = re.compile(
+    r"^(?:\*\*)?ACTION\s*\d+\s*[:：]\s*(?:\*\*)?(.+?)(?:\*\*)?$",
+    re.MULTILINE,
+)
+
+
+def _extract_retro_org_actions(text: str) -> list[ActionItem]:
+    """일일회고 다부서 토론 형식에서 조직별 ACTION 아이템 추출.
+
+    `### ⚙️ 개발실` 같은 섹션 헤더로 org 컨텍스트를 추적하고,
+    `ACTION 1: **설명**` 형식의 실제 액션아이템을 연결해 ActionItem을 반환한다.
+    """
+    items: list[ActionItem] = []
+    lines = text.splitlines()
+    current_org_id: str | None = None
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        # 조직 섹션 헤더 감지
+        org_m = _ORG_SECTION_RE.match(stripped)
+        if org_m:
+            org_name = org_m.group("org_name").strip()
+            current_org_id = ORG_NAME_MAP.get(org_name)
+            continue
+
+        # ACTION N: 패턴 감지
+        action_m = _ACTION_ITEM_RE.match(stripped)
+        if action_m:
+            desc = action_m.group(1).strip().strip("*").strip()
+            if desc and len(desc) >= 3:
+                items.append(
+                    ActionItem(
+                        description=desc,
+                        assigned_dept=current_org_id,
+                        source_text=stripped,
+                        confidence=0.95,
+                    )
+                )
+
+    return items
+
+
 # ── 주간회의 전용: 담당자+태스크 패턴 ─────────────────────────────────────────
 
 _WEEKLY_ASSIGNEE_TASK_RE = re.compile(
@@ -180,6 +236,12 @@ def parse_action_items(
     # 1. 보고 유형별 우선 섹션 추출
     if meeting_type == MeetingType.DAILY_RETRO:
         priority_sections = _extract_priority_sections(report_text, _DAILY_PRIORITY_RE)
+        # 일일회고 다부서 토론 형식: ACTION N: 패턴 + 조직 컨텍스트 추출
+        for ai in _extract_retro_org_actions(report_text):
+            key = ai.description.strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                items.append(ai)
     elif meeting_type == MeetingType.WEEKLY_MEETING:
         priority_sections = _extract_priority_sections(report_text, _WEEKLY_PRIORITY_RE)
         # 주간회의 전용: 담당자+태스크 패턴도 추출

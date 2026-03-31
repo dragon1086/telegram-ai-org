@@ -69,6 +69,7 @@ class SessionStore:
         usage_source: str | None = None,
         output_chars: int | None = None,
         increment_messages: bool = False,
+        eval_mode: bool | None = None,
     ) -> None:
         data = self.load()
         if session_id is not None:
@@ -96,9 +97,15 @@ class SessionStore:
             data["output_chars"] = output_chars
         if increment_messages:
             data["msg_count"] = int(data.get("msg_count", 0) or 0) + 1
+        if eval_mode is not None:
+            data["eval_mode"] = bool(eval_mode)
         data["updated_at"] = datetime.now(UTC).isoformat()
         self._data = data
         self.path.write_text(json.dumps(self._data, indent=2))
+
+    def is_eval_mode(self) -> bool:
+        """현재 세션이 평가 모드인지 반환합니다."""
+        return bool(self.load().get("eval_mode", False))
 
     def mark_compacted(self, *, reason: str = "") -> None:
         data = self.load()

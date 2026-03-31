@@ -15,7 +15,7 @@ from typing import Deque
 
 from fastapi import HTTPException, Request, status
 
-ENABLE_RATE_LIMITING: bool = os.environ.get("ENABLE_RATE_LIMITING", "false").lower() in ("true", "1")
+ENABLE_RATE_LIMITING: bool = os.environ.get("ENABLE_RATE_LIMITING", "true").lower() in ("true", "1")
 RATE_LIMIT_REQUESTS: int = int(os.environ.get("RATE_LIMIT_REQUESTS", "60"))
 RATE_LIMIT_WINDOW_SECONDS: int = int(os.environ.get("RATE_LIMIT_WINDOW_SECONDS", "60"))
 
