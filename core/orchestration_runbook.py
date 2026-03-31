@@ -173,6 +173,62 @@ class OrchestrationRunbook:
             return docs_dir / required[0]
         return docs_dir / f"{phase_name}.md"
 
+    def gc_stale_runs(self, max_age_hours: int = 6) -> list[str]:
+        """active 상태로 max_age_hours 이상 방치된 런을 completed(stale) 처리.
+
+        봇 재시작/타임아웃으로 프로세스가 죽으면 state.json이 active인 채 남는 문제 방지.
+        Returns: completed 처리된 run_id 목록.
+        """
+        from datetime import timedelta
+
+        cutoff = datetime.now(UTC) - timedelta(hours=max_age_hours)
+        cleaned: list[str] = []
+
+        for state_file in self.state_root.glob("*/state.json"):
+            try:
+                state = json.loads(state_file.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+
+            if state.get("status") != "active":
+                continue
+
+            # updated_at 또는 created_at 기준으로 stale 판단
+            ts_str = state.get("updated_at") or state.get("created_at", "")
+            if not ts_str:
+                continue
+
+            try:
+                updated = datetime.fromisoformat(ts_str)
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=UTC)
+            except (ValueError, TypeError):
+                continue
+
+            if updated >= cutoff:
+                continue
+
+            # Stale → completed 처리
+            now = _utcnow()
+            state["status"] = "completed"
+            state["completed_at"] = now
+            state["updated_at"] = now
+            state["completion_reason"] = "gc_stale"
+
+            for phase in state.get("phases", []):
+                if phase.get("status") == "active":
+                    phase["status"] = "completed"
+                    phase["completed_at"] = now
+                elif phase.get("status") == "pending":
+                    phase["status"] = "skipped"
+
+            state_file.write_text(
+                json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            cleaned.append(state.get("run_id", state_file.parent.name))
+
+        return cleaned
+
     def _write_index(self, docs_dir: Path, state: dict[str, Any], note: str = "") -> None:
         lines = [
             f"# {state['run_id']}",

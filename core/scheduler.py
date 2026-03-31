@@ -148,6 +148,13 @@ class OrgScheduler:
             "interval", weeks=1, id="conversation_cleanup",
             replace_existing=True,
         )
+        # 매 6시간 — stale run GC (active 상태로 6시간 이상 방치된 런 정리)
+        self.scheduler.add_job(
+            lambda: asyncio.create_task(self._gc_stale_runs()),
+            "interval", hours=6, id="gc_stale_runs",
+            misfire_grace_time=3600,
+            replace_existing=True,
+        )
         self.scheduler.add_job(
             self._weekly_bot_business_retro,
             CronTrigger(day_of_week="mon", hour=9, minute=10, timezone=KST),
@@ -784,6 +791,21 @@ class OrgScheduler:
                 logger.info("[OrgScheduler] claim 파일 정리 완료")
         except Exception as e:
             logger.warning(f"[OrgScheduler] claim 파일 정리 실패 (무시): {e}")
+
+    async def _gc_stale_runs(self) -> None:
+        """6시간 이상 active 상태로 방치된 런을 completed(gc_stale) 처리."""
+        try:
+            from core.orchestration_runbook import OrchestrationRunbook
+            runbook = OrchestrationRunbook(".")
+            loop = asyncio.get_event_loop()
+            cleaned = await loop.run_in_executor(None, runbook.gc_stale_runs)
+            if cleaned:
+                logger.info(f"[OrgScheduler] stale run GC: {len(cleaned)}개 정리 — {cleaned[:3]}")
+                await self._safe_send(f"🧹 Stale run GC: {len(cleaned)}개 정리 완료")
+            else:
+                logger.debug("[OrgScheduler] stale run GC: 정리 대상 없음")
+        except Exception as e:
+            logger.warning(f"[OrgScheduler] stale run GC 실패 (무시): {e}")
 
     async def _cleanup_old_conversations(self) -> None:
         """오래된 대화 이력 정리 (주 1회) — context_db 연결 시 실제 삭제 구현."""
