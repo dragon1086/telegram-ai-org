@@ -43,6 +43,13 @@ _ROUND_INSTRUCTIONS = {
         "구체적이고 실행 가능한 항목이어야 합니다.\n"
         "형식: 불렛 목록 (각 항목 앞에 반드시 'TODO:' 접두어로 시작)"
     ),
+    "통합_회고": (
+        "이번 기간을 돌아보며 아래 3가지를 **한 번에** 간결하게 답해주세요:\n"
+        "1. **잘한 것** (최대 2개, '- 잘함:' 접두어)\n"
+        "2. **아쉬운 것** (최대 2개, '- 아쉬움:' 접두어)\n"
+        "3. **해야 할 것** (최대 2개, 반드시 'TODO:' 접두어)\n"
+        "총 6줄 이내로 핵심만 작성하세요."
+    ),
 }
 
 
@@ -118,11 +125,9 @@ class RetroDiscussion:
         """전체 회고 토론을 순차 실행하고 세션 객체를 반환.
 
         Steps:
-            1. 라운드 1: 잘한 것 (전 조직 순차 발언)
-            2. 라운드 2: 잘못한 것 (이전 발언 컨텍스트 포함)
-            3. 라운드 3: 해야 할 것 (TODO 도출)
-            4. TODO 항목 → MEMORY.md 등록 + GoalTracker 등록
-            5. 최종 요약 전송
+            1. 단일 통합 라운드: 잘한 것 + 잘못한 것 + 해야 할 것을 한 번에 발언
+            2. TODO 항목 → MEMORY.md 등록 + GoalTracker 등록
+            3. 최종 요약 전송
         """
         session = RetroSession(
             meeting_type=meeting_type,
@@ -138,18 +143,12 @@ class RetroDiscussion:
 
         await self._send(
             f"🔔 **[{meeting_type.upper()}] 대화형 회고를 시작합니다.**\n"
-            f"총 {len(orgs)}개 조직이 순차 발언합니다. 잘한 것 → 잘못한 것 → 해야 할 것 순서로 진행됩니다.\n"
+            f"총 {len(orgs)}개 조직이 순차 발언합니다. (잘한 것·잘못한 것·해야 할 것 통합)\n"
             f"---"
         )
 
-        # ── 라운드 1: 잘한 것 ───────────────────────────────────────────
-        await self._run_round(session, orgs, "잘한_것")
-
-        # ── 라운드 2: 잘못한 것 ─────────────────────────────────────────
-        await self._run_round(session, orgs, "잘못한_것")
-
-        # ── 라운드 3: 해야 할 것 (TODO 도출) ────────────────────────────
-        await self._run_round(session, orgs, "해야_할_것")
+        # ── 단일 통합 라운드: 잘한 것 + 잘못한 것 + 해야 할 것 ──────────
+        await self._run_round(session, orgs, "통합_회고")
 
         # ── 후처리: TODO 추출 + 자가개선 등록 ──────────────────────────
         session.todo_items = self._extract_todo_items(session)
@@ -175,9 +174,12 @@ class RetroDiscussion:
 
         각 조직은 이전 조직의 발언을 컨텍스트로 받아 반응·추가 의견을 쌓는다.
         """
-        round_label = {"잘한_것": "✅ 잘한 것", "잘못한_것": "⚠️ 잘못한 것", "해야_할_것": "📌 해야 할 것"}.get(
-            round_name, round_name
-        )
+        round_label = {
+            "잘한_것": "✅ 잘한 것",
+            "잘못한_것": "⚠️ 잘못한 것",
+            "해야_할_것": "📌 해야 할 것",
+            "통합_회고": "📋 통합 회고 (잘한 것·아쉬운 것·해야 할 것)",
+        }.get(round_name, round_name)
         await self._send(f"\n### 라운드: {round_label}")
 
         for org_id, dept_name in orgs:
@@ -252,6 +254,9 @@ class RetroDiscussion:
                 assigned_dept="pm",
                 created_by="retro_discussion",
             )
+            # 즉시 running으로 전환 — TaskPoller가 pending/assigned 상태를
+            # 감지하여 classify_and_plan으로 재분배하는 cascade를 방지.
+            await self._pm._db.update_pm_task_status(parent_task_id, "running")
 
             task_ids = await self._pm.dispatch(
                 parent_task_id=parent_task_id,

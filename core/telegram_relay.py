@@ -3570,6 +3570,16 @@ class TelegramRelay:
         """
         task_id = task_info["id"]
         description = task_info.get("description", "")
+
+        # ── RETRO/회고 태스크 가드 ──────────────────────────────────────
+        # retro_discussion이 직접 생성·관리하는 태스크는 일반 실행 경로를
+        # 타면 안 됨 (classify_and_plan → 전 부서 재분배 cascade 방지).
+        created_by = task_info.get("created_by", "")
+        if created_by == "retro_discussion" or task_id.startswith("RETRO-"):
+            logger.info(
+                f"[{self.org_id}] RETRO 태스크 skip (retro_discussion 관리): {task_id}"
+            )
+            return
         metadata = task_info.get("metadata", {})
         # 요약 표시용: PM이 저장한 원본 description 우선 사용 (structured.render() 결과 회피)
         summary_text = metadata.get("original_description") or description
