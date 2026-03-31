@@ -204,10 +204,18 @@ class MultibotMeetingHandler:
 
         # ── Step 4: GoalTracker 등록 및 자율 루프 트리거 ──────────────────
         if combined_report.strip():
+            async def _dispatch_tasks(task_ids: list[str]) -> None:
+                if not task_ids:
+                    return
+                lines = [f"📬 조치사항 배분 — {len(task_ids)}개 태스크"]
+                lines.extend(f"  • {tid}" for tid in task_ids[:10])
+                await self._send(chat_id, "\n".join(lines))
+
             register_result = await self._client.register_report(
                 report_text=combined_report,
                 report_type=detected_type,
                 chat_id=chat_id,
+                dispatch_func=_dispatch_tasks,
             )
             result.register_result = register_result
 
