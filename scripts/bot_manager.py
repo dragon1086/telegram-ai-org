@@ -4,6 +4,7 @@
 사용법:
   python scripts/bot_manager.py list
   python scripts/bot_manager.py start <token> <org_id> <chat_id>
+  python scripts/bot_manager.py start_by_id <org_id>
   python scripts/bot_manager.py stop <org_id>
   python scripts/bot_manager.py restart-all
 """
@@ -196,6 +197,24 @@ def stop_bot(org_id: str) -> bool:
     return stopped or had_tracking
 
 
+def start_bot_by_id(org_id: str) -> int:
+    """org_id만으로 봇을 시작한다. organizations.yaml에서 token/chat_id를 자동 조회."""
+    sys.path.insert(0, str(PROJECT_DIR))
+    from core.orchestration_config import load_orchestration_config
+
+    cfg = load_orchestration_config()
+    org = cfg.get_org(org_id)
+    if org is None:
+        print(f"❌ organizations.yaml에서 '{org_id}' 를 찾을 수 없음")
+        sys.exit(1)
+    token = org.token
+    chat_id = org.chat_id
+    if not token or not chat_id:
+        print(f"❌ '{org_id}' token 또는 chat_id 설정 누락")
+        sys.exit(1)
+    return start_bot(token=token, org_id=org_id, chat_id=chat_id)
+
+
 def restart_all_bots() -> None:
     runtime_dir = _resolve_runtime_dir()
     restart_script = runtime_dir / "scripts" / "restart_bots.sh"
@@ -242,6 +261,13 @@ if __name__ == "__main__":
             sys.exit(1)
         pid = start_bot(token=sys.argv[2], org_id=sys.argv[3], chat_id=int(sys.argv[4]))
         print(f"✅ {sys.argv[3]} 시작됨 (PID={pid})")
+
+    elif cmd == "start_by_id":
+        if len(sys.argv) < 3:
+            print("사용법: bot_manager.py start_by_id <org_id>")
+            sys.exit(1)
+        pid = start_bot_by_id(org_id=sys.argv[2])
+        print(f"✅ {sys.argv[2]} 시작됨 (PID={pid})")
 
     elif cmd == "stop":
         if len(sys.argv) < 3:

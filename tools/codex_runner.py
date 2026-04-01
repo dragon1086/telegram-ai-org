@@ -419,6 +419,10 @@ class CodexRunner(BaseRunner):
             # Codex CLI는 ~/.codex/auth.json OAuth를 사용하므로
             # .env에서 로드된 stale OPENAI_API_KEY가 간섭하지 않도록 제거
             clean_env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
+            # watchdog/bot_manager 경유 시 PATH에 homebrew bin이 누락될 수 있음
+            _hb = "/opt/homebrew/bin"
+            if _hb not in clean_env.get("PATH", ""):
+                clean_env["PATH"] = f"{_hb}:{clean_env.get('PATH', '/usr/bin:/bin')}"
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
