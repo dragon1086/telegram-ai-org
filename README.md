@@ -1,1138 +1,249 @@
-![AIMesh](data/images/aimesh_hero.png)
-
 <p align="center">
-  <img src="assets/logo/nanobunny2_logo.png" alt="aimesh 마스코트 nanobunny2" width="200"/>
-</p>
-<h1 align="center">telegram-ai-org (aimesh)</h1>
-<p align="center">
-  <strong>"10분 안에 텔레그램에서 당신만의 AI 조직을 운영하세요"</strong><br/>
-  텔레그램 그룹 채팅방 하나를 AI 조직의 오피스로 만드는 오픈소스 멀티봇 오케스트레이션 시스템
+  <!-- TODO: SVG 로고 완성 후 assets/logo/logo.svg 로 교체하세요 -->
+  <img src="assets/mascot/mascot_v1.png" alt="telegram-ai-org" width="140"/>
 </p>
 
+<h1 align="center">telegram-ai-org</h1>
+
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License"/></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+"/></a>
-  <a href="#3엔진-지원-안내"><img src="https://img.shields.io/badge/engine-claude--code%20%7C%20codex%20%7C%20gemini--cli-orange.svg" alt="3엔진 지원"/></a>
-  <a href="https://pypi.org/project/telegram-ai-org/"><img src="https://img.shields.io/pypi/v/telegram-ai-org.svg" alt="PyPI version"/></a>
-  <a href="https://github.com/dragon1086/aimesh/actions/workflows/ci-lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/dragon1086/aimesh/ci-lint.yml?label=CI&logo=github" alt="CI"/></a>
-  <a href="https://github.com/dragon1086/aimesh/actions/workflows/cd-main.yml"><img src="https://img.shields.io/github/actions/workflow/status/dragon1086/aimesh/cd-main.yml?label=CD%3Amain&logo=github" alt="CD"/></a>
-  <a href="https://github.com/dragon1086/aimesh/releases/latest"><img src="https://img.shields.io/github/v/release/dragon1086/aimesh?label=Release&logo=github&color=green" alt="Release"/></a>
-  <a href="https://hub.docker.com/r/dragon1086/aimesh"><img src="https://img.shields.io/docker/v/dragon1086/aimesh?label=Docker&logo=docker&color=blue" alt="Docker Hub"/></a>
+  <strong>텔레그램 채팅방 하나가 AI 팀이 됩니다</strong><br/>
+  <sub>Your Telegram group chat, reimagined as an AI-powered organization</sub>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/engine-claude--code-blueviolet?logo=anthropic&logoColor=white" alt="Claude Code"/>
-  <img src="https://img.shields.io/badge/engine-codex-00A67E?logo=openai&logoColor=white" alt="Codex"/>
-  <img src="https://img.shields.io/badge/engine-gemini--cli-4285F4?logo=google&logoColor=white" alt="Gemini CLI"/>
-</p>
-
-<p align="center">
-  <a href="https://play.google.com/store/apps/details?id=com.prisminsight.prism_mobile&utm_source=aimesh_readme&utm_medium=badge&utm_campaign=opensource_launch">
-    <img src="https://img.shields.io/badge/Android-Prism_Dashboard-3DDC84?logo=android&logoColor=white" alt="Android App"/>
+  <a href="https://github.com/dragon1086/aimesh/actions/workflows/ci-lint.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/dragon1086/aimesh/ci-lint.yml?label=CI&logo=github&style=flat-square" alt="CI"/>
   </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="MIT License"/>
+  </a>
+  <a href="https://pypi.org/project/telegram-ai-org/">
+    <img src="https://img.shields.io/pypi/v/telegram-ai-org.svg?style=flat-square&logo=pypi&logoColor=white" alt="PyPI"/>
+  </a>
+  <a href="https://hub.docker.com/r/dragon1086/aimesh">
+    <img src="https://img.shields.io/docker/v/dragon1086/aimesh?label=Docker&logo=docker&style=flat-square&color=2496ED" alt="Docker Hub"/>
+  </a>
+  <img src="https://img.shields.io/badge/python-3.10+-blue.svg?style=flat-square" alt="Python 3.10+"/>
 </p>
 
----
-
-## 목차
-
-- [⚡ 빠른 시작 (3단계)](#-빠른-시작-3단계)
-- [프로젝트 소개](#프로젝트-소개)
-- [원클릭 셋팅](#원클릭-셋팅)
-- [봇 토큰 설정](#봇-토큰-설정)
-- [대시보드 사용법](#대시보드-사용법)
-- [아키텍처 개요](#아키텍처-개요)
-- [워크플로우 라이프사이클](#워크플로우-라이프사이클)
-- [3엔진 지원 안내](#3엔진-지원-안내)
-- [조직 구조](#조직-구조)
-- [봇 독립 메모리 → 개성 강화 메커니즘](#bot-independent-memory--personality-enhancement)
-- [스킬 가이드](#스킬-가이드)
-- [기여 방법](#기여-방법)
-- [Docker 실행법](#docker-실행법)
-- [환경변수 참조](#환경변수-참조)
-- [FAQ / 트러블슈팅](#faq--트러블슈팅)
-- [라이선스](#라이선스)
+<br/>
 
 ---
 
-## ⚡ 빠른 시작
+## 이게 뭔가요? (30초 설명)
 
-### 처음이라면: 퀵스타트 (권장)
+> **메시지 하나 보내면, AI 팀이 알아서 처리합니다.**
 
-봇 토큰과 Chat ID만 입력하면 나머지는 전부 자동 설정됩니다. 화면 안내를 따라가기만 하세요.
+지금까지 "AI 도구"는 혼자 쓰는 것이었습니다.
+**telegram-ai-org**는 다릅니다 — AI들이 역할을 나눠 **함께** 일합니다.
+
+채팅방에 *"오늘 마케팅 전략 짜줘"* 라고 입력하면:
+
+1. **PM 봇**이 요청을 이해하고 적절한 팀에 위임
+2. **기획실 봇**이 요구사항을 정리하고
+3. **성장실 봇**이 마케팅 전략을 작성
+4. 결과를 채팅방에 바로 돌려줌
+
+설치에서 첫 응답까지 **5분**. 코딩 지식 없이도 시작 가능합니다.
+
+---
+
+## ✨ 주요 기능
+
+| | 기능 | 설명 |
+|---|---|---|
+| 🧠 | **스마트 라우팅** | PM 봇이 메시지 의도를 파악해 최적의 부서에 자동 위임 |
+| 🤝 | **멀티봇 협업** | 개발·디자인·기획·성장·리서치·운영 6개 부서 봇이 유기적으로 협력 |
+| ⚡ | **3종 AI 엔진 지원** | Claude Code · OpenAI Codex · Gemini CLI — 원하는 엔진 자유 선택 |
+| 🔌 | **스킬 플러그인 시스템** | 봇에 능력을 추가하는 스킬을 직접 만들고 붙일 수 있음 |
+| 📊 | **실시간 대시보드** | 봇 상태·메시지 흐름·응답 이력을 웹 UI로 한눈에 모니터링 |
+| 🧩 | **자유로운 조직 구성** | 부서 봇을 추가/삭제해 나만의 AI 조직 구조를 설계 |
+| 🐳 | **Docker 원클릭 실행** | `docker compose up -d` 한 줄로 전체 시스템 기동 |
+| 🔒 | **독립 메모리** | 봇마다 독립 컨텍스트를 유지해 일관된 성격과 맥락 보존 |
+
+---
+
+## 🚀 Quick Start — 5분이면 충분합니다
+
+### 준비물
+
+- Python 3.10 이상 (또는 Docker)
+- [Telegram](https://telegram.org/) 계정 + [@BotFather](https://t.me/BotFather)에서 만든 봇 토큰
+- AI 엔진 하나: Claude Code / Codex / Gemini CLI 중 선택
+
+### 1. 저장소 클론
 
 ```bash
-git clone https://github.com/dragon1086/aimesh.git && cd aimesh && bash quickstart.sh
+git clone https://github.com/dragon1086/aimesh.git
+cd aimesh
 ```
 
-완료 후 `bash scripts/start_all.sh` 로 봇을 실행하면 끝!
-
-> 💡 **조직 구성**(부서, 봇 수, 역할 등)은 기호에 따라 자유롭게 편집할 수 있습니다.
-> 기본 구조로도 바로 사용 가능하며, 나중에 `config/org_structure.yaml` 에서 수정하세요.
-
-### 익숙한 사용자: 3단계 설치
+### 2. 원클릭 설치
 
 ```bash
-# Step 1 — 저장소 클론 & 설치
-git clone https://github.com/dragon1086/aimesh.git && cd aimesh && bash install.sh
+bash quickstart.sh
+```
 
-# Step 2 — 텔레그램 봇 토큰 입력 (.env 파일 편집)
-nano .env
-# TELEGRAM_BOT_TOKEN=  ← @BotFather에서 발급
-# TELEGRAM_GROUP_CHAT_ID=  ← 그룹 채팅 ID (음수값)
+화면 안내에 따라 봇 토큰과 Chat ID를 입력하면 나머지는 자동 설정됩니다.
 
-# Step 3 — 전체 봇 기동
+### 3. 환경변수 확인 (선택)
+
+`.env` 파일이 자동 생성됩니다. 필요한 경우 직접 수정하세요.
+
+```dotenv
+# 필수
+TELEGRAM_PM_BOT_TOKEN=123456:ABC...
+TELEGRAM_CHAT_ID=-100123456789
+
+# AI 엔진 (하나만 설정)
+CLAUDE_CODE_PATH=/usr/local/bin/claude   # Claude Code
+OPENAI_API_KEY=sk-...                    # Codex
+GEMINI_CLI_PATH=/opt/homebrew/bin/gemini # Gemini CLI
+```
+
+> 전체 환경변수 목록 → [`.env.example`](.env.example)
+
+### 4. 봇 실행
+
+```bash
 bash scripts/start_all.sh
 ```
 
-기동 후 텔레그램 그룹 채팅방에서 **"PRD 작성해줘"** 라고 입력하면 AI 조직이 즉시 응답합니다.
+### 5. 텔레그램에서 테스트
 
-> **또는 원라이너 설치** (저장소 클론 없이):
-> ```bash
-> curl -sSL https://raw.githubusercontent.com/dragon1086/aimesh/main/install.sh | bash
-> ```
+텔레그램 채팅방에 아무 메시지나 보내보세요!
+
+```
+안녕, 오늘 할 일 정리해줘
+```
+
+PM 봇이 요청을 받아 적절한 팀에 자동으로 위임합니다. 🎉
 
 ---
 
-## 프로젝트 소개
-
-### 무엇을 하는 프로젝트인가
-
-aimesh는 **텔레그램 그룹 채팅방 하나를 AI 조직의 사무실로 전환**합니다.
-사용자가 자연어로 태스크를 입력하면:
-
-1. **PM 봇**이 태스크를 분석하고 적합한 부서 봇에 자동 배분
-2. **부서 봇**이 엔진(Claude Code / Codex / Gemini CLI)을 실행해 결과 생성
-3. 결과를 텔레그램 채팅방으로 반환 — 별도 대시보드 불필요
-
-### 주요 기능
-
-| 기능 | 설명 |
-|------|------|
-| **PM 오케스트레이션** | 자연어 태스크를 PM 봇이 분석 → 적합한 부서 봇에 자동 배분 |
-| **7개 전문 부서봇** | PM / 기획실 / 개발실 / 디자인실 / 성장실 / 운영실 / 리서치실 |
-| **3엔진 호환** | Claude Code (복잡한 추론) / Codex (DevOps 자동화) / Gemini CLI (실시간 웹 검색) |
-| **스킬 시스템** | 재사용 가능한 작업 템플릿 22개 — 텔레그램 슬래시 커맨드로 직접 실행 |
-| **자연어 스케줄** | "매주 월요일 오전 9시에 리포트 보내줘" 형식의 스케줄 등록 |
-| **교훈 메모리** | 작업 결과를 메모리에 저장, 다음 태스크에 자동 반영 |
-| **멀티부서 토론** | 여러 봇이 하나의 주제를 토론 후 PM이 합성 결과 생성 |
-| **실시간 대시보드** | `http://localhost:8080` — 만화 캐릭터 컨셉 작업 시각화 |
-
-### 핵심 파일 구조
-
-```
-telegram-ai-org/
-├── quickstart.sh                    # 초보자용 간편 설치 (권장)
-├── install.sh                       # 표준 원클릭 설치
-├── main.py                          # 로컬 진입점
-├── orchestration.yaml               # 전체 오케스트레이션 설정
-├── workers.yaml                     # 워커 봇 등록부
-├── bots/                            # 봇별 YAML 정의 (성격, 역할, 엔진)
-├── core/                            # 핵심 오케스트레이션 로직
-│   ├── pm_orchestrator.py           #   PM 메인 루프
-│   ├── pm_router.py                 #   태스크 → 부서 라우팅
-│   └── nl_classifier.py             #   자연어 분류기
-├── tools/                           # 엔진 러너 및 CLI 도구
-│   ├── claude_code_runner.py        #   Claude Code CLI 래퍼
-│   ├── codex_runner.py              #   Codex CLI 래퍼
-│   ├── gemini_cli_runner.py         #   Gemini CLI OAuth 러너
-│   └── orchestration_cli.py         #   설정 검증 CLI
-├── skills/                          # 재사용 가능한 작업 스킬 (22개)
-├── scripts/                         # 운영 스크립트
-│   ├── setup.sh                     #   원클릭 초기 설치
-│   ├── start_all.sh                 #   전체 봇 시작
-│   └── request_restart.sh           #   안전한 재기동 요청
-├── dashboard.py                     # 실시간 대시보드 서버
-├── CLAUDE.md                        # Claude Code 운영 지침 (기준 문서)
-├── AGENTS.md                        # Codex CLI 운영 지침
-├── GEMINI.md                        # Gemini CLI 운영 지침
-└── .env.example                     # 환경변수 템플릿
-```
-
----
-
-## 원클릭 셋팅
-
-<p align="center">
-  <img src="assets/onboarding_banner.png" alt="원클릭 셋팅 온보딩 배너" width="700"/>
-</p>
-
-<p align="center">
-  <img src="assets/onboarding/install_flow.png" alt="설치 흐름 다이어그램" width="700"/>
-</p>
-
-`quickstart.sh`는 완전 초보자를 위한 간편 설치입니다. 봇 토큰/Chat ID 입력 가이드가 화면에 표시되며, 나머지는 전부 자동입니다.
-
-`install.sh`는 설치된 엔진을 자동으로 감지하고 Python 환경 구성, `.env` 파일 생성, 검증까지 한 번에 수행합니다.
-
-### 설치 옵션
-
-| 옵션 | 설명 |
-|------|------|
-| `bash quickstart.sh` | **초보자 권장** — 가이드 따라가기만 하면 완료 |
-| `bash install.sh` | 기본 실행 |
-| `bash install.sh --quickstart` | quickstart.sh로 전환 |
-| `bash install.sh --yes` | CI/자동화 환경 무인 설치 (프롬프트 건너뜀) |
-| `bash install.sh --start` | 헬스체크 통과 후 봇 자동 기동 |
-| `bash install.sh --yes --start` | CI 환경 + 봇 자동 기동 |
-| `bash install.sh --health-only` | 헬스체크만 실행 (설치 없음) |
-| `bash install.sh --skip-verify` | 헬스체크 단계 건너뜀 (빠른 재설치) |
-| `bash install.sh --no-venv` | 가상환경 생성 건너뜀 (기존 환경 재사용) |
-
-> **고급 옵션** (Docker Compose, 엔진 자동 설치, 대화형 토큰 수집): `bash scripts/setup.sh [--docker] [--yes]`
-
-### 실행 예시 출력
-
-```
-╔══════════════════════════════════════════════════════════════╗
-║        telegram-ai-org — 원클릭 설치 스크립트               ║
-║        3-Engine Auto-Detect Setup (claude/codex/gemini)      ║
-╚══════════════════════════════════════════════════════════════╝
-
-▶ Step 1/5: AI 엔진 자동 감지
-  ✅ codex 감지됨:  /opt/homebrew/bin/codex
-  ✅ gemini 감지됨: /opt/homebrew/bin/gemini
-  ⚠️  claude CLI 미감지 (설치: https://claude.ai/code)
-  감지된 엔진: codex gemini (총 2개)
-
-▶ Step 2/5: Python 환경 확인 (3.13→3.12→3.11→3.10 순 자동 선택)
-  ✅ Python 3.12.x — 요구사항 충족
-
-▶ Step 3/5: Python 의존성 설치
-  ✅ .venv 생성 및 의존성 설치 완료
-
-▶ Step 4/5: 환경 변수 파일 설정
-  ✅ .env 파일 생성 완료
-  ℹ️  GEMINI_CLI_PATH → /opt/homebrew/bin/gemini (자동 설정)
-  ℹ️  CODEX_CLI_PATH  → /opt/homebrew/bin/codex  (자동 설정)
-
-▶ Step 5/5: 초기화 검증
-  ✅ import anthropic   ✅ import pydantic
-  ✅ import telegram    ✅ import loguru
-  검증 완료: 10/10 항목 통과 — 모두 정상
-```
-
-### 3엔진 자동 감지 규칙
-
-| 엔진 | 감지 조건 | 인증 파일 |
-|------|-----------|-----------|
-| **claude-code** | `which claude` 성공 + `--version` 실행 가능 | OAuth 세션 (브라우저) |
-| **codex** | `which codex` 성공 + `--version` 실행 가능 | `~/.codex/auth.json` |
-| **gemini-cli** | `/opt/homebrew/bin/gemini` 우선 또는 `which gemini` | `~/.gemini/oauth_creds.json` |
-
-감지된 엔진 경로는 `.env`의 `CLAUDE_CLI_PATH`, `CODEX_CLI_PATH`, `GEMINI_CLI_PATH`에 자동으로 기재됩니다.
-
----
-
-## 봇 토큰 설정
-
-aimesh는 부서별로 별도 텔레그램 봇을 사용합니다. 봇 토큰은 [@BotFather](https://t.me/BotFather)에서 발급받아 `.env` 파일에 입력합니다.
-
-### Step 1 — PM 봇 생성 (필수)
-
-```
-1. 텔레그램에서 @BotFather 검색 → 대화 시작
-2. /newbot 입력
-3. 봇 표시 이름 입력 (예: My AI Org PM)
-4. 봇 username 입력 (예: myaiorg_pm_bot) — _bot 으로 끝나야 함
-5. 토큰 발급 완료: 123456789:ABC-DEF... 형식
-```
-
-발급받은 토큰을 `.env`에 입력:
-
-```bash
-TELEGRAM_BOT_TOKEN=123456789:ABC-DEFGhijKLMnopQRSTuvWXYZ
-PM_BOT_TOKEN=123456789:ABC-DEFGhijKLMnopQRSTuvWXYZ   # 위와 동일값
-```
-
-### Step 2 — 부서 봇 생성 (필요한 부서만)
-
-각 부서별로 `/newbot`을 반복해 토큰을 발급받습니다.
-
-| 부서 | 권장 봇 이름 | 환경변수 |
-|------|-------------|---------|
-| 기획실 | `myaiorg_product_bot` | `BOT_TOKEN_AIORG_PRODUCT_BOT` |
-| 개발실 | `myaiorg_engineering_bot` | `BOT_TOKEN_AIORG_ENGINEERING_BOT` |
-| 디자인실 | `myaiorg_design_bot` | `BOT_TOKEN_AIORG_DESIGN_BOT` |
-| 성장실 | `myaiorg_growth_bot` | `BOT_TOKEN_AIORG_GROWTH_BOT` |
-| 운영실 | `myaiorg_ops_bot` | `BOT_TOKEN_AIORG_OPS_BOT` |
-| 리서치실 | `myaiorg_research_bot` | `BOT_TOKEN_AIORG_RESEARCH_BOT` |
-
-> **최소 구성**: 봇 생성 rate limit이 있을 경우, PM + 필요한 부서 봇만 먼저 생성 후 나머지 추가 가능
-
-### Step 3 — 그룹 채팅 ID 취득
-
-```
-1. 텔레그램 그룹 채팅방 생성
-2. PM 봇과 부서 봇들을 그룹에 초대 (관리자 권한 부여)
-3. @userinfobot 을 그룹에 초대 → 아무 메시지 전송 → 채팅 ID 확인
-4. .env에 입력: TELEGRAM_GROUP_CHAT_ID=-1001234567890  (음수값)
-```
-
-### Step 4 — API 키 설정 (선택, 권장)
-
-엔진 신뢰도 스코어링에 사용됩니다. 없어도 동작하지만, 있으면 태스크 라우팅 정확도가 향상됩니다.
-
-| 변수명 | 취득 방법 | 비고 |
-|--------|----------|------|
-| `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/app/apikey) | 권장 (무료 티어 제공) |
-| `ANTHROPIC_API_KEY` | [Anthropic Console](https://console.anthropic.com/) | 선택 (Gemini 없을 때 대체) |
-
-### 최소 .env 설정 예시 (3개 봇 테스트 구성)
-
-```bash
-# PM 봇 (필수)
-TELEGRAM_BOT_TOKEN=7341804021:AAGsQpqS_...
-TELEGRAM_GROUP_CHAT_ID=-1001234567890
-
-# 기획실 봇 (선택)
-BOT_TOKEN_AIORG_PRODUCT_BOT=8399399379:AAHOHmm...
-
-# 개발실 봇 (선택)
-BOT_TOKEN_AIORG_ENGINEERING_BOT=8645105804:AAE2uck...
-
-# 엔진 경로 (setup.sh 자동 감지 — 수동 입력도 가능)
-GEMINI_CLI_PATH=/opt/homebrew/bin/gemini
-```
-
-> **보안 주의**: `.env` 파일은 `.gitignore`에 포함되어 있습니다. 절대 Git에 커밋하지 마세요.
-
----
-
-## 대시보드 사용법
-
-만화 캐릭터 컨셉 실시간 작업 시각화 대시보드를 지원합니다. 텔레그램 채팅방과 함께 **작업 현황을 브라우저에서 실시간**으로 모니터링할 수 있습니다.
-
-### 실행 방법
-
-```bash
-# 권장: 스크립트로 실행 (포트·호스트 자동 설정)
-bash scripts/start_dashboard.sh
-
-# 직접 실행 (포트 8080)
-python dashboard.py
-
-# 포트 지정
-python dashboard.py --port 8081
-
-# 개발 모드 (자동 리로드)
-python dashboard.py --reload
-```
-
-브라우저에서 `http://localhost:8080` 접속.
-
-### 화면 구성
-
-<p align="center">
-  <!-- 대시보드 스크린샷 플레이스홀더: assets/onboarding/dashboard_overview.png 추가 예정 -->
-  <img src="assets/onboarding/e2e_flow.png" alt="AI 조직 E2E 태스크 처리 흐름" width="700"/>
-</p>
-
-| 패널 | 내용 | 설명 |
-|------|------|------|
-| ① **티켓 현황** | pending / in_progress / done | 실시간 카운터 + 처리 속도 |
-| ② **완료 작업** | 최근 완료된 작업 타임라인 | 스크롤 뷰 |
-| ③ **원격 접근** | 접속 중인 클라이언트 수 | SSE 스트림 연결 상태 |
-| ④ **부서 캐릭터** | nanobunny2 마스코트 | 각 부서별 AI 캐릭터 상태 |
-
-### API 엔드포인트
-
-| 엔드포인트 | 설명 |
-|-----------|------|
-| `GET /api/v1/events/stream` | SSE 실시간 스트림 (다중 클라이언트 동시 지원) |
-| `GET /api/v1/dashboard/snapshot` | 현재 상태 스냅샷 (초기 로드용) |
-| `GET /api/v1/dashboard/characters` | 부서별 캐릭터 정보 |
-| `GET /api/docs` | Swagger UI |
-
-### 환경변수
-
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `DASHBOARD_PORT` | `8080` | 서버 포트 |
-| `DASHBOARD_POLL_INTERVAL` | `5` | 데이터 폴링 주기 (초) |
-| `AIMESH_DB_PATH` | `data/tasks.db` | SQLite DB 경로 |
-
----
-
-## 아키텍처 개요
-
-<p align="center">
-  <img src="assets/diagrams/architecture_overview.png" alt="aimesh 아키텍처 다이어그램" width="700"/>
-</p>
-
-aimesh는 **오케스트레이터(PM 봇) + 7개 전문 부서봇 + 3개 AI 엔진**의 3계층 구조로 동작합니다.
+## 🏗️ 아키텍처
 
 ```mermaid
 graph TD
-    User(["👤 사용자 메시지"])
-    TG["📱 Telegram 그룹 채팅방"]
+    U(["👤 사용자<br/>텔레그램 채팅"])
+    PM(["🧠 PM Bot<br/>라우터 &amp; 조율자"])
+    DEV(["💻 개발실 봇"])
+    DES(["🎨 디자인실 봇"])
+    PRD(["📋 기획실 봇"])
+    GRO(["📣 성장실 봇"])
+    RES(["🔭 리서치실 봇"])
+    OPS(["⚙️ 운영실 봇"])
+    CE["Claude Code"]
+    GE["Gemini CLI"]
+    DB[("메모리 &amp; DB")]
 
-    User -->|자연어 입력| TG
-    TG -->|메시지 수신| PM
+    U -->|메시지| PM
+    PM -->|위임| DEV & DES & PRD
+    PM -->|위임| GRO & RES & OPS
+    DEV & DES & PRD --> CE
+    GRO & RES & OPS --> GE
+    CE & GE --> DB
+    DB -->|컨텍스트 유지| PM
 
-    subgraph PM["🤖 PM Bot — aiorg_pm_bot"]
-        NL["nl_classifier\n(자연어 분류)"]
-        RT["pm_router\n(부서 라우팅)"]
-        OR["pm_orchestrator\n(태스크 조율)"]
-        NL --> RT --> OR
-    end
-
-    OR -->|"PRD·코드·설계\n(복잡한 추론)"| CLAUDE
-    OR -->|"배포·인프라\n(CLI 자동화)"| CODEX
-    OR -->|"조사·검색\n(웹 검색 내장)"| GEMINI
-
-    subgraph CLAUDE["⚡ claude-code 계열"]
-        PRODUCT["기획실\nPRD·요구사항분석"]
-        ENG["개발실\n코드·버그수정·API"]
-        DESIGN["디자인실\nUI/UX·와이어프레임"]
-    end
-
-    subgraph CODEX["🔧 codex 계열"]
-        OPS["운영실\n배포·인프라·DevOps"]
-    end
-
-    subgraph GEMINI["🔍 gemini-cli 계열"]
-        GROWTH["성장실\n마케팅·지표분석"]
-        RESEARCH["리서치실\n시장조사·경쟁사분석"]
-    end
-
-    CLAUDE -->|결과 반환| TG
-    CODEX  -->|결과 반환| TG
-    GEMINI -->|결과 반환| TG
+    style PM fill:#4f46e5,color:#fff,stroke:none
+    style U fill:#0ea5e9,color:#fff,stroke:none
+    style CE fill:#7c3aed,color:#fff,stroke:none
+    style GE fill:#059669,color:#fff,stroke:none
+    style DB fill:#374151,color:#fff,stroke:none
 ```
 
-> 사용자는 텔레그램 채팅방 하나만 운영합니다. PM 봇이 태스크를 자동으로 분석하고 적합한 부서와 엔진을 선택합니다.
+**흐름 요약:**
+- 모든 메시지는 **PM 봇**이 가장 먼저 수신 → 의도 파악 → 적합한 부서에 위임
+- 각 부서 봇은 전문 AI 엔진(Claude Code / Gemini CLI)을 실행
+- 모든 대화는 DB에 저장되어 문맥이 누적됨
 
 ---
 
-## 워크플로우 라이프사이클
+## 📊 실시간 대시보드
 
-<p align="center">
-  <img src="docs/assets/workflow_lifecycle_diagram.png" alt="telegram-ai-org 워크플로우 라이프사이클 다이어그램" width="800"/>
-</p>
+봇 상태, 메시지 라우팅, 응답 이력을 **한 화면**에서 확인할 수 있습니다.
 
-### 멀티봇 디스패치 흐름
+<!-- TODO: 대시보드 스크린샷 캡처 후 assets/screenshots/dashboard.png 에 저장 -->
+![Dashboard Screenshot](assets/screenshots/dashboard.png)
 
-사용자가 텔레그램에 메시지를 보내면, PM 봇이 자동으로 태스크를 분석하고 적합한 부서봇에 병렬 위임합니다.
+> 📸 **스크린샷 위치**: `assets/screenshots/dashboard.png`
+> 대시보드 실행 후 스크린샷을 찍어 위 경로에 저장하면 자동으로 README에 표시됩니다.
 
-```
-[사용자] ──텔레그램──▶ [PM Bot]
-                            │
-              ┌─────────────┼─────────────┐
-              ▼             ▼             ▼
-         [개발실봇]     [디자인실봇]   [기획실봇]
-         Claude Code   Claude Code   Claude Code
-              │             │             │
-         [성장실봇]     [리서치실봇]   [운영실봇]
-         Gemini CLI    Gemini CLI    Gemini CLI
-              │             │             │
-              └─────────────┴─────────────┘
-                            │
-                       [PM Bot 집계]
-                            │
-              ──텔레그램──▶ [사용자 응답]
-```
+**대시보드에서 볼 수 있는 것:**
 
-### E2E 라이프사이클 (7단계)
+- 🟢 **봇 상태** — 각 봇의 온라인/오프라인 상태 실시간 확인
+- 📨 **메시지 흐름** — PM → 각 부서 봇으로의 라우팅 경로 시각화
+- 🕐 **응답 이력** — 시간순 대화 로그 및 처리 시간
+- 🔔 **알림 현황** — 에러·지연·이상 감지 시 즉각 알림
 
-| 단계 | 이름 | 상세 |
-|------|------|------|
-| 1 | **사용자 입력** | 텔레그램 그룹 채팅방에 자연어 메시지 전송 |
-| 2 | **PM봇 수신** | `pm_message_handler.py`가 메시지 파싱·태스크 ID 발급 |
-| 3 | **태스크 분류** | NL 분류기가 `solo / collab / goal-tracker` 중 유형 결정 |
-| 4 | **엔진 선택** | 조직별 설정(`bots/*.yaml`)에 따라 Claude Code·Gemini CLI·Codex 자동 배정 |
-| 5 | **서브에이전트 실행** | 담당 부서봇이 전문 페르소나(Agent)로 태스크 수행 |
-| 6 | **결과 집계** | PM 봇이 타임아웃 처리·중간 결과 수집·포맷팅 |
-| 7 | **최종 응답** | 마크다운 → HTML 변환 후 텔레그램 전달 |
-
-### 텔레그램 E2E 테스트 방법
-
-실제 텔레그램 채팅방에서 아래 메시지를 전송하면 전체 워크플로우를 검증할 수 있습니다:
-
-```
-# 1. 단순 질의 (PM 직접 답변 확인)
-안녕!
-
-# 2. 단일 부서 태스크 (부서봇 단독 처리 확인)
-간단한 Python 헬로월드 코드 작성해줘
-
-# 3. 멀티봇 협업 (COLLAB 디스패치 확인)
-로그인 화면 기획부터 디자인까지 해줘
-
-# 4. 골 트래커 (장기 목표 루프 확인)
-우리 앱의 사용자 획득 전략을 수립해줘
-```
-
-자동화 E2E 테스트 실행:
+**대시보드 실행:**
 
 ```bash
-# 전체 E2E 회귀 테스트 (pytest 기반)
-pytest tests/e2e/ -v
-
-# 또는 스킬로 실행
-/e2e-regression
+python dashboard.py
+# 브라우저에서 http://localhost:8050 접속
 ```
 
-### 부서별 역할 & 엔진 배정
+---
 
-| 부서 | 엔진 | 전문 분야 | 색상 |
-|------|------|-----------|------|
-| 🔵 개발실 | Claude Code | 코드 구현·버그 수정·API 설계 | Blue |
-| 🟣 디자인실 | Claude Code | UI/UX·와이어프레임·WCAG 접근성 | Purple |
-| 🟢 기획실 | Claude Code | PRD·요구사항 분석·로드맵 | Green |
-| 🟠 성장실 | Gemini CLI | 마케팅·지표 분석·퍼널 | Orange |
-| 🩵 리서치실 | Gemini CLI | 시장조사·경쟁사 분석·문서 요약 | Teal |
-| 🔴 운영실 | Gemini CLI | 배포·인프라·모니터링 | Red |
+## 🤖 부서별 봇 구성
+
+| 봇 | 역할 | AI 엔진 |
+|----|------|---------|
+| 🧠 `aiorg_pm_bot` | 전체 조율, 라우팅 | Claude Code |
+| 💻 `aiorg_engineering_bot` | 코드 작성, API 구현, 버그 수정 | Claude Code |
+| 🎨 `aiorg_design_bot` | UI/UX 설계, 와이어프레임 | Claude Code |
+| 📋 `aiorg_product_bot` | 기획, 요구사항 분석, PRD | Claude Code |
+| 📣 `aiorg_growth_bot` | 성장 전략, 마케팅, 지표 분석 | Gemini CLI |
+| 🔭 `aiorg_research_bot` | 시장조사, 경쟁사 분석 | Gemini CLI |
+| ⚙️ `aiorg_ops_bot` | 배포, 인프라, 모니터링 | Gemini CLI |
+
+> 봇 수와 역할은 `organizations.yaml`과 `orchestration.yaml`을 수정해 자유롭게 바꿀 수 있습니다.
 
 ---
 
-## 3엔진 지원 안내
-
-3개 엔진 중 **1개 이상** 설치하면 됩니다. 엔진별 특성에 따라 부서가 자동으로 엔진을 선택합니다.
-
-### 엔진 비교
-
-<p align="center">
-  <img src="assets/diagrams/engine_compat.png" alt="3엔진 호환성 다이어그램" width="700"/>
-</p>
-
-| 항목 | claude-code | codex | gemini-cli |
-|------|-------------|-------|------------|
-| 개발사 | Anthropic | OpenAI | Google |
-| 웹 검색 | 없음 | 없음 | **내장** (Google Search) |
-| 최적 태스크 | PRD·코드·기획·설계 | 배포·인프라·DevOps | 시장조사·경쟁사 분석 |
-| 컨텍스트 길이 | 200K 토큰 | 표준 | **1M 토큰** |
-| 인증 방식 | OAuth 2.0 | OAuth 2.0 | OAuth 2.0 |
-| API 키 필요 여부 | **불필요** (OAuth 사용) | **불필요** (OAuth 사용) | **불필요** (Google 계정) |
-
-> 3개 엔진 모두 OAuth 2.0을 지원하므로 API 키 없이 바로 시작할 수 있습니다.
-
----
-
-### 1. Claude Code (기본·권장)
-
-**사전 요구사항**
-
-| 항목 | 요구사항 |
-|------|----------|
-| Node.js | 18 이상 |
-| npm | 8 이상 |
-| 인터넷 연결 | OAuth 인증 시 필요 |
-| OS | macOS / Linux / Windows (WSL2) |
-
-**설치 명령어**
+## 🐳 Docker로 실행
 
 ```bash
-# 1. npm으로 설치
-npm install -g @anthropic-ai/claude-code
+# 전체 시스템 실행
+docker compose up -d
 
-# 2. 브라우저 OAuth 인증 (1회만)
-claude auth login
-
-# 3. 설치 확인
-claude --version
+# AI 엔진 프로파일 선택
+docker compose --profile claude up -d   # Claude Code 전용
+docker compose --profile gemini up -d   # Gemini CLI 전용
 ```
-
-**인증 확인**: `claude auth status` — 인증 성공 시 `Logged in` 출력
 
 ---
 
-### 2. Codex CLI
+## 📂 프로젝트 구조
 
-**사전 요구사항**
-
-| 항목 | 요구사항 |
-|------|----------|
-| Node.js | 18 이상 |
-| npm | 8 이상 |
-| OpenAI 계정 | OAuth 인증용 |
-
-**설치 명령어**
-
-```bash
-# 1. npm으로 설치
-npm install -g @openai/codex
-
-# 2. 브라우저 OAuth 인증 — ~/.codex/auth.json 자동 생성
-codex login
-
-# 3. 설치 확인
-codex --version
 ```
-
-**인증 확인**: `~/.codex/auth.json` 파일 존재 여부 확인
-
-> OpenAI API 키가 있는 경우: `.env`에 `OPENAI_API_KEY=sk-...`를 직접 설정하면 OAuth 없이 사용 가능
+aimesh/
+├── bots/              # 각 부서 봇 구현
+├── core/              # 메시지 라우팅·엔진 공통 코어
+├── skills/            # 플러그인 스킬 모음
+├── dashboard/         # 실시간 모니터링 대시보드
+├── tests/             # E2E + 유닛 테스트
+├── orchestration.yaml # 조직 운영 전략 설정
+├── organizations.yaml # 봇 조직 구성 설정
+├── quickstart.sh      # 원클릭 설치 스크립트
+└── docker-compose.yml # 멀티엔진 Docker 설정
+```
 
 ---
 
-### 3. Gemini CLI
+## 🤝 기여하기
 
-**사전 요구사항**
+버그 리포트, 기능 제안, PR 모두 환영합니다!
 
-| 항목 | 요구사항 |
-|------|----------|
-| Node.js 또는 Homebrew | 둘 중 하나 |
-| Google 계정 | OAuth 인증용 (무료) |
+1. 이 저장소를 **Fork**
+2. 새 브랜치 생성 (`git checkout -b feat/my-feature`)
+3. 변경 후 커밋 (`git commit -m "feat: 기능 설명"`)
+4. PR 생성
 
-**설치 명령어**
-
-```bash
-# Homebrew (macOS 권장)
-brew install gemini-cli
-
-# 또는 npm
-npm install -g @google/gemini-cli
-
-# Google 계정 OAuth 인증 — ~/.gemini/oauth_creds.json 자동 생성
-gemini auth login
-
-# 설치 확인
-gemini --version
-```
-
-**인증 확인**: `~/.gemini/oauth_creds.json` 파일 존재 여부 확인
+자세한 가이드 → [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
-## 조직 구조
+## 📄 라이선스
 
-### 부서별 역할과 담당 엔진
-
-| 부서 | 봇 ID | 담당 엔진 | 역할 |
-|------|-------|-----------|------|
-| **PM** | `aiorg_pm_bot` | claude-code | 태스크 분석, 부서 배분, 오케스트레이션 |
-| **기획실** | `aiorg_product_bot` | claude-code | PRD 작성, 요구사항 분석, 기획 |
-| **개발실** | `aiorg_engineering_bot` | claude-code | 코드 구현, 버그 수정, API 개발 |
-| **디자인실** | `aiorg_design_bot` | claude-code | UI/UX 설계, 와이어프레임, 프로토타입 |
-| **운영실** | `aiorg_ops_bot` | codex | 배포, 인프라, DevOps 자동화 |
-| **성장실** | `aiorg_growth_bot` | gemini-cli | 성장 전략, 마케팅, 지표 분석 |
-| **리서치실** | `aiorg_research_bot` | gemini-cli | 시장조사, 경쟁사 분석, 문서 요약 |
-
-> **엔진 선택 원칙**: 복잡한 추론 → claude-code / 경량 CLI 자동화 → codex / 실시간 웹 검색 → gemini-cli
-
-### 조직도
-
-```mermaid
-graph LR
-    PM["🤖 PM Bot\n(aiorg_pm_bot)\nclaude-code"]
-
-    PM --> PRODUCT["📋 기획실\n(aiorg_product_bot)\nclaude-code"]
-    PM --> ENG["💻 개발실\n(aiorg_engineering_bot)\nclaude-code"]
-    PM --> DESIGN["🎨 디자인실\n(aiorg_design_bot)\nclaude-code"]
-    PM --> OPS["⚙️ 운영실\n(aiorg_ops_bot)\ncodex"]
-    PM --> GROWTH["📈 성장실\n(aiorg_growth_bot)\ngemini-cli"]
-    PM --> RESEARCH["🔍 리서치실\n(aiorg_research_bot)\ngemini-cli"]
-```
-
-> 전체 아키텍처 흐름도는 [아키텍처 개요](#아키텍처-개요) 섹션을 참조하세요.
-
-### 봇 추가 방법
-
-`workers.yaml`에 항목을 추가하고 봇을 재시작합니다 — 코드 수정 불필요:
-
-```yaml
-workers:
-  - name: my_new_bot
-    token: "${MY_NEW_BOT_TOKEN}"
-    engine: claude-code        # claude-code | codex | gemini-cli
-    description: "신규 봇 역할 설명"
-```
-
-<p align="center">
-  <img src="assets/onboarding/e2e_flow.png" alt="E2E 태스크 처리 흐름" width="700"/>
-</p>
-
----
-
-## Bot Independent Memory & Personality Enhancement
-### 봇 독립 메모리 → 개성 강화 메커니즘
-
-> Each bot grows more opinionated over time — by design.
-> 각 봇은 시간이 지날수록 더 강한 개성을 갖도록 의도적으로 설계되어 있습니다.
-
-### Bot Independent Memory | 봇 독립 메모리
-
-Each bot accumulates its own operational memory through three context files: `CLAUDE.md` (Claude Code), `AGENTS.md` (Codex), and `GEMINI.md` (Gemini CLI). Successful task patterns, failure records, and judgment criteria are layered over time — making each bot progressively more opinionated in its domain.
-
-각 봇은 `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` 세 컨텍스트 파일을 통해 독립 메모리를 쌓습니다. 태스크 성공 패턴·실패 기록·판단 기준이 누적될수록 봇마다 도메인 전문성이 점점 뚜렷해집니다.
-
-```yaml
-# bots/aiorg_research_bot.yaml — 리서치실 개성 정의 예시
-personality: "깊이 파고드는 탐구자. 근거 없는 주장은 하지 않는다."
-tone: "학문적이고 꼼꼼함"
-catchphrase: "데이터로 말하자"
-strengths: [시장 조사, 경쟁사 분석, 인사이트 도출]
-engine: gemini-cli   # 실시간 웹 검색 내장 → 최신 레퍼런스 즉시 조회
-```
-
-> **누적 패턴**: `bots/*.yaml`의 `personality` / `tone` / `catchphrase` 필드가 초기값이고, `CLAUDE.md` / `GEMINI.md`에 부서별 성공 패턴·판단 기준이 레이어로 쌓입니다.
-
----
-
-### Personality Ossification | 개성 고착화 (Opinionated 설계)
-
-This is intentional design. Each bot starts with a defined persona and deepens it through repeated task execution. The Research Bot becomes more insistent on citation-based structure; the Design Bot reinforces WCAG-first thinking — not by external enforcement, but by accumulated preference.
-
-이는 의도된 설계입니다. 반복 태스크 수행을 통해 리서치실은 출처 기반 구조화를, 디자인실은 WCAG 우선 사고를 강화합니다. 외부 규칙이 아니라 축적된 선호가 행동을 결정합니다.
-
-> **왜 이렇게 설계했는가?** 무색무취한 범용 AI보다, 강한 개성을 가진 전문가 팀이 예측 가능하고 신뢰할 수 있는 결과를 생산합니다. `decision_weight` 필드로 레퍼런스별 영향도를 추적합니다.
-
-| 부서 | 고착화 패턴 | 핵심 선호 |
-|------|------------|----------|
-| 리서치실 | 출처 기반 구조화 | `decision_weight` 필드 필수 |
-| 디자인실 | WCAG 접근성 우선 | severity 3단계 체계 |
-| 개발실 | pre-flight 검증 우선 | conftest.py SystemExit 패턴 |
-| 기획실 | 수치 기반 완료 조건 | `criteria_version` 추적 |
-
----
-
-### Personality Reinforcement Cycle | 개성 강화 사이클
-
-Why does repetition create preference? Each completed task feeds a four-stage loop: **Feedback → Pattern Recognition → Ossification → Expression**. With every cycle, the bot's uncertainty range narrows and its domain stance becomes more predictable — and more distinct from its peers.
-
-왜 반복이 선호를 만드는가? 완료 태스크마다 **피드백→패턴→고착화→표출** 4단계 루프가 순환합니다. 사이클마다 불확실성 범위가 줄고, 봇의 도메인 입장이 더 정교해지며, 다른 봇과 뚜렷이 달라집니다.
-
-```
-  ┌─────────────────────────────────────────────────┐
-  │           Personality Reinforcement Cycle         │
-  │                                                   │
-  │  [Feedback] ──→ [Pattern Recognition]             │
-  │      ↑                   │                        │
-  │      │           [Ossification] (L2→L3)           │
-  │      │                   │                        │
-  │  [New Task] ←── [Expression / Output]             │
-  │                 (더 강한 개성·더 높은 예측가능성)    │
-  └─────────────────────────────────────────────────┘
-```
-
-> **고착화 트리거 조건**: 동일 유형 태스크 3회 이상 성공 + `score ≥ 0.8` + PM RETRO 통합 확인 → 해당 패턴이 L3 영구 원칙으로 승격되어 삭제 불가가 됩니다.
-> **Ossification trigger**: Same task class ≥3 successes + `score ≥ 0.8` + PM RETRO validation → promoted to L3 permanent principle, immutable thereafter.
-
----
-
-### Cross-team Sync Rules | 크로스팀 동기화 규칙
-
-To prevent personality divergence from becoming organizational silos, three sync mechanisms operate continuously across all bots.
-
-개성 분열이 사일로화되지 않도록 세 가지 동기화 메커니즘이 상시 작동합니다.
-
-**① 3-File Sync Principle | 3파일 동기화 원칙**
-Any change to `CLAUDE.md` must simultaneously update `AGENTS.md` and `GEMINI.md`.
-`CLAUDE.md` 수정 시 `AGENTS.md` / `GEMINI.md`도 즉시 동일하게 업데이트합니다.
-
-**② RETRO Distribution | RETRO 배분**
-PM distributes the same issue to all 7 departments, each analyzing from their own perspective — then synthesizes into shared organizational learning.
-PM이 동일 이슈를 7개 부서에 각자 관점으로 배분 후 공통 학습으로 통합합니다.
-
-**③ L3 Archive | 영구 공통 원칙**
-Permanent organizational principles (L3 Archive) override any bot-specific preference when in conflict.
-L3 Archive의 영구 원칙은 부서 개성 선호보다 항상 우선합니다.
-
-> **충돌 시나리오 예시**: 리서치실 봇은 "출처 미확인 주장 금지" 원칙(L3)을 고수하지만, PM이 속도 우선 태스크를 디스패치합니다. 이 경우 PM 오케스트레이터가 L3 원칙을 스코프 제약으로 명시하고 리서치실의 고착화된 선호를 유지하면서 출력 형식만 간소화합니다. 봇 개성은 보존되고, 조직 원칙도 위반되지 않습니다.
-> **Conflict example**: Research Bot insists on citation-first (L3 principle), PM needs speed. Resolution: PM orchestrator preserves the citation rule as a scope constraint, simplifies output format only. Bot personality maintained; L3 not violated.
-
----
-
-### Balance Mechanism | 동기화 vs 독립성 균형 메커니즘
-
-The system operates on a **"shared rails, independent carriages"** model.
-
-```
-          L3 Archive (Permanent Shared Principles)
-          영구 공통 원칙 — TTL 없음, 전사 적용
-                    │
-          ┌─────────┼─────────────┐
-          │         │             │
-     Research    Design      Engineering
-    (citation)  (WCAG)      (pre-flight)
-    독립 메모리  독립 메모리   독립 메모리
-    개성 심화 ↑  개성 심화 ↑   개성 심화 ↑
-```
-
-Bots share the same organizational grammar (norms, RETRO protocols, `criteria_version` sync) but develop distinct vocabularies (domain depth, style preferences, judgment criteria). The PM orchestrator is the convergence force — routing tasks, running RETROs, and maintaining L3 principles.
-
-전사 공통 문법(규범·RETRO·`criteria_version` 동기화)은 공유하되, 각 봇의 도메인 깊이·판단 스타일은 독자적으로 발전합니다. PM 오케스트레이터가 수렴력(convergence force)으로 작동합니다.
-
----
-
-### Memory Accumulation Lifecycle | 메모리 누적 라이프사이클
-
-Bot memory is stratified into three layers — each with distinct retention rules that reinforce bot personality over time.
-
-봇 메모리는 세 계층으로 분리되며, 각 계층의 보존 규칙이 봇 개성 강화와 직접 연결됩니다.
-
-| Layer | TTL | Role / 역할 | Personality Effect / 개성 영향 |
-|-------|-----|------------|-------------------------------|
-| **L1 Active** | Session | Live task state / 현재 태스크 상태 | 즉각 반응 패턴 형성 |
-| **L2 Mid-term** | 7–30 days sliding | Recent patterns / 최근 성공·실패 기록 | 반복 선호도 강화 |
-| **L3 Archive** | Permanent | Core principles / 조직 공통 원칙 | 판단 기준 고착화 기반 |
-
-> **연계 구조**: L1 태스크가 반복되면 L2로 승격 → L2가 충분히 검증되면 L3 영구 원칙으로 승격됩니다. `tools/memory_ttl_checker.py`가 매일 00:00 KST에 자동 처리합니다. 리서치실 봇이 "출처 없는 주장 금지" 원칙을 갖게 된 것도 이 라이프사이클의 결과입니다.
-
-> **Lifecycle**: Repeated L1 tasks are promoted to L2 → verified L2 patterns graduate to L3 permanent principles. `tools/memory_ttl_checker.py` auto-processes daily at 00:00 KST.
-
----
-
-### Customization Guardrails | 커스터마이징 가드레일
-
-Bot personality can deepen, but cannot override organizational standards. Three guardrails enforce this boundary.
-
-봇 개성은 심화될 수 있지만, 조직 표준을 위반할 수는 없습니다. 세 가지 가드레일이 이 경계를 강제합니다.
-
-**① Immutable L3 Principles | L3 불변 원칙**
-Any bot preference conflicting with an L3 Archive entry is automatically overridden by the PM orchestrator during task dispatch.
-L3 Archive와 충돌하는 봇 선호는 PM 오케스트레이터가 태스크 디스패치 시 자동 우선 적용합니다.
-
-**② 3-File Sync Lock | 3파일 동기화 잠금**
-`CLAUDE.md` / `AGENTS.md` / `GEMINI.md` must be updated simultaneously. A solo file edit triggers a sync warning in the next pre-flight check.
-세 파일 중 하나만 수정하면 pre-flight 검증에서 동기화 경고가 발생합니다.
-
-**③ criteria_version Tracking | 기준 버전 추적**
-All bot outputs reference `criteria_version` — preventing a bot's opinionated preference from silently shifting evaluation thresholds.
-모든 봇 산출물은 `criteria_version`을 참조해 개성 변화가 평가 임계값을 무단 변경하지 못하게 합니다.
-
----
-
-### References | 레퍼런스
-
-> *Architecture patterns informing this design / 이 설계에 참고한 아키텍처 패턴*
-
-| # | Reference | Pattern | Relevance |
-|---|-----------|---------|-----------|
-| 1 | [MemGPT (2023)](https://arxiv.org/abs/2310.08560) | Hierarchical memory (main ctx / external storage) | L1/L2/L3 계층 설계 기반 |
-| 2 | [AutoGen: Multi-Agent Conversation (2023)](https://arxiv.org/abs/2308.08155) | Autonomous agent specialization via role assignment | 부서별 역할 고착화 패턴 |
-| 3 | [CrewAI OSS](https://github.com/crewAIInc/crewAI) | Agent role + backstory → opinionated behavior | `personality`/`tone` 필드 설계 참고 |
-| 4 | [CAMEL: Communicative Agents (2023)](https://arxiv.org/abs/2303.17760) | Role-play specialization + cross-agent sync | RETRO 배분 → 크로스팀 동기화 패턴 |
-| 5 | [LangGraph Agent Memory](https://langchain-ai.github.io/langgraph/concepts/memory/) | Short/long-term memory separation in agentic systems | TTL 슬라이딩 윈도우 설계 참고 |
-| 6 | [Generative Agents (2023)](https://arxiv.org/abs/2304.03442) | Memory stream + reflection → personality emergence | 반복 태스크 → 선호 고착화 메커니즘 |
-
-<p align="center">
-  <img src="assets/bot_memory_mechanism.png" alt="봇 독립 메모리 → 개성 강화 메커니즘 시각화" width="700"/>
-</p>
-
----
-
-## 스킬 가이드
-
-<p align="center">
-  <img src="assets/onboarding/skill_guide.png" alt="스킬 가이드 다이어그램" width="700"/>
-</p>
-
-스킬은 재사용 가능한 자동화 워크플로입니다. 텔레그램에서 슬래시 커맨드 또는 자연어 트리거로 실행할 수 있습니다.
-
-> 상세 작성법 및 MCP 연동 가이드: **[docs/SKILLS_MCP_GUIDE.md](docs/SKILLS_MCP_GUIDE.md)**
-
-### 내장 스킬 목록 (22개)
-
-| 스킬 | 슬래시 커맨드 | 트리거 키워드 | 설명 |
-|------|--------------|--------------|------|
-| **quality-gate** | `/quality-gate` | `품질검사`, `QA gate`, `pre-merge check` | ruff 린트 + pytest 실행 — 머지/배포 전 필수 |
-| **e2e-regression** | `/e2e-regression` | `e2e 테스트`, `회귀테스트`, `smoke test` | 전체 E2E 회귀 테스트 (PM 라우팅·봇 디스패치·엔진 호환성) |
-| **gemini-image-gen** | `/gemini-image-gen` | `이미지 생성`, `generate image`, `시각화` | Gemini OAuth 기반 이미지 생성 (gemini-2.5-flash) |
-| **bot-triage** | `/bot-triage` | `봇 장애`, `bot down`, `triage` | 봇 장애 진단, 자동 복구, 인시던트 리포트 |
-| **error-gotcha** | `/error-gotcha` | `gotcha 추가`, `에러 회고`, `add gotcha` | 에러 재발 방지 — gotcha 항목 자동 등록 |
-| **engineering-review** | `/engineering-review` | `code review`, `코드리뷰`, `PR review` | 코드 변경 검토 — 린트 + 테스트 + 구조 체크 |
-| **safe-modify** | `/safe-modify` | `safe modify`, `안전 수정`, `부작용 최소화` | 고위험 코드 수정 시 최소 풋프린트 방법론 |
-| **brainstorming-auto** | `/brainstorming-auto` | `자동 설계`, `auto design` | 인간 확인 없는 자율 설계 문서 생성 |
-| **weekly-review** | `/weekly-review` | `주간 회고`, `weekly review` | 주간 회고 자동 실행 + KR 업데이트 |
-| **performance-eval** | `/performance-eval` | `성과 평가`, `KR 달성률` | 월말 KR 달성률 기반 성과 평가 |
-| **harness-audit** | `/harness-audit` | `설정 감사`, `출시 전 점검` | 전체 설정 감사 — 릴리스 전 필수 실행 |
-| **pm-progress-tracker** | `/pm-progress-tracker` | `진척률`, `목표 추적` | PM 목표 달성률 추적 및 이터레이션 로그 |
-| **pm-task-dispatch** | `/pm-task-dispatch` | `태스크 배분`, `task dispatch` | PM 태스크 자동 배분 및 추적 |
-| **pm-discussion** | `/pm-discussion` | `부서 토론`, `discussion` | 멀티부서 토론 프로토콜 실행 |
-| **growth-analysis** | `/growth-analysis` | `성장 분석`, `지표 분석` | 성장 지표 분석 및 보고서 생성 |
-| **design-critique** | `/design-critique` | `디자인 리뷰`, `UI 검토` | UI/UX 디자인 비평 및 개선안 제안 |
-| **retro** | `/retro` | `회고`, `retrospective` | 스프린트 회고 자동 실행 |
-| **loop-checkpoint** | `/loop-checkpoint` | `루프 체크`, `진행 상황` | 반복 작업 체크포인트 저장 |
-| **skill-evolve** | `/skill-evolve` | `스킬 개선`, `skill evolve` | 기존 스킬 자동 개선 및 업데이트 |
-| **autonomous-skill-proxy** | `/autonomous-skill-proxy` | `자율 실행`, `autonomous` | 인간 확인 없는 자율 스킬 프록시 |
-| **failure-detect-llm** | `/failure-detect-llm` | `장애 감지`, `failure detect` | LLM 기반 장애 감지 및 알림 |
-| **create-skill** | `/create-skill` | `스킬 생성`, `new skill` | 새 스킬 자동 생성 템플릿 |
-
-### 스킬 구조
-
-각 스킬은 `skills/<skill-name>/` 디렉토리에 위치하며, Claude Code가 자동으로 로드합니다:
-
-```
-skills/
-└── quality-gate/
-    ├── SKILL.md          # 트리거·실행 절차·산출물 정의
-    ├── gotchas.md        # 인시던트 기반 주의사항
-    └── scripts/          # 스킬 전용 자동화 스크립트 (선택)
-```
-
-새 스킬 추가 방법: [docs/SKILLS_MCP_GUIDE.md](docs/SKILLS_MCP_GUIDE.md) 참조
-
----
-
-## 기여 방법
-
-> 모든 경험 수준의 기여자를 환영합니다!
-
-### 처음 기여하시나요? Good First Issues부터 시작하세요
-
-| 라벨 | 설명 | 대상 |
-|------|------|------|
-| `good first issue` | 코드베이스 파악 없이도 처리 가능한 작은 개선 | 첫 기여자 |
-| `documentation` | README, 주석, 가이드 문서 개선 | 글 잘 쓰시는 분 |
-| `help wanted` | 메인테이너가 도움을 원하는 이슈 | 경험 있는 기여자 |
-| `engine-compat` | 3엔진(claude/codex/gemini) 호환성 이슈 | 엔진 전문가 |
-| `skill-proposal` | 새 스킬 제안 및 구현 | 자동화 아이디어 있는 분 |
-
-- **이슈 보기**: [github.com/dragon1086/aimesh/issues?q=label%3A"good+first+issue"](https://github.com/dragon1086/aimesh/issues?q=label%3A%22good+first+issue%22&utm_source=aimesh_readme&utm_medium=link&utm_campaign=contribute)
-- **로드맵**: [ROADMAP.md](ROADMAP.md) — 진행 중인 Phase와 다음 목표 확인
-- **커뮤니티**: 질문은 [GitHub Discussions](https://github.com/dragon1086/aimesh/discussions?utm_source=aimesh_readme&utm_medium=link&utm_campaign=community)에서
-
-### Fork → PR 흐름
-
-```
-1. Fork: github.com/dragon1086/aimesh → Fork
-2. Clone: git clone https://github.com/<your-username>/aimesh.git
-3. Branch: git checkout -b feature/my-feature
-4. Code + Test: ./.venv/bin/pytest -q
-5. PR: gh pr create --base develop
-```
-
-### 로컬 개발 환경 설정
-
-```bash
-# 1. 저장소 포크 후 클론
-git clone https://github.com/<your-username>/aimesh.git
-cd aimesh
-
-# 2. 원클릭 설치 (가상환경 자동 생성)
-bash scripts/setup.sh
-
-# 3. 환경 변수 설정
-cp .env.example .env
-# .env 파일에 테스트용 봇 토큰 입력
-
-# 4. 테스트 실행으로 환경 확인
-./.venv/bin/pytest -q
-```
-
-### 브랜치 전략
-
-```
-main          ─── 프로덕션 배포 기준 (태그 기반 릴리스)
-  └── develop ─── 통합 브랜치 (PR 머지 대상)
-        ├── feature/xxx   ── 신규 기능
-        ├── fix/xxx       ── 버그 수정
-        ├── docs/xxx      ── 문서 수정
-        ├── refactor/xxx  ── 리팩토링
-        └── chore/xxx     ── 빌드/설정 변경
-```
-
-| 유형 | 패턴 | 예시 |
-|------|------|------|
-| 신규 기능 | `feature/<짧은-설명>` | `feature/docker-compose-support` |
-| 버그 수정 | `fix/<짧은-설명>` | `fix/gemini-auth-timeout` |
-| 문서 | `docs/<짧은-설명>` | `docs/readme-opensource` |
-| 리팩토링 | `refactor/<짧은-설명>` | `refactor/runner-interface` |
-
-> **주의**: `main` 브랜치에 직접 푸시하지 마세요. 모든 변경은 `develop` 경유 PR로 머지됩니다.
-
-### PR 절차
-
-```bash
-# 1. develop에서 피처 브랜치 생성
-git checkout develop && git pull origin develop
-git checkout -b feature/my-feature
-
-# 2. 코드 작성 + 테스트
-./.venv/bin/pytest -q
-./.venv/bin/ruff check .
-
-# 3. 커밋 (Conventional Commits 규칙)
-git commit -m "feat(gemini): OAuth 2.0 인증 지원 추가"
-
-# 4. develop 브랜치 대상으로 PR 제출
-gh pr create --base develop --title "feat: ..." --body "..."
-```
-
-**PR 제출 전 체크리스트**
-
-```
-[ ] develop 브랜치 기준으로 작성했다
-[ ] .venv/bin/pytest -q 통과 확인
-[ ] .venv/bin/ruff check . 경고 없음
-[ ] 새 기능/버그 수정에 테스트 추가
-[ ] CLAUDE.md / AGENTS.md / GEMINI.md 동시 업데이트 (해당 시)
-[ ] .env 파일이나 시크릿이 커밋에 포함되지 않았다 확인
-```
-
-### 3개 컨텍스트 파일 동기화 원칙 (필수)
-
-이 프로젝트는 3개 엔진을 지원합니다. 각 엔진은 자신의 컨텍스트 파일만 읽으므로
-**항상 동시에 수정**해야 합니다:
-
-```
-CLAUDE.md   →  Claude Code용 (가장 상세한 기준 문서)
-AGENTS.md   →  Codex CLI용  (CLAUDE.md와 동기화)
-GEMINI.md   →  Gemini CLI용 (CLAUDE.md와 동기화)
-```
-
-> 하나의 파일만 수정하면 다른 엔진이 최신 정보를 반영하지 못합니다.
-> CLAUDE.md를 먼저 수정한 후 AGENTS.md → GEMINI.md 순서로 동기화하세요.
-
-### 코드 스타일
-
-- **Linter**: `ruff` (line length: 100)
-- **Python**: 3.10+, 타입 힌트 필수
-- **비동기**: asyncio 기반 (`async/await` 우선)
-- **로깅**: `loguru` 사용 (`print` 금지)
-- **시크릿**: 하드코딩 절대 금지, `os.environ` 사용
-
-자세한 기여 가이드: [CONTRIBUTING.md](CONTRIBUTING.md)
-
----
-
-## Docker 실행법
-
-Docker Compose는 엔진별 프로파일로 선택적 실행을 지원합니다.
-
-```bash
-# 1. 환경변수 준비
-cp .env.example .env && nano .env
-
-# 2. 전체 조직 빌드 + 실행 (claude + codex + gemini)
-docker compose --profile claude --profile codex --profile gemini up -d
-
-# 3. 상태 확인
-docker compose ps
-docker compose logs -f aiorg-pm
-```
-
-**프로파일별 선택 실행**
-
-```bash
-# Claude 계열만 (PM + 기획실 + 개발실 + 디자인실)
-docker compose --profile claude up -d
-
-# Codex 계열만 (운영실)
-docker compose --profile codex up -d
-
-# Gemini 계열만 (성장실 + 리서치실)
-docker compose --profile gemini up -d
-```
-
-| 프로파일 | 봇 | 엔진 |
-|----------|----|------|
-| `claude` | PM, 기획실, 개발실, 디자인실 | `claude-code` |
-| `codex` | 운영실 | `codex` |
-| `gemini` | 성장실, 리서치실 | `gemini-cli` (gemini-2.5-flash) |
-
----
-
-## 환경변수 참조
-
-`.env.example`을 복사해 `.env`를 만들고 값을 채웁니다.
-
-```bash
-cp .env.example .env
-```
-
-> **보안**: `.env` 파일은 `.gitignore`에 포함되어 있습니다. 절대 커밋하지 마세요.
-
-### 필수 변수
-
-| 변수명 | 설명 | 예시 |
-|--------|------|------|
-| `TELEGRAM_BOT_TOKEN` | PM 봇 토큰 (@BotFather 발급) | `123456:ABC-DEF...` |
-| `TELEGRAM_GROUP_CHAT_ID` | 그룹 채팅 ID (음수) | `-5203707291` |
-| `BOT_TOKEN_AIORG_PRODUCT_BOT` | 기획실 봇 토큰 | `123456:ABC...` |
-| `BOT_TOKEN_AIORG_ENGINEERING_BOT` | 개발실 봇 토큰 | `123456:ABC...` |
-| `BOT_TOKEN_AIORG_DESIGN_BOT` | 디자인실 봇 토큰 | `123456:ABC...` |
-| `BOT_TOKEN_AIORG_GROWTH_BOT` | 성장실 봇 토큰 | `123456:ABC...` |
-| `BOT_TOKEN_AIORG_OPS_BOT` | 운영실 봇 토큰 | `123456:ABC...` |
-| `BOT_TOKEN_AIORG_RESEARCH_BOT` | 리서치실 봇 토큰 | `123456:ABC...` |
-
-### 엔진 경로 (setup.sh 자동 감지)
-
-| 변수명 | 엔진 | 예시 |
-|--------|------|------|
-| `CLAUDE_CLI_PATH` | Claude Code | `/Users/user/.local/bin/claude` |
-| `CODEX_CLI_PATH` | Codex | `/opt/homebrew/bin/codex` |
-| `GEMINI_CLI_PATH` | Gemini CLI | `/opt/homebrew/bin/gemini` |
-
-전체 환경변수 레퍼런스: [`.env.example`](.env.example)
-
----
-
-## FAQ / 트러블슈팅
-
-**Q. 엔진 하나만 설치해도 되나요?**
-A. 네. 3개 중 하나만 설치해도 됩니다. `bots/*.yaml`의 `engine:` 필드를 설치된 엔진으로 통일하세요.
-
-**Q. API 비용이 걱정됩니다.**
-A. `DAILY_COST_LIMIT_USD`, `PM_HOURLY_CALL_LIMIT` 환경변수로 비용 상한을 설정할 수 있습니다. 초과 시 서킷 브레이커가 자동 동작합니다.
-
-**Q. 봇을 직접 종료/재시작해도 되나요?**
-A. **금지**입니다. 직접 프로세스 종료 시 실행 중인 태스크 결과가 유실됩니다. 반드시 `bash scripts/request_restart.sh --reason "이유"`를 사용하세요.
-
-### 설치 문제
-
-| 증상 | 해결 방법 |
-|------|-----------|
-| `AI 엔진이 하나도 감지되지 않았습니다` | 3엔진 중 하나 이상 설치 후 `bash scripts/setup.sh` 재실행 |
-| `Python 3.10 이상을 찾을 수 없습니다` | `brew install python@3.12` 또는 `pyenv install 3.12` |
-| `import anthropic 실패` | `.venv/bin/pip install anthropic` 수동 실행 |
-| setup.sh가 엔진을 못 찾음 | `which claude` / `which codex` / `which gemini`로 경로 확인 후 `.env`에 직접 입력 |
-
-### 엔진 연결 오류
-
-| 엔진 | 증상 | 해결 방법 |
-|------|------|-----------|
-| **claude-code** | `claude: command not found` | `npm install -g @anthropic-ai/claude-code` 후 `claude auth login` |
-| **codex** | `~/.codex/auth.json not found` | `codex login` 으로 OAuth 인증 완료 |
-| **gemini-cli** | `oauth_creds.json not found` | `gemini auth login` 으로 Google 계정 인증 |
-
----
-
-## 기술 스택
-
-| 레이어 | 기술 |
-|--------|------|
-| 언어 | Python 3.10+ |
-| 봇 프레임워크 | python-telegram-bot |
-| 비동기 | asyncio |
-| 린터 | ruff |
-| 테스트 | pytest + pytest-asyncio |
-| DB | SQLite (공유 컨텍스트) |
-| 실행 엔진 | Claude Code CLI / Codex CLI / Gemini CLI |
-| 컨테이너 | Docker + Docker Compose (프로파일 지원) |
-| CI/CD | GitHub Actions (`ci-lint.yml` / `ci-e2e.yml` / `publish-pypi.yml` / `cd-main.yml`) |
-
----
-
-## 라이선스
-
-이 프로젝트는 **MIT 라이선스** 하에 배포됩니다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
-
----
-
-## 모바일 앱
-
-<p align="center">
-  <a href="https://play.google.com/store/apps/details?id=com.prisminsight.prism_mobile&utm_source=aimesh_readme&utm_medium=badge&utm_campaign=opensource_launch">
-    <img src="https://img.shields.io/badge/Google_Play-Prism_Dashboard-3DDC84?style=for-the-badge&logo=google-play&logoColor=white" alt="Google Play에서 Prism Dashboard 다운로드"/>
-  </a>
-</p>
-
-aimesh와 연동하는 **Prism Dashboard** 앱으로 AI 조직의 작업 현황을 모바일에서 실시간 모니터링하세요.
-
----
-
-## 관련 프로젝트
-
-MetaGPT, AutoGen, CrewAI, OpenAI Swarm에서 영감을 받았으나 핵심 차별점:
-
-- **Telegram을 native 메시지 버스로 사용** — 별도 UI·대시보드 불필요
-- **YAML 기반 동적 조직 구성** — 코드 수정 없이 부서·엔진 추가 가능
-- **3엔진 동시 지원** — 태스크 특성에 맞게 엔진 자동 선택
-- **실사용 검증된 스킬 시스템** — 22개 재사용 가능한 자동화 워크플로
-
----
-
-*telegram-ai-org (aimesh) — AI 조직을 텔레그램에서 | 2026*
+[MIT License](LICENSE) © 2024 telegram-ai-org contributors

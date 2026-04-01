@@ -356,7 +356,7 @@ async def get_snapshot() -> dict[str, Any]:
     # 최근 24시간 태스크 가져오기 (in_progress 없을 때도 failed/done 반영)
     rows = await _query(
         """
-        SELECT id, assigned_dept, status, description
+        SELECT id, assigned_dept, status, description, parent_id
         FROM pm_tasks
         WHERE updated_at >= datetime('now', '-24 hours')
         ORDER BY updated_at DESC
@@ -373,24 +373,58 @@ async def get_snapshot() -> dict[str, Any]:
         dept = _ORG_TO_DEPT.get(raw, raw)  # full orgId면 short key로 변환
         dept_tasks.setdefault(dept, []).append(row)
 
+    # 부모 태스크 상태 조회 — failed 자식의 부모가 완료됐으면 무시
+    all_task_ids = {row["id"]: row["status"] for row in rows}
+    parent_ids_needed = {
+        row["parent_id"]
+        for row in rows
+        if row["status"] == "failed" and row.get("parent_id")
+        and row["parent_id"] not in all_task_ids
+    }
+    parent_statuses: dict[str, str] = {}
+    if parent_ids_needed:
+        placeholders = ",".join("?" for _ in parent_ids_needed)
+        parent_rows = await _query(
+            f"SELECT id, status FROM pm_tasks WHERE id IN ({placeholders})",
+            tuple(parent_ids_needed),
+        )
+        parent_statuses = {r["id"]: r["status"] for r in parent_rows}
+    # 24h 내 태스크 상태도 포함
+    parent_statuses.update(all_task_ids)
+
+    def _is_resolved_failed(task: dict) -> bool:
+        """부모가 done/completed/cancelled 이면 이미 해결된 실패."""
+        pid = task.get("parent_id")
+        if not pid:
+            return False
+        ps = parent_statuses.get(pid)
+        return ps in ("done", "completed", "cancelled")
+
     # 각 봇 캐릭터 상태 계산
     characters = []
     for dept, org_id in _DEPT_TO_ORG.items():
         tasks = dept_tasks.get(dept, [])
         active   = [t for t in tasks if t["status"] in ("in_progress", "running", "active")]
         blocked  = [t for t in tasks if t["status"] == "blocked"]
-        failed   = [t for t in tasks if t["status"] == "failed"]
+        # 부모가 완료된 failed 태스크는 제외 (과거 실패, 이미 해결됨)
+        failed   = [
+            t for t in tasks
+            if t["status"] == "failed" and not _is_resolved_failed(t)
+        ]
         done     = [t for t in tasks if t["status"] in ("done", "completed")]
 
         if blocked:
             severity, emotion, hp = "critical", "alert", 25
-        elif len(active) > 5 or len(failed) > 3:
+        elif active and (len(active) > 5 or len(failed) > 3):
             severity, emotion, hp = "critical", "alert", 30
-        elif len(active) > 2 or len(failed) > 0:
+        elif active and len(failed) > 0:
+            severity, emotion, hp = "warning", "alert", 55
+        elif len(active) > 2:
             severity, emotion, hp = "warning", "alert", 55
         elif active:
             severity, emotion, hp = "info", "working", 80
-        elif done:
+        elif done or failed:
+            # active 없이 done/failed만 남은 경우 → 과거 작업 완료 상태
             severity, emotion, hp = "info", "happy", 90
         else:
             severity, emotion, hp = "info", "idle", 85
