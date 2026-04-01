@@ -1304,11 +1304,11 @@
     const s = rt[id];
     switch (s.state) {
       case 'idle':
-        // 자리에 앉아있음 — 미세 호흡만
-        s.tx = b.hx + rand(-0.005, 0.005);
-        s.ty = b.hy + rand(-0.008, 0.008);
-        s.speed = 0.000003;
-        s.waitMs = rand(5000, 10000);
+        // 자리에 고정 — 완전 정지
+        s.tx = b.hx;
+        s.ty = b.hy;
+        s.speed = 0;
+        s.waitMs = 999999;
         break;
       case 'working':
         // 사무실 돌아다님 — 여유롭게
