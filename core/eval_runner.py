@@ -218,14 +218,14 @@ class EvalRunner:
         score = 0.0
 
         # 1. expected 키워드 커버리지
-        expected_words = [w.lower() for w in scenario.expected.split() if len(w) > 2]
+        expected_words = self._meaningful_tokens(scenario.expected)
         if expected_words:
             skill_lower = skill_text.lower()
             matched = sum(1 for w in expected_words if w in skill_lower)
             score += 0.6 * (matched / len(expected_words))
 
         # 2. 입력 시나리오가 트리거 섹션에 언급되는지
-        input_words = [w.lower() for w in scenario.input.split() if len(w) > 2]
+        input_words = self._meaningful_tokens(scenario.input)
         if input_words:
             skill_lower = skill_text.lower()
             trigger_section = self._extract_section(skill_text, "trigger")
@@ -234,6 +234,19 @@ class EvalRunner:
             score += 0.4 * min(1.0, matched_input / max(1, len(input_words) // 2))
 
         return min(1.0, score)
+
+    def _meaningful_tokens(self, text: str) -> list[str]:
+        """영문 약어와 2글자 한글 토큰을 모두 보존하는 경량 토크나이저."""
+        raw_tokens = re.findall(r"[A-Za-z0-9_+-]+|[가-힣]+|[一-龥ぁ-んァ-ン]+", text.lower())
+        tokens: list[str] = []
+        for token in raw_tokens:
+            if re.fullmatch(r"[a-z0-9_+-]+", token):
+                if len(token) > 2:
+                    tokens.append(token)
+                continue
+            if len(token) >= 2:
+                tokens.append(token)
+        return tokens
 
     def _extract_section(self, text: str, section_name: str) -> str:
         """마크다운 섹션 추출."""

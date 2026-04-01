@@ -129,6 +129,9 @@ jobs:
       - name: Validate orchestration config
         run: python tools/orchestration_cli.py validate-config
 
+      - name: Report skill eval threshold drift
+        run: python tools/orchestration_cli.py skill-eval-report --target 7.5 --github-warning
+
       - name: Pre-flight Check (RETRO-01 — bash)
         # timeout/filter/env 인프라 파라미터 자동 검증 — FAIL 시 E2E 중단
         # SKIP_PREFLIGHT=1 로 일시적 우회 가능 (CI 디버깅 한정)

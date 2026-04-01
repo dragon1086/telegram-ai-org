@@ -4,12 +4,14 @@
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from core.eval_runner import EvalResult
 from core.improvement_bus import ImprovementBus, ImprovementSignal, SignalKind
 
 
@@ -83,6 +85,35 @@ class TestImprovementBus:
         for s in signals:
             assert s.kind == SignalKind.CODE_SMELL
             assert s.priority >= 1
+
+    def test_skill_staleness_signal_uses_current_score(self, monkeypatch, tmp_path):
+        """baseline이 아니라 현재 eval 점수 기준으로 신호를 발생시킨다."""
+        import core.improvement_bus as improvement_bus
+
+        eval_dir = tmp_path / "evals" / "skills" / "bot-triage"
+        eval_dir.mkdir(parents=True)
+        (eval_dir / "eval.json").write_text(json.dumps({"baseline": 6.5}), encoding="utf-8")
+        fake_core_dir = tmp_path / "core"
+        fake_core_dir.mkdir()
+        monkeypatch.setattr(improvement_bus, "__file__", str(fake_core_dir / "improvement_bus.py"))
+
+        with patch(
+            "core.eval_runner.EvalRunner.score_skill",
+            return_value=EvalResult(
+                skill_name="bot-triage",
+                score=7.4,
+                baseline=6.5,
+                passed=True,
+                improved=True,
+                scenario_count=1,
+                details=[],
+            ),
+        ):
+            signals = ImprovementBus(dry_run=True)._signals_from_skill_staleness()
+
+        assert len(signals) == 1
+        assert signals[0].target == "skill:bot-triage"
+        assert "7.4/10" in signals[0].suggested_action
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +242,84 @@ class TestApprovalGate:
         assert "approve_code_fix" in msg
         assert "reject_code_fix" in msg
         assert "24시간" in msg
+
+    def test_skill_signal_runs_auto_improver(self):
+        """skill: 타겟은 목표 점수까지 auto-improve를 시도한다."""
+        bus = ImprovementBus(dry_run=False)
+        signal = ImprovementSignal(
+            kind=SignalKind.SKILL_STALE,
+            priority=6,
+            target="skill:pm-task-dispatch",
+            evidence={"recent_failures": 9},
+            suggested_action="pm-task-dispatch 스킬 eval 실행 권장.",
+        )
+
+        mock_result = MagicMock()
+        mock_result.improved = True
+        mock_result.original_score = 7.1
+        mock_result.best_score = 7.8
+
+        with (
+            patch(
+                "core.eval_runner.EvalRunner.score_skill",
+                side_effect=[
+                    EvalResult(
+                        skill_name="pm-task-dispatch",
+                        score=7.1,
+                        baseline=7.0,
+                        passed=True,
+                        improved=True,
+                        scenario_count=1,
+                        details=[],
+                    ),
+                    EvalResult(
+                        skill_name="pm-task-dispatch",
+                        score=7.8,
+                        baseline=7.0,
+                        passed=True,
+                        improved=True,
+                        scenario_count=1,
+                        details=[],
+                    ),
+                ],
+            ),
+            patch("core.skill_auto_improver.SkillAutoImprover.improve", return_value=mock_result) as mock_improve,
+        ):
+            result = bus._dispatch(signal)
+
+        mock_improve.assert_called_once_with("pm-task-dispatch", target_score=7.5)
+        assert "[skill_auto_improved]" in result
+
+    def test_skill_signal_skips_auto_improver_when_already_healthy(self):
+        """현재 점수가 이미 목표 이상이면 auto-improver를 다시 호출하지 않는다."""
+        bus = ImprovementBus(dry_run=False)
+        signal = ImprovementSignal(
+            kind=SignalKind.SKILL_STALE,
+            priority=6,
+            target="skill:pm-task-dispatch",
+            evidence={"recent_failures": 9},
+            suggested_action="pm-task-dispatch 스킬 eval 실행 권장.",
+        )
+
+        with (
+            patch(
+                "core.eval_runner.EvalRunner.score_skill",
+                return_value=EvalResult(
+                    skill_name="pm-task-dispatch",
+                    score=7.6,
+                    baseline=7.0,
+                    passed=True,
+                    improved=True,
+                    scenario_count=1,
+                    details=[],
+                ),
+            ),
+            patch("core.skill_auto_improver.SkillAutoImprover.improve") as mock_improve,
+        ):
+            result = bus._dispatch(signal)
+
+        mock_improve.assert_not_called()
+        assert result == "[skill_ok] pm-task-dispatch: 7.6/10 >= 7.5"
 
 
 # ---------------------------------------------------------------------------

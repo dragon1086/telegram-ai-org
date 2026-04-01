@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.eval_runner import EvalResult, EvalRunner
+from core.eval_runner import EvalResult, EvalRunner, EvalScenario
 
 
 class TestEvalRunner:
@@ -82,3 +82,18 @@ class TestEvalRunner:
         assert result["accuracy"] == 1.0
         assert result["correct"] == 2
         assert result["total"] == 2
+
+    def test_score_scenario_counts_short_korean_trigger_tokens(self):
+        """2글자 한글 토큰도 trigger 매칭에 반영한다."""
+        runner = EvalRunner()
+        scenario = EvalScenario(
+            id="ko-short",
+            input="로그 확인",
+            expected="log",
+            weight=1.0,
+        )
+        skill_text = "## Trigger\n- 로그 확인 (log check) 후 traceback을 수집한다.\n"
+
+        score = runner._score_scenario(scenario, skill_text, {})
+
+        assert score > 0.6
