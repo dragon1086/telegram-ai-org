@@ -1268,6 +1268,21 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
         parent_task = await self._db.get_pm_task(parent_task_id)
         parent_metadata = parent_task.get("metadata", {}) if parent_task else {}
         parent_description = parent_task.get("description", "") if parent_task else ""
+
+        # 부모 goal이 terminal 상태면 dispatch 거부 (in-flight 세션 재발 방지)
+        _TERMINAL_GOAL_STATUSES = {
+            "achieved", "completed", "max_iterations_reached", "cancelled", "stagnated",
+        }
+        if parent_task:
+            _goal_id = parent_task.get("parent_id")
+            if _goal_id:
+                _goal = await self._db.get_goal(_goal_id)
+                if _goal and _goal.get("status") in _TERMINAL_GOAL_STATUSES:
+                    logger.info(
+                        f"[PM] dispatch 거부: goal {_goal_id} 상태={_goal.get('status')}"
+                    )
+                    return []
+
         # 0. 계획 미리보기 전송
         await self._send_plan_preview(
             subtasks,
