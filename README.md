@@ -1,31 +1,48 @@
-# telegram-ai-org (aimesh)
+![AIMesh](data/images/aimesh_hero.png)
 
-![logo](assets/logo.png)
+<p align="center">
+  <img src="assets/logo/nanobunny2_logo.png" alt="aimesh 마스코트 nanobunny2" width="200"/>
+</p>
+<h1 align="center">telegram-ai-org (aimesh)</h1>
+<p align="center">
+  <strong>"10분 안에 텔레그램에서 당신만의 AI 조직을 운영하세요"</strong><br/>
+  텔레그램 그룹 채팅방 하나를 AI 조직의 오피스로 만드는 오픈소스 멀티봇 오케스트레이션 시스템
+</p>
 
-> **"10분 안에 텔레그램에서 당신만의 AI 조직을 운영하세요"**
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License"/></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+"/></a>
+  <a href="#3엔진-지원-안내"><img src="https://img.shields.io/badge/engine-claude--code%20%7C%20codex%20%7C%20gemini--cli-orange.svg" alt="3엔진 지원"/></a>
+  <a href="https://pypi.org/project/telegram-ai-org/"><img src="https://img.shields.io/pypi/v/telegram-ai-org.svg" alt="PyPI version"/></a>
+  <a href="https://github.com/dragon1086/aimesh/actions/workflows/ci-lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/dragon1086/aimesh/ci-lint.yml?label=CI&logo=github" alt="CI"/></a>
+  <a href="https://github.com/dragon1086/aimesh/actions/workflows/cd-main.yml"><img src="https://img.shields.io/github/actions/workflow/status/dragon1086/aimesh/cd-main.yml?label=CD%3Amain&logo=github" alt="CD"/></a>
+  <a href="https://github.com/dragon1086/aimesh/releases/latest"><img src="https://img.shields.io/github/v/release/dragon1086/aimesh?label=Release&logo=github&color=green" alt="Release"/></a>
+  <a href="https://hub.docker.com/r/dragon1086/aimesh"><img src="https://img.shields.io/docker/v/dragon1086/aimesh?label=Docker&logo=docker&color=blue" alt="Docker Hub"/></a>
+</p>
 
-텔레그램 그룹 채팅방을 AI 조직의 오피스로 만드는 오픈소스 멀티봇 오케스트레이션 시스템.
-PM 봇이 사용자 요청을 분석해 7개 전문 부서 봇에 자동 배분합니다.
-**Claude Code / Codex / Gemini CLI** 3개 엔진을 모두 지원합니다.
+<p align="center">
+  <img src="https://img.shields.io/badge/engine-claude--code-blueviolet?logo=anthropic&logoColor=white" alt="Claude Code"/>
+  <img src="https://img.shields.io/badge/engine-codex-00A67E?logo=openai&logoColor=white" alt="Codex"/>
+  <img src="https://img.shields.io/badge/engine-gemini--cli-4285F4?logo=google&logoColor=white" alt="Gemini CLI"/>
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
-[![Engine](https://img.shields.io/badge/engine-claude--code%20%7C%20codex%20%7C%20gemini--cli-orange.svg)](#3엔진-지원-안내)
-[![PyPI version](https://img.shields.io/pypi/v/telegram-ai-org.svg)](https://pypi.org/project/telegram-ai-org/)
-[![CI](https://img.shields.io/github/actions/workflow/status/dragon1086/aimesh/ci-lint.yml?label=CI&logo=github)](https://github.com/dragon1086/aimesh/actions/workflows/ci-lint.yml)
-[![CD Main](https://img.shields.io/github/actions/workflow/status/dragon1086/aimesh/cd-main.yml?label=CD%3Amain&logo=github)](https://github.com/dragon1086/aimesh/actions/workflows/cd-main.yml)
-[![Release](https://img.shields.io/github/v/release/dragon1086/aimesh?label=Release&logo=github&color=green)](https://github.com/dragon1086/aimesh/releases/latest)
-[![Docker Hub](https://img.shields.io/docker/v/dragon1086/aimesh?label=Docker&logo=docker&color=blue)](https://hub.docker.com/r/dragon1086/aimesh)
+<p align="center">
+  <a href="https://play.google.com/store/apps/details?id=com.prisminsight.prism_mobile&utm_source=aimesh_readme&utm_medium=badge&utm_campaign=opensource_launch">
+    <img src="https://img.shields.io/badge/Android-Prism_Dashboard-3DDC84?logo=android&logoColor=white" alt="Android App"/>
+  </a>
+</p>
 
 ---
 
 ## 목차
 
+- [⚡ 빠른 시작 (3단계)](#-빠른-시작-3단계)
 - [프로젝트 소개](#프로젝트-소개)
+- [원클릭 셋팅](#원클릭-셋팅)
+- [봇 토큰 설정](#봇-토큰-설정)
+- [대시보드 사용법](#대시보드-사용법)
 - [아키텍처 개요](#아키텍처-개요)
 - [3엔진 지원 안내](#3엔진-지원-안내)
-- [원클릭 설치 가이드](#원클릭-설치-가이드)
-- [봇 토큰 설정](#봇-토큰-설정)
 - [조직 구조](#조직-구조)
 - [스킬 가이드](#스킬-가이드)
 - [기여 방법](#기여-방법)
@@ -33,6 +50,32 @@ PM 봇이 사용자 요청을 분석해 7개 전문 부서 봇에 자동 배분�
 - [환경변수 참조](#환경변수-참조)
 - [FAQ / 트러블슈팅](#faq--트러블슈팅)
 - [라이선스](#라이선스)
+
+---
+
+## ⚡ 빠른 시작 (3단계)
+
+> **이 3단계만 따라하면 10분 안에 당신의 AI 조직이 텔레그램에서 작동합니다.**
+
+```bash
+# Step 1 — 저장소 클론 & 원클릭 설치
+git clone https://github.com/dragon1086/aimesh.git && cd aimesh && bash install.sh
+
+# Step 2 — 텔레그램 봇 토큰 입력 (.env 파일 편집)
+nano .env
+# TELEGRAM_BOT_TOKEN=  ← @BotFather에서 발급
+# TELEGRAM_GROUP_CHAT_ID=  ← 그룹 채팅 ID (음수값)
+
+# Step 3 — 전체 봇 기동
+bash scripts/start_all.sh
+```
+
+기동 후 텔레그램 그룹 채팅방에서 **"PRD 작성해줘"** 라고 입력하면 AI 조직이 즉시 응답합니다.
+
+> **또는 원라이너 설치** (저장소 클론 없이):
+> ```bash
+> curl -sSL https://raw.githubusercontent.com/dragon1086/aimesh/main/install.sh | bash
+> ```
 
 ---
 
@@ -58,7 +101,7 @@ aimesh는 **텔레그램 그룹 채팅방 하나를 AI 조직의 사무실로 �
 | **자연어 스케줄** | "매주 월요일 오전 9시에 리포트 보내줘" 형식의 스케줄 등록 |
 | **교훈 메모리** | 작업 결과를 메모리에 저장, 다음 태스크에 자동 반영 |
 | **멀티부서 토론** | 여러 봇이 하나의 주제를 토론 후 PM이 합성 결과 생성 |
-| **Telegram Native UI** | 채팅방 자체가 오피스 — 별도 대시보드 불필요 |
+| **실시간 대시보드** | `http://localhost:8080` — 만화 캐릭터 컨셉 작업 시각화 |
 
 ### 핵심 파일 구조
 
@@ -82,6 +125,7 @@ telegram-ai-org/
 │   ├── setup.sh                     #   원클릭 초기 설치
 │   ├── start_all.sh                 #   전체 봇 시작
 │   └── request_restart.sh           #   안전한 재기동 요청
+├── dashboard.py                     # 실시간 대시보드 서버
 ├── CLAUDE.md                        # Claude Code 운영 지침 (기준 문서)
 ├── AGENTS.md                        # Codex CLI 운영 지침
 ├── GEMINI.md                        # Gemini CLI 운영 지침
@@ -90,195 +134,17 @@ telegram-ai-org/
 
 ---
 
-## 아키텍처 개요
+## 원클릭 셋팅
 
-![architecture](assets/architecture_diagram.png)
+<p align="center">
+  <img src="assets/onboarding_banner.png" alt="원클릭 셋팅 온보딩 배너" width="700"/>
+</p>
 
-aimesh는 **오케스트레이터(PM 봇) + 7개 전문 부서봇 + 3개 AI 엔진**의 3계층 구조로 동작합니다.
-
-```mermaid
-graph TD
-    User(["👤 사용자 메시지"])
-    TG["📱 Telegram 그룹 채팅방"]
-
-    User -->|자연어 입력| TG
-    TG -->|메시지 수신| PM
-
-    subgraph PM["🤖 PM Bot — aiorg_pm_bot"]
-        NL["nl_classifier\n(자연어 분류)"]
-        RT["pm_router\n(부서 라우팅)"]
-        OR["pm_orchestrator\n(태스크 조율)"]
-        NL --> RT --> OR
-    end
-
-    OR -->|"PRD·코드·설계\n(복잡한 추론)"| CLAUDE
-    OR -->|"배포·인프라\n(CLI 자동화)"| CODEX
-    OR -->|"조사·검색\n(웹 검색 내장)"| GEMINI
-
-    subgraph CLAUDE["⚡ claude-code 계열"]
-        PRODUCT["기획실\nPRD·요구사항분석"]
-        ENG["개발실\n코드·버그수정·API"]
-        DESIGN["디자인실\nUI/UX·와이어프레임"]
-    end
-
-    subgraph CODEX["🔧 codex 계열"]
-        OPS["운영실\n배포·인프라·DevOps"]
-    end
-
-    subgraph GEMINI["🔍 gemini-cli 계열"]
-        GROWTH["성장실\n마케팅·지표분석"]
-        RESEARCH["리서치실\n시장조사·경쟁사분석"]
-    end
-
-    CLAUDE -->|결과 반환| TG
-    CODEX  -->|결과 반환| TG
-    GEMINI -->|결과 반환| TG
-```
-
-> 사용자는 텔레그램 채팅방 하나만 운영합니다. PM 봇이 태스크를 자동으로 분석하고 적합한 부서와 엔진을 선택합니다.
-
----
-
-## 3엔진 지원 안내
-
-3개 엔진 중 **1개 이상** 설치하면 됩니다. 엔진별 특성에 따라 부서가 자동으로 엔진을 선택합니다.
-
-### 엔진 비교
-
-| 항목 | claude-code | codex | gemini-cli |
-|------|-------------|-------|------------|
-| 개발사 | Anthropic | OpenAI | Google |
-| 웹 검색 | 없음 | 없음 | **내장** (Google Search) |
-| 최적 태스크 | PRD·코드·기획·설계 | 배포·인프라·DevOps | 시장조사·경쟁사 분석 |
-| 컨텍스트 길이 | 200K 토큰 | 표준 | **1M 토큰** |
-| 인증 방식 | OAuth 2.0 | OAuth 2.0 | OAuth 2.0 |
-| API 키 필요 여부 | **불필요** (OAuth 사용) | **불필요** (OAuth 사용) | **불필요** (Google 계정) |
-
-> 3개 엔진 모두 OAuth 2.0을 지원하므로 API 키 없이 바로 시작할 수 있습니다.
-
----
-
-### 1. Claude Code (기본·권장)
-
-**사전 요구사항**
-
-| 항목 | 요구사항 |
-|------|----------|
-| Node.js | 18 이상 |
-| npm | 8 이상 |
-| 인터넷 연결 | OAuth 인증 시 필요 |
-| OS | macOS / Linux / Windows (WSL2) |
-
-**설치 명령어**
-
-```bash
-# 1. npm으로 설치
-npm install -g @anthropic-ai/claude-code
-
-# 2. 브라우저 OAuth 인증 (1회만)
-claude auth login
-
-# 3. 설치 확인
-claude --version
-```
-
-**인증 확인**: `claude auth status` — 인증 성공 시 `Logged in` 출력
-
----
-
-### 2. Codex CLI
-
-**사전 요구사항**
-
-| 항목 | 요구사항 |
-|------|----------|
-| Node.js | 18 이상 |
-| npm | 8 이상 |
-| OpenAI 계정 | OAuth 인증용 |
-
-**설치 명령어**
-
-```bash
-# 1. npm으로 설치
-npm install -g @openai/codex
-
-# 2. 브라우저 OAuth 인증 — ~/.codex/auth.json 자동 생성
-codex login
-
-# 3. 설치 확인
-codex --version
-```
-
-**인증 확인**: `~/.codex/auth.json` 파일 존재 여부 확인
-
-> OpenAI API 키가 있는 경우: `.env`에 `OPENAI_API_KEY=sk-...`를 직접 설정하면 OAuth 없이 사용 가능
-
----
-
-### 3. Gemini CLI
-
-**사전 요구사항**
-
-| 항목 | 요구사항 |
-|------|----------|
-| Node.js 또는 Homebrew | 둘 중 하나 |
-| Google 계정 | OAuth 인증용 (무료) |
-
-**설치 명령어**
-
-```bash
-# Homebrew (macOS 권장)
-brew install gemini-cli
-
-# 또는 npm
-npm install -g @google/gemini-cli
-
-# Google 계정 OAuth 인증 — ~/.gemini/oauth_creds.json 자동 생성
-gemini auth login
-
-# 설치 확인
-gemini --version
-```
-
-**인증 확인**: `~/.gemini/oauth_creds.json` 파일 존재 여부 확인
-
----
-
-## 원클릭 설치 가이드
-
-![onboarding](assets/onboarding_banner.png)
+<p align="center">
+  <img src="assets/onboarding/install_flow.png" alt="설치 흐름 다이어그램" width="700"/>
+</p>
 
 `install.sh`는 설치된 엔진을 자동으로 감지하고 Python 환경 구성, `.env` 파일 생성, 검증까지 한 번에 수행하는 **권장 진입점**입니다.
-
-### 빠른 시작
-
-```bash
-# 1. 저장소 클론
-git clone https://github.com/dragon1086/aimesh.git
-cd aimesh
-
-# 2. 원클릭 설치 실행 (권장)
-bash install.sh
-
-# 3. .env 파일에 Telegram 봇 토큰 입력
-nano .env
-# 필수: TELEGRAM_BOT_TOKEN, TELEGRAM_GROUP_CHAT_ID
-
-# 4. 전체 봇 시작
-bash scripts/start_all.sh
-```
-
-또는 설치 후 봇까지 자동 기동:
-
-```bash
-bash install.sh --start   # 헬스체크 통과 시 봇 자동 기동
-```
-
-또는 curl 원라이너 (저장소 클론 없이):
-
-```bash
-curl -sSL https://raw.githubusercontent.com/dragon1086/aimesh/main/install.sh | bash
-```
 
 ### install.sh 옵션
 
@@ -412,6 +278,221 @@ GEMINI_CLI_PATH=/opt/homebrew/bin/gemini
 
 ---
 
+## 대시보드 사용법
+
+만화 캐릭터 컨셉 실시간 작업 시각화 대시보드를 지원합니다. 텔레그램 채팅방과 함께 **작업 현황을 브라우저에서 실시간**으로 모니터링할 수 있습니다.
+
+### 실행 방법
+
+```bash
+# 기본 실행 (포트 8080)
+python dashboard.py
+
+# 포트 지정
+python dashboard.py --port 8081
+
+# uvicorn 직접 사용
+uvicorn dashboard:app --port 8080
+
+# 개발 모드 (자동 리로드)
+python dashboard.py --reload
+```
+
+브라우저에서 `http://localhost:8080` 접속.
+
+### 화면 구성
+
+<p align="center">
+  <!-- 대시보드 스크린샷 플레이스홀더: assets/onboarding/dashboard_overview.png 추가 예정 -->
+  <img src="assets/onboarding/e2e_flow.png" alt="AI 조직 E2E 태스크 처리 흐름" width="700"/>
+</p>
+
+| 패널 | 내용 | 설명 |
+|------|------|------|
+| ① **티켓 현황** | pending / in_progress / done | 실시간 카운터 + 처리 속도 |
+| ② **완료 작업** | 최근 완료된 작업 타임라인 | 스크롤 뷰 |
+| ③ **원격 접근** | 접속 중인 클라이언트 수 | SSE 스트림 연결 상태 |
+| ④ **부서 캐릭터** | nanobunny2 마스코트 | 각 부서별 AI 캐릭터 상태 |
+
+### API 엔드포인트
+
+| 엔드포인트 | 설명 |
+|-----------|------|
+| `GET /api/v1/events/stream` | SSE 실시간 스트림 (다중 클라이언트 동시 지원) |
+| `GET /api/v1/dashboard/snapshot` | 현재 상태 스냅샷 (초기 로드용) |
+| `GET /api/v1/dashboard/characters` | 부서별 캐릭터 정보 |
+| `GET /api/docs` | Swagger UI |
+
+### 환경변수
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `DASHBOARD_PORT` | `8080` | 서버 포트 |
+| `DASHBOARD_POLL_INTERVAL` | `5` | 데이터 폴링 주기 (초) |
+| `AIMESH_DB_PATH` | `data/tasks.db` | SQLite DB 경로 |
+
+---
+
+## 아키텍처 개요
+
+<p align="center">
+  <img src="assets/diagrams/architecture_overview.png" alt="aimesh 아키텍처 다이어그램" width="700"/>
+</p>
+
+aimesh는 **오케스트레이터(PM 봇) + 7개 전문 부서봇 + 3개 AI 엔진**의 3계층 구조로 동작합니다.
+
+```mermaid
+graph TD
+    User(["👤 사용자 메시지"])
+    TG["📱 Telegram 그룹 채팅방"]
+
+    User -->|자연어 입력| TG
+    TG -->|메시지 수신| PM
+
+    subgraph PM["🤖 PM Bot — aiorg_pm_bot"]
+        NL["nl_classifier\n(자연어 분류)"]
+        RT["pm_router\n(부서 라우팅)"]
+        OR["pm_orchestrator\n(태스크 조율)"]
+        NL --> RT --> OR
+    end
+
+    OR -->|"PRD·코드·설계\n(복잡한 추론)"| CLAUDE
+    OR -->|"배포·인프라\n(CLI 자동화)"| CODEX
+    OR -->|"조사·검색\n(웹 검색 내장)"| GEMINI
+
+    subgraph CLAUDE["⚡ claude-code 계열"]
+        PRODUCT["기획실\nPRD·요구사항분석"]
+        ENG["개발실\n코드·버그수정·API"]
+        DESIGN["디자인실\nUI/UX·와이어프레임"]
+    end
+
+    subgraph CODEX["🔧 codex 계열"]
+        OPS["운영실\n배포·인프라·DevOps"]
+    end
+
+    subgraph GEMINI["🔍 gemini-cli 계열"]
+        GROWTH["성장실\n마케팅·지표분석"]
+        RESEARCH["리서치실\n시장조사·경쟁사분석"]
+    end
+
+    CLAUDE -->|결과 반환| TG
+    CODEX  -->|결과 반환| TG
+    GEMINI -->|결과 반환| TG
+```
+
+> 사용자는 텔레그램 채팅방 하나만 운영합니다. PM 봇이 태스크를 자동으로 분석하고 적합한 부서와 엔진을 선택합니다.
+
+---
+
+## 3엔진 지원 안내
+
+3개 엔진 중 **1개 이상** 설치하면 됩니다. 엔진별 특성에 따라 부서가 자동으로 엔진을 선택합니다.
+
+### 엔진 비교
+
+<p align="center">
+  <img src="assets/diagrams/engine_compat.png" alt="3엔진 호환성 다이어그램" width="700"/>
+</p>
+
+| 항목 | claude-code | codex | gemini-cli |
+|------|-------------|-------|------------|
+| 개발사 | Anthropic | OpenAI | Google |
+| 웹 검색 | 없음 | 없음 | **내장** (Google Search) |
+| 최적 태스크 | PRD·코드·기획·설계 | 배포·인프라·DevOps | 시장조사·경쟁사 분석 |
+| 컨텍스트 길이 | 200K 토큰 | 표준 | **1M 토큰** |
+| 인증 방식 | OAuth 2.0 | OAuth 2.0 | OAuth 2.0 |
+| API 키 필요 여부 | **불필요** (OAuth 사용) | **불필요** (OAuth 사용) | **불필요** (Google 계정) |
+
+> 3개 엔진 모두 OAuth 2.0을 지원하므로 API 키 없이 바로 시작할 수 있습니다.
+
+---
+
+### 1. Claude Code (기본·권장)
+
+**사전 요구사항**
+
+| 항목 | 요구사항 |
+|------|----------|
+| Node.js | 18 이상 |
+| npm | 8 이상 |
+| 인터넷 연결 | OAuth 인증 시 필요 |
+| OS | macOS / Linux / Windows (WSL2) |
+
+**설치 명령어**
+
+```bash
+# 1. npm으로 설치
+npm install -g @anthropic-ai/claude-code
+
+# 2. 브라우저 OAuth 인증 (1회만)
+claude auth login
+
+# 3. 설치 확인
+claude --version
+```
+
+**인증 확인**: `claude auth status` — 인증 성공 시 `Logged in` 출력
+
+---
+
+### 2. Codex CLI
+
+**사전 요구사항**
+
+| 항목 | 요구사항 |
+|------|----------|
+| Node.js | 18 이상 |
+| npm | 8 이상 |
+| OpenAI 계정 | OAuth 인증용 |
+
+**설치 명령어**
+
+```bash
+# 1. npm으로 설치
+npm install -g @openai/codex
+
+# 2. 브라우저 OAuth 인증 — ~/.codex/auth.json 자동 생성
+codex login
+
+# 3. 설치 확인
+codex --version
+```
+
+**인증 확인**: `~/.codex/auth.json` 파일 존재 여부 확인
+
+> OpenAI API 키가 있는 경우: `.env`에 `OPENAI_API_KEY=sk-...`를 직접 설정하면 OAuth 없이 사용 가능
+
+---
+
+### 3. Gemini CLI
+
+**사전 요구사항**
+
+| 항목 | 요구사항 |
+|------|----------|
+| Node.js 또는 Homebrew | 둘 중 하나 |
+| Google 계정 | OAuth 인증용 (무료) |
+
+**설치 명령어**
+
+```bash
+# Homebrew (macOS 권장)
+brew install gemini-cli
+
+# 또는 npm
+npm install -g @google/gemini-cli
+
+# Google 계정 OAuth 인증 — ~/.gemini/oauth_creds.json 자동 생성
+gemini auth login
+
+# 설치 확인
+gemini --version
+```
+
+**인증 확인**: `~/.gemini/oauth_creds.json` 파일 존재 여부 확인
+
+---
+
 ## 조직 구조
 
 ### 부서별 역할과 담당 엔진
@@ -456,9 +537,17 @@ workers:
     description: "신규 봇 역할 설명"
 ```
 
+<p align="center">
+  <img src="assets/onboarding/e2e_flow.png" alt="E2E 태스크 처리 흐름" width="700"/>
+</p>
+
 ---
 
 ## 스킬 가이드
+
+<p align="center">
+  <img src="assets/onboarding/skill_guide.png" alt="스킬 가이드 다이어그램" width="700"/>
+</p>
 
 스킬은 재사용 가능한 자동화 워크플로입니다. 텔레그램에서 슬래시 커맨드 또는 자연어 트리거로 실행할 수 있습니다.
 
@@ -509,7 +598,31 @@ skills/
 
 ## 기여 방법
 
-기여를 환영합니다! 버그 신고, 기능 제안, PR 모두 가능합니다.
+> 모든 경험 수준의 기여자를 환영합니다!
+
+### 처음 기여하시나요? Good First Issues부터 시작하세요
+
+| 라벨 | 설명 | 대상 |
+|------|------|------|
+| `good first issue` | 코드베이스 파악 없이도 처리 가능한 작은 개선 | 첫 기여자 |
+| `documentation` | README, 주석, 가이드 문서 개선 | 글 잘 쓰시는 분 |
+| `help wanted` | 메인테이너가 도움을 원하는 이슈 | 경험 있는 기여자 |
+| `engine-compat` | 3엔진(claude/codex/gemini) 호환성 이슈 | 엔진 전문가 |
+| `skill-proposal` | 새 스킬 제안 및 구현 | 자동화 아이디어 있는 분 |
+
+- **이슈 보기**: [github.com/dragon1086/aimesh/issues?q=label%3A"good+first+issue"](https://github.com/dragon1086/aimesh/issues?q=label%3A%22good+first+issue%22&utm_source=aimesh_readme&utm_medium=link&utm_campaign=contribute)
+- **로드맵**: [ROADMAP.md](ROADMAP.md) — 진행 중인 Phase와 다음 목표 확인
+- **커뮤니티**: 질문은 [GitHub Discussions](https://github.com/dragon1086/aimesh/discussions?utm_source=aimesh_readme&utm_medium=link&utm_campaign=community)에서
+
+### Fork → PR 흐름
+
+```
+1. Fork: github.com/dragon1086/aimesh → Fork
+2. Clone: git clone https://github.com/<your-username>/aimesh.git
+3. Branch: git checkout -b feature/my-feature
+4. Code + Test: ./.venv/bin/pytest -q
+5. PR: gh pr create --base develop
+```
 
 ### 로컬 개발 환경 설정
 
@@ -527,13 +640,6 @@ cp .env.example .env
 
 # 4. 테스트 실행으로 환경 확인
 ./.venv/bin/pytest -q
-```
-
-### Phase 1 단위 테스트 (2026-03-29 추가)
-
-```bash
-# Phase 1 스캐폴딩 단위 테스트 실행
-.venv/bin/python -m pytest tests/unit/test_phase1_*.py -v
 ```
 
 ### 브랜치 전략
@@ -733,6 +839,18 @@ A. **금지**입니다. 직접 프로세스 종료 시 실행 중인 태스크 �
 ## 라이선스
 
 이 프로젝트는 **MIT 라이선스** 하에 배포됩니다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
+
+---
+
+## 모바일 앱
+
+<p align="center">
+  <a href="https://play.google.com/store/apps/details?id=com.prisminsight.prism_mobile&utm_source=aimesh_readme&utm_medium=badge&utm_campaign=opensource_launch">
+    <img src="https://img.shields.io/badge/Google_Play-Prism_Dashboard-3DDC84?style=for-the-badge&logo=google-play&logoColor=white" alt="Google Play에서 Prism Dashboard 다운로드"/>
+  </a>
+</p>
+
+aimesh와 연동하는 **Prism Dashboard** 앱으로 AI 조직의 작업 현황을 모바일에서 실시간 모니터링하세요.
 
 ---
 
