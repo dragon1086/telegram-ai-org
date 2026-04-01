@@ -774,12 +774,12 @@
 
   // ── Bot Characters ───────────────────────────────────────────────────────────
   const BOTS = [
-    { id: 'pm',          name: 'PM',      dept: 'aiorg_pm_bot',           emoji: '🤖', img: 'chars/pm.png' },
-    { id: 'engineering', name: '개발실',  dept: 'aiorg_engineering_bot',  emoji: '⚙️', img: 'chars/engineering.png' },
-    { id: 'design',      name: '디자인실', dept: 'aiorg_design_bot',      emoji: '🎨', img: 'chars/design.png' },
-    { id: 'growth',      name: '성장실',  dept: 'aiorg_growth_bot',       emoji: '🚀', img: 'chars/growth.png' },
-    { id: 'research',    name: '리서치실', dept: 'aiorg_research_bot',    emoji: '🔬', img: 'chars/research.png' },
-    { id: 'ops',         name: '운영실',  dept: 'aiorg_ops_bot',          emoji: '🖥️', img: 'chars/ops.png' },
+    { id: 'pm',          name: 'PM',      dept: 'aiorg_pm_bot',           emoji: '🤖', img: '/static/chars/pm.png' },
+    { id: 'engineering', name: '개발실',  dept: 'aiorg_engineering_bot',  emoji: '⚙️', img: '/static/chars/engineering.png' },
+    { id: 'design',      name: '디자인실', dept: 'aiorg_design_bot',      emoji: '🎨', img: '/static/chars/design.png' },
+    { id: 'growth',      name: '성장실',  dept: 'aiorg_growth_bot',       emoji: '🚀', img: '/static/chars/growth.png' },
+    { id: 'research',    name: '리서치실', dept: 'aiorg_research_bot',    emoji: '🔬', img: '/static/chars/research.png' },
+    { id: 'ops',         name: '운영실',  dept: 'aiorg_ops_bot',          emoji: '🖥️', img: '/static/chars/ops.png' },
   ];
   const botStates = {};
   BOTS.forEach(b => { botStates[b.dept] = { state: 'idle', task: '' }; });
