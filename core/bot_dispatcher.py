@@ -14,6 +14,12 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from core.dispatch_guards import (
+    MAX_ORCHESTRATION_DEPTH as _GUARD_MAX_ORCH_DEPTH,
+    MAX_ROUTING_HOPS as _GUARD_MAX_HOPS,
+    check_circular_ref_impl as _check_impl,
+)
+
 ENABLE_REFACTORED_DISPATCHER = os.environ.get("ENABLE_REFACTORED_DISPATCHER", "1") == "1"
 
 # ─── 순환참조 방지 상수 (RETRO-17 설계값) ────────────────────────────────────

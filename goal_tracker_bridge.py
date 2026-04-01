@@ -179,7 +179,7 @@ class GoalTrackerBridge:
         lines: list[str] = [
             f"## {item.description}",
             "",
-            f"**출처**: 일일회고 (daily_retro)",
+            "**출처**: 일일회고 (daily_retro)",
         ]
         if item.retro_id:
             lines.append(f"**RETRO ID**: {item.retro_id}")

@@ -45,11 +45,14 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-ok()   { echo -e "${GREEN}✅ $*${RESET}"; }
-warn() { echo -e "${YELLOW}⚠️  $*${RESET}"; }
-err()  { echo -e "${RED}❌ $*${RESET}"; }
-info() { echo -e "${CYAN}ℹ️  $*${RESET}"; }
-step() { echo -e "\n${BOLD}${BLUE}▶ $*${RESET}"; }
+ok()          { echo -e "${GREEN}✅ $*${RESET}"; }
+warn()        { echo -e "${YELLOW}⚠️  $*${RESET}"; }
+err()         { echo -e "${RED}❌ $*${RESET}"; }
+info()        { echo -e "${CYAN}ℹ️  $*${RESET}"; }
+step()        { echo -e "\n${BOLD}${BLUE}▶ $*${RESET}"; }
+skip()        { echo -e "\033[0;90m⏭️  $*\033[0m"; }
+hint()        { echo -e "${CYAN}💡 $*${RESET}"; }
+done_banner() { echo -e "${BOLD}${GREEN}🎉 $*${RESET}"; }
 
 # ── 인수 파싱 ──────────────────────────────────────────────────────────────────
 SKIP_VERIFY=false
@@ -99,6 +102,285 @@ if [ ! -f "pyproject.toml" ] && [ ! -f ".env.example" ]; then
     exit 1
 fi
 info "프로젝트 루트: $PROJECT_ROOT"
+
+# =============================================================================
+# STEP 0: 동의 프롬프트 + Node.js/npm 선행 설치
+# (Step 1 엔진 감지 이전에 npm이 준비되어야 자동 설치 가능)
+# =============================================================================
+
+# ── 동의 프롬프트 (--yes 시 스킵) ─────────────────────────────────────────────
+if [ "$NON_INTERACTIVE" = false ]; then
+    echo ""
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo -e "${BOLD}${CYAN}  📦 자동 설치 동의 안내${RESET}"
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo ""
+    echo "  이 스크립트는 다음 소프트웨어를 자동으로 설치할 수 있습니다:"
+    echo "   • Node.js 18+ / npm (엔진 CLI 설치에 필요)"
+    echo "   • claude-code / codex / gemini-cli (AI 엔진 CLI)"
+    echo "   • Python 패키지 (pyproject.toml 의존성)"
+    echo ""
+    echo "  비대화형 자동 설치를 원하면: bash scripts/setup.sh --yes"
+    echo ""
+    read -rp "  계속 진행하시겠습니까? [Y/n]: " _consent_ans
+    _consent_ans="${_consent_ans:-Y}"
+    if [[ "$_consent_ans" =~ ^[Nn]$ ]]; then
+        info "설치가 취소되었습니다. --yes 플래그로 자동 설치하거나 수동으로 진행하세요."
+        exit 0
+    fi
+else
+    info "--yes 모드: 동의 프롬프트 건너뜀 — 자동 설치 진행"
+fi
+
+# ── Node.js/npm 설치 헬퍼 함수들 ──────────────────────────────────────────────
+
+# _ensure_nodejs_nvm: nvm(Node Version Manager) 기반 Node.js 설치
+#   macOS + Linux 공용. nvm 미설치 시 공식 스크립트로 nvm 먼저 설치 후 node 설치.
+_ensure_nodejs_nvm() {
+    # nvm 설치 경로 확인
+    local _nvm_dir="${NVM_DIR:-$HOME/.nvm}"
+    local _nvm_sh="$_nvm_dir/nvm.sh"
+
+    # nvm 미설치 시 공식 스크립트로 설치
+    if [ ! -f "$_nvm_sh" ]; then
+        if [ "$NON_INTERACTIVE" = false ]; then
+            read -rp "  ❓ nvm(Node Version Manager)을 자동 설치하시겠습니까? [Y/n]: " _nvm_ans
+            _nvm_ans="${_nvm_ans:-Y}"
+            if [[ "$_nvm_ans" =~ ^[Nn]$ ]]; then
+                skip "nvm 설치 건너뜀"
+                return 1
+            fi
+        else
+            info "--yes 모드: nvm 자동 설치 시도"
+        fi
+
+        if ! command -v curl &>/dev/null; then
+            err "curl 미감지 — nvm 설치 실패"
+            return 1
+        fi
+        info "⏳ nvm 설치 중..."
+        curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    fi
+
+    # nvm 로드
+    # shellcheck source=/dev/null
+    [ -f "$_nvm_sh" ] && \. "$_nvm_sh" || return 1
+
+    # Node.js LTS 설치
+    info "⏳ Node.js LTS 설치 중... (nvm, 1~3분 소요)"
+    if nvm install --lts 2>&1 | tail -5; then
+        nvm use --lts 2>/dev/null || true
+        nvm alias default 'lts/*' 2>/dev/null || true
+        if command -v node &>/dev/null; then
+            ok "Node.js $(node --version) / npm $(npm --version) 설치 완료 (nvm)"
+            return 0
+        fi
+    fi
+    warn "nvm으로 Node.js 설치 실패"
+    return 1
+}
+
+# _ensure_nodejs_ubuntu: Ubuntu/Debian 전용 NodeSource PPA 기반 설치 (nvm 폴백)
+_ensure_nodejs_ubuntu() {
+    # /etc/os-release 기반 Debian/Ubuntu 계열 확인
+    local _is_debian=false
+    if [ -f "/etc/os-release" ]; then
+        local _os_id _os_id_like
+        _os_id=$(. /etc/os-release 2>/dev/null && echo "${ID:-}")
+        _os_id_like=$(. /etc/os-release 2>/dev/null && echo "${ID_LIKE:-}")
+        if [[ "$_os_id" =~ ^(ubuntu|debian)$ ]] || [[ "$_os_id_like" =~ (ubuntu|debian) ]]; then
+            _is_debian=true
+        fi
+    fi
+    if [ "$_is_debian" = false ]; then
+        return 1
+    fi
+
+    if [ "$NON_INTERACTIVE" = false ]; then
+        read -rp "  ❓ Node.js 18+를 NodeSource PPA로 자동 설치하시겠습니까? [Y/n]: " _node_ans
+        _node_ans="${_node_ans:-Y}"
+        if [[ "$_node_ans" =~ ^[Nn]$ ]]; then
+            skip "Node.js 설치 건너뜀 — npm 기반 엔진 자동 설치 불가"
+            return 1
+        fi
+    else
+        info "--yes 모드: Ubuntu/Debian 감지 — NodeSource PPA로 Node.js 18+ 자동 설치"
+    fi
+
+    if ! command -v curl &>/dev/null; then
+        info "curl 미감지 — apt-get으로 먼저 설치 중..."
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y curl
+    fi
+
+    info "⏳ NodeSource PPA 등록 중 (Node.js 18.x LTS)..."
+    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+
+    info "⏳ Node.js 18 설치 중... (apt, 1~2분 소요)"
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+
+    if command -v node &>/dev/null; then
+        ok "Node.js $(node --version) / npm $(npm --version) 설치 완료 (NodeSource PPA)"
+        return 0
+    else
+        warn "Node.js 설치 실패 — npm 기반 엔진 자동 설치가 제한될 수 있습니다"
+        hint "수동 설치: https://nodejs.org/en/download/"
+        return 1
+    fi
+}
+
+# _ensure_nodejs_choco: Windows (MINGW/CYGWIN/Git Bash) — Chocolatey 기반 설치
+_ensure_nodejs_choco() {
+    if ! command -v choco &>/dev/null; then
+        err "Chocolatey 미감지 — Node.js 자동 설치 불가"
+        hint "Chocolatey 설치: https://chocolatey.org/install (관리자 PowerShell에서 실행)"
+        hint "또는 Node.js 직접 다운로드: https://nodejs.org/en/download/"
+        return 1
+    fi
+
+    if [ "$NON_INTERACTIVE" = false ]; then
+        read -rp "  ❓ choco로 Node.js를 자동 설치하시겠습니까? [Y/n]: " _choco_ans
+        _choco_ans="${_choco_ans:-Y}"
+        if [[ "$_choco_ans" =~ ^[Nn]$ ]]; then
+            skip "Node.js 설치 건너뜀"
+            return 1
+        fi
+    else
+        info "--yes 모드: choco로 Node.js 자동 설치 시도"
+    fi
+
+    info "⏳ Node.js 설치 중... (choco, 1~3분 소요)"
+    choco install nodejs-lts -y
+
+    if command -v node &>/dev/null; then
+        ok "Node.js $(node --version) / npm $(npm --version) 설치 완료 (choco)"
+        return 0
+    else
+        warn "choco Node.js 설치 실패"
+        hint "수동 설치: https://nodejs.org/en/download/"
+        return 1
+    fi
+}
+
+# ── Step 0: Node.js 18+ 선행 확인 및 자동 설치 ────────────────────────────────
+step "Step 0: Node.js/npm 선행 확인 (엔진 CLI 설치에 필요)"
+info "⏳ Node.js / npm 확인 중..."
+NODE_AVAILABLE=false
+NODE_PATH_BIN=""
+
+_install_nodejs_for_os() {
+    case "$OS_TYPE" in
+        Darwin)
+            # macOS: nvm 우선 → brew 폴백
+            info "macOS 감지 — nvm 우선 설치 시도"
+            if _ensure_nodejs_nvm; then
+                return 0
+            fi
+            info "nvm 실패 — Homebrew 폴백 시도"
+            if command -v brew &>/dev/null; then
+                if [ "$NON_INTERACTIVE" = false ]; then
+                    read -rp "  ❓ brew로 Node.js를 설치하시겠습니까? [Y/n]: " _brew_node_ans
+                    _brew_node_ans="${_brew_node_ans:-Y}"
+                    if [[ "$_brew_node_ans" =~ ^[Nn]$ ]]; then
+                        skip "Node.js brew 설치 건너뜀"
+                        return 1
+                    fi
+                else
+                    info "--yes 모드: brew로 Node.js 설치 시도"
+                fi
+                info "⏳ Node.js 설치 중... (brew, 1~3분 소요)"
+                if brew install node; then
+                    ok "Node.js $(node --version) / npm $(npm --version) 설치 완료 (brew)"
+                    return 0
+                fi
+            else
+                err "Node.js 설치 실패 — Homebrew가 없습니다"
+                hint "https://brew.sh 에서 Homebrew를 먼저 설치 후 재시도하세요"
+            fi
+            return 1
+            ;;
+        Linux)
+            # Linux: nvm 우선 → apt(Ubuntu/Debian) 폴백
+            info "Linux 감지 — nvm 우선 설치 시도"
+            if _ensure_nodejs_nvm; then
+                return 0
+            fi
+            info "nvm 실패 — apt(NodeSource) 폴백 시도"
+            if _ensure_nodejs_ubuntu; then
+                return 0
+            fi
+            err "Node.js 설치 실패"
+            hint "수동 설치: https://nodejs.org/en/download/"
+            return 1
+            ;;
+        MINGW*|CYGWIN*|MSYS*)
+            # Windows Git Bash / CYGWIN
+            info "Windows 환경 감지 — Chocolatey로 Node.js 설치 시도"
+            if _ensure_nodejs_choco; then
+                return 0
+            fi
+            return 1
+            ;;
+        *)
+            warn "지원하지 않는 OS: $OS_TYPE"
+            hint "수동 설치: https://nodejs.org/en/download/"
+            return 1
+            ;;
+    esac
+}
+
+if command -v node &>/dev/null && command -v npm &>/dev/null; then
+    NODE_VER=$(node --version)
+    NPM_VER=$(npm --version)
+    NODE_MAJOR=$(echo "$NODE_VER" | sed 's/v//' | cut -d. -f1)
+    if [ "$NODE_MAJOR" -ge 18 ]; then
+        ok "Node.js $NODE_VER / npm $NPM_VER 이미 설치됨 (18+ 요구사항 충족)"
+        NODE_AVAILABLE=true
+    else
+        warn "Node.js $NODE_VER 감지됨 — 18+ 필요, 업그레이드 시도"
+        if _install_nodejs_for_os; then
+            NODE_AVAILABLE=true
+        else
+            warn "Node.js 18+ 업그레이드 실패 — 기존 버전($NODE_VER)으로 계속 진행"
+            NODE_AVAILABLE=true  # 구버전이라도 설치된 상태면 계속 진행
+        fi
+    fi
+else
+    warn "Node.js / npm 미감지 — 설치 시도 중"
+    if _install_nodejs_for_os; then
+        NODE_AVAILABLE=true
+    else
+        warn "Node.js 미설치 — npm 기반 엔진(codex/claude-code/gemini-cli) 설치 시 수동 설치 필요"
+        hint "수동 설치: https://nodejs.org/en/download/"
+    fi
+fi
+
+# ── Node.js 버전 최종 검증 ─────────────────────────────────────────────────────
+if [ "$NODE_AVAILABLE" = true ]; then
+    # nvm 환경 로드 확인 (nvm으로 설치된 경우 PATH 갱신 필요)
+    if [ -f "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ] && ! command -v node &>/dev/null; then
+        # shellcheck source=/dev/null
+        \. "${NVM_DIR:-$HOME/.nvm}/nvm.sh"
+        nvm use --lts 2>/dev/null || true
+    fi
+
+    if command -v node &>/dev/null && command -v npm &>/dev/null; then
+        _verified_node_ver=$(node --version 2>/dev/null)
+        _verified_npm_ver=$(npm --version 2>/dev/null)
+        if [ -z "$_verified_node_ver" ]; then
+            err "Node.js 버전 확인 실패 — 설치가 정상적으로 완료되지 않았습니다"
+            err "수동 설치 후 재실행하세요: https://nodejs.org/en/download/"
+            exit 1
+        fi
+        ok "Node.js $_verified_node_ver / npm $_verified_npm_ver 검증 완료"
+        NODE_PATH_BIN=$(command -v node 2>/dev/null || true)
+    else
+        if [ "$NODE_AVAILABLE" = true ]; then
+            warn "Node.js PATH 설정이 현재 셸에 반영되지 않았습니다"
+            hint "터미널을 재시작하거나: source ~/.bashrc (또는 ~/.zshrc)"
+            NODE_AVAILABLE=false
+        fi
+    fi
+fi
 
 # =============================================================================
 # main() — 원클릭 설치 진입점
@@ -324,10 +606,10 @@ if ! detect_gemini_cli; then
     fi
 fi
 
-# 하나도 없으면 경고 후 종료
+# 하나도 없으면 경고 후 계속 진행 (부분 설치 허용)
 if [ ${#DETECTED_ENGINES[@]} -eq 0 ]; then
-    err "AI 엔진이 하나도 감지되지 않았습니다."
-    err "최소 하나의 엔진을 설치해주세요:"
+    warn "AI 엔진이 하나도 감지되지 않았습니다. Python 환경 설치는 계속 진행합니다."
+    warn "최소 하나의 엔진을 나중에 설치해주세요:"
     echo "  • claude:  npm install -g @anthropic-ai/claude-code"
     echo "             (또는 https://claude.ai/code 에서 직접 설치)"
     echo "  • codex:   npm install -g @openai/codex"
@@ -335,12 +617,13 @@ if [ ${#DETECTED_ENGINES[@]} -eq 0 ]; then
     if [ "$OS_NAME" = "macOS" ]; then
         echo "             (또는 brew install gemini-cli)"
     fi
-    exit 1
+    SELECTED_ENGINE="(없음 — 엔진 미설치)"
 fi
 
-echo -e "\n감지된 엔진: ${BOLD}${GREEN}${DETECTED_ENGINES[*]}${RESET} (총 ${#DETECTED_ENGINES[@]}개)"
+echo -e "\n감지된 엔진: ${BOLD}${GREEN}${DETECTED_ENGINES[*]:-없음}${RESET} (총 ${#DETECTED_ENGINES[@]}개)"
 
 # ── 엔진 선택 (복수 감지 시 사용자 선택 프롬프트) ─────────────────────────────
+if [ ${#DETECTED_ENGINES[@]} -gt 0 ]; then
 SELECTED_ENGINE=""
 if [ ${#DETECTED_ENGINES[@]} -eq 1 ]; then
     SELECTED_ENGINE="${DETECTED_ENGINES[0]}"
@@ -372,6 +655,7 @@ else
     done
     ok "선택된 기본 엔진: $SELECTED_ENGINE"
 fi
+fi  # end if DETECTED_ENGINES > 0
 
 # =============================================================================
 # STEP 2: Python 버전 확인
@@ -550,106 +834,6 @@ else
     info "gemini-cli 미감지 — google-genai SDK 설치 건너뜀 (필요시: pip install google-genai)"
 fi
 
-# ── Node.js 18+ 자동 설치 헬퍼 (Ubuntu/Debian 전용) ──────────────────────────
-# _ensure_nodejs_ubuntu: /etc/os-release 로 Debian/Ubuntu 계열 감지 →
-#   NodeSource PPA 등록 → apt-get install -y nodejs
-#   --yes 모드: 비대화형 자동 설치 (DEBIAN_FRONTEND=noninteractive)
-_ensure_nodejs_ubuntu() {
-    # /etc/os-release 기반 Debian/Ubuntu 계열 확인
-    local _is_debian=false
-    if [ -f "/etc/os-release" ]; then
-        local _os_id _os_id_like
-        _os_id=$(. /etc/os-release 2>/dev/null && echo "${ID:-}")
-        _os_id_like=$(. /etc/os-release 2>/dev/null && echo "${ID_LIKE:-}")
-        if [[ "$_os_id" =~ ^(ubuntu|debian)$ ]] || [[ "$_os_id_like" =~ (ubuntu|debian) ]]; then
-            _is_debian=true
-        fi
-    fi
-    if [ "$_is_debian" = false ]; then
-        return 1  # Ubuntu/Debian 계열 아님 — 호출자가 다른 방법으로 처리
-    fi
-
-    # 사용자 확인 (--yes 모드는 자동 진행)
-    if [ "$NON_INTERACTIVE" = false ]; then
-        read -rp "  ❓ Node.js 18+를 NodeSource PPA로 자동 설치하시겠습니까? [Y/n]: " _node_ans
-        _node_ans="${_node_ans:-Y}"
-        if [[ "$_node_ans" =~ ^[Nn]$ ]]; then
-            warn "Node.js 설치 건너뜀 — npm 기반 엔진 자동 설치 불가"
-            return 1
-        fi
-    else
-        info "--yes 모드: Ubuntu/Debian 감지 — NodeSource PPA로 Node.js 18+ 자동 설치"
-    fi
-
-    # curl 의존성 확인 (NodeSource 스크립트에 필요)
-    if ! command -v curl &>/dev/null; then
-        info "curl 미감지 — apt-get으로 먼저 설치 중..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y curl
-    fi
-
-    # NodeSource PPA 등록 (Node.js 18.x LTS)
-    info "NodeSource PPA 등록 중 (Node.js 18.x LTS)..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-
-    # Node.js 설치 (비대화형 모드 강제)
-    info "Node.js 18 설치 중..."
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
-
-    if command -v node &>/dev/null; then
-        ok "Node.js $(node --version) / npm $(npm --version) 설치 완료 (NodeSource PPA)"
-        return 0
-    else
-        err "Node.js 설치 실패 — 수동 설치: https://nodejs.org/en/download/"
-        return 1
-    fi
-}
-
-# ── Node.js 18+ 확인 및 자동 설치 ─────────────────────────────────────────────
-# npm 기반 엔진(claude-code / codex / gemini-cli) 설치에 Node.js 18+ 필요
-# Linux(Ubuntu/Debian): NodeSource PPA 자동 설치
-# macOS: brew 자동 설치 (감지된 경우)
-NODE_AVAILABLE=false
-if command -v node &>/dev/null && command -v npm &>/dev/null; then
-    NODE_VER=$(node --version)
-    NPM_VER=$(npm --version)
-    NODE_MAJOR=$(echo "$NODE_VER" | sed 's/v//' | cut -d. -f1)
-    if [ "$NODE_MAJOR" -ge 18 ]; then
-        ok "Node.js $NODE_VER / npm $NPM_VER 감지됨 (18+ 요구사항 충족)"
-        NODE_AVAILABLE=true
-    else
-        warn "Node.js $NODE_VER 감지됨 — 18+ 필요, 업그레이드 시도"
-        if [ "$OS_NAME" = "Linux" ] && _ensure_nodejs_ubuntu; then
-            NODE_AVAILABLE=true
-        elif [ "$OS_NAME" = "macOS" ]; then
-            warn "macOS: brew upgrade node 또는 https://nodejs.org 에서 18+ 설치 필요"
-        fi
-    fi
-else
-    warn "Node.js / npm 미감지 — 설치 시도 중"
-    if [ "$OS_NAME" = "Linux" ] && _ensure_nodejs_ubuntu; then
-        NODE_AVAILABLE=true
-    elif [ "$OS_NAME" = "macOS" ]; then
-        if command -v brew &>/dev/null; then
-            if [ "$NON_INTERACTIVE" = false ]; then
-                read -rp "  ❓ brew로 Node.js를 설치하시겠습니까? [Y/n]: " _brew_node_ans
-                _brew_node_ans="${_brew_node_ans:-Y}"
-                if [[ ! "$_brew_node_ans" =~ ^[Nn]$ ]]; then
-                    brew install node && NODE_AVAILABLE=true || true
-                fi
-            else
-                info "--yes 모드: brew로 Node.js 설치 시도"
-                brew install node && NODE_AVAILABLE=true || true
-            fi
-        else
-            warn "brew 미감지 — Node.js 수동 설치 필요: https://nodejs.org"
-        fi
-    fi
-    if [ "$NODE_AVAILABLE" = false ]; then
-        warn "Node.js 미설치 — npm 기반 엔진(codex/claude-code/gemini-cli) 설치 시 수동 설치 필요"
-        warn "수동 설치: https://nodejs.org/en/download/"
-    fi
-fi
-
 # 추가: workspace 디렉토리 생성
 mkdir -p ~/.ai-org/workspace
 info "컨텍스트 DB 디렉토리 준비: ~/.ai-org/"
@@ -755,6 +939,17 @@ setup_env() {
             _sed_inplace "s|^GEMINI_CLI_DEFAULT_TIMEOUT_SEC=$|GEMINI_CLI_DEFAULT_TIMEOUT_SEC=1800|"
             info "GEMINI_CLI_DEFAULT_TIMEOUT_SEC → 1800 (기본값 자동 설정)"
         fi
+    fi
+
+    # NODE_PATH 자동 기재 (node 실행 경로 → .env에 저장)
+    local _node_bin
+    _node_bin=$(command -v node 2>/dev/null || true)
+    if [ -n "${NODE_PATH_BIN:-}" ]; then
+        _node_bin="$NODE_PATH_BIN"
+    fi
+    if [ -n "$_node_bin" ]; then
+        _set_or_append "NODE_PATH" "$_node_bin"
+        info "NODE_PATH → $_node_bin (자동 설정)"
     fi
 
     # AI_ENGINE= 자동 세팅 (표준 진입점 — 런타임 우선 참조 변수)
@@ -1393,6 +1588,16 @@ else
         warn "agency-agents 자동 설치 실패 (git 필요). 수동 설치:"
         echo "  bash scripts/install_agents.sh claude-code"
     fi
+fi
+
+# =============================================================================
+# Cold-start 벤치마크 (선택 사항 — 실패해도 설치에 영향 없음)
+# =============================================================================
+step "Cold-start 성능 측정"
+if python tools/cold_start_benchmark.py 2>/dev/null; then
+    ok "Cold-start 벤치마크 완료"
+else
+    warn "벤치마크 실패 (선택 사항 — 설치는 정상)"
 fi
 
 # =============================================================================

@@ -12,9 +12,11 @@
 #   - RETRO-14 "조사 산출물에 맥락 자동화" + RETRO-20 "변수 교차 사전 가시화" 직접 반영
 # =============================================================================
 
-schema_version: "1.1.0"
-schema_updated: "2026-03-29"
+schema_version: "1.2.0"
+schema_updated: "2026-03-31"
 owner: "리서치실/aiorg_research_bot"
+# v1.2.0 변경사항: RETRO-36 — data_sources 항목에 decision_weight 필드 추가
+#   criteria(기준확정용) / reference(참고용) / rejected(기각됨) 3분류 의무화
 
 # ------------------------------------------------------------------------------
 # 필드 정의
@@ -103,6 +105,27 @@ fields:
         description: "출처 제목 또는 설명"
       accessed_at:
         description: "접근 일시 (web 타입 시 권장 — 시점 추적용)"
+      decision_weight:                  # RETRO-36 추가 (v1.2.0)
+        type: string
+        required: true                  # 기준 추적 파이프라인 연동 시 필수
+        values: ["criteria", "reference", "rejected"]
+        description: |
+          이 레퍼런스의 의사결정 기여도 분류.
+          - criteria: 기준 확정용 — threshold/정책 값 결정에 직접 사용된 레퍼런스
+          - reference: 참고용 — 맥락 이해에 활용, threshold 직접 결정에는 미사용
+          - rejected: 기각됨 — 검토 후 채택하지 않은 레퍼런스 (rationale에 기각 사유 필수 기재)
+        required_when: "criteria_tracking.yaml 참조 산출물 또는 block_threshold 근거 리서치"
+        retro_origin: "RETRO-36"
+        note: |
+          기준 추적 파이프라인(criteria_tracking.yaml)의 research_basis.refs.weight 필드와 동일 분류 체계.
+          리서치 산출물이 criteria_tracking에 인용될 때 이 필드를 기반으로 weight가 결정됨.
+      rationale:
+        type: string
+        required: false
+        description: |
+          이 레퍼런스를 선택하거나 기각한 이유 (자유 텍스트).
+          decision_weight=rejected 시 필수. criteria/reference도 기재 권장.
+        retro_origin: "RETRO-36"
     retro_origin: "RETRO-08"
 
   summary:
@@ -187,7 +210,9 @@ example_complete: |
   data_sources:
     - type: "internal_doc"
       ref: "docs/RESEARCH_STANDARDS.md"
-      title: "리서치 산출물 표준 v1.1.0"
+      title: "리서치 산출물 표준 v1.2.0"
+      decision_weight: "criteria"
+      rationale: "리서치 표준 자체를 기준으로 삼아 스키마를 설계 — criteria 분류"
   context_notes: |
     조사 한계: 내부 문서 기반 분석, 외부 소스 없음.
   variables_context:

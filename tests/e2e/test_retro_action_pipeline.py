@@ -14,18 +14,16 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-import pytest_asyncio
 
 # 프로젝트 루트 sys.path 추가
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from retro_action_parser import RetroActionItem, RetroActionParser
 from goal_tracker_bridge import GoalTrackerBridge
+from retro_action_parser import RetroActionItem, RetroActionParser
 from retro_dispatch import RetroDispatch
-
 
 # ── 공통 픽스처 ──────────────────────────────────────────────────────────────
 

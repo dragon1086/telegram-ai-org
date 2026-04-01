@@ -27,7 +27,7 @@ def test_scheduler_jobs_registered(scheduler: OrgScheduler) -> None:
     # 기본 운영 잡
     assert "morning_standup" in job_ids
     assert "daily_retro" in job_ids
-    assert "weekly_standup" in job_ids
+    # weekly_standup 잡은 2026-03-31 스케줄러에서 제거됨 (weekly_bot_business_retro로 대체)
     assert "friday_retro" in job_ids
     assert "conversation_cleanup" in job_ids
     assert "weekly_bot_business_retro" in job_ids

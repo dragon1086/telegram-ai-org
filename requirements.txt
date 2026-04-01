@@ -1,0 +1,40 @@
+# =============================================================================
+# requirements.txt — telegram-ai-org 핵심 의존성
+#
+# 생성 기준: pyproject.toml [project].dependencies (v1.1.0)
+# 설치:      pip install -r requirements.txt
+# 개발 환경: pip install -r requirements-dev.txt
+# 엔진별 선택 설치: pip install -r requirements-optional.txt
+# =============================================================================
+
+# ─── Telegram Bot Framework ──────────────────────────────────────────────────
+python-telegram-bot>=22.0        # 22.6 tested — Bot API 8.x 지원
+
+# ─── Data Validation ─────────────────────────────────────────────────────────
+pydantic>=2.0                    # 2.12.x — settings·model validation
+
+# ─── Database ────────────────────────────────────────────────────────────────
+aiosqlite>=0.19                  # 0.22.x — async SQLite (GoalTracker, MemoryManager)
+
+# ─── Configuration ───────────────────────────────────────────────────────────
+python-dotenv>=1.0               # .env 로드 — BOT_TOKEN, ENGINE_PATH 등
+PyYAML>=6.0                      # orchestration.yaml, config.yaml 파싱
+
+# ─── Logging ─────────────────────────────────────────────────────────────────
+loguru>=0.7                      # 구조화 로그 (콘솔 + 파일 rotation)
+
+# ─── Scheduling ──────────────────────────────────────────────────────────────
+apscheduler>=3.10.0              # 3.11.x — 일간 목표 파이프라인, cron 트리거
+
+# ─── Retrieval ───────────────────────────────────────────────────────────────
+rank-bm25>=0.2                   # 0.2.2 — MemoryManager BM25 검색 (optional lazy-import)
+
+# ─── Web Framework (REST API + Dashboard) ────────────────────────────────────
+fastapi>=0.100                   # core/api/ REST 엔드포인트, dashboard.py
+uvicorn>=0.20                    # ASGI 서버 (dashboard.py 직접 실행 시)
+
+# ─── MCP (Model Context Protocol) ───────────────────────────────────────────
+mcp>=1.0                         # 1.26.x — MCP tool server 연동
+
+# ─── Agent SDK ───────────────────────────────────────────────────────────────
+claude-agent-sdk>=0.1.50         # 0.1.50 — ClaudeAgent, COLLAB dispatch

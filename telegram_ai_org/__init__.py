@@ -5,7 +5,7 @@ with shared context, multi-agent orchestration, and 3-engine support
 (claude-code / codex / gemini-cli).
 """
 
-__version__ = "0.1.0"
+__version__ = "1.1.0"
 __author__ = "telegram-ai-org contributors"
 __license__ = "MIT"
 

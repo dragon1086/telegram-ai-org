@@ -1,0 +1,47 @@
+research_date: "2026-03-31T00:00:00+09:00"
+researcher_agent: "리서치실/aiorg_research_bot"
+model_version: "claude-sonnet-4-5"
+infra_baseline_version: "v1.2.0"
+query_summary: "decision_weight 3분류 체계 설계 + criteria_version 스냅샷 구조 확정 (RETRO-36/37)"
+topic: "criteria-tracking, decision-weight, reference-snapshot, retro-36, retro-37"
+
+data_sources:
+  - type: "internal_doc"
+    ref: "docs/RETRO-33-criteria-tracking-pipeline-prd.md"
+    title: "기준 추적 파이프라인 PRD v1.0 (기획실)"
+    decision_weight: "criteria"
+    rationale: "decision_weight 필드 요구사항 원문 — research 섹션 스펙 직접 참조"
+  - type: "internal_doc"
+    ref: "criteria_tracking.yaml"
+    title: "기준 추적 파이프라인 단일 YAML (개발실 초기 구현)"
+    decision_weight: "criteria"
+    rationale: "리서치실 보강 대상 파일 — research_basis 섹션 구조 확인"
+  - type: "internal_doc"
+    ref: "docs/research/research_context_schema.yaml"
+    title: "리서치 산출물 메타데이터 스키마 v1.1.0"
+    decision_weight: "criteria"
+    rationale: "decision_weight 필드 추가 대상 — v1.2.0으로 업그레이드"
+  - type: "internal_doc"
+    ref: "docs/research/retro-26-analysis/report.md"
+    title: "RETRO-26 레퍼런스 → 의사결정 강제 파이프라인 분석"
+    decision_weight: "reference"
+    rationale: "이전 리서치 사이클에서 확립된 파이프라인 패턴 참조 — 분류 체계 설계 배경"
+  - type: "internal_doc"
+    ref: "docs/research/retro-14-analysis/research_context.yaml"
+    title: "RETRO-14 research_context.yaml 표준 (조사 산출물 맥락 자동화)"
+    decision_weight: "reference"
+    rationale: "기존 스키마 구조 파악용 — decision_weight 필드 추가 전 현행 확인"
+
+context_notes: |
+  ADR, RFC Process, Google Design Docs, Amazon Working Backwards 등 유사 시스템의
+  레퍼런스 분류 방식을 비교 분석하여 3분류(criteria/reference/rejected) 체계 확정.
+  외부 소스 웹 조사는 학습 데이터 기반(인터넷 접속 없음) — 대표적 공개 방법론 기반 설계.
+
+variables_context:
+  active_variables:
+    model_version: "claude-sonnet-4-5"
+    infra_baseline_version: "v1.2.0"
+    research_date: "2026-03-31T00:00:00+09:00"
+    external_dependencies: []
+  cross_variable_periods: []  # 단일 조사 — 변수 교차 없음
+  isolation_confidence: "high"

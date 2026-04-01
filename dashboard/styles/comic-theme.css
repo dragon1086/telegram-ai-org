@@ -1,0 +1,412 @@
+/* comic-theme.css — 만화 캐릭터 컨셉 UI 팔레트
+ * Phase 2 Dashboard | 2026-03-31
+ */
+@import url('https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&family=JetBrains+Mono&display=swap');
+
+:root {
+  /* ── 팝아트 색상 팔레트 ── */
+  --comic-yellow:    #FFE000;
+  --comic-red:       #FF3B3F;
+  --comic-blue:      #0057FF;
+  --comic-green:     #00C851;
+  --comic-orange:    #FF6B00;
+  --comic-purple:    #9B00FF;
+  --comic-bg:        #FFFDE7;
+  --comic-dark:      #1A1A2E;
+  --comic-white:     #FFFFFF;
+
+  /* ── 상태 색상 ── */
+  --status-in-progress: var(--comic-orange);
+  --status-pending:     var(--comic-blue);
+  --status-done:        var(--comic-green);
+  --status-connected:   var(--comic-green);
+  --status-disconnected:var(--comic-red);
+  --status-connecting:  var(--comic-yellow);
+
+  /* ── 테두리 ── */
+  --comic-border:    4px solid var(--comic-dark);
+  --comic-border-lg: 5px solid var(--comic-dark);
+
+  /* ── 그림자 (팝아트 오프셋) ── */
+  --comic-shadow:    6px 6px 0px var(--comic-dark);
+  --comic-shadow-sm: 4px 4px 0px var(--comic-dark);
+  --comic-shadow-hover: 8px 8px 0px var(--comic-dark);
+
+  /* ── 폰트 ── */
+  --font-comic-display: 'Bangers', 'Comic Neue', cursive;
+  --font-comic-body:    'Comic Neue', cursive;
+  --font-mono:          'JetBrains Mono', monospace;
+}
+
+/* ── 기본 레이아웃 ── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--comic-bg);
+  background-image:
+    radial-gradient(circle, #FFE000 1px, transparent 1px),
+    radial-gradient(circle, #FFE000 1px, transparent 1px);
+  background-size: 30px 30px;
+  background-position: 0 0, 15px 15px;
+  font-family: var(--font-comic-body);
+  color: var(--comic-dark);
+  min-height: 100vh;
+}
+
+/* ── 대시보드 헤더 ── */
+.dashboard-header {
+  background: var(--comic-dark);
+  color: var(--comic-yellow);
+  padding: 1.5rem 2rem;
+  border-bottom: var(--comic-border-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dashboard-header h1 {
+  font-family: var(--font-comic-display);
+  font-size: 2.5rem;
+  letter-spacing: 2px;
+  text-shadow: 3px 3px 0px var(--comic-red);
+}
+
+.dashboard-header .subtitle {
+  font-size: 0.875rem;
+  color: #aaa;
+  margin-top: 0.25rem;
+}
+
+.connection-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--comic-bg);
+  border: var(--comic-border);
+  border-radius: 999px;
+  padding: 0.4rem 1rem;
+  font-family: var(--font-comic-body);
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+.connection-badge .dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--comic-dark);
+}
+
+/* ── 메인 그리드 ── */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ── 말풍선 카드 ── */
+.comic-card {
+  background: var(--comic-white);
+  border: var(--comic-border-lg);
+  border-radius: 16px;
+  box-shadow: var(--comic-shadow);
+  padding: 1.5rem;
+  position: relative;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.comic-card:hover {
+  box-shadow: var(--comic-shadow-hover);
+  transform: translate(-2px, -2px);
+}
+
+.comic-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 3px solid var(--comic-dark);
+}
+
+.comic-card-title {
+  font-family: var(--font-comic-display);
+  font-size: 1.4rem;
+  letter-spacing: 1px;
+  color: var(--comic-dark);
+}
+
+.comic-card-icon {
+  font-size: 1.75rem;
+}
+
+/* ── 배지/태그 ── */
+.badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border: 2px solid var(--comic-dark);
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  font-family: var(--font-comic-body);
+}
+
+/* ── 티켓 상태 패널 ── */
+.ticket-counters {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.ticket-counter {
+  text-align: center;
+  padding: 1.25rem 0.75rem;
+  border: var(--comic-border);
+  border-radius: 12px;
+  background: var(--comic-bg);
+  box-shadow: var(--comic-shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.ticket-counter::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 6px;
+}
+
+.ticket-counter.in-progress::before { background: var(--status-in-progress); }
+.ticket-counter.pending::before      { background: var(--status-pending); }
+.ticket-counter.done::before         { background: var(--status-done); }
+
+.ticket-counter .count {
+  font-family: var(--font-comic-display);
+  font-size: 2.5rem;
+  line-height: 1;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.ticket-counter.in-progress .count { color: var(--status-in-progress); }
+.ticket-counter.pending .count      { color: var(--status-pending); }
+.ticket-counter.done .count         { color: var(--status-done); }
+
+.ticket-counter .label {
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--comic-dark);
+}
+
+/* ── 완료 작업 패널 ── */
+.tasks-list {
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-right: 0.25rem;
+}
+
+.tasks-list::-webkit-scrollbar { width: 6px; }
+.tasks-list::-webkit-scrollbar-track { background: var(--comic-bg); border-radius: 3px; }
+.tasks-list::-webkit-scrollbar-thumb { background: var(--comic-dark); border-radius: 3px; }
+
+.task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 2px solid var(--comic-dark);
+  border-radius: 8px;
+  background: var(--comic-bg);
+  animation: slideInRight 0.3s ease;
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.task-item .task-icon { font-size: 1.25rem; flex-shrink: 0; }
+
+.task-item .task-body { flex: 1; min-width: 0; }
+
+.task-item .task-title {
+  font-weight: 700;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-item .task-meta {
+  font-size: 0.75rem;
+  color: #666;
+  margin-top: 0.2rem;
+}
+
+.task-item .task-time {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: #999;
+  flex-shrink: 0;
+}
+
+/* ── 원격 접근 패널 ── */
+.remote-status-main {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.25rem;
+  border: var(--comic-border);
+  border-radius: 12px;
+  background: var(--comic-bg);
+  box-shadow: var(--comic-shadow-sm);
+  margin-bottom: 1rem;
+}
+
+.remote-status-icon {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  border: var(--comic-border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.remote-status-icon.connected    { background: #d4ffd4; }
+.remote-status-icon.disconnected { background: #ffd4d4; }
+.remote-status-icon.connecting   { background: #ffffd4; }
+
+.remote-status-label {
+  font-family: var(--font-comic-display);
+  font-size: 1.5rem;
+  letter-spacing: 1px;
+}
+
+.remote-status-label.connected    { color: var(--status-connected); }
+.remote-status-label.disconnected { color: var(--status-disconnected); }
+.remote-status-label.connecting   { color: #a08000; }
+
+.remote-url {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--comic-blue);
+  word-break: break-all;
+  margin-top: 0.25rem;
+}
+
+.remote-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.remote-detail-item {
+  padding: 0.75rem;
+  border: 2px solid var(--comic-dark);
+  border-radius: 8px;
+  background: var(--comic-bg);
+}
+
+.remote-detail-item .detail-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+}
+
+.remote-detail-item .detail-value {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 700;
+  margin-top: 0.2rem;
+}
+
+/* ── 깜빡이는 연결 애니메이션 ── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.blink { animation: blink 1s ease infinite; }
+
+/* ── 업데이트 플래시 ── */
+@keyframes flashUpdate {
+  0%   { background: #fff176; }
+  100% { background: var(--comic-bg); }
+}
+
+.flash-update {
+  animation: flashUpdate 0.6s ease;
+}
+
+/* ── 말풍선 꼬리 (장식용) ── */
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -20px;
+  left: 32px;
+  border: 10px solid transparent;
+  border-top-color: var(--comic-dark);
+}
+
+.speech-bubble::before {
+  content: '';
+  position: absolute;
+  bottom: -14px;
+  left: 34px;
+  border: 8px solid transparent;
+  border-top-color: var(--comic-white);
+  z-index: 1;
+}
+
+/* ── 반응형 ── */
+@media (max-width: 768px) {
+  .dashboard-grid { grid-template-columns: 1fr; padding: 1rem; }
+  .ticket-counters { grid-template-columns: repeat(3, 1fr); }
+  .dashboard-header h1 { font-size: 1.75rem; }
+}
+
+/* ── WCAG 2.2 AA: prefers-reduced-motion ── */
+/* 움직임 민감 사용자를 위한 애니메이션 비활성화 (WCAG 2.3.3 기준) */
+@media (prefers-reduced-motion: reduce) {
+  .character-anim-idle,
+  .character-anim-alert,
+  .character-anim-danger,
+  .wow-effect {
+    animation: none !important;
+    transition: none !important;
+  }
+  /* 애니메이션 대신 정적 테두리 색상으로 severity 상태 표현 */
+  .character-anim-alert  { border-color: var(--comic-orange) !important; }
+  .character-anim-danger { border-color: var(--comic-red)    !important; }
+  /* 플래시 카운터 트랜지션 제거 */
+  .ticket-counter { transition: none !important; }
+  /* 버튼 hover 이동 효과 제거 */
+  .btn-primary:hover { transform: none !important; }
+}
+
+/* ── 액션 효과 (WOW/POW 텍스트) ── */
+.wow-effect {
+  position: fixed;
+  pointer-events: none;
+  font-family: var(--font-comic-display);
+  font-size: 2rem;
+  color: var(--comic-yellow);
+  -webkit-text-stroke: 2px var(--comic-dark);
+  animation: wowPop 0.8s ease forwards;
+  z-index: 9999;
+}
+
+@keyframes wowPop {
+  0%   { transform: scale(0) rotate(-15deg); opacity: 1; }
+  60%  { transform: scale(1.2) rotate(5deg);  opacity: 1; }
+  100% { transform: scale(1) rotate(0deg);    opacity: 0; }
+}

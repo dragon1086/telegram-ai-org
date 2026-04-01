@@ -33,9 +33,9 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    # gemini-cli: WebDev Arena 1위 (2026-03) → UI/UX 디자인·프로토타입에 최적
-    preferred_engine: gemini-cli
-    fallback_engine: claude-code
+    # claude-code: 디자인실 복잡한 UI/UX 추론 담당 (BOT_ENGINE_MAP 정합, 2026-03-31)
+    preferred_engine: claude-code
+    fallback_engine: gemini-cli
     team_profile: design_strategy
     verification_profile: specialist_default
     phase_policy: default

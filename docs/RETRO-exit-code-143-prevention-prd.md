@@ -6,6 +6,8 @@
 **승인자**: (Rocky 검토 후 서명)
 **정책 시행 목표일**: 2026-04-07
 **상태**: Draft → Review 요청 중
+**criteria_version**: 1.0.0
+**criteria_tracking_ref**: criteria_tracking.yaml §thresholds.exit_code_143
 
 ---
 

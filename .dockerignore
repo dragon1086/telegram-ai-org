@@ -102,3 +102,12 @@ migrations/
 *.yaml.orig
 PM봇_로그분석_보고서_*.md
 # agent_hints.yaml, improvement_thresholds.yaml 은 런타임 필수 — 제외하지 않음
+
+# ─── 경량화 Phase 1 추가 (2026-03-31) ────────────────────────────────────────
+_deprecated/
+memory/
+*.bak
+retro_action_parser.py
+retro_dispatch.py
+run_e2e_loop.py
+goal_tracker_bridge.py

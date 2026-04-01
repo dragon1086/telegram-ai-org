@@ -192,13 +192,15 @@ class TestModuleInterface:
         )
 
     def test_file_not_found_returns_fail(self, tmp_path):
-        """파일 없으면 passed=False 반환."""
+        """파일 없으면 WARN 스킵 처리 — passed=True, skipped=True 반환."""
         mod = _load()
         result = mod.run_design_preflight_checks(
             baseline_path=str(tmp_path / "nonexistent.yaml"),
             exit_on_fail=False,
         )
-        assert result["passed"] is False
+        # 파일 없으면 체크 생략(WARN) → _skipped_result() 반환, passed=True
+        assert result["passed"] is True
+        assert result.get("skipped") is True
 
     def test_blocking_count_is_six(self, valid_yaml):
         """blocking 체크 항목은 6개 (PC-D-001/003/005/006/007/008)."""
@@ -859,8 +861,8 @@ class TestSkipBehavior:
             baseline_path=str(tmp_path / "nonexistent.yaml"),
             exit_on_fail=False,
         )
-        # SKIP_DESIGN_PREFLIGHT가 아닌 SKIP_PREFLIGHT → 모듈은 정상 실행, 파일 없으면 fail
-        assert result["passed"] is False
+        # SKIP_DESIGN_PREFLIGHT가 아닌 SKIP_PREFLIGHT → 파일 없으면 WARN 스킵(passed=True)
+        assert result["passed"] is True
 
     def test_skip_false_by_default(self, valid_yaml, monkeypatch):
         """환경변수 없으면 skipped 없음."""

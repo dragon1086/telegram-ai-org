@@ -178,8 +178,11 @@ async def test_api_keys_removed_from_env(runner: GeminiCLIRunner) -> None:
 # ---------------------------------------------------------------------------
 
 def test_runner_factory_creates_gemini_cli() -> None:
+    # importlib.reload(tools.gemini_cli_runner)가 다른 테스트에서 호출될 수 있으므로
+    # 모듈 레벨 임포트(구 클래스) 대신 런타임 lazy import로 현행 클래스를 가져온다
+    from tools.gemini_cli_runner import GeminiCLIRunner as _CurrentGeminiCLIRunner
     runner = RunnerFactory.create("gemini-cli")
-    assert isinstance(runner, GeminiCLIRunner)
+    assert isinstance(runner, _CurrentGeminiCLIRunner)
 
 
 def test_runner_factory_unknown_engine_error() -> None:
