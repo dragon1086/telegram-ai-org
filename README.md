@@ -285,14 +285,14 @@ GEMINI_CLI_PATH=/opt/homebrew/bin/gemini
 ### 실행 방법
 
 ```bash
-# 기본 실행 (포트 8080)
+# 권장: 스크립트로 실행 (포트·호스트 자동 설정)
+bash scripts/start_dashboard.sh
+
+# 직접 실행 (포트 8080)
 python dashboard.py
 
 # 포트 지정
 python dashboard.py --port 8081
-
-# uvicorn 직접 사용
-uvicorn dashboard:app --port 8080
 
 # 개발 모드 (자동 리로드)
 python dashboard.py --reload
