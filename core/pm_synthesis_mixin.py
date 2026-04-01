@@ -203,6 +203,8 @@ class PMSynthesisMixin:
         _skip_discussion_gate=True 는 _discussion_summarize 최종 라운드에서
         재귀 호출 없이 전체 synthesis를 수행할 때만 사용한다.
         """
+        # cancelled 서브태스크는 이전 iteration 잔재 — synthesis에서 제외
+        subtasks = [st for st in subtasks if st.get("status") != "cancelled"]
         from core.pm_orchestrator import (
             MAX_REWORK_RETRIES,
             SubTask,
