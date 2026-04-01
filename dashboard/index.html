@@ -63,33 +63,33 @@
       </div>
       <div class="bot-sprite" id="office-sprite-aiorg_engineering_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_engineering_bot"></div>
-        <img class="sprite-img" src="/static/chars/engineering.png" alt="Eng" />
-        <div class="sprite-label" style="color:#4477ff">Eng</div>
+        <img class="sprite-img" src="/static/chars/engineering.png" alt="개발실" />
+        <div class="sprite-label" style="color:#4477ff">개발실</div>
       </div>
       <div class="bot-sprite" id="office-sprite-aiorg_design_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_design_bot"></div>
-        <img class="sprite-img" src="/static/chars/design.png" alt="Design" />
-        <div class="sprite-label" style="color:#bb66ff">Design</div>
+        <img class="sprite-img" src="/static/chars/design.png" alt="디자인실" />
+        <div class="sprite-label" style="color:#bb66ff">디자인실</div>
       </div>
       <div class="bot-sprite" id="office-sprite-aiorg_product_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_product_bot"></div>
-        <img class="sprite-img" src="/static/chars/planning.png" alt="Product" />
-        <div class="sprite-label" style="color:#ff9944">Product</div>
+        <img class="sprite-img" src="/static/chars/planning.png" alt="기획실" />
+        <div class="sprite-label" style="color:#ff9944">기획실</div>
       </div>
       <div class="bot-sprite" id="office-sprite-aiorg_growth_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_growth_bot"></div>
-        <img class="sprite-img" src="/static/chars/growth.png" alt="Growth" />
-        <div class="sprite-label" style="color:#ff7777">Growth</div>
+        <img class="sprite-img" src="/static/chars/growth.png" alt="성장실" />
+        <div class="sprite-label" style="color:#ff7777">성장실</div>
       </div>
       <div class="bot-sprite" id="office-sprite-aiorg_research_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_research_bot"></div>
-        <img class="sprite-img" src="/static/chars/research.png" alt="Research" />
-        <div class="sprite-label" style="color:#44ddee">Research</div>
+        <img class="sprite-img" src="/static/chars/research.png" alt="리서치실" />
+        <div class="sprite-label" style="color:#44ddee">리서치실</div>
       </div>
       <div class="bot-sprite" id="office-sprite-aiorg_ops_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_ops_bot"></div>
-        <img class="sprite-img" src="/static/chars/ops.png" alt="Ops" />
-        <div class="sprite-label" style="color:#44ff88">Ops</div>
+        <img class="sprite-img" src="/static/chars/ops.png" alt="운영실" />
+        <div class="sprite-label" style="color:#44ff88">운영실</div>
       </div>
     </div>
   </div>
@@ -1298,55 +1298,55 @@
   function rand(a, b) { return a + Math.random() * (b - a); }
 
   // speed 단위: normalized-units per millisecond
-  // 1.0 = 오피스 전체 폭. speed 0.00015 → 약 6.6초에 전체 폭 횡단
+  // 0.00005 → 오피스 전체 횡단 약 20초
   function pickTarget(id) {
     const b = BOTS[id];
     const s = rt[id];
     switch (s.state) {
       case 'idle':
-        // 자리에서 거의 안움직임 — 미세 호흡
-        s.tx = b.hx + rand(-0.01, 0.01);
-        s.ty = b.hy + rand(-0.015, 0.015);
-        s.speed = 0.000008;
-        s.waitMs = rand(3000, 6000);
+        // 자리에 앉아있음 — 미세 호흡만
+        s.tx = b.hx + rand(-0.005, 0.005);
+        s.ty = b.hy + rand(-0.008, 0.008);
+        s.speed = 0.000003;
+        s.waitMs = rand(5000, 10000);
         break;
       case 'working':
-        // 사무실 전체 자유 이동 (적당한 속도)
+        // 사무실 돌아다님 — 여유롭게
         s.tx = rand(0.05, 0.88);
         s.ty = rand(0.08, 0.85);
-        s.speed = rand(0.00012, 0.00018);
-        s.waitMs = rand(600, 1800);
+        s.speed = rand(0.00004, 0.00006);
+        s.waitMs = rand(1500, 3500);
         break;
       case 'waiting':
-        // 책상 근처 천천히 왔다갔다
-        s.tx = b.hx + rand(-0.10, 0.10);
-        s.ty = b.hy + rand(-0.06, 0.06);
-        s.speed = 0.00005;
-        s.waitMs = rand(2000, 4000);
+        // 책상 근처 산책
+        s.tx = b.hx + rand(-0.08, 0.08);
+        s.ty = b.hy + rand(-0.05, 0.05);
+        s.speed = 0.00002;
+        s.waitMs = rand(3000, 6000);
         break;
       case 'alert':
-        // 작은 범위 안에서 바들바들
-        s.tx = b.hx + rand(-0.015, 0.015);
-        s.ty = b.hy + rand(-0.015, 0.015);
-        s.speed = 0.0004;
-        s.waitMs = 250;
+        // 제자리 진동
+        s.tx = b.hx + rand(-0.01, 0.01);
+        s.ty = b.hy + rand(-0.01, 0.01);
+        s.speed = 0.00015;
+        s.waitMs = 300;
         break;
       case 'delegated':
         if (s.phase === 'going_pm') {
           s.tx = PM.hx + rand(-0.03, 0.03);
           s.ty = PM.hy + 0.08;
-          s.speed = 0.00012;
+          s.speed = 0.00004;
           s.waitMs = 0;
         } else if (s.phase === 'at_pm') {
-          s.tx = PM.hx + rand(-0.02, 0.02);
+          s.tx = PM.hx + rand(-0.015, 0.015);
           s.ty = PM.hy + 0.09;
-          s.speed = 0.00003;
-          s.waitMs = rand(3000, 5000);
+          s.speed = 0.00001;
+          s.waitMs = rand(4000, 7000);
         } else {
-          s.tx = b.hx + rand(-0.02, 0.02);
+          s.tx = b.hx + rand(-0.015, 0.015);
           s.ty = b.hy;
-          s.speed = 0.00012;
-          s.waitMs = rand(4000, 8000);
+          s.speed = 0.00004;
+          s.waitMs = rand(5000, 10000);
           s.phase = 'returning';
         }
         break;
