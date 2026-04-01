@@ -63,6 +63,17 @@ coverage_e2e.json
 .coverage_e2e.json
 trivy-scan-report.txt
 
+# 봇 작업 산출물 (프로젝트 레포에 생성되면 안 되는 파일들)
+docs/design/
+docs/research/
+docs/G*-PRD*.md
+docs/competitive-*.md
+docs/RETRO-*.md
+*.flag
+dashboard/mocks/
+assets/bot_*.png
+tests/e2e/test_dashboard_phase3_*.py
+
 # 런타임 데이터 (self_code_improver.py 속도제한 파일 등)
 data/
 !data/images/
