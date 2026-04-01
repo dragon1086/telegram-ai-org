@@ -50,9 +50,10 @@ const CHAR_IMG = {
   aiorg_growth_bot:      '/static/chars/growth.png',
   aiorg_ops_bot:         '/static/chars/ops.png',
   aiorg_research_bot:    '/static/chars/research.png',
-  aiorg_product_bot:     '/static/chars/pm.png',
+  aiorg_product_bot:     '/static/chars/planning.png',
   // short key 형식 (fallback)
   pm:          '/static/chars/pm.png',
+  planning:    '/static/chars/planning.png',
   engineering: '/static/chars/engineering.png',
   design:      '/static/chars/design.png',
   growth:      '/static/chars/growth.png',

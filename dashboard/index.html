@@ -110,56 +110,65 @@
 </style>
 
 <style>
-  /* ── Horizontal Task Graph ── */
-  :root { --ts-node-h: 58px; --ts-node-mid: 29px; }
-  .ts-graph-container { padding: 8px 0; }
-  .ts-graph-section-title {
-    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em;
-    color: #4a6080; margin: 16px 0 8px; padding-left: 4px;
+  /* ── Timeline Activity Feed ── */
+  .ts-timeline { padding: 4px 0; }
+  .ts-tl-group { margin-bottom: 20px; }
+  .ts-tl-date-hdr {
+    font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em;
+    color: #4a6080; padding: 2px 8px 6px; font-weight: 700;
+    border-bottom: 1px solid #0f1e33; margin-bottom: 8px;
   }
-  .ts-graph-row {
-    display: flex; align-items: flex-start; margin-bottom: 14px; overflow-x: auto; padding-bottom: 2px;
+  .ts-tl-item {
+    display: flex; align-items: stretch; border-radius: 8px;
+    margin: 4px 0; overflow: hidden; cursor: pointer;
+    background: #0c1828;
+    transition: background 0.15s;
   }
-  .ts-gnode {
-    min-height: var(--ts-node-h);
-    background: #0c1a2e; border: 2px solid #1e3a5f; border-radius: 10px;
-    padding: 7px 10px; cursor: pointer; flex-shrink: 0; position: relative;
-    box-sizing: border-box; transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+  .ts-tl-item:hover { background: #0f2038; }
+  .ts-tl-strip { width: 4px; flex-shrink: 0; }
+  .ts-tl-body { flex: 1; padding: 8px 10px; min-width: 0; }
+  .ts-tl-top {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    margin-bottom: 3px;
   }
-  .ts-gnode:hover { border-color: #3b82f6; background: #0f2040; box-shadow: 0 0 0 3px rgba(59,130,246,0.18); }
-  .ts-gnode.ts-node-highlight {
-    border-color: #fbbf24 !important; background: #130f00 !important;
-    box-shadow: 0 0 0 4px rgba(251,191,36,0.3) !important;
-    animation: tsNodePulse 0.5s ease;
+  .ts-tl-dept {
+    font-size: 0.62rem; font-weight: 700; padding: 1px 5px;
+    border-radius: 4px; background: #0d2040; color: #7ab3e0; white-space: nowrap;
   }
-  @keyframes tsNodePulse { 0%{transform:scale(1.06)} 100%{transform:scale(1)} }
-  .ts-gnode-parent { width: 185px; }
-  .ts-gnode-child  { width: 175px; }
-  .ts-gnode-label {
-    font-size: 0.71rem; color: #c5d4e8; line-height: 1.38;
-    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  .ts-tl-status-dot {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
   }
-  .ts-gnode-status-row { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
-  .ts-gnode-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-  .ts-gnode-status-text { font-size: 0.6rem; color: #6a8caa; }
-  .ts-gnode-dept { font-size: 0.6rem; color: #3a5070; margin-top: 2px; }
-  .ts-gnode.st-done, .ts-gnode.st-completed { border-color: #173825; }
-  .ts-gnode.st-failed, .ts-gnode.st-error   { border-color: #3a1515; }
-  .ts-gnode.st-in_progress, .ts-gnode.st-active { border-color: #1a3560; }
-  .ts-gnode.st-cancelled { border-color: #1a2030; opacity: 0.65; }
-  /* Connector */
-  .ts-graph-h-line {
-    width: 20px; height: 2px; background: #1e3a5f; flex-shrink: 0;
-    align-self: flex-start; margin-top: var(--ts-node-mid); transform: translateY(-1px);
+  .ts-tl-status-txt { font-size: 0.6rem; color: #4a6080; }
+  .ts-tl-time { font-size: 0.6rem; color: #2a4060; margin-left: auto; white-space: nowrap; }
+  .ts-tl-label {
+    font-size: 0.76rem; color: #a0c0e0; line-height: 1.35;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .ts-children-col {
-    display: flex; flex-direction: column; gap: 6px;
-    border-left: 2px solid #1e3a5f; padding-left: 14px;
+  .ts-tl-meta { font-size: 0.6rem; color: #2e4a6a; margin-top: 2px; }
+  .ts-tl-children { margin-top: 6px; padding-top: 6px; border-top: 1px solid #0d1e30; }
+  .ts-tl-child {
+    display: flex; align-items: flex-start; gap: 6px;
+    padding: 4px 0 2px 8px; border-left: 2px solid #0d2040;
+    margin: 2px 0;
   }
-  .ts-gnode-child::before {
-    content: ''; position: absolute; left: -16px;
-    top: calc(var(--ts-node-mid) - 2px); width: 14px; height: 2px; background: #1e3a5f;
+  .ts-tl-child .ts-tl-label { font-size: 0.7rem; color: #6080a0; }
+  .ts-tl-child .ts-tl-dept { font-size: 0.58rem; }
+  .ts-tl-child-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+  .ts-tl-count-badge {
+    font-size: 0.58rem; background: #0d2040; color: #4a7aa0;
+    border-radius: 3px; padding: 1px 4px; margin-left: 4px;
   }
+  .ts-tl-expand-btn {
+    background: none; border: none; color: #3a6a90; font-size: 0.6rem;
+    cursor: pointer; padding: 2px 4px; margin-top: 2px; text-decoration: underline;
+  }
+  .ts-show-more { text-align: center; padding: 8px; }
+  .ts-show-more-btn {
+    background: #0c1828; border: 1px solid #1a3050; color: #4a80b0;
+    padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 0.72rem;
+  }
+  .ts-show-more-btn:hover { background: #0f2038; }
+  .ts-empty { background: #0c1220; border: 1px solid #1a2540; border-radius: 10px; padding: 24px; text-align: center; color: #4a6080; }
   /* Current task link in character panels */
   .current-task-link {
     color: #60a5fa; text-decoration: none; font-size: 0.7rem;
@@ -188,14 +197,6 @@
   }
   .ts-tab:hover { border-color: #3b82f6; color: #90b4d4; }
   .ts-tab.active { background: #1a3560; border-color: #3b82f6; color: #c5d4e8; }
-  /* Show more / collapse */
-  .ts-show-more { text-align: center; padding: 8px 0 2px; }
-  .ts-show-more-btn {
-    padding: 5px 18px; border-radius: 8px; border: 1.5px solid #1e3a5f;
-    background: #0c1a2e; color: #6a8caa; font-size: 0.7rem; cursor: pointer;
-    font-family: var(--font-comic-body, sans-serif); transition: all 0.15s;
-  }
-  .ts-show-more-btn:hover { border-color: #3b82f6; color: #c5d4e8; background: #0f2040; }
 </style>
 
 
@@ -714,106 +715,156 @@
     tog.classList.toggle('is-open', !open);
   };
 
-  // ── Task Graph (Horizontal) ──────────────────────────────────────────
-  window._tsNodeData = {};
-
-  function tsNodeDotColor(status) {
-    const m = { done:'#00C851', completed:'#00C851', active:'#3b82f6', in_progress:'#3b82f6',
-                failed:'#FF3B3F', error:'#FF3B3F', cancelled:'#6b7280', pending:'#a78bfa',
-                blocked:'#FF6B00', max_iterations_reached:'#FF6B00' };
-    return m[status] || '#6b7280';
+  // ── Timeline Activity Feed ──────────────────────────────────────────
+  const DEPT_META = {
+    aiorg_engineering_bot: { label: '🦾 개발실', color: '#0057FF' },
+    aiorg_design_bot:      { label: '🎨 디자인실', color: '#9B00FF' },
+    aiorg_ops_bot:         { label: '⚙️ 운영실',  color: '#00C851' },
+    aiorg_product_bot:     { label: '📋 기획실',  color: '#FF6B00' },
+    aiorg_growth_bot:      { label: '📈 성장실',  color: '#FF3B3F' },
+    aiorg_research_bot:    { label: '🔬 리서치실', color: '#00B8D4' },
+    aiorg_pm_bot:          { label: '🎯 PM',      color: '#FFD600' },
+    pm:                    { label: '🎯 PM',      color: '#FFD600' },
+  };
+  function tsDeptMeta(dept) {
+    return DEPT_META[dept] || DEPT_META[(dept||'').split('_').slice(-2,-1)[0]] || { label: dept || '?', color: '#4a6080' };
   }
 
-  function tsStatusCls(status) {
-    const k = (status || '').replace(/[^a-z_]/g, '');
-    return ['done','completed','active','in_progress','failed','error','cancelled','pending','blocked'].includes(k)
-      ? 'st-' + k : '';
+  const STATUS_COLOR = {
+    done:'#00C851', completed:'#00C851', active:'#3b82f6', in_progress:'#3b82f6',
+    failed:'#FF3B3F', error:'#FF3B3F', cancelled:'#6b7280', pending:'#a78bfa',
+    blocked:'#FF6B00', max_iterations_reached:'#FF6B00',
+  };
+  function tsStatusColor(s) { return STATUS_COLOR[s] || '#6b7280'; }
+
+  function tsTimeAgo(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    if (isNaN(d)) return '';
+    const diff = Date.now() - d.getTime();
+    if (diff < 60000) return '방금';
+    if (diff < 3600000) return Math.floor(diff/60000) + '분 전';
+    if (diff < 86400000) return Math.floor(diff/3600000) + '시간 전';
+    return Math.floor(diff/86400000) + '일 전';
   }
 
-  function tsRenderNode(node, isParent) {
-    const cls = isParent ? 'ts-gnode-parent' : 'ts-gnode-child';
-    const sc  = tsStatusCls(node.status);
-    const lbl = tsEsc(node.label || node.id || '—');
-    const sid = tsEsc(node.id);
-    window._tsNodeData[node.id] = { id: node.id, label: node.label || node.id, dept: node.dept, status: node.status };
-    return `<div class="ts-gnode ${cls} ${sc}" id="task-${sid}"
-      onmouseenter="tsShowPopup(event,'${sid}')"
-      onmouseleave="tsHidePopup()"
-      onclick="tsClickNode('${sid}')">
-      <div class="ts-gnode-label" title="${lbl}">${lbl}</div>
-      <div class="ts-gnode-status-row">
-        <span class="ts-gnode-dot" style="background:${tsNodeDotColor(node.status)}"></span>
-        <span class="ts-gnode-status-text">${tsEsc(node.status || '?')}</span>
-      </div>
-      <div class="ts-gnode-dept">${tsEsc(tsShortDept(node.dept))}</div>
-    </div>`;
+  function tsDateKey(isoStr) {
+    if (!isoStr) return 'unknown';
+    const d = new Date(isoStr);
+    if (isNaN(d)) return 'unknown';
+    const now = new Date();
+    const today = now.toDateString();
+    const yesterday = new Date(now - 86400000).toDateString();
+    if (d.toDateString() === today) return 'today';
+    if (d.toDateString() === yesterday) return 'yesterday';
+    const daysAgo = Math.floor((now - d) / 86400000);
+    if (daysAgo < 7) return 'thisweek';
+    return 'older';
   }
 
-  function tsRenderGraphRow(root, childrenOf) {
-    const children = childrenOf[root.id] || [];
-    const parentHtml = tsRenderNode(root, true);
-    if (!children.length) {
-      return `<div class="ts-graph-row">${parentHtml}</div>`;
+  function tsDateLabel(key) {
+    const now = new Date();
+    if (key === 'today') return '오늘 · ' + now.toLocaleDateString('ko-KR', {month:'long',day:'numeric'});
+    if (key === 'yesterday') {
+      const y = new Date(now - 86400000);
+      return '어제 · ' + y.toLocaleDateString('ko-KR', {month:'long',day:'numeric'});
     }
-    const childrenHtml = children.map(c => tsRenderNode(c, false)).join('');
-    return `<div class="ts-graph-row">
-      ${parentHtml}
-      <div class="ts-graph-h-line"></div>
-      <div class="ts-children-col">${childrenHtml}</div>
+    if (key === 'thisweek') return '이번 주';
+    return '이전';
+  }
+
+  window._tsTreeExpanded = false;
+  window._tsTreeFilter = 'all';
+  window._tsTreeCache = null;
+  const _TREE_PAGE = 15;
+
+  function tsRenderChildRow(child) {
+    const meta = tsDeptMeta(child.dept);
+    const lbl = tsEsc(child.label || child.id);
+    return `<div class="ts-tl-child">
+      <div class="ts-tl-child-dot" style="background:${tsStatusColor(child.status)}"></div>
+      <div style="flex:1;min-width:0">
+        <span class="ts-tl-dept" style="background:${meta.color}22;color:${meta.color}">${meta.label}</span>
+        <span class="ts-tl-label" style="margin-left:4px">${lbl}</span>
+      </div>
     </div>`;
   }
 
-  // ── Tree filter/pagination state ─────────────────────────────────────
-  const _TREE_PAGE = 12;
-  window._tsTreeCache    = null;   // { projectRoots, retroRoots, childrenOf }
-  window._tsTreeFilter   = 'all';
-  window._tsTreeExpanded = false;
-
-  function _tsActiveStatuses(filter) {
-    if (filter === 'running') return new Set(['running','active','in_progress']);
-    if (filter === 'failed')  return new Set(['failed','error']);
-    return null; // all
-  }
-
-  function _tsFilterRoots(roots, childrenOf, filter) {
-    const s = _tsActiveStatuses(filter);
-    if (!s) return roots;
-    return roots.filter(r => s.has(r.status) || (childrenOf[r.id] || []).some(c => s.has(c.status)));
+  function tsRenderTimelineItem(node, childrenOf) {
+    const meta = tsDeptMeta(node.dept);
+    const children = (childrenOf[node.id] || []);
+    const lbl = tsEsc(node.label || node.id);
+    const sid = tsEsc(node.id);
+    const childCount = children.length;
+    const childrenHtml = childCount
+      ? `<div class="ts-tl-children">${children.slice(0,5).map(c => tsRenderChildRow(c)).join('')}${childCount > 5 ? `<div style="padding:2px 0 0 8px;font-size:0.6rem;color:#2a4060">+ ${childCount-5}개 더</div>` : ''}</div>`
+      : '';
+    return `<div class="ts-tl-item" title="${sid}">
+      <div class="ts-tl-strip" style="background:${meta.color}"></div>
+      <div class="ts-tl-body">
+        <div class="ts-tl-top">
+          <span class="ts-tl-dept" style="background:${meta.color}22;color:${meta.color}">${meta.label}</span>
+          <div class="ts-tl-status-dot" style="background:${tsStatusColor(node.status)}"></div>
+          <span class="ts-tl-status-txt">${tsEsc(node.status||'?')}</span>
+          ${childCount ? `<span class="ts-tl-count-badge">하위 ${childCount}건</span>` : ''}
+          <span class="ts-tl-time">${tsTimeAgo(node.updated_at)}</span>
+        </div>
+        <div class="ts-tl-label">${lbl}</div>
+        <div class="ts-tl-meta">${sid}</div>
+        ${childrenHtml}
+      </div>
+    </div>`;
   }
 
   function tsRenderTreeFromCache() {
     const container = document.getElementById('ts-task-tree');
     if (!window._tsTreeCache) return;
-    const { projectRoots, retroRoots, childrenOf } = window._tsTreeCache;
-    const filter   = window._tsTreeFilter;
-    const filtered = _tsFilterRoots(projectRoots, childrenOf, filter);
-    const limit    = window._tsTreeExpanded ? Infinity : _TREE_PAGE;
-    const visible  = filtered.slice(0, limit);
-    const hidden   = filtered.length - visible.length;
+    const { allRoots, childrenOf } = window._tsTreeCache;
+    const filter = window._tsTreeFilter;
 
-    if (!visible.length && !retroRoots.length) {
-      const label = filter === 'running' ? '현재 진행중인 태스크 없음' : filter === 'failed' ? '실패 태스크 없음' : '태스크 없음';
-      container.innerHTML = `<div class="ts-empty" style="background:#0c1220;border:1px solid #1a2540;border-radius:10px;padding:24px;text-align:center">${label}</div>`;
+    // Filter
+    let roots = allRoots;
+    if (filter === 'running') roots = allRoots.filter(n => ['active','in_progress','running'].includes(n.status));
+    else if (filter === 'failed') roots = allRoots.filter(n => ['failed','error','blocked'].includes(n.status));
+
+    if (!roots.length) {
+      container.innerHTML = `<div class="ts-empty">표시할 태스크 없음</div>`;
       return;
     }
 
-    let html = '<div class="ts-graph-container">';
-    html += visible.map(r => tsRenderGraphRow(r, childrenOf)).join('');
+    const limit = window._tsTreeExpanded ? Infinity : _TREE_PAGE;
+    const visible = roots.slice(0, limit);
+    const hidden = roots.length - visible.length;
+
+    // Group by date
+    const groups = {};
+    const ORDER = ['today','yesterday','thisweek','older','unknown'];
+    visible.forEach(n => {
+      const k = tsDateKey(n.updated_at);
+      if (!groups[k]) groups[k] = [];
+      groups[k].push(n);
+    });
+
+    let html = '<div class="ts-timeline">';
+    ORDER.forEach(key => {
+      if (!groups[key] || !groups[key].length) return;
+      html += `<div class="ts-tl-group">`;
+      html += `<div class="ts-tl-date-hdr">${tsDateLabel(key)} · ${groups[key].length}건</div>`;
+      html += groups[key].map(n => tsRenderTimelineItem(n, childrenOf)).join('');
+      html += `</div>`;
+    });
+
     if (hidden > 0) {
       html += `<div class="ts-show-more"><button class="ts-show-more-btn" onclick="tsExpandTree()">▼ ${hidden}개 더 보기</button></div>`;
-    } else if (window._tsTreeExpanded && filtered.length > _TREE_PAGE) {
+    } else if (window._tsTreeExpanded && roots.length > _TREE_PAGE) {
       html += `<div class="ts-show-more"><button class="ts-show-more-btn" onclick="tsCollapseTree()">▲ 접기</button></div>`;
-    }
-    if (retroRoots.length && filter === 'all') {
-      html += '<div class="ts-graph-section-title">🔄 수명 업무</div>';
-      html += retroRoots.map(r => tsRenderGraphRow(r, childrenOf)).join('');
     }
     html += '</div>';
     container.innerHTML = html;
   }
 
   window.tsSetTreeFilter = function (filter) {
-    window._tsTreeFilter   = filter;
+    window._tsTreeFilter = filter;
     window._tsTreeExpanded = false;
     document.querySelectorAll('.ts-tab').forEach(t => t.classList.toggle('active', t.dataset.filter === filter));
     tsRenderTreeFromCache();
@@ -828,24 +879,24 @@
       if (!r.ok) throw new Error('API error');
       const data = await r.json();
       if (!data.nodes || !data.nodes.length) {
-        container.innerHTML = '<div class="ts-empty" style="background:#0c1220;border:1px solid #1a2540;border-radius:10px;padding:32px">최근 30일 내 태스크 없음</div>';
+        container.innerHTML = '<div class="ts-empty">최근 30일 내 태스크 없음</div>';
         return;
       }
-      const nodeMap    = new Map(data.nodes.map(n => [n.id, n]));
+      const nodeMap = new Map(data.nodes.map(n => [n.id, n]));
       const childrenOf = {};
       (data.edges || []).forEach(e => {
         if (!childrenOf[e.source]) childrenOf[e.source] = [];
         const child = nodeMap.get(e.target);
         if (child) childrenOf[e.source].push(child);
       });
-      window._tsTreeCache = {
-        projectRoots: data.nodes.filter(n => n.depth === 0 && !n.virtual && n.task_type !== 'retro' && n.task_type !== 'weekly'),
-        retroRoots:   data.nodes.filter(n => n.depth === 0 && (n.virtual || n.task_type === 'retro' || n.task_type === 'weekly')),
-        childrenOf,
-      };
+      // All root nodes (depth 0), sorted newest first
+      const allRoots = data.nodes
+        .filter(n => n.depth === 0)
+        .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+      window._tsTreeCache = { allRoots, childrenOf };
       tsRenderTreeFromCache();
     } catch (e) {
-      container.innerHTML = '<div class="ts-empty" style="background:#0c1220;border:1px solid #1a2540;border-radius:10px;padding:32px">태스크 트리 로드 실패</div>';
+      container.innerHTML = '<div class="ts-empty">태스크 피드 로드 실패</div>';
       console.warn('[ts] task tree error', e);
     }
   }
