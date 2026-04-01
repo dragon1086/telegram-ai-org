@@ -4,307 +4,228 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AIMesh Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: #0a0e1a;
-    color: #e2e8f0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    min-height: 100vh;
-    padding: 0 0 40px;
+  :root {
+    --bg:        #080c14;
+    --surface:   #0c1220;
+    --surface2:  #101828;
+    --border:    #1a2540;
+    --border2:   #243050;
+    --text:      #dce8f8;
+    --muted:     #4a5e7a;
+    --muted2:    #2d3f5a;
+    --cyan:      #22d3ee;
+    --green:     #22c55e;
+    --red:       #f87171;
+    --orange:    #fb923c;
+    --purple:    #a78bfa;
+    --blue:      #3b82f6;
+    --blue-dim:  #1e3a5f;
+    --mono:      'IBM Plex Mono', monospace;
+    --sans:      'IBM Plex Sans KR', system-ui, sans-serif;
   }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 0 0 60px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── Header ─────────────────────────────────────── */
   header {
-    background: #0d1224;
-    border-bottom: 1px solid #1e2a45;
-    padding: 16px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: 50;
   }
-  header h1 { font-size: 1.3rem; font-weight: 700; color: #60a5fa; }
+  .header-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .header-logo .logo-mark {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, #1d4ed8 0%, #0e7490 100%);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-family: var(--mono);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--cyan);
+    letter-spacing: 0.04em;
+  }
+  .header-sub {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-top: 1px;
+  }
   #sse-status {
     margin-left: auto;
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.78rem;
-    color: #94a3b8;
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-family: var(--mono);
   }
   #sse-dot {
-    width: 10px; height: 10px;
+    width: 8px; height: 8px;
     border-radius: 50%;
-    background: #ef4444;
+    background: var(--red);
     transition: background 0.3s;
+    flex-shrink: 0;
   }
-  #sse-dot.connected { background: #22c55e; }
-  main { max-width: 1280px; margin: 0 auto; padding: 28px 20px 0; }
-  .section-title {
-    font-size: 0.85rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #64748b;
-    margin-bottom: 14px;
-  }
-  /* Summary cards */
-  .summary-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-    margin-bottom: 36px;
-  }
-  .card {
-    background: #0d1224;
-    border: 1px solid #1e2a45;
-    border-radius: 12px;
-    padding: 20px 24px;
-  }
-  .card .label { font-size: 0.82rem; color: #64748b; margin-bottom: 8px; }
-  .card .value { font-size: 2rem; font-weight: 700; }
-  .card.active .value { color: #22d3ee; }
-  .card.done   .value { color: #22c55e; }
-  .card.failed .value { color: #f87171; }
+  #sse-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
 
-  /* Graph section */
-  .graph-wrap {
-    background: #0d1224;
-    border: 1px solid #1e2a45;
-    border-radius: 12px;
-    margin-bottom: 36px;
-    position: relative;
-    overflow: hidden;
-  }
-  .graph-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    border-bottom: 1px solid #1e2a45;
-    flex-wrap: wrap;
-  }
-  .graph-toolbar span { font-size: 0.8rem; color: #64748b; }
-  .graph-days-btn {
-    padding: 4px 10px;
-    border-radius: 6px;
-    border: 1px solid #1e2a45;
-    background: transparent;
-    color: #94a3b8;
-    font-size: 0.76rem;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .graph-days-btn.active, .graph-days-btn:hover {
-    background: #1e3a5f;
-    border-color: #3b82f6;
-    color: #93c5fd;
-  }
-  #graph-stats {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-left: auto;
-  }
-  .stat-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 9px;
-    border-radius: 20px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    background: #111827;
-  }
-  .stat-dot {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    display: inline-block;
-  }
-  #graph-svg-container {
-    width: 100%;
-    height: 480px;
-    position: relative;
-  }
-  #graph-svg {
-    width: 100%;
-    height: 100%;
-    display: block;
-  }
-  #graph-empty {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #475569;
-    font-size: 0.9rem;
-    pointer-events: none;
-  }
-  /* Tooltip */
-  #g-tooltip {
-    position: fixed;
-    background: #111827;
-    border: 1px solid #1e2a45;
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 0.78rem;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-    z-index: 100;
-    max-width: 260px;
-    line-height: 1.6;
-  }
-  #g-tooltip .tt-label { font-weight: 600; color: #e2e8f0; margin-bottom: 4px; }
-  #g-tooltip .tt-dept  { color: #93c5fd; }
-  #g-tooltip .tt-status { }
+  /* ── Layout ──────────────────────────────────────── */
+  main { max-width: 1360px; margin: 0 auto; padding: 28px 20px 0; }
 
-  /* Goals section */
-  .goals-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 14px;
-    margin-bottom: 36px;
-  }
-  .goal-card {
-    background: #0d1224;
-    border: 1px solid #1e2a45;
-    border-radius: 10px;
-    padding: 16px;
-  }
-  .goal-card .goal-title {
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin-bottom: 8px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .goal-card .goal-meta {
-    font-size: 0.75rem;
-    color: #64748b;
-    margin-bottom: 10px;
-  }
-  .status-badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 4px;
+  .section-label {
+    font-family: var(--mono);
     font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
-    margin-bottom: 10px;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
-  .status-badge.active               { background: #0e3a4f; color: #22d3ee; }
-  .status-badge.completed            { background: #0a3020; color: #22c55e; }
-  .status-badge.max_iterations_reached { background: #3d2800; color: #fb923c; }
-  .status-badge.failed               { background: #3b0d0d; color: #f87171; }
-  .status-badge.default              { background: #1e2a45; color: #94a3b8; }
-  .progress-bar-wrap {
-    background: #1e2a45;
-    border-radius: 4px;
-    height: 6px;
-    overflow: hidden;
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
   }
-  .progress-bar {
-    height: 100%;
-    background: #3b82f6;
-    border-radius: 4px;
-    transition: width 0.4s;
-  }
-  .progress-label {
-    font-size: 0.72rem;
-    color: #64748b;
-    margin-top: 4px;
-    text-align: right;
-  }
-  /* Tasks table */
-  .table-wrap {
-    background: #0d1224;
-    border: 1px solid #1e2a45;
-    border-radius: 12px;
-    overflow: hidden;
-  }
-  table { width: 100%; border-collapse: collapse; }
-  thead tr { background: #111827; }
-  th {
-    padding: 10px 14px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #64748b;
-    text-align: left;
-  }
-  tbody tr { border-top: 1px solid #1e2a45; }
-  tbody tr:hover { background: #111827; }
-  td { padding: 10px 14px; font-size: 0.83rem; }
-  td.desc { max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  td.dept { color: #93c5fd; }
-  .ts { color: #475569; font-size: 0.72rem; }
-  .empty { padding: 32px; text-align: center; color: #475569; }
 
-  /* Bot Characters */
+  /* ── Summary Cards ───────────────────────────────── */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-bottom: 32px;
+  }
+  .sum-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .sum-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+    border-radius: 10px 0 0 10px;
+  }
+  .sum-card.active::before  { background: var(--cyan); }
+  .sum-card.done::before    { background: var(--green); }
+  .sum-card.failed::before  { background: var(--red); }
+  .sum-card .s-label {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-bottom: 6px;
+    font-family: var(--mono);
+  }
+  .sum-card .s-value {
+    font-family: var(--mono);
+    font-size: 2.2rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .sum-card.active .s-value  { color: var(--cyan); }
+  .sum-card.done   .s-value  { color: var(--green); }
+  .sum-card.failed .s-value  { color: var(--red); }
+
+  /* ── Bot Characters ──────────────────────────────── */
   .bots-row {
     display: flex;
-    gap: 14px;
+    gap: 12px;
     flex-wrap: wrap;
-    margin-bottom: 36px;
+    margin-bottom: 32px;
   }
   .bot-card {
-    background: #0d1224;
-    border: 1px solid #1e2a45;
-    border-radius: 12px;
-    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
-    width: 120px;
+    gap: 7px;
+    width: 112px;
     position: relative;
-    transition: border-color 0.3s;
+    transition: border-color 0.3s, box-shadow 0.3s;
   }
-  .bot-card.state-working { border-color: #22d3ee; }
-  .bot-card.state-done    { border-color: #22c55e; }
-  .bot-card.state-error   { border-color: #f87171; }
+  .bot-card.state-working {
+    border-color: var(--cyan);
+    box-shadow: 0 0 16px rgba(34,211,238,0.12);
+  }
+  .bot-card.state-done  { border-color: var(--green); }
+  .bot-card.state-error { border-color: var(--red); }
   .bot-avatar {
-    width: 64px;
-    height: 64px;
+    width: 56px; height: 56px;
     border-radius: 50%;
     object-fit: cover;
-    background: #1e2a45;
+    background: var(--border);
   }
   .bot-avatar-svg {
-    width: 64px; height: 64px;
+    width: 56px; height: 56px;
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 28px;
-    background: #1e2a45;
+    font-size: 24px;
+    background: var(--surface2);
+    border: 2px solid var(--border);
   }
-  .bot-name {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #94a3b8;
-    text-align: center;
+  .bot-name { font-size: 0.72rem; font-weight: 600; color: var(--muted); text-align: center; }
+  .bot-state-label { font-size: 0.62rem; color: var(--muted2); font-family: var(--mono); }
+  .bot-task-bubble {
+    position: absolute;
+    top: -6px; right: -6px;
+    background: var(--cyan);
+    color: var(--bg);
+    border-radius: 8px;
+    font-size: 0.58rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    display: none;
+    font-family: var(--mono);
   }
-  .bot-state-label {
-    font-size: 0.65rem;
-    color: #475569;
-  }
+  .bot-card.state-working .bot-task-bubble { display: block; }
+
   @keyframes bot-pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
-    50%       { opacity: 0.7; transform: scale(0.97); }
+    50%       { opacity: 0.75; transform: scale(0.97); }
   }
   @keyframes bot-spin-glow {
     0%   { filter: drop-shadow(0 0 4px #22d3ee); }
-    50%  { filter: drop-shadow(0 0 12px #22d3ee); }
+    50%  { filter: drop-shadow(0 0 14px #22d3ee); }
     100% { filter: drop-shadow(0 0 4px #22d3ee); }
   }
   @keyframes bot-done-bounce {
     0%, 100% { transform: translateY(0); }
-    40%       { transform: translateY(-8px); }
-    60%       { transform: translateY(-4px); }
+    40%       { transform: translateY(-7px); }
+    60%       { transform: translateY(-3px); }
   }
   @keyframes bot-error-shake {
     0%, 100% { transform: translateX(0); }
@@ -321,79 +242,315 @@
   .bot-card.state-done .bot-avatar-svg    { animation: bot-done-bounce 0.6s ease 1; }
   .bot-card.state-error .bot-avatar,
   .bot-card.state-error .bot-avatar-svg   { animation: bot-error-shake 0.5s ease 1; }
-  .bot-task-bubble {
-    position: absolute;
-    top: -8px; right: -8px;
-    background: #22d3ee;
-    color: #0a0e1a;
-    border-radius: 10px;
-    font-size: 0.6rem;
-    font-weight: 700;
-    padding: 1px 5px;
-    display: none;
+
+  /* ── Goals Grid ──────────────────────────────────── */
+  .goals-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+    margin-bottom: 32px;
   }
-  .bot-card.state-working .bot-task-bubble { display: block; }
+  .goal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .goal-card .goal-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text);
+  }
+  .goal-card .goal-meta {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-bottom: 8px;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .goal-footer {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .goal-ts { font-size: 0.68rem; color: var(--muted); font-family: var(--mono); margin-left: auto; }
+
+  /* status badges */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .badge-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .badge.s-done, .badge.s-completed       { background: #0a2e1a; color: var(--green); }
+  .badge.s-done .badge-dot,
+  .badge.s-completed .badge-dot           { background: var(--green); }
+  .badge.s-active, .badge.s-in_progress   { background: #0e2e3a; color: var(--cyan); }
+  .badge.s-active .badge-dot,
+  .badge.s-in_progress .badge-dot         { background: var(--cyan); animation: pulse-dot 1.4s ease-in-out infinite; }
+  .badge.s-failed, .badge.s-error         { background: #2e0f0f; color: var(--red); }
+  .badge.s-failed .badge-dot,
+  .badge.s-error .badge-dot               { background: var(--red); }
+  .badge.s-cancelled                      { background: #1a1a1a; color: #4a5e7a; }
+  .badge.s-cancelled .badge-dot           { background: #4a5e7a; }
+  .badge.s-needs_review                   { background: #2e1e0a; color: var(--orange); }
+  .badge.s-needs_review .badge-dot        { background: var(--orange); }
+  .badge.s-pending                        { background: #1e1a2e; color: var(--purple); }
+  .badge.s-pending .badge-dot             { background: var(--purple); }
+  .badge.s-max_iterations_reached         { background: #2e1e0a; color: var(--orange); }
+  .badge.s-max_iterations_reached .badge-dot { background: var(--orange); }
+  .badge.s-default                        { background: var(--surface2); color: var(--muted); }
+  .badge.s-default .badge-dot             { background: var(--muted); }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.5; transform: scale(0.7); }
+  }
+
+  .progress-bar-wrap {
+    background: var(--border);
+    border-radius: 3px;
+    height: 5px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    background: var(--blue);
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+  .progress-bar.done-bar { background: var(--green); }
+  .progress-label {
+    font-size: 0.68rem;
+    color: var(--muted);
+    margin-top: 3px;
+    text-align: right;
+    font-family: var(--mono);
+  }
+
+  /* ── Task Tree (Accordion) ───────────────────────── */
+  .task-tree {
+    margin-bottom: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .tree-root {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .tree-root:hover { border-color: var(--border2); }
+  .tree-root.is-open { border-color: var(--blue-dim); }
+
+  .tree-root-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+  }
+  .tree-root-header:hover { background: var(--surface2); }
+
+  .tree-chevron {
+    width: 16px; height: 16px;
+    flex-shrink: 0;
+    color: var(--muted);
+    transition: transform 0.2s ease;
+  }
+  .tree-root.is-open .tree-chevron { transform: rotate(90deg); }
+
+  .tree-root-label {
+    flex: 1;
+    font-size: 0.84rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .tree-root-dept {
+    font-size: 0.7rem;
+    color: #93c5fd;
+    font-family: var(--mono);
+    flex-shrink: 0;
+  }
+  .tree-root-ts {
+    font-size: 0.68rem;
+    color: var(--muted);
+    font-family: var(--mono);
+    flex-shrink: 0;
+  }
+  .tree-child-count {
+    font-size: 0.65rem;
+    color: var(--muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-family: var(--mono);
+    flex-shrink: 0;
+  }
+
+  .tree-children {
+    display: none;
+    border-top: 1px solid var(--border);
+  }
+  .tree-root.is-open .tree-children { display: block; }
+
+  .subtask-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .subtask-table thead tr {
+    background: #080c14;
+  }
+  .subtask-table th {
+    padding: 7px 16px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    text-align: left;
+    font-family: var(--mono);
+    border-bottom: 1px solid var(--border);
+  }
+  .subtask-table tbody tr { border-top: 1px solid var(--border); }
+  .subtask-table tbody tr:hover { background: #0e1628; }
+  .subtask-table td { padding: 9px 16px; font-size: 0.8rem; }
+  .subtask-table td.st-dept { color: #93c5fd; font-family: var(--mono); font-size: 0.75rem; white-space: nowrap; }
+  .subtask-table td.st-desc {
+    max-width: 440px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .subtask-table td.st-ts { color: var(--muted); font-family: var(--mono); font-size: 0.7rem; white-space: nowrap; }
+  .subtask-table td.st-status { white-space: nowrap; }
+
+  .no-children {
+    padding: 16px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-family: var(--mono);
+  }
+
+  /* ── Tasks Feed Table ────────────────────────────── */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  table.feed-table { width: 100%; border-collapse: collapse; }
+  table.feed-table thead tr { background: var(--surface2); }
+  table.feed-table th {
+    padding: 9px 14px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    text-align: left;
+    font-family: var(--mono);
+  }
+  table.feed-table tbody tr { border-top: 1px solid var(--border); }
+  table.feed-table tbody tr:hover { background: var(--surface2); }
+  table.feed-table td { padding: 9px 14px; font-size: 0.8rem; }
+  table.feed-table td.dept { color: #93c5fd; font-family: var(--mono); font-size: 0.75rem; }
+  table.feed-table td.desc { max-width: 380px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  table.feed-table td.ts   { color: var(--muted); font-family: var(--mono); font-size: 0.7rem; white-space: nowrap; }
+  .empty { padding: 32px; text-align: center; color: var(--muted); font-size: 0.82rem; }
+
+  /* ── Responsive ──────────────────────────────────── */
+  @media (max-width: 640px) {
+    .summary-grid { grid-template-columns: 1fr 1fr; }
+    .summary-grid .sum-card:last-child { grid-column: span 2; }
+    .bots-row { gap: 8px; }
+    .bot-card { width: 90px; padding: 10px 10px; }
+    .tree-root-ts { display: none; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>AIMesh Dashboard</h1>
+  <div class="header-logo">
+    <div class="logo-mark">🤖</div>
+    <div>
+      <h1>AIMesh</h1>
+      <div class="header-sub">AI 조직 오케스트레이션 대시보드</div>
+    </div>
+  </div>
   <div id="sse-status">
     <div id="sse-dot"></div>
     <span id="sse-label">연결 중...</span>
   </div>
 </header>
+
 <main>
   <!-- Summary -->
-  <div class="section-title">현황 요약</div>
+  <div class="section-label">현황 요약</div>
   <div class="summary-grid">
-    <div class="card active">
-      <div class="label">🎯 활성 목표</div>
-      <div class="value" id="cnt-active-goals">—</div>
+    <div class="sum-card active">
+      <div class="s-label">🎯 활성 목표</div>
+      <div class="s-value" id="cnt-active-goals">—</div>
     </div>
-    <div class="card done">
-      <div class="label">✅ 완료 태스크</div>
-      <div class="value" id="cnt-done-tasks">—</div>
+    <div class="sum-card done">
+      <div class="s-label">✅ 완료 태스크</div>
+      <div class="s-value" id="cnt-done-tasks">—</div>
     </div>
-    <div class="card failed">
-      <div class="label">❌ 실패 태스크</div>
-      <div class="value" id="cnt-failed-tasks">—</div>
+    <div class="sum-card failed">
+      <div class="s-label">❌ 실패 태스크</div>
+      <div class="s-value" id="cnt-failed-tasks">—</div>
     </div>
   </div>
 
   <!-- Bot Characters -->
-  <div class="section-title">봇 현황</div>
-  <div class="bots-row" id="bots-row">
-    <!-- JS로 렌더링 -->
-  </div>
-
-  <!-- Task Graph -->
-  <div class="section-title">태스크 계층 그래프</div>
-  <div class="graph-wrap">
-    <div class="graph-toolbar">
-      <span>최근</span>
-      <button class="graph-days-btn active" data-days="3">3일</button>
-      <button class="graph-days-btn active" data-days="7" id="btn-7d">7일</button>
-      <button class="graph-days-btn" data-days="14">14일</button>
-      <button class="graph-days-btn" data-days="30">30일</button>
-      <div id="graph-stats"></div>
-    </div>
-    <div id="graph-svg-container">
-      <svg id="graph-svg"></svg>
-      <div id="graph-empty">그래프 로딩 중...</div>
-    </div>
-  </div>
+  <div class="section-label">봇 현황</div>
+  <div class="bots-row" id="bots-row"></div>
 
   <!-- Goals -->
-  <div class="section-title">목표 목록</div>
+  <div class="section-label">목표 현황</div>
   <div class="goals-grid" id="goals-grid">
     <div class="empty">로딩 중...</div>
   </div>
 
-  <!-- Tasks -->
-  <div class="section-title">최근 태스크</div>
+  <!-- Task Tree Accordion -->
+  <div class="section-label">태스크 트리</div>
+  <div class="task-tree" id="task-tree">
+    <div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:32px">로딩 중...</div>
+  </div>
+
+  <!-- Recent Tasks Feed -->
+  <div class="section-label">최근 태스크 피드</div>
   <div class="table-wrap">
-    <table>
+    <table class="feed-table">
       <thead>
         <tr>
           <th>상태</th>
@@ -409,43 +566,14 @@
   </div>
 </main>
 
-<div id="g-tooltip">
-  <div class="tt-label" id="tt-label"></div>
-  <div class="tt-dept" id="tt-dept"></div>
-  <div class="tt-status" id="tt-status"></div>
-</div>
-
-<!-- D3.js v7 -->
-<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <script>
   const BASE = '';
 
-  // ── Status colour palette ──────────────────────────────────────────────────
-  const STATUS_COLOR = {
-    done:       '#22c55e',
-    completed:  '#22c55e',
-    active:     '#22d3ee',
-    in_progress:'#38bdf8',
-    pending:    '#a78bfa',
-    failed:     '#f87171',
-    error:      '#f87171',
-    cancelled:  '#475569',
-    needs_review:'#fb923c',
-    blocked:    '#ef4444',
-  };
-  function nodeColor(status) {
-    return STATUS_COLOR[status] || '#64748b';
-  }
-
-  // ── helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────────
   function esc(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
       .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-  function badgeClass(status) {
-    const map = { active:'active', completed:'completed',
-                  max_iterations_reached:'max_iterations_reached', failed:'failed' };
-    return map[status] || 'default';
   }
   function fmtTs(ts) {
     if (!ts) return '—';
@@ -468,8 +596,28 @@
     };
     return map[dept] || dept.replace('aiorg_','').replace('_bot','');
   }
+  function badgeKey(status) {
+    const known = ['done','completed','active','in_progress','failed','error',
+                   'cancelled','needs_review','pending','max_iterations_reached'];
+    return known.includes(status) ? status : 'default';
+  }
+  function statusIcon(status) {
+    const icons = {
+      done:'✅', completed:'✅',
+      active:'🔄', in_progress:'🔄',
+      failed:'❌', error:'❌',
+      cancelled:'⚫', needs_review:'🟠',
+      pending:'🔵', max_iterations_reached:'🟠',
+    };
+    return icons[status] || '⚪';
+  }
+  function badge(status) {
+    const k = badgeKey(status);
+    const icon = statusIcon(status);
+    return `<span class="badge s-${k}"><span class="badge-dot"></span>${icon} ${esc(status||'?')}</span>`;
+  }
 
-  // ── Summary ────────────────────────────────────────────────────────────────
+  // ── Summary ──────────────────────────────────────────────────────────────────
   async function loadSummary() {
     try {
       const r = await fetch(BASE + '/api/v1/dashboard/summary');
@@ -483,7 +631,7 @@
     } catch (e) { console.warn('summary error', e); }
   }
 
-  // ── Goals ──────────────────────────────────────────────────────────────────
+  // ── Goals ────────────────────────────────────────────────────────────────────
   async function loadGoals() {
     try {
       const r = await fetch(BASE + '/api/v1/dashboard/goals?limit=20');
@@ -491,35 +639,123 @@
       const goals = await r.json();
       const grid = document.getElementById('goals-grid');
       if (!goals.length) {
-        grid.innerHTML = '<div class="empty">목표 없음</div>';
+        grid.innerHTML = '<div class="empty" style="grid-column:1/-1">목표 없음</div>';
         return;
       }
-      grid.innerHTML = goals.map(g => {
-        const iter = g.iteration || 0;
+      // Active goals float to top
+      const sorted = [...goals].sort((a, b) => {
+        const aActive = (a.status === 'active') ? 0 : 1;
+        const bActive = (b.status === 'active') ? 0 : 1;
+        return aActive - bActive;
+      });
+      grid.innerHTML = sorted.map(g => {
+        const iter    = g.iteration || 0;
         const maxIter = g.max_iterations || 1;
-        const pct = Math.min(100, Math.round((iter / maxIter) * 100));
-        const bc = badgeClass(g.status);
-        const prog = g.last_progress
-          ? g.last_progress.slice(0,80) + (g.last_progress.length > 80 ? '…' : '')
+        const pct     = Math.min(100, Math.round((iter / maxIter) * 100));
+        const isDone  = g.status === 'completed' || g.status === 'done';
+        const prog    = g.last_progress
+          ? g.last_progress.slice(0,90) + (g.last_progress.length > 90 ? '…' : '')
           : '';
         return `<div class="goal-card">
           <div class="goal-title" title="${esc(g.title||'')}">${esc(g.title||'(제목 없음)')}</div>
-          <span class="status-badge ${bc}">${esc(g.status||'unknown')}</span>
-          <div class="progress-bar-wrap">
-            <div class="progress-bar" style="width:${pct}%"></div>
+          ${prog ? `<div class="goal-meta">${esc(prog)}</div>` : ''}
+          <div class="progress-bar-wrap" style="margin-bottom:3px">
+            <div class="progress-bar${isDone?' done-bar':''}" style="width:${pct}%"></div>
           </div>
-          <div class="progress-label">${iter} / ${maxIter} iter</div>
-          ${prog ? `<div class="goal-meta" style="margin-top:6px">${esc(prog)}</div>` : ''}
-          <div class="ts" style="margin-top:6px">${fmtTs(g.updated_at)}</div>
+          <div class="progress-label">${iter} / ${maxIter} iter · ${pct}%</div>
+          <div class="goal-footer">
+            ${badge(g.status)}
+            <span class="goal-ts">${fmtTs(g.updated_at)}</span>
+          </div>
         </div>`;
       }).join('');
     } catch (e) { console.warn('goals error', e); }
   }
 
-  // ── Tasks ──────────────────────────────────────────────────────────────────
+  // ── Task Tree (Accordion) ────────────────────────────────────────────────────
+  async function loadTaskTree() {
+    const container = document.getElementById('task-tree');
+    try {
+      const r = await fetch(`${BASE}/api/v1/dashboard/task-graph?days=30&limit=200`);
+      if (!r.ok) throw new Error('API error');
+      const data = await r.json();
+
+      if (!data.nodes || data.nodes.length === 0) {
+        container.innerHTML = '<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:32px">최근 30일 내 태스크 없음</div>';
+        return;
+      }
+
+      // Build node map and children index
+      const nodeMap = new Map(data.nodes.map(n => [n.id, n]));
+      const childrenOf = {};
+      (data.edges || []).forEach(e => {
+        if (!childrenOf[e.source]) childrenOf[e.source] = [];
+        const child = nodeMap.get(e.target);
+        if (child) childrenOf[e.source].push(child);
+      });
+
+      // Root nodes (depth=0), sorted by updated_at DESC from API
+      const roots = data.nodes.filter(n => n.depth === 0);
+
+      if (!roots.length) {
+        container.innerHTML = '<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:32px">루트 태스크 없음</div>';
+        return;
+      }
+
+      container.innerHTML = roots.map((root, idx) => {
+        const children = childrenOf[root.id] || [];
+        const countLabel = children.length ? `${children.length}개 서브태스크` : '서브 없음';
+        const childRows = children.length
+          ? `<table class="subtask-table">
+              <thead><tr>
+                <th style="width:90px">담당 봇</th>
+                <th>내용</th>
+                <th style="width:130px">상태</th>
+                <th style="width:110px">업데이트</th>
+              </tr></thead>
+              <tbody>
+              ${children.map(c => `<tr>
+                <td class="st-dept">${esc(shortDept(c.dept))}</td>
+                <td class="st-desc" title="${esc(c.label||'')}">${esc(c.label||'—')}</td>
+                <td class="st-status">${badge(c.status)}</td>
+                <td class="st-ts">${fmtTs(c.updated_at)}</td>
+              </tr>`).join('')}
+              </tbody>
+            </table>`
+          : `<div class="no-children">하위 태스크 없음</div>`;
+
+        return `<div class="tree-root" id="tree-${idx}">
+          <div class="tree-root-header" onclick="toggleTree('tree-${idx}')">
+            <svg class="tree-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="5,3 11,8 5,13"/>
+            </svg>
+            <span class="tree-root-label" title="${esc(root.label||'')}">${esc(root.label||'—')}</span>
+            <span class="tree-root-dept">${esc(shortDept(root.dept))}</span>
+            ${badge(root.status)}
+            <span class="tree-child-count">${countLabel}</span>
+            <span class="tree-root-ts">${fmtTs(root.updated_at)}</span>
+          </div>
+          <div class="tree-children">
+            ${childRows}
+          </div>
+        </div>`;
+      }).join('');
+
+    } catch (e) {
+      container.innerHTML = '<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:32px">태스크 트리 로드 실패</div>';
+      console.warn('task tree error', e);
+    }
+  }
+
+  function toggleTree(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('is-open');
+  }
+
+  // ── Tasks Feed ───────────────────────────────────────────────────────────────
   async function loadTasks() {
     try {
-      const r = await fetch(BASE + '/api/v1/dashboard/tasks?limit=20');
+      const r = await fetch(BASE + '/api/v1/dashboard/tasks?limit=30');
       if (!r.ok) return;
       const tasks = await r.json();
       const tbody = document.getElementById('tasks-tbody');
@@ -527,253 +763,16 @@
         tbody.innerHTML = '<tr><td colspan="4" class="empty">태스크 없음</td></tr>';
         return;
       }
-      tbody.innerHTML = tasks.map(t => {
-        const bc = badgeClass(t.status);
-        return `<tr>
-          <td><span class="status-badge ${bc}">${esc(t.status||'?')}</span></td>
-          <td class="dept">${esc(shortDept(t.assigned_dept))}</td>
-          <td class="desc" title="${esc(t.description||'')}">${esc(t.description||'—')}</td>
-          <td class="ts">${fmtTs(t.updated_at)}</td>
-        </tr>`;
-      }).join('');
+      tbody.innerHTML = tasks.map(t => `<tr>
+        <td>${badge(t.status)}</td>
+        <td class="dept">${esc(shortDept(t.assigned_dept))}</td>
+        <td class="desc" title="${esc(t.description||'')}">${esc(t.description||'—')}</td>
+        <td class="ts">${fmtTs(t.updated_at)}</td>
+      </tr>`).join('');
     } catch (e) { console.warn('tasks error', e); }
   }
 
-  // ── D3 Force Graph ─────────────────────────────────────────────────────────
-  let currentDays = 7;
-  let simulation = null;
-
-  const tooltip = document.getElementById('g-tooltip');
-
-  function showTooltip(event, d) {
-    document.getElementById('tt-label').textContent = d.label;
-    document.getElementById('tt-dept').textContent = '담당: ' + shortDept(d.dept);
-    document.getElementById('tt-status').innerHTML =
-      '<span style="color:' + nodeColor(d.status) + '">' + (d.status||'?') + '</span>' +
-      (d.depth === 0 ? ' · 루트' : ' · 서브태스크');
-    tooltip.style.opacity = '1';
-    moveTooltip(event);
-  }
-  function moveTooltip(event) {
-    const tx = event.clientX + 14;
-    const ty = event.clientY - 10;
-    tooltip.style.left = tx + 'px';
-    tooltip.style.top  = ty + 'px';
-  }
-  function hideTooltip() {
-    tooltip.style.opacity = '0';
-  }
-
-  function renderStats(stats) {
-    const container = document.getElementById('graph-stats');
-    const order = ['done','completed','active','in_progress','pending','failed','cancelled','needs_review','blocked'];
-    const allKeys = [...new Set([...order, ...Object.keys(stats)])].filter(k => stats[k]);
-    container.innerHTML = allKeys.map(k => {
-      if (!stats[k]) return '';
-      return `<span class="stat-chip">
-        <span class="stat-dot" style="background:${nodeColor(k)}"></span>
-        ${esc(k)} ${stats[k]}
-      </span>`;
-    }).join('');
-  }
-
-  async function loadGraph(days) {
-    currentDays = days;
-    const emptyEl = document.getElementById('graph-empty');
-    emptyEl.textContent = '로딩 중...';
-    emptyEl.style.display = 'flex';
-
-    try {
-      const r = await fetch(`${BASE}/api/v1/dashboard/task-graph?days=${days}&limit=100`);
-      if (!r.ok) throw new Error('API error');
-      const data = await r.json();
-
-      if (!data.nodes || data.nodes.length === 0) {
-        emptyEl.textContent = `최근 ${days}일 내 태스크 없음`;
-        renderStats({});
-        return;
-      }
-
-      emptyEl.style.display = 'none';
-      renderStats(data.stats || {});
-      drawGraph(data.nodes, data.edges || []);
-    } catch (e) {
-      emptyEl.textContent = '그래프 로드 실패';
-      console.warn('graph error', e);
-    }
-  }
-
-  function drawGraph(nodes, edges) {
-    const container = document.getElementById('graph-svg-container');
-    const W = container.clientWidth || 960;
-    const H = 480;
-
-    // Kill previous simulation
-    if (simulation) simulation.stop();
-
-    const svg = d3.select('#graph-svg')
-      .attr('viewBox', `0 0 ${W} ${H}`)
-      .attr('width', W)
-      .attr('height', H);
-
-    svg.selectAll('*').remove();
-
-    // Zoom layer
-    const g = svg.append('g');
-    svg.call(
-      d3.zoom()
-        .scaleExtent([0.15, 4])
-        .on('zoom', (event) => g.attr('transform', event.transform))
-    );
-
-    // Arrow marker (for directed edges)
-    svg.append('defs').append('marker')
-      .attr('id', 'arrow')
-      .attr('viewBox', '0 -4 8 8')
-      .attr('refX', 14)
-      .attr('refY', 0)
-      .attr('markerWidth', 6)
-      .attr('markerHeight', 6)
-      .attr('orient', 'auto')
-      .append('path')
-      .attr('d', 'M0,-4L8,0L0,4')
-      .attr('fill', '#334155');
-
-    // Build link & node data
-    const nodeMap = new Map(nodes.map(n => [n.id, n]));
-    const links = edges.map(e => ({
-      source: e.source,
-      target: e.target,
-    })).filter(e => nodeMap.has(e.source) && nodeMap.has(e.target));
-
-    // Links
-    const link = g.append('g').attr('class', 'links')
-      .selectAll('line')
-      .data(links)
-      .join('line')
-      .attr('stroke', '#1e3a5f')
-      .attr('stroke-width', 1.5)
-      .attr('marker-end', 'url(#arrow)');
-
-    // Nodes
-    const nodeGroup = g.append('g').attr('class', 'nodes')
-      .selectAll('g')
-      .data(nodes)
-      .join('g')
-      .attr('cursor', 'pointer')
-      .call(
-        d3.drag()
-          .on('start', (event, d) => {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            d.fx = d.x; d.fy = d.y;
-          })
-          .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
-          .on('end', (event, d) => {
-            if (!event.active) simulation.alphaTarget(0);
-            d.fx = null; d.fy = null;
-          })
-      )
-      .on('mouseover', (event, d) => showTooltip(event, d))
-      .on('mousemove', (event) => moveTooltip(event))
-      .on('mouseout', hideTooltip);
-
-    // Circle
-    nodeGroup.append('circle')
-      .attr('r', d => d.depth === 0 ? 10 : 6)
-      .attr('fill', d => nodeColor(d.status))
-      .attr('fill-opacity', d => d.depth === 0 ? 0.9 : 0.7)
-      .attr('stroke', d => d.depth === 0 ? '#fff' : 'none')
-      .attr('stroke-width', d => d.depth === 0 ? 1.5 : 0);
-
-    // Label (only root nodes by default, toggle on hover)
-    nodeGroup.append('text')
-      .attr('dy', d => d.depth === 0 ? -14 : -9)
-      .attr('text-anchor', 'middle')
-      .attr('font-size', d => d.depth === 0 ? '10px' : '8px')
-      .attr('fill', '#94a3b8')
-      .attr('pointer-events', 'none')
-      .attr('opacity', d => d.depth === 0 ? 1 : 0)
-      .text(d => d.label ? d.label.slice(0, 22) + (d.label.length > 22 ? '…' : '') : '');
-
-    // Show sub labels on root hover
-    nodeGroup.filter(d => d.depth === 0)
-      .on('mouseover', function(event, d) {
-        showTooltip(event, d);
-        // Highlight connected children
-        const childIds = new Set(links.filter(l => l.source.id === d.id || l.source === d.id).map(l =>
-          typeof l.target === 'object' ? l.target.id : l.target));
-        nodeGroup.selectAll('text')
-          .attr('opacity', nd =>
-            nd.id === d.id ? 1 : (childIds.has(nd.id) ? 0.9 : (nd.depth === 0 ? 0.4 : 0)));
-        link.attr('stroke', l => {
-          const src = typeof l.source === 'object' ? l.source.id : l.source;
-          return src === d.id ? '#3b82f6' : '#1e2a45';
-        }).attr('stroke-opacity', l => {
-          const src = typeof l.source === 'object' ? l.source.id : l.source;
-          return src === d.id ? 1 : 0.3;
-        });
-      })
-      .on('mouseout', function() {
-        hideTooltip();
-        nodeGroup.selectAll('text')
-          .attr('opacity', nd => nd.depth === 0 ? 1 : 0);
-        link.attr('stroke', '#1e3a5f').attr('stroke-opacity', 1);
-      });
-
-    // Force simulation
-    simulation = d3.forceSimulation(nodes)
-      .force('link', d3.forceLink(links).id(d => d.id).distance(d =>
-        (d.source.depth === 0 ? 60 : 30)))
-      .force('charge', d3.forceManyBody().strength(d => d.depth === 0 ? -120 : -40))
-      .force('center', d3.forceCenter(W / 2, H / 2))
-      .force('collision', d3.forceCollide().radius(d => d.depth === 0 ? 18 : 10))
-      .on('tick', () => {
-        link
-          .attr('x1', d => d.source.x)
-          .attr('y1', d => d.source.y)
-          .attr('x2', d => d.target.x)
-          .attr('y2', d => d.target.y);
-        nodeGroup.attr('transform', d => `translate(${d.x},${d.y})`);
-      });
-  }
-
-  // Day filter buttons
-  document.querySelectorAll('.graph-days-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.graph-days-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      loadGraph(parseInt(btn.dataset.days, 10));
-    });
-  });
-  // Default active = 7d
-  document.querySelectorAll('.graph-days-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.days === '7'));
-
-  // ── SSE ────────────────────────────────────────────────────────────────────
-  const dot = document.getElementById('sse-dot');
-  const sseLabel = document.getElementById('sse-label');
-
-  function connectSSE() {
-    const es = new EventSource(BASE + '/api/v1/events/stream');
-    es.onopen = () => {
-      dot.classList.add('connected');
-      sseLabel.textContent = 'SSE 연결됨';
-    };
-    es.onerror = () => {
-      dot.classList.remove('connected');
-      sseLabel.textContent = '연결 끊김';
-      es.close();
-      setTimeout(connectSSE, 5000);
-    };
-    es.addEventListener('ticket_update', () => {
-      loadGoals(); loadTasks(); loadGraph(currentDays); syncBotStates();
-    });
-    es.addEventListener('task_complete', () => {
-      loadSummary(); loadGoals(); loadTasks(); loadGraph(currentDays); syncBotStates();
-    });
-  }
-
-  // ── Bot Characters ─────────────────────────────────────────────────────────
+  // ── Bot Characters ───────────────────────────────────────────────────────────
   const BOTS = [
     { id: 'pm',          name: 'PM',      dept: 'aiorg_pm_bot',           emoji: '🤖', img: 'chars/pm.png' },
     { id: 'engineering', name: '개발실',  dept: 'aiorg_engineering_bot',  emoji: '⚙️', img: 'chars/engineering.png' },
@@ -782,20 +781,19 @@
     { id: 'research',    name: '리서치실', dept: 'aiorg_research_bot',    emoji: '🔬', img: 'chars/research.png' },
     { id: 'ops',         name: '운영실',  dept: 'aiorg_ops_bot',          emoji: '🖥️', img: 'chars/ops.png' },
   ];
-
   const botStates = {};
   BOTS.forEach(b => { botStates[b.dept] = { state: 'idle', task: '' }; });
 
   function renderBots() {
     const row = document.getElementById('bots-row');
     if (!row) return;
-    const stateLabels = { idle: '대기중', working: '작업중', done: '완료', error: '오류' };
+    const stateLabels = { idle: 'idle', working: 'working', done: 'done', error: 'error' };
     row.innerHTML = BOTS.map(b => {
       const bs = botStates[b.dept] || { state: 'idle', task: '' };
-      const avatarHtml = `<img class="bot-avatar" src="${b.img}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="bot-avatar-svg" style="display:none">${b.emoji}</div>`;
+      const avatar = `<img class="bot-avatar" src="${b.img}" alt="${b.name}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="bot-avatar-svg" style="display:none">${b.emoji}</div>`;
       return `<div class="bot-card state-${bs.state}" id="bot-card-${b.id}">
         <div class="bot-task-bubble">BUSY</div>
-        ${avatarHtml}
+        ${avatar}
         <div class="bot-name">${b.name}</div>
         <div class="bot-state-label">${stateLabels[bs.state] || bs.state}</div>
       </div>`;
@@ -817,18 +815,42 @@
     } catch (e) { console.warn('botSync error', e); }
   }
 
-  // ── Init ───────────────────────────────────────────────────────────────────
+  // ── SSE ──────────────────────────────────────────────────────────────────────
+  const dot      = document.getElementById('sse-dot');
+  const sseLabel = document.getElementById('sse-label');
+
+  function connectSSE() {
+    const es = new EventSource(BASE + '/api/v1/events/stream');
+    es.onopen = () => {
+      dot.classList.add('connected');
+      sseLabel.textContent = '라이브';
+    };
+    es.onerror = () => {
+      dot.classList.remove('connected');
+      sseLabel.textContent = '끊김';
+      es.close();
+      setTimeout(connectSSE, 5000);
+    };
+    es.addEventListener('ticket_update', () => {
+      loadGoals(); loadTasks(); loadTaskTree(); syncBotStates();
+    });
+    es.addEventListener('task_complete', () => {
+      loadSummary(); loadGoals(); loadTasks(); loadTaskTree(); syncBotStates();
+    });
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────────
   async function refresh() {
-    await Promise.all([loadSummary(), loadGoals(), loadTasks()]);
-    loadGraph(currentDays);
+    await Promise.all([loadSummary(), loadGoals(), loadTasks(), loadTaskTree()]);
     syncBotStates();
   }
 
   renderBots();
   refresh();
   connectSSE();
-  setInterval(loadSummary, 30000);
-  setInterval(() => loadGraph(currentDays), 30000);
+  setInterval(loadSummary,   30000);
+  setInterval(loadGoals,     30000);
+  setInterval(loadTaskTree,  30000);
   setInterval(syncBotStates, 15000);
 </script>
 </body>
