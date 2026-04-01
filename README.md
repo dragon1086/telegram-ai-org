@@ -45,6 +45,7 @@
 - [워크플로우 라이프사이클](#워크플로우-라이프사이클)
 - [3엔진 지원 안내](#3엔진-지원-안내)
 - [조직 구조](#조직-구조)
+- [봇 독립 메모리 → 개성 강화 메커니즘](#bot-independent-memory--personality-enhancement)
 - [스킬 가이드](#스킬-가이드)
 - [기여 방법](#기여-방법)
 - [Docker 실행법](#docker-실행법)
@@ -54,12 +55,25 @@
 
 ---
 
-## ⚡ 빠른 시작 (3단계)
+## ⚡ 빠른 시작
 
-> **이 3단계만 따라하면 10분 안에 당신의 AI 조직이 텔레그램에서 작동합니다.**
+### 처음이라면: 퀵스타트 (권장)
+
+봇 토큰과 Chat ID만 입력하면 나머지는 전부 자동 설정됩니다. 화면 안내를 따라가기만 하세요.
 
 ```bash
-# Step 1 — 저장소 클론 & 원클릭 설치
+git clone https://github.com/dragon1086/aimesh.git && cd aimesh && bash quickstart.sh
+```
+
+완료 후 `bash scripts/start_all.sh` 로 봇을 실행하면 끝!
+
+> 💡 **조직 구성**(부서, 봇 수, 역할 등)은 기호에 따라 자유롭게 편집할 수 있습니다.
+> 기본 구조로도 바로 사용 가능하며, 나중에 `config/org_structure.yaml` 에서 수정하세요.
+
+### 익숙한 사용자: 3단계 설치
+
+```bash
+# Step 1 — 저장소 클론 & 설치
 git clone https://github.com/dragon1086/aimesh.git && cd aimesh && bash install.sh
 
 # Step 2 — 텔레그램 봇 토큰 입력 (.env 파일 편집)
@@ -108,6 +122,8 @@ aimesh는 **텔레그램 그룹 채팅방 하나를 AI 조직의 사무실로 �
 
 ```
 telegram-ai-org/
+├── quickstart.sh                    # 초보자용 간편 설치 (권장)
+├── install.sh                       # 표준 원클릭 설치
 ├── main.py                          # 로컬 진입점
 ├── orchestration.yaml               # 전체 오케스트레이션 설정
 ├── workers.yaml                     # 워커 봇 등록부
@@ -145,13 +161,17 @@ telegram-ai-org/
   <img src="assets/onboarding/install_flow.png" alt="설치 흐름 다이어그램" width="700"/>
 </p>
 
-`install.sh`는 설치된 엔진을 자동으로 감지하고 Python 환경 구성, `.env` 파일 생성, 검증까지 한 번에 수행하는 **권장 진입점**입니다.
+`quickstart.sh`는 완전 초보자를 위한 간편 설치입니다. 봇 토큰/Chat ID 입력 가이드가 화면에 표시되며, 나머지는 전부 자동입니다.
 
-### install.sh 옵션
+`install.sh`는 설치된 엔진을 자동으로 감지하고 Python 환경 구성, `.env` 파일 생성, 검증까지 한 번에 수행합니다.
+
+### 설치 옵션
 
 | 옵션 | 설명 |
 |------|------|
-| `bash install.sh` | 기본 실행 (권장) |
+| `bash quickstart.sh` | **초보자 권장** — 가이드 따라가기만 하면 완료 |
+| `bash install.sh` | 기본 실행 |
+| `bash install.sh --quickstart` | quickstart.sh로 전환 |
 | `bash install.sh --yes` | CI/자동화 환경 무인 설치 (프롬프트 건너뜀) |
 | `bash install.sh --start` | 헬스체크 통과 후 봇 자동 기동 |
 | `bash install.sh --yes --start` | CI 환경 + 봇 자동 기동 |
@@ -621,6 +641,174 @@ workers:
 
 <p align="center">
   <img src="assets/onboarding/e2e_flow.png" alt="E2E 태스크 처리 흐름" width="700"/>
+</p>
+
+---
+
+## Bot Independent Memory & Personality Enhancement
+### 봇 독립 메모리 → 개성 강화 메커니즘
+
+> Each bot grows more opinionated over time — by design.
+> 각 봇은 시간이 지날수록 더 강한 개성을 갖도록 의도적으로 설계되어 있습니다.
+
+### Bot Independent Memory | 봇 독립 메모리
+
+Each bot accumulates its own operational memory through three context files: `CLAUDE.md` (Claude Code), `AGENTS.md` (Codex), and `GEMINI.md` (Gemini CLI). Successful task patterns, failure records, and judgment criteria are layered over time — making each bot progressively more opinionated in its domain.
+
+각 봇은 `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` 세 컨텍스트 파일을 통해 독립 메모리를 쌓습니다. 태스크 성공 패턴·실패 기록·판단 기준이 누적될수록 봇마다 도메인 전문성이 점점 뚜렷해집니다.
+
+```yaml
+# bots/aiorg_research_bot.yaml — 리서치실 개성 정의 예시
+personality: "깊이 파고드는 탐구자. 근거 없는 주장은 하지 않는다."
+tone: "학문적이고 꼼꼼함"
+catchphrase: "데이터로 말하자"
+strengths: [시장 조사, 경쟁사 분석, 인사이트 도출]
+engine: gemini-cli   # 실시간 웹 검색 내장 → 최신 레퍼런스 즉시 조회
+```
+
+> **누적 패턴**: `bots/*.yaml`의 `personality` / `tone` / `catchphrase` 필드가 초기값이고, `CLAUDE.md` / `GEMINI.md`에 부서별 성공 패턴·판단 기준이 레이어로 쌓입니다.
+
+---
+
+### Personality Ossification | 개성 고착화 (Opinionated 설계)
+
+This is intentional design. Each bot starts with a defined persona and deepens it through repeated task execution. The Research Bot becomes more insistent on citation-based structure; the Design Bot reinforces WCAG-first thinking — not by external enforcement, but by accumulated preference.
+
+이는 의도된 설계입니다. 반복 태스크 수행을 통해 리서치실은 출처 기반 구조화를, 디자인실은 WCAG 우선 사고를 강화합니다. 외부 규칙이 아니라 축적된 선호가 행동을 결정합니다.
+
+> **왜 이렇게 설계했는가?** 무색무취한 범용 AI보다, 강한 개성을 가진 전문가 팀이 예측 가능하고 신뢰할 수 있는 결과를 생산합니다. `decision_weight` 필드로 레퍼런스별 영향도를 추적합니다.
+
+| 부서 | 고착화 패턴 | 핵심 선호 |
+|------|------------|----------|
+| 리서치실 | 출처 기반 구조화 | `decision_weight` 필드 필수 |
+| 디자인실 | WCAG 접근성 우선 | severity 3단계 체계 |
+| 개발실 | pre-flight 검증 우선 | conftest.py SystemExit 패턴 |
+| 기획실 | 수치 기반 완료 조건 | `criteria_version` 추적 |
+
+---
+
+### Personality Reinforcement Cycle | 개성 강화 사이클
+
+Why does repetition create preference? Each completed task feeds a four-stage loop: **Feedback → Pattern Recognition → Ossification → Expression**. With every cycle, the bot's uncertainty range narrows and its domain stance becomes more predictable — and more distinct from its peers.
+
+왜 반복이 선호를 만드는가? 완료 태스크마다 **피드백→패턴→고착화→표출** 4단계 루프가 순환합니다. 사이클마다 불확실성 범위가 줄고, 봇의 도메인 입장이 더 정교해지며, 다른 봇과 뚜렷이 달라집니다.
+
+```
+  ┌─────────────────────────────────────────────────┐
+  │           Personality Reinforcement Cycle         │
+  │                                                   │
+  │  [Feedback] ──→ [Pattern Recognition]             │
+  │      ↑                   │                        │
+  │      │           [Ossification] (L2→L3)           │
+  │      │                   │                        │
+  │  [New Task] ←── [Expression / Output]             │
+  │                 (더 강한 개성·더 높은 예측가능성)    │
+  └─────────────────────────────────────────────────┘
+```
+
+> **고착화 트리거 조건**: 동일 유형 태스크 3회 이상 성공 + `score ≥ 0.8` + PM RETRO 통합 확인 → 해당 패턴이 L3 영구 원칙으로 승격되어 삭제 불가가 됩니다.
+> **Ossification trigger**: Same task class ≥3 successes + `score ≥ 0.8` + PM RETRO validation → promoted to L3 permanent principle, immutable thereafter.
+
+---
+
+### Cross-team Sync Rules | 크로스팀 동기화 규칙
+
+To prevent personality divergence from becoming organizational silos, three sync mechanisms operate continuously across all bots.
+
+개성 분열이 사일로화되지 않도록 세 가지 동기화 메커니즘이 상시 작동합니다.
+
+**① 3-File Sync Principle | 3파일 동기화 원칙**
+Any change to `CLAUDE.md` must simultaneously update `AGENTS.md` and `GEMINI.md`.
+`CLAUDE.md` 수정 시 `AGENTS.md` / `GEMINI.md`도 즉시 동일하게 업데이트합니다.
+
+**② RETRO Distribution | RETRO 배분**
+PM distributes the same issue to all 7 departments, each analyzing from their own perspective — then synthesizes into shared organizational learning.
+PM이 동일 이슈를 7개 부서에 각자 관점으로 배분 후 공통 학습으로 통합합니다.
+
+**③ L3 Archive | 영구 공통 원칙**
+Permanent organizational principles (L3 Archive) override any bot-specific preference when in conflict.
+L3 Archive의 영구 원칙은 부서 개성 선호보다 항상 우선합니다.
+
+> **충돌 시나리오 예시**: 리서치실 봇은 "출처 미확인 주장 금지" 원칙(L3)을 고수하지만, PM이 속도 우선 태스크를 디스패치합니다. 이 경우 PM 오케스트레이터가 L3 원칙을 스코프 제약으로 명시하고 리서치실의 고착화된 선호를 유지하면서 출력 형식만 간소화합니다. 봇 개성은 보존되고, 조직 원칙도 위반되지 않습니다.
+> **Conflict example**: Research Bot insists on citation-first (L3 principle), PM needs speed. Resolution: PM orchestrator preserves the citation rule as a scope constraint, simplifies output format only. Bot personality maintained; L3 not violated.
+
+---
+
+### Balance Mechanism | 동기화 vs 독립성 균형 메커니즘
+
+The system operates on a **"shared rails, independent carriages"** model.
+
+```
+          L3 Archive (Permanent Shared Principles)
+          영구 공통 원칙 — TTL 없음, 전사 적용
+                    │
+          ┌─────────┼─────────────┐
+          │         │             │
+     Research    Design      Engineering
+    (citation)  (WCAG)      (pre-flight)
+    독립 메모리  독립 메모리   독립 메모리
+    개성 심화 ↑  개성 심화 ↑   개성 심화 ↑
+```
+
+Bots share the same organizational grammar (norms, RETRO protocols, `criteria_version` sync) but develop distinct vocabularies (domain depth, style preferences, judgment criteria). The PM orchestrator is the convergence force — routing tasks, running RETROs, and maintaining L3 principles.
+
+전사 공통 문법(규범·RETRO·`criteria_version` 동기화)은 공유하되, 각 봇의 도메인 깊이·판단 스타일은 독자적으로 발전합니다. PM 오케스트레이터가 수렴력(convergence force)으로 작동합니다.
+
+---
+
+### Memory Accumulation Lifecycle | 메모리 누적 라이프사이클
+
+Bot memory is stratified into three layers — each with distinct retention rules that reinforce bot personality over time.
+
+봇 메모리는 세 계층으로 분리되며, 각 계층의 보존 규칙이 봇 개성 강화와 직접 연결됩니다.
+
+| Layer | TTL | Role / 역할 | Personality Effect / 개성 영향 |
+|-------|-----|------------|-------------------------------|
+| **L1 Active** | Session | Live task state / 현재 태스크 상태 | 즉각 반응 패턴 형성 |
+| **L2 Mid-term** | 7–30 days sliding | Recent patterns / 최근 성공·실패 기록 | 반복 선호도 강화 |
+| **L3 Archive** | Permanent | Core principles / 조직 공통 원칙 | 판단 기준 고착화 기반 |
+
+> **연계 구조**: L1 태스크가 반복되면 L2로 승격 → L2가 충분히 검증되면 L3 영구 원칙으로 승격됩니다. `tools/memory_ttl_checker.py`가 매일 00:00 KST에 자동 처리합니다. 리서치실 봇이 "출처 없는 주장 금지" 원칙을 갖게 된 것도 이 라이프사이클의 결과입니다.
+
+> **Lifecycle**: Repeated L1 tasks are promoted to L2 → verified L2 patterns graduate to L3 permanent principles. `tools/memory_ttl_checker.py` auto-processes daily at 00:00 KST.
+
+---
+
+### Customization Guardrails | 커스터마이징 가드레일
+
+Bot personality can deepen, but cannot override organizational standards. Three guardrails enforce this boundary.
+
+봇 개성은 심화될 수 있지만, 조직 표준을 위반할 수는 없습니다. 세 가지 가드레일이 이 경계를 강제합니다.
+
+**① Immutable L3 Principles | L3 불변 원칙**
+Any bot preference conflicting with an L3 Archive entry is automatically overridden by the PM orchestrator during task dispatch.
+L3 Archive와 충돌하는 봇 선호는 PM 오케스트레이터가 태스크 디스패치 시 자동 우선 적용합니다.
+
+**② 3-File Sync Lock | 3파일 동기화 잠금**
+`CLAUDE.md` / `AGENTS.md` / `GEMINI.md` must be updated simultaneously. A solo file edit triggers a sync warning in the next pre-flight check.
+세 파일 중 하나만 수정하면 pre-flight 검증에서 동기화 경고가 발생합니다.
+
+**③ criteria_version Tracking | 기준 버전 추적**
+All bot outputs reference `criteria_version` — preventing a bot's opinionated preference from silently shifting evaluation thresholds.
+모든 봇 산출물은 `criteria_version`을 참조해 개성 변화가 평가 임계값을 무단 변경하지 못하게 합니다.
+
+---
+
+### References | 레퍼런스
+
+> *Architecture patterns informing this design / 이 설계에 참고한 아키텍처 패턴*
+
+| # | Reference | Pattern | Relevance |
+|---|-----------|---------|-----------|
+| 1 | [MemGPT (2023)](https://arxiv.org/abs/2310.08560) | Hierarchical memory (main ctx / external storage) | L1/L2/L3 계층 설계 기반 |
+| 2 | [AutoGen: Multi-Agent Conversation (2023)](https://arxiv.org/abs/2308.08155) | Autonomous agent specialization via role assignment | 부서별 역할 고착화 패턴 |
+| 3 | [CrewAI OSS](https://github.com/crewAIInc/crewAI) | Agent role + backstory → opinionated behavior | `personality`/`tone` 필드 설계 참고 |
+| 4 | [CAMEL: Communicative Agents (2023)](https://arxiv.org/abs/2303.17760) | Role-play specialization + cross-agent sync | RETRO 배분 → 크로스팀 동기화 패턴 |
+| 5 | [LangGraph Agent Memory](https://langchain-ai.github.io/langgraph/concepts/memory/) | Short/long-term memory separation in agentic systems | TTL 슬라이딩 윈도우 설계 참고 |
+| 6 | [Generative Agents (2023)](https://arxiv.org/abs/2304.03442) | Memory stream + reflection → personality emergence | 반복 태스크 → 선호 고착화 메커니즘 |
+
+<p align="center">
+  <img src="assets/bot_memory_mechanism.png" alt="봇 독립 메모리 → 개성 강화 메커니즘 시각화" width="700"/>
 </p>
 
 ---

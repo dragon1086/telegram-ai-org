@@ -21,6 +21,7 @@
 #   bash install.sh --health-only     # 헬스체크만 실행 (설치 없음)
 #   bash install.sh --start           # 헬스체크 통과 후 봇 자동 기동
 #   bash install.sh --yes --start     # CI 환경 + 봇 자동 기동
+#   bash install.sh --quickstart      # 초보자용 간편 설치 (quickstart.sh 호출)
 #
 # 설계 문서: docs/INSTALL_FLOW.md
 # =============================================================================
@@ -56,6 +57,10 @@ for arg in "$@"; do
         --skip-verify)                SKIP_VERIFY=true ;;
         --health-only)                HEALTH_ONLY=true; SKIP_VERIFY=false ;;
         --start)                      AUTO_START=true ;;
+        --quickstart)
+            echo "→ 초보자용 간편 설치로 전환합니다..."
+            exec bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/quickstart.sh"
+            ;;
     esac
 done
 
