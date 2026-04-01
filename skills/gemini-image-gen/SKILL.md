@@ -5,10 +5,17 @@ description: "Generate images using Google Gemini 3.1 Flash Image model via OAut
 
 # Gemini 이미지 생성 스킬
 
-Google Gemini 3.1 Flash Image 모델을 OAuth 2.0으로 사용해 이미지를 생성한다.
-**API Key 사용 금지** — OAuth 기반 인증 전용.
+Google Gemini 3.1 Flash Image 모델로 이미지를 생성한다.
+정확한 모델명: **`gemini-3.1-flash-image-preview`** (절대 다른 모델 사용 금지)
 
-## 인증 방식
+## 호출 방식 (우선순위)
+
+```
+1순위: gemini CLI (OAuth)  →  간편, subprocess 기반
+2순위: Google GenAI API    →  CLI에 모델 없거나 실패 시 fallback
+```
+
+### 방식 1: gemini CLI (OAuth 2.0)
 
 ```
 OAuth 2.0 (Google Pro Plan)
@@ -18,8 +25,38 @@ OAuth 2.0 (Google Pro Plan)
 gemini CLI subprocess
 ```
 
-API Key(`GOOGLE_API_KEY`, `GEMINI_API_KEY`)는 사용하지 않는다.
-GeminiCLIRunner가 subprocess 실행 시 해당 환경변수를 자동 제거한다.
+GeminiCLIRunner가 subprocess 실행 시 `GOOGLE_API_KEY`, `GEMINI_API_KEY` 환경변수를 자동 제거한다.
+
+### 방식 2: Google GenAI API (CLI fallback)
+
+gemini CLI에 `gemini-3.1-flash-image-preview` 모델이 없거나, CLI 호출 실패 시 API를 직접 호출한다.
+
+```python
+from google import genai
+from google.genai import types
+import base64, os
+from pathlib import Path
+
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+response = client.models.generate_content(
+    model="gemini-3.1-flash-image-preview",
+    contents="아름다운 한국 풍경, 산과 강, 4K, 사실적",
+    config=types.GenerateContentConfig(
+        response_modalities=["TEXT", "IMAGE"],
+    ),
+)
+
+# 응답에서 이미지 추출
+for part in response.candidates[0].content.parts:
+    if part.inline_data and part.inline_data.mime_type.startswith("image/"):
+        image_bytes = part.inline_data.data
+        Path("output.png").write_bytes(image_bytes)
+        break
+```
+
+> **필요 패키지**: `pip install google-genai`
+> **필요 환경변수**: `GEMINI_API_KEY` (.env에 설정)
 
 ## Step 1: 사전 확인
 
@@ -111,10 +148,10 @@ await send_photo(
 
 ## 코드 구현 가이드 (tools/gemini_image_runner.py)
 
-스킬 호출 시 아래 패턴으로 구현한다:
+스킬 호출 시 아래 패턴으로 구현한다. **CLI 우선, 실패 시 API fallback.**
 
 ```python
-"""Gemini 이미지 생성 러너 — OAuth subprocess 기반."""
+"""Gemini 이미지 생성 러너 — CLI 우선, API fallback."""
 from __future__ import annotations
 
 import asyncio
@@ -145,62 +182,106 @@ class ImageGenResult:
     image_path: str
     prompt: str
     model: str
+    method: str  # "cli" 또는 "api"
 
 
 class GeminiImageRunner:
-    """Gemini CLI를 사용한 이미지 생성 러너.
+    """Gemini 이미지 생성 러너.
 
-    OAuth 2.0 기반. API Key 사용 안 함.
-    gemini CLI subprocess를 통해 이미지 생성 후 base64 디코딩하여 저장.
+    1순위: gemini CLI subprocess (OAuth 2.0)
+    2순위: Google GenAI API (GEMINI_API_KEY) — CLI 실패 시 자동 전환
     """
 
     def __init__(self) -> None:
         self._cli_runner = GeminiCLIRunner()
 
     async def generate(self, request: ImageGenRequest) -> ImageGenResult:
-        """이미지 생성 후 파일로 저장."""
-        # 출력 디렉토리 생성
+        """이미지 생성 후 파일로 저장. CLI 실패 시 API fallback."""
         output_dir = Path(request.output_path).parent
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Gemini CLI로 이미지 생성 프롬프트 실행
+        # 1순위: CLI 시도
+        try:
+            return await self._generate_via_cli(request)
+        except (RunnerError, Exception) as cli_err:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"CLI 이미지 생성 실패 ({cli_err}), API fallback 시도"
+            )
+
+        # 2순위: API fallback
+        return await self._generate_via_api(request)
+
+    async def _generate_via_cli(self, request: ImageGenRequest) -> ImageGenResult:
+        """gemini CLI subprocess로 이미지 생성."""
         prompt = (
             f"Generate an image with the following description: {request.prompt}. "
             f"Return the image as base64 encoded PNG data in the response."
         )
-
         ctx = RunContext(
             prompt=prompt,
             engine_config={"model": request.model},
         )
-
-        # subprocess 실행 (OAuth 인증 사용)
         raw_response = await self._cli_runner.run(ctx)
-
-        # base64 이미지 데이터 추출 및 저장
-        # (실제 응답 구조에 따라 파싱 로직 조정 필요)
-        self._save_image(raw_response, request.output_path)
-
+        self._save_image_from_cli(raw_response, request.output_path)
         return ImageGenResult(
             image_path=request.output_path,
             prompt=request.prompt,
             model=request.model,
+            method="cli",
         )
 
-    def _save_image(self, response: str, output_path: str) -> None:
-        """응답에서 이미지 데이터를 추출하여 파일로 저장."""
+    async def _generate_via_api(self, request: ImageGenRequest) -> ImageGenResult:
+        """Google GenAI API로 직접 이미지 생성 (CLI fallback)."""
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError:
+            raise RunnerError(
+                "google-genai 패키지 필요: pip install google-genai"
+            )
+
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise RunnerError(
+                "API fallback 실패: GEMINI_API_KEY 환경변수가 설정되지 않았습니다. "
+                ".env 파일에 GEMINI_API_KEY=... 를 추가하세요."
+            )
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=request.model,  # gemini-3.1-flash-image-preview
+            contents=request.prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=["TEXT", "IMAGE"],
+            ),
+        )
+
+        # 응답에서 이미지 파트 추출
+        for part in response.candidates[0].content.parts:
+            if part.inline_data and part.inline_data.mime_type.startswith("image/"):
+                Path(request.output_path).write_bytes(part.inline_data.data)
+                return ImageGenResult(
+                    image_path=request.output_path,
+                    prompt=request.prompt,
+                    model=request.model,
+                    method="api",
+                )
+
+        raise RunnerError(f"API 응답에 이미지 없음. 텍스트만 반환됨.")
+
+    def _save_image_from_cli(self, response: str, output_path: str) -> None:
+        """CLI 응답에서 이미지 데이터를 추출하여 파일로 저장."""
         try:
             data = json.loads(response)
-            # Gemini API 응답 구조: {"response": "...", "images": [{"data": "base64..."}]}
             images = data.get("images", [])
             if images:
                 image_data = base64.b64decode(images[0]["data"])
                 Path(output_path).write_bytes(image_data)
             else:
-                # 텍스트 응답만 있는 경우 (이미지 생성 실패)
                 raise RunnerError(f"이미지 데이터 없음. 응답: {response[:200]}")
         except (json.JSONDecodeError, KeyError) as e:
-            raise RunnerError(f"이미지 응답 파싱 실패: {e}. 응답: {response[:200]}") from e
+            raise RunnerError(f"이미지 응답 파싱 실패: {e}") from e
 ```
 
 ## OAuth 설정 문제 해결

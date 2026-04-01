@@ -15,7 +15,28 @@ gemini models list  # 사용 가능한 이미지 모델 확인
 **증상**: OAuth 인증 무시, API Key로 시도 → 인증 실패 또는 quota 초과
 **해결**: GeminiCLIRunner는 subprocess 환경에서 `GEMINI_API_KEY`, `GOOGLE_API_KEY`를 자동 제거함. 별도 처리 불필요.
 
-## Gotcha 3: Preview 모델 불안정
+## Gotcha 3: gemini CLI에 이미지 모델이 없는 경우
+
+**상황**: `gemini -p "..." --model gemini-3.1-flash-image-preview` 실행 시 `model not found` 오류
+**원인**: gemini CLI 버전이 낮거나, 해당 모델이 CLI에서 아직 미지원
+**해결**: Google GenAI API로 직접 호출 (CLI 우회)
+```python
+from google import genai
+from google.genai import types
+
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+response = client.models.generate_content(
+    model="gemini-3.1-flash-image-preview",
+    contents="이미지 프롬프트",
+    config=types.GenerateContentConfig(
+        response_modalities=["TEXT", "IMAGE"],
+    ),
+)
+# response.candidates[0].content.parts 에서 inline_data 이미지 추출
+```
+> `pip install google-genai` 필요. `.env`에 `GEMINI_API_KEY` 설정 필요.
+
+## Gotcha 4: Preview 모델 불안정
 
 **상황**: 이미지 생성 모델이 Preview 단계
 **증상**: 가끔 빈 응답, 타임아웃, 모델명 변경
@@ -24,13 +45,13 @@ gemini models list  # 사용 가능한 이미지 모델 확인
 - `gemini models list` 로 최신 이미지 모델명 확인
 - 실패 시 재시도 로직 추가
 
-## Gotcha 4: base64 이미지 데이터 크기
+## Gotcha 5: base64 이미지 데이터 크기
 
 **상황**: 고해상도 이미지 생성 시 응답이 매우 큼
 **증상**: JSON 파싱 메모리 오류, 느린 응답
 **해결**: 이미지 크기를 512x512 이하로 요청하거나, streaming 방식 사용 고려.
 
-## Gotcha 5: Telegram 이미지 전송 크기 제한
+## Gotcha 6: Telegram 이미지 전송 크기 제한
 
 **상황**: 생성된 이미지가 10MB 초과
 **증상**: Telegram API 413 오류
