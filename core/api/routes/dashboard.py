@@ -106,6 +106,61 @@ async def get_tasks(
     )
 
 
+@router.get("/goals-hierarchy")
+async def get_goals_hierarchy(limit: int = Query(default=50, ge=1, le=200)) -> dict[str, Any]:
+    """목표를 장기목표 / 수명업무(회고·주간회의·감사)로 분류해 반환합니다.
+
+    Returns:
+        long_term: 장기 프로젝트 목표 목록
+        recurring: {retro, weekly, audit, other} 수명업무 분류
+    """
+    rows = await _query(
+        """
+        SELECT id, title, status, iteration, max_iterations, last_progress, updated_at, meta_json
+        FROM pm_goals
+        ORDER BY
+            CASE WHEN status IN ('active','in_progress') THEN 0 ELSE 1 END,
+            updated_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+
+    long_term: list[dict[str, Any]] = []
+    retro:     list[dict[str, Any]] = []
+    weekly:    list[dict[str, Any]] = []
+    audit:     list[dict[str, Any]] = []
+    other_rec: list[dict[str, Any]] = []
+
+    for row in rows:
+        title = (row.get("title") or row.get("description") or "").strip()
+        tl = title.lower()
+        if (
+            tl.startswith("[daily_retro")
+            or tl.startswith("[일일회고")
+            or "daily_retro" in tl
+        ):
+            retro.append(row)
+        elif tl.startswith("[주간회의") or "주간회의" in tl:
+            weekly.append(row)
+        elif "harness-audit" in tl or "harness audit" in tl:
+            audit.append(row)
+        elif title.startswith("["):
+            other_rec.append(row)
+        else:
+            long_term.append(row)
+
+    return {
+        "long_term": long_term,
+        "recurring": {
+            "retro":  retro,
+            "weekly": weekly,
+            "audit":  audit,
+            "other":  other_rec,
+        },
+    }
+
+
 @router.get("/task-graph")
 async def get_task_graph(
     days: int = Query(default=7, ge=1, le=90),
@@ -157,29 +212,81 @@ async def get_task_graph(
     def _label(text: str, max_len: int = 35) -> str:
         return text[:max_len] + "…" if len(text) > max_len else text
 
+    def _task_type(task_id: str, description: str) -> str:
+        tid = (task_id or "").lower()
+        desc = (description or "").lower()
+        if "retro" in tid or "daily_retro" in desc or "[daily_retro" in desc:
+            return "retro"
+        if "주간회의" in desc or "weekly" in tid:
+            return "weekly"
+        if "harness" in tid or "harness" in desc:
+            return "audit"
+        return "project"
+
     nodes: list[dict[str, Any]] = []
     stats: dict[str, int] = {}
+    edges: list[dict[str, Any]] = []
 
+    # Virtual group nodes for RETRO tasks (group by date in ID)
+    retro_groups: dict[str, dict[str, Any]] = {}
     for t in root_tasks:
+        ttype = _task_type(t["id"], t["description"])
+        if ttype == "retro":
+            # Extract date from ID like RETRO-daily_retro-20260331-xxx
+            parts = t["id"].split("-")
+            date_key = next((p for p in parts if p.isdigit() and len(p) == 8), None)
+            if date_key and date_key not in retro_groups:
+                vnode_id = f"RETRO-GROUP-{date_key}"
+                fmt_date = f"{date_key[:4]}-{date_key[4:6]}-{date_key[6:]}"
+                retro_groups[date_key] = {
+                    "id": vnode_id,
+                    "label": f"일일회고 {fmt_date}",
+                    "dept": "pm",
+                    "status": "done",
+                    "depth": 0,
+                    "task_type": "retro",
+                    "virtual": True,
+                }
+
+    # Add virtual retro group nodes
+    for vnode in retro_groups.values():
+        nodes.append(vnode)
+        stats[vnode["status"]] = stats.get(vnode["status"], 0) + 1
+
+    # Add real root tasks
+    for t in root_tasks:
+        ttype = _task_type(t["id"], t["description"])
         nodes.append({
             "id": t["id"],
             "label": _label(t["description"]),
             "dept": t["assigned_dept"] or "pm",
             "status": t["status"],
-            "depth": 0,
+            "depth": 0 if ttype not in ("retro",) else 1,
+            "task_type": ttype,
         })
         stats[t["status"]] = stats.get(t["status"], 0) + 1
+
+        # Wire retro tasks to their virtual group parent
+        if ttype == "retro":
+            parts = t["id"].split("-")
+            date_key = next((p for p in parts if p.isdigit() and len(p) == 8), None)
+            if date_key and date_key in retro_groups:
+                edges.append({
+                    "source": retro_groups[date_key]["id"],
+                    "target": t["id"],
+                })
 
     for t in child_tasks:
+        ttype = _task_type(t["id"], t["description"])
         nodes.append({
             "id": t["id"],
             "label": _label(t["description"]),
             "dept": t["assigned_dept"] or "pm",
             "status": t["status"],
-            "depth": 1,
+            "depth": 2 if ttype == "retro" else 1,
+            "task_type": ttype,
         })
         stats[t["status"]] = stats.get(t["status"], 0) + 1
-
-    edges = [{"source": t["parent_id"], "target": t["id"]} for t in child_tasks]
+        edges.append({"source": t["parent_id"], "target": t["id"]})
 
     return {"nodes": nodes, "edges": edges, "stats": stats}
