@@ -167,8 +167,8 @@ team_profiles:
     max_team_size: 3
     guidance: 출처와 비교 기준을 명확히 남긴다.
   engineering_delivery:
-    preferred_engine: claude-code  # organizations.yaml aiorg_engineering_bot과 일치 (2026-03-30 수정)
-    fallback_engine: gemini-cli
+    preferred_engine: codex  # organizations.yaml 동기화 (2026-04-02 Claude 한도 절약)
+    fallback_engine: claude-code
     fallback_model: gemini-2.5-flash
     execution_mode: sequential
     preferred_agents:
@@ -179,8 +179,8 @@ team_profiles:
     max_team_size: 3
     guidance: 구현과 검증을 함께 수행한다.
   design_strategy:
-    preferred_engine: claude-code
-    fallback_engine: gemini-cli
+    preferred_engine: gemini-cli  # organizations.yaml 동기화 (2026-04-02 Claude 한도 절약)
+    fallback_engine: claude-code
     fallback_model: gemini-2.5-flash
     execution_mode: sequential
     preferred_agents:
@@ -191,7 +191,7 @@ team_profiles:
     max_team_size: 3
     guidance: 사용자 경험과 전달 명확성을 우선한다.
   product_strategy:
-    preferred_engine: claude-code
+    preferred_engine: codex  # organizations.yaml 동기화 (2026-04-02 Claude 한도 절약)
     fallback_engine: gemini-cli
     fallback_model: gemini-2.5-flash
     execution_mode: sequential

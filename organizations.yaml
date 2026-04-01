@@ -33,9 +33,9 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    # claude-code: 디자인실 복잡한 UI/UX 추론 담당 (BOT_ENGINE_MAP 정합, 2026-03-31)
-    preferred_engine: claude-code
-    fallback_engine: gemini-cli
+    # gemini-cli: Claude 주간한도 절약 (2026-04-02), fallback으로 claude-code 유지
+    preferred_engine: gemini-cli
+    fallback_engine: claude-code
     team_profile: design_strategy
     verification_profile: specialist_default
     phase_policy: default
@@ -80,9 +80,9 @@ organizations:
     orchestration_mode: skill_cli
   execution:
     # claude-code: 복잡한 코드 아키텍처, 멀티스텝 디버깅, 테스트 작성에 최적
-    # codex fallback: 대규모 레포 안정성, 85.5% 자율 PR, 코드 리뷰 특화
-    preferred_engine: claude-code
-    fallback_engine: codex
+    # codex: Claude 주간한도 절약 (2026-04-02), 코딩 특화
+    preferred_engine: codex
+    fallback_engine: claude-code
     team_profile: engineering_delivery
     verification_profile: specialist_default
     phase_policy: default
@@ -264,7 +264,8 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    preferred_engine: claude-code
+    # codex: Claude 주간한도 절약 (2026-04-02), 기획/문서 작업
+    preferred_engine: codex
     fallback_engine: gemini-cli
     team_profile: product_strategy
     verification_profile: specialist_default
