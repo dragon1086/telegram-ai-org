@@ -10,7 +10,7 @@ assets/asset_prompts.yaml 에서 설정을 읽어 Gemini 이미지 생성 모델
     python tools/generate_assets.py --dry-run        # 설정만 출력 (생성 안 함)
 
 인증: GEMINI_API_KEY 환경변수 (또는 .env 파일)
-모델: gemini-2.5-flash-preview-image-generation (이미지 생성 전용 Preview 모델)
+모델: gemini-3.1-flash-image-preview (이미지 생성 전용 Preview 모델)
 """
 from __future__ import annotations
 

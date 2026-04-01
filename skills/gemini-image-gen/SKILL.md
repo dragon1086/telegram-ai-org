@@ -1,11 +1,11 @@
 ---
 name: gemini-image-gen
-description: "Generate images using Google Gemini 2.5 Flash Image model via OAuth 2.0 (no API key required). Use when image generation, visual content creation, or diagram generation is needed. Triggers: '이미지 생성', 'image generation', 'generate image', '이미지 만들어', 'visual', '시각화', 'diagram', 'illustration'"
+description: "Generate images using Google Gemini 3.1 Flash Image model via OAuth 2.0 (no API key required). Use when image generation, visual content creation, or diagram generation is needed. Triggers: '이미지 생성', 'image generation', 'generate image', '이미지 만들어', 'visual', '시각화', 'diagram', 'illustration'"
 ---
 
 # Gemini 이미지 생성 스킬
 
-Google Gemini 2.5 Flash Image 모델을 OAuth 2.0으로 사용해 이미지를 생성한다.
+Google Gemini 3.1 Flash Image 모델을 OAuth 2.0으로 사용해 이미지를 생성한다.
 **API Key 사용 금지** — OAuth 기반 인증 전용.
 
 ## 인증 방식
@@ -43,11 +43,11 @@ gemini --version
 ```bash
 # 텍스트 → 이미지 생성
 gemini -p "아름다운 한국 풍경, 산과 강, 4K, 사실적" \
-  --model gemini-2.5-flash-preview-image-generation \
+  --model gemini-3.1-flash-image-preview \
   --output-format json
 
 # 또는 간단하게
-gemini -p "Generate: [이미지 설명]" --model gemini-2.5-flash-preview-image-generation
+gemini -p "Generate: [이미지 설명]" --model gemini-3.1-flash-image-preview
 ```
 
 ### Python 코드로 호출 (tools/gemini_image_runner.py 사용)
@@ -61,7 +61,7 @@ async def generate_image(prompt: str, output_path: str) -> str:
     request = ImageGenRequest(
         prompt=prompt,
         output_path=output_path,
-        model="gemini-2.5-flash-preview-image-generation",
+        model="gemini-3.1-flash-image-preview",
     )
     result = await runner.generate(request)
     return result.image_path
@@ -98,11 +98,11 @@ await send_photo(
 )
 ```
 
-## 모델 정보 (2026-03-24 기준)
+## 모델 정보 (2026-04-01 기준)
 
 | 모델 | 상태 | 용도 |
 |------|------|------|
-| `gemini-2.5-flash-preview-image-generation` | Preview | 이미지 생성 |
+| `gemini-3.1-flash-image-preview` | Preview | 이미지 생성 |
 | `gemini-2.5-flash` | GA (stable) | 텍스트/코드 |
 | `gemini-2.0-flash` | **Deprecated** (2026-06-01 종료) | 사용 금지 |
 
@@ -134,7 +134,7 @@ class ImageGenRequest:
     """이미지 생성 요청."""
     prompt: str
     output_path: str
-    model: str = "gemini-2.5-flash-preview-image-generation"
+    model: str = "gemini-3.1-flash-image-preview"
     width: int = 1024
     height: int = 1024
 
