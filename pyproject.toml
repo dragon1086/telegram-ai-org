@@ -9,7 +9,7 @@
 
 [project]
 name = "telegram-ai-org"
-version = "1.1.0"
+version = "1.2.0"
 description = "AI organization on Telegram — PM bot coordinates AI teams with shared context"
 readme = "README.md"
 license = "MIT"
@@ -41,12 +41,22 @@ dependencies = [
     "apscheduler>=3.10.0",
     "rank-bm25>=0.2",
     "mcp>=1.0",
-    "claude-agent-sdk>=0.1.50",   # 0.1.50 = current latest
     "fastapi>=0.100",
     "uvicorn>=0.20",
 ]
 
 [project.optional-dependencies]
+# claude-agent-sdk 엔진: pip install 'telegram-ai-org[sdk]'
+sdk = [
+    "claude-agent-sdk>=0.1.50",
+]
+# ML/시각화 의존성 (차트·폰트·이미지 처리): pip install 'telegram-ai-org[ml]'
+ml = [
+    "matplotlib>=3.0",
+    "numpy>=1.20",
+    "Pillow>=9.0",
+    "fontTools>=4.0",
+]
 # claude-code 엔진: npm install -g @anthropic-ai/claude-code
 claude = [
     "anthropic>=0.80",

@@ -207,7 +207,7 @@ async def _run_dispatch(tracker) -> int:
     for item in queue:
         goal_id = item["goal_id"]
         new_iter, max_iter = await tracker.tick_iteration(goal_id)
-        if new_iter > max_iter:
+        if new_iter >= max_iter:
             await tracker.update_goal_status(goal_id, "max_iterations_reached")
             dispatched.append(
                 {
