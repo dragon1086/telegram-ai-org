@@ -163,15 +163,12 @@ export class MockEventEmitter {
   }
 }
 
-/** URL 파라미터 또는 환경 기반 목 모드 감지 */
+/** URL 파라미터 기반 목 모드 감지. 기본값은 실서버 모드 (?mock=1 로 활성화). */
 export function isMockMode() {
   if (typeof window === 'undefined') return false;
   const params = new URLSearchParams(window.location.search);
   if (params.get('mock') === '1') return true;
-  if (window.DEV_MODE === true)    return true;
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    // 로컬호스트에서는 기본 목 모드 활성화 (명시적 ?mock=0 으로 비활성화 가능)
-    return params.get('mock') !== '0';
-  }
+  if (params.get('mock') === '0') return false;
+  // Default: real server mode (use ?mock=1 to enable mock)
   return false;
 }

@@ -123,6 +123,9 @@ if DASHBOARD_DIR.exists():
     app.mount("/styles", StaticFiles(directory=str(DASHBOARD_DIR / "styles")), name="styles")
     app.mount("/components", StaticFiles(directory=str(DASHBOARD_DIR / "components")), name="components")
     app.mount("/services", StaticFiles(directory=str(DASHBOARD_DIR / "services")), name="services")
+    _static_dir = DASHBOARD_DIR / "static"
+    if _static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(_static_dir)), name="dashboard-static")
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
