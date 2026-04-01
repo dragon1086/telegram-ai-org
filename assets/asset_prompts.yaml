@@ -1,146 +1,126 @@
 # assets/asset_prompts.yaml
-# telegram-ai-org 이미지 자산 생성 설정
+# AIMesh 이미지 자산 생성 설정
 # 재생성: python tools/generate_assets.py
-# 작성일: 2026-03-30
+# 갱신일: 2026-04-02 (AIMesh 브랜딩 전환)
 
 images:
-  # ── Phase 2: 나노바나나2 캐릭터 로고 ──────────────────────────────────────
+  # ── AIMesh 로고 ────────────────────────────────────────────────────────────
 
-  - id: nanobunny2_logo
-    output_path: assets/logo/nanobunny2_logo.png
+  - id: aimesh_logo
+    output_path: assets/logo.png
     model: gemini-3.1-flash-image-preview
     thinking_mode: true
     width: 1024
     height: 1024
     prompt: >
-      A cute futuristic AI organization bot mascot logo called NanoBunny2.
-      The character is a small adorable banana-shaped robot with big expressive eyes,
-      a warm smile, tiny antenna on top, and digital circuit board patterns on its body.
-      Color scheme: bright yellow body, purple and blue digital accents, glowing blue eyes.
-      The character stands confidently, holding a small holographic phone or tablet.
-      Style: clean vector illustration, flat design with subtle gradients, white circular background.
-      High resolution PNG, professional logo quality, no text.
+      Minimalist logo for 'AIMesh' — an AI organization platform where multiple AI agents
+      collaborate as one team. Abstract mesh network of 6-7 connected nodes forming a
+      brain-like organic pattern. Each node is slightly different size representing hierarchy
+      (1 large orchestrator node + 6 smaller specialist nodes). Smooth gradients from
+      deep indigo (#4F46E5) to emerald (#059669). Clean white background. Modern tech
+      aesthetic, flat design with subtle depth. No text, no animals, no characters.
+      Professional SaaS logo quality suitable for GitHub README header.
+      Style: modern minimalist tech logo, clean vector look, neural mesh network.
 
-  - id: nanobunny2_logo_sm
-    output_path: assets/logo/nanobunny2_logo_sm.png
+  # ── "이게 뭔가요?" 섹션 — 동작 흐름 개요 ─────────────────────────────────────
+
+  - id: aimesh_overview
+    output_path: assets/diagrams/aimesh_overview.png
     model: gemini-3.1-flash-image-preview
     thinking_mode: true
-    width: 256
-    height: 256
+    width: 1200
+    height: 600
     prompt: >
-      A cute futuristic AI organization bot mascot logo called NanoBunny2.
-      Small simple icon version: adorable banana-shaped robot face with big eyes,
-      antenna, digital circuit accents. Yellow and purple colors.
-      Style: minimal flat icon, clean edges, transparent-friendly white background.
-      Icon size optimized, 256x256 equivalent quality.
+      Clean infographic showing the AIMesh workflow in 4 steps, left to right flow:
+      Step 1: A user icon sends a message to a Telegram chat bubble (labeled "Telegram").
+      Step 2: A central brain/hub node (labeled "PM Bot") receives and analyzes the message.
+      Step 3: The PM Bot routes to 6 department icons arranged in a fan pattern:
+        Engineering (code icon), Design (palette icon), Planning (clipboard icon),
+        Growth (chart icon), Research (magnifier icon), Ops (gear icon).
+      Step 4: Results flow back to the user in the Telegram chat.
+      Numbered steps 1→2→3→4 with arrows connecting each stage.
+      Color scheme: indigo (#4F46E5) primary, emerald (#059669) accent, white background.
+      Style: clean flat illustration, modern tech infographic, no text clutter,
+      professional documentation quality. Wide format 2:1 ratio.
 
-  # ── Phase 3: 아키텍처 다이어그램 ──────────────────────────────────────────
+  # ── 주요 기능 섹션 — 4개 피처 이미지 ──────────────────────────────────────────
+
+  - id: feat_routing
+    output_path: assets/diagrams/feat_routing.png
+    model: gemini-3.1-flash-image-preview
+    thinking_mode: true
+    width: 600
+    height: 400
+    prompt: >
+      Simple diagram showing smart routing: a central brain node icon receiving a chat
+      message on the left, analyzing it, then routing to 3 different colored department
+      icons on the right with directional arrows. Flat minimal style, indigo (#4F46E5)
+      primary color, white background. Small compact illustration, icon-style.
+      No text labels. Clean vector look.
+
+  - id: feat_collab
+    output_path: assets/diagrams/feat_collab.png
+    model: gemini-3.1-flash-image-preview
+    thinking_mode: true
+    width: 600
+    height: 400
+    prompt: >
+      Simple diagram showing multi-bot collaboration: 6 colored circles arranged in a
+      hexagonal pattern, connected by thin lines forming a mesh network. Each circle has
+      a small unique icon inside (code brackets, paint brush, clipboard, chart, magnifier,
+      gear). Lines pulse with data flowing between nodes. Flat design, indigo and emerald
+      palette, white background. Small compact illustration. No text. Clean vector look.
+
+  - id: feat_engines
+    output_path: assets/diagrams/feat_engines.png
+    model: gemini-3.1-flash-image-preview
+    thinking_mode: true
+    width: 600
+    height: 400
+    prompt: >
+      Simple diagram showing 3 AI engine icons side by side connected to a central platform
+      hub: Claude (purple hexagon), Codex (green hexagon), Gemini (blue hexagon).
+      Each engine connects to the central AIMesh hub with bidirectional arrows.
+      Flat tech comparison layout, clean white background, modern minimal style.
+      Small compact illustration. No text labels. Vector-style icons.
+
+  - id: feat_skills
+    output_path: assets/diagrams/feat_skills.png
+    model: gemini-3.1-flash-image-preview
+    thinking_mode: true
+    width: 600
+    height: 400
+    prompt: >
+      Simple diagram showing a modular plugin system: a robot/bot icon on the left
+      with 4 puzzle pieces connecting to it from the right. Each puzzle piece is a
+      different color (indigo, emerald, amber, rose) representing different skills/plugins.
+      Clean flat illustration, white background, minimal tech style.
+      Small compact illustration. No text. Vector-style.
+
+  # ── 아키텍처 다이어그램 (Mermaid 교체용) ──────────────────────────────────────
 
   - id: architecture_overview
     output_path: assets/diagrams/architecture_overview.png
     model: gemini-3.1-flash-image-preview
     thinking_mode: true
-    width: 1920
-    height: 1080
+    width: 1400
+    height: 900
     prompt: >
-      A clean professional software architecture diagram for a multi-bot AI organization system.
-      White background with Korean and English labels.
-      Layout (top to bottom):
-      TOP ROW: Single box labeled "PM봇 (Project Manager Bot)" in center, highlighted in blue.
-      MIDDLE ROW: Six department boxes connected by arrows from PM봇:
-        개발실(Dev), 운영실(Ops), 디자인실(Design), 기획실(Planning), 성장실(Growth), 리서치실(Research)
-        Each box has a different pastel color. Korean labels with small English subtitles.
-      BOTTOM ROW: Three engine boxes connected from department boxes:
-        "Claude Code (claude-code)" in orange, "Gemini CLI (gemini-cli)" in blue, "Codex (codex)" in green.
-      Arrows show clear flow: PM봇 → Departments → Engines.
-      Style: clean corporate diagram, rounded boxes, colored arrows, drop shadows, professional look.
-      Title at top: "telegram-ai-org 멀티봇 아키텍처". No decorative elements, focused information design.
-
-  - id: engine_compat
-    output_path: assets/diagrams/engine_compat.png
-    model: gemini-3.1-flash-image-preview
-    thinking_mode: true
-    width: 1920
-    height: 1080
-    prompt: >
-      A clean compatibility matrix diagram showing 3-engine support for an AI organization platform.
-      White background, professional style with Korean and English labels.
-      Title: "3엔진 호환 구조 (3-Engine Compatibility)"
-      Main table/matrix layout:
-      Rows: 6 departments (개발실, 운영실, 디자인실, 기획실, 성장실, 리서치실)
-      Columns: 3 engines (Claude Code, Gemini CLI, Codex)
-      Cell content: checkmarks (✓) or colored indicators showing which engine each department uses.
-      Primary assignments shown with filled colored circles:
-        개발실/디자인실/기획실/PM → Claude Code (orange)
-        운영실/성장실/리서치실 → Gemini CLI (blue)
-        All departments → Codex (green, fallback)
-      Below the matrix: Feature comparison table with rows for: 검색 능력, 코드 추론, 이미지 생성, 실시간 웹 접근
-      Style: clean data table design, alternating row colors, icon indicators, no clutter.
-
-  # ── Phase 4: 온보딩 시각 자료 ─────────────────────────────────────────────
-
-  - id: install_flow
-    output_path: assets/onboarding/install_flow.png
-    model: gemini-3.1-flash-image-preview
-    thinking_mode: true
-    width: 1200
-    height: 800
-    prompt: >
-      A friendly step-by-step installation flow infographic for an open source AI bot system.
-      White background, friendly illustration style with numbered steps.
-      Korean and English mixed labels ("설치 흐름 / Install Flow" as title).
-      4 sequential steps with icons and brief descriptions:
-      Step 1: "setup.sh 실행 / Run setup.sh" - terminal/computer icon, arrow pointing right
-      Step 2: ".env 설정 / Configure .env" - gear/settings icon, arrow pointing right
-      Step 3: "엔진 선택 / Choose Engine" - three engine logos (Claude, Gemini, Codex), arrow pointing right
-      Step 4: "봇 실행 / Start Bots" - robot/telegram icon with speech bubble, success checkmark
-      Each step in a rounded card with pastel background color (blue, green, orange, purple).
-      Friendly approachable style, cartoon-like icons, warm color palette.
-      Bottom note: "완료! 봇이 텔레그램에서 응답합니다 / Done! Bots respond on Telegram"
-
-  - id: skill_guide
-    output_path: assets/onboarding/skill_guide.png
-    model: gemini-3.1-flash-image-preview
-    thinking_mode: true
-    width: 1200
-    height: 800
-    prompt: >
-      A friendly directory structure visualization infographic for adding skills to an AI bot system.
-      White background, illustration style with numbered annotations.
-      Title: "스킬 추가 가이드 / Skill Addition Guide"
-      Main visual: A folder tree diagram showing:
-        skills/ (root folder icon)
-          ├── my-new-skill/ (highlighted new folder)
-          │   ├── skill.md (description file icon)
-          │   └── prompt.txt (optional, text icon)
-          ├── gemini-image-gen/ (existing example)
-          └── e2e-regression/ (existing example)
-      Annotation callouts with Korean+English labels pointing to each file:
-        - skill.md: "스킬 정의 파일 / Skill definition (required)"
-        - prompt.txt: "프롬프트 템플릿 / Prompt template (optional)"
-        - my-new-skill/: "새 스킬 폴더 / New skill folder"
-      Step badges (①②③) showing the order: 폴더생성 → skill.md작성 → 봇재시작
-      Friendly approachable style, pastel colors, clear arrows and callouts.
-
-  - id: e2e_flow
-    output_path: assets/onboarding/e2e_flow.png
-    model: gemini-3.1-flash-image-preview
-    thinking_mode: true
-    width: 1200
-    height: 800
-    prompt: >
-      A clean E2E test flow diagram for an AI multi-bot organization platform.
-      White background, professional but friendly style.
-      Title: "E2E 테스트 흐름도 / E2E Test Flow"
-      Flowchart showing the test process from left to right:
-      START: "pytest 실행 / Run pytest" (terminal icon)
-        → "Pre-flight 체크 / Pre-flight Check" (checklist icon) [orange box]
-        → "PM봇 라우팅 / PM Bot Routing" (robot icon) [blue box]
-        → "조직 디스패치 / Org Dispatch" (arrow fan to 6 boxes) [green section]
-        → "엔진 호출 / Engine Call" (3 engine logos) [purple box]
-        → "응답 검증 / Validate Response" (checkmark icon) [teal box]
-        → "보고서 저장 / Save Report" (document icon) [gray box]
-      END: "✓ PASS / ✗ FAIL" (green/red indicator)
-      Each box has numbered badge (①~⑦).
-      Korean labels with English subtitles below each box.
-      Clean flowchart style, colored boxes with drop shadows, clear directional arrows.
+      Professional system architecture diagram for AIMesh multi-bot AI platform.
+      White background, clean corporate tech style.
+      Layout (top to bottom, 3 tiers):
+      TOP: User icon with Telegram logo, arrow down to PM Bot.
+      MIDDLE: Large rounded box "PM Bot" (indigo #4F46E5, white text) in center.
+        Six arrows fan out from PM Bot to 6 department boxes arranged in an arc:
+        Engineering (orange), Design (pink), Planning (purple),
+        Growth (teal), Research (yellow), Ops (green).
+        Each box shows a small icon + department name in Korean+English.
+      BOTTOM: Three engine boxes connected from departments:
+        "Claude Code" (purple box), "Codex" (green box), "Gemini CLI" (blue box).
+        Dotted lines show which departments connect to which engine:
+        Engineering→Codex(primary)/Claude(fallback), Design→Gemini/Claude,
+        Planning→Codex/Gemini, PM→Claude/Gemini,
+        Growth/Research/Ops→Gemini/Claude.
+      A shared DB/Memory cylinder at the very bottom connected to all engines.
+      Style: clean labeled boxes, thin arrows, subtle shadows, professional documentation.
+      No decorative elements. Clear readable hierarchy.
