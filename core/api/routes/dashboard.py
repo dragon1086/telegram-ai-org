@@ -381,7 +381,7 @@ async def get_snapshot() -> dict[str, Any]:
     # 최근 24시간 태스크 가져오기 (in_progress 없을 때도 failed/done 반영)
     rows = await _query(
         """
-        SELECT id, assigned_dept, status, description, parent_id
+        SELECT id, assigned_dept, status, description, parent_id, updated_at
         FROM pm_tasks
         WHERE updated_at >= datetime('now', '-24 hours')
         ORDER BY updated_at DESC
@@ -431,10 +431,14 @@ async def get_snapshot() -> dict[str, Any]:
         tasks = dept_tasks.get(dept, [])
         active   = [t for t in tasks if t["status"] in ("in_progress", "running", "active")]
         blocked  = [t for t in tasks if t["status"] == "blocked"]
-        # 부모가 완료된 failed 태스크는 제외 (과거 실패, 이미 해결됨)
+        # 최근 1시간 내 실패만 alert 대상 (과거 실패는 무시)
+        one_hour_ago = (
+            datetime.now(timezone.utc) - timedelta(hours=1)
+        ).strftime("%Y-%m-%dT%H:%M:%S")
         failed   = [
             t for t in tasks
-            if t["status"] == "failed" and not _is_resolved_failed(t)
+            if t["status"] == "failed"
+            and (t.get("updated_at") or "") >= one_hour_ago
         ]
         done     = [t for t in tasks if t["status"] in ("done", "completed")]
 
