@@ -150,8 +150,8 @@ def run_preflight(ctx, verbose: bool = True) -> PreflightResult:
     if verbose:
         _pf_line(ctx, "조직/워커 설정", r.worker_token_ok if r.worker_token_ok else None, "설정됨" if r.worker_token_ok else "미설정")
 
-    required = ["aiosqlite", "loguru", "telegram", "openai", "yaml"]
-    import_map = {"telegram": "telegram", "yaml": "yaml", "openai": "openai", "aiosqlite": "aiosqlite", "loguru": "loguru"}
+    required = ["aiosqlite", "loguru", "telegram", "yaml"]
+    import_map = {"telegram": "telegram", "yaml": "yaml", "aiosqlite": "aiosqlite", "loguru": "loguru"}
     for pkg in required:
         try:
             __import__(import_map.get(pkg, pkg))

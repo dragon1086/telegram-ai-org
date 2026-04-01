@@ -627,6 +627,11 @@ class TestGeminiCLIIntegration:
             pytest.skip(
                 "gemini CLI 미설치 — GEMINI_CLI_PATH 설정 또는 'gemini' 설치 후 재실행"
             )
+        # gemini CLI는 Node.js 런타임 필요 — node가 PATH에 없으면 스킵
+        if not shutil.which("node"):
+            pytest.skip(
+                "node.js가 PATH에 없음 — gemini CLI 실행 불가 (node 설치 또는 PATH 확인)"
+            )
 
     async def test_gemini_cli_real_basic_prompt(self) -> None:
         """실제 gemini CLI로 짧은 프롬프트를 실행하고 str 응답을 받는다."""

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AIMesh 실시간 대시보드</title>
+  <link rel="stylesheet" href="styles/comic-theme.css" />
+  <style>
+    /* 헤더 실시간 시계 */
+    #live-clock {
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      color: #ccc;
+    }
+    /* 연결 상태 배지 */
+    #conn-status-badge { cursor: default; }
+    #conn-status-badge.connected .dot   { background: var(--status-connected); }
+    #conn-status-badge.disconnected .dot{ background: var(--status-disconnected); }
+    #conn-status-badge.connecting .dot  { background: var(--status-connecting); animation: blink 1s ease infinite; }
+    #conn-status-badge.reconnecting .dot{ background: var(--comic-orange); animation: blink 0.5s ease infinite; }
+  </style>
+</head>
+<body>
+
+<!-- ── 헤더 ── -->
+<header class="dashboard-header">
+  <div>
+    <h1>⚡ AIMesh Dashboard</h1>
+    <div class="subtitle">실시간 작업 시각화 &amp; 원격 접근 모니터링</div>
+  </div>
+  <div style="display:flex; align-items:center; gap:1rem;">
+    <span id="live-clock">--:--:--</span>
+    <div class="connection-badge" id="conn-status-badge">
+      <span class="dot"></span>
+      <span id="conn-status-text">연결중...</span>
+    </div>
+  </div>
+</header>
+
+<!-- ── 대시보드 그리드 ── -->
+<main class="dashboard-grid">
+  <div id="ticket-status-panel"></div>
+  <div id="completed-tasks-panel"></div>
+  <div id="remote-access-panel"></div>
+</main>
+
+<!-- ── 퀵스타트 배너 (첫 방문 시만 표시, localStorage로 dismissed 저장) ── -->
+<div id="quickstart-banner" style="
+  display:none;
+  position:fixed; top:0; left:0; right:0;
+  background:var(--comic-yellow); border-bottom:3px solid var(--comic-dark);
+  text-align:center; padding:0.55rem 3rem;
+  font-family:var(--font-comic-body); font-weight:700; font-size:0.9rem;
+  color:var(--comic-dark);
+  z-index:9999;
+  box-shadow:0 3px 0 var(--comic-dark);
+">
+  💡 대시보드 시작: <code style="background:rgba(0,0,0,0.1);padding:0.1rem 0.4rem;border-radius:4px;">python dashboard.py</code> 실행 후 이 페이지를 새로고침하세요
+  <button id="quickstart-dismiss" aria-label="배너 닫기" style="
+    position:absolute; right:1rem; top:50%; transform:translateY(-50%);
+    background:none; border:2px solid var(--comic-dark); border-radius:50%;
+    width:1.6rem; height:1.6rem; cursor:pointer;
+    font-size:0.85rem; font-weight:700; line-height:1;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--comic-dark);
+    transition:background 0.15s;
+  " onmouseover="this.style.background='rgba(0,0,0,0.1)'" onmouseout="this.style.background='none'">✕</button>
+</div>
+<script>
+  (function () {
+    if (!localStorage.getItem('aimesh_quickstart_dismissed')) {
+      var banner = document.getElementById('quickstart-banner');
+      if (banner) banner.style.display = 'block';
+    }
+    var btn = document.getElementById('quickstart-dismiss');
+    if (btn) {
+      btn.addEventListener('click', function () {
+        localStorage.setItem('aimesh_quickstart_dismissed', '1');
+        var banner = document.getElementById('quickstart-banner');
+        if (banner) {
+          banner.style.transition = 'opacity 0.3s ease';
+          banner.style.opacity = '0';
+          setTimeout(function () { banner.style.display = 'none'; }, 300);
+        }
+      });
+    }
+  })();
+</script>
+
+<!-- ── 모드 표시 배너 (목 모드 시) ── -->
+<div id="mock-banner" style="
+  display:none;
+  position:fixed; bottom:0; left:0; right:0;
+  background:var(--comic-yellow); border-top:3px solid var(--comic-dark);
+  text-align:center; padding:0.5rem;
+  font-family:var(--font-comic-body); font-weight:700; font-size:0.875rem;
+  z-index:9998;
+">
+  🎭 개발 모드 — 목(Mock) 데이터 사용 중 | <a href="?mock=0" style="color:var(--comic-blue);">실서버 연결</a>
+</div>
+
+<!-- ── ES 모듈 진입점 ── -->
+<script type="module">
+  import { TicketStatusPanel }   from './components/TicketStatusPanel.js';
+  import { CompletedTasksPanel } from './components/CompletedTasksPanel.js';
+  import { RemoteAccessPanel }   from './components/RemoteAccessPanel.js';
+  import { DashboardClient }     from './services/client.js';
+  import { isMockMode }          from './services/mockEventEmitter.js';
+
+  // ── 패널 초기화 ────────────────────────────────────────────
+  const ticketPanel  = new TicketStatusPanel(document.getElementById('ticket-status-panel'));
+  const tasksPanel   = new CompletedTasksPanel(document.getElementById('completed-tasks-panel'));
+  const remotePanel  = new RemoteAccessPanel(document.getElementById('remote-access-panel'));
+
+  // ── 목 모드 배너 ──────────────────────────────────────────
+  if (isMockMode()) {
+    document.getElementById('mock-banner').style.display = 'block';
+  }
+
+  // ── DashboardClient 초기화 및 시작 ───────────────────────
+  const dashClient = new DashboardClient();
+  dashClient
+    .mount({
+      badgeEl:   document.getElementById('conn-status-badge'),
+      badgeText: document.getElementById('conn-status-text'),
+    })
+    .setPanels({ ticketPanel, tasksPanel, remotePanel })
+    .start();
+
+  // ── 실시간 시계 ───────────────────────────────────────────
+  function updateClock() {
+    document.getElementById('live-clock').textContent =
+      new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+</script>
+</body>
+</html>

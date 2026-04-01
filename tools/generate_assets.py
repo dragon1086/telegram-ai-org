@@ -15,7 +15,6 @@ assets/asset_prompts.yaml 에서 설정을 읽어 Gemini 이미지 생성 모델
 from __future__ import annotations
 
 import argparse
-import base64
 import os
 import sys
 import time

@@ -1,3 +1,7 @@
+# DEPRECATED: 이 파일은 사용되지 않아 _deprecated/로 이동되었습니다.
+# 이동일: 2026-03-31
+# 이유: 코드베이스 어디서도 프로덕션 코드에서 import되지 않음 (grep 검증 완료)
+# 원래 위치: /Users/rocky/telegram-ai-org/retro_action_parser.py
 """회고(Retro) 텍스트 전용 ActionItem 파서.
 
 일일회고 텍스트에서 RETRO-N 태그, ACTION N: 형식, 체크박스 형식 등을
@@ -12,12 +16,11 @@
 """
 from __future__ import annotations
 
-import re
 import logging
-from dataclasses import dataclass, field
-from typing import Optional
+import re
+from dataclasses import dataclass
 
-from goal_tracker.action_parser import ActionItem, ActionParser, ORG_NAME_MAP
+from goal_tracker.action_parser import ORG_NAME_MAP, ActionItem, ActionParser
 
 logger = logging.getLogger(__name__)
 

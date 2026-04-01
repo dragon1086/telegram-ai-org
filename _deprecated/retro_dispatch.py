@@ -1,3 +1,7 @@
+# DEPRECATED: 이 파일은 사용되지 않아 _deprecated/로 이동되었습니다.
+# 이동일: 2026-03-31
+# 이유: 코드베이스 어디서도 프로덕션 코드에서 import되지 않음 (grep 검증 완료)
+# 원래 위치: /Users/rocky/telegram-ai-org/retro_dispatch.py
 """Retro Dispatch — GoalTracker 등록 완료 후 부서 봇에 자동 dispatch.
 
 파싱+등록된 RetroActionItem을 해당 부서 채팅방에 COLLAB 태그 포맷으로 전송하고,

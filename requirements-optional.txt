@@ -1,0 +1,33 @@
+# =============================================================================
+# requirements-optional.txt — 엔진별 선택 의존성
+#
+# 설치 방법 (엔진별 선택):
+#   Claude Code 엔진:  pip install -r requirements-optional.txt  (anthropic 포함)
+#   Codex 엔진:        pip install openai>=2.0
+#   Gemini CLI 엔진:   pip install google-genai>=1.0
+#
+# 전체 설치 (개발/테스트):
+#   pip install -r requirements-dev.txt   # anthropic + openai + google-genai 포함
+#
+# pyproject.toml extras 방식:
+#   pip install -e ".[claude]"   — anthropic만
+#   pip install -e ".[codex]"    — openai만
+#   pip install -e ".[gemini]"   — google-genai만
+#   pip install -e ".[all]"      — 전체
+# =============================================================================
+
+# ─── claude-code 엔진 ────────────────────────────────────────────────────────
+# npm install -g @anthropic-ai/claude-code  (CLI 바이너리 별도 설치 필요)
+anthropic>=0.80                  # 0.84.x — Anthropic Python SDK (API 직접 호출 시)
+
+# ─── codex 엔진 ──────────────────────────────────────────────────────────────
+# npm install -g @openai/codex  (CLI 바이너리 별도 설치 필요)
+openai>=2.0                      # 2.26.x — OpenAI Python SDK
+
+# ─── gemini-cli 엔진 ─────────────────────────────────────────────────────────
+# npm install -g @google/gemini-cli  (CLI 바이너리 별도 설치 필요)
+# .env: GEMINI_CLI_PATH=/opt/homebrew/bin/gemini
+google-genai>=1.0                # 1.68.x — Google Gen AI Python SDK
+
+# ─── 공통 HTTP 클라이언트 (엔진 SDK 내부 의존성 — 명시적 버전 고정용) ────────
+httpx>=0.25                      # python-telegram-bot HTTPXRequest, anthropic 내부 사용

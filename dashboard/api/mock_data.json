@@ -1,0 +1,53 @@
+{
+  "snapshot": {
+    "counts": { "pending": 3, "in_progress": 5, "done": 12, "blocked": 1 },
+    "aggregations": { "1h": { "throughput": 4.2, "completed": 7 } },
+    "criteria_version": "1.0.0",
+    "ts": 0
+  },
+  "thresholds": {
+    "exit_code_143": {
+      "name": "exit_code_143",
+      "block_threshold": 3,
+      "warn_threshold": 1,
+      "unit": "occurrences",
+      "criteria_version": "1.0.0"
+    },
+    "error_pattern_repeat": {
+      "name": "error_pattern_repeat",
+      "block_threshold": 3,
+      "warn_threshold": 1,
+      "unit": "occurrences",
+      "criteria_version": "1.0.0"
+    },
+    "task_timeout_hard": {
+      "name": "task_timeout_hard",
+      "block_threshold": 1800,
+      "warn_threshold": 1200,
+      "unit": "seconds",
+      "criteria_version": "1.0.0"
+    }
+  },
+  "characters": [
+    { "orgId": "aiorg_engineering_bot", "name": "개발실", "emoji": "🦾", "color": "#0057FF", "hp": 85, "level": 5, "emotion": "idle", "animationTrigger": "none", "severity": "info", "lastUpdated": 0 },
+    { "orgId": "aiorg_design_bot", "name": "디자인실", "emoji": "🎨", "color": "#9B00FF", "hp": 72, "level": 4, "emotion": "alert", "animationTrigger": "pulse", "severity": "warning", "lastUpdated": 0 },
+    { "orgId": "aiorg_ops_bot", "name": "운영실", "emoji": "⚙️", "color": "#00C851", "hp": 90, "level": 6, "emotion": "idle", "animationTrigger": "none", "severity": "info", "lastUpdated": 0 },
+    { "orgId": "aiorg_product_bot", "name": "기획실", "emoji": "📋", "color": "#FF6B00", "hp": 45, "level": 3, "emotion": "danger", "animationTrigger": "shake", "severity": "critical", "lastUpdated": 0 }
+  ],
+  "recent_completed": [
+    { "ticket_id": "T-mock-001", "title": "Mock 태스크 완료", "org_id": "aiorg_engineering_bot", "state": "done", "assignee": "aiorg_engineering_bot", "completed_at": 0 },
+    { "ticket_id": "T-mock-002", "title": "디자인 리뷰 완료", "org_id": "aiorg_design_bot", "state": "done", "assignee": "aiorg_design_bot", "completed_at": 0 }
+  ],
+  "criteria_change_events": [
+    {
+      "type": "criteria_change",
+      "threshold_name": "exit_code_143",
+      "old_version": "0.9.0",
+      "new_version": "1.0.0",
+      "old_value": 2,
+      "new_value": 3,
+      "changed_at": 0,
+      "change_reason": "RETRO-27 기준 추적 파이프라인 구축"
+    }
+  ]
+}

@@ -71,12 +71,11 @@ FROM python:3.11-slim@sha256:9358444059ed78e2975ada2c189f1c1a3144a5dab6f35bff8c9
 LABEL org.opencontainers.image.title="telegram-ai-org"
 LABEL org.opencontainers.image.description="AI organization on Telegram — multi-agent PM bot system"
 LABEL org.opencontainers.image.source="https://github.com/dragon1086/aimesh"
-LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.version="1.1.0"
 
 # 런타임 시스템 패키지 (Node.js 런타임 — CLI 실행용)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
-    curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -86,23 +85,23 @@ WORKDIR /app
 #    pyproject.toml dependencies 목록과 동기화 유지
 ARG ENGINE=base
 RUN pip install --no-cache-dir \
-    "python-telegram-bot>=20.0" \
+    "python-telegram-bot>=22.0" \
     "pydantic>=2.0" \
     "aiosqlite>=0.19" \
-    "httpx>=0.25" \
     "python-dotenv>=1.0" \
     "loguru>=0.7" \
-    "typer>=0.9" \
-    "openai>=1.0" \
-    "anthropic>=0.20" \
     "PyYAML>=6.0" \
     "apscheduler>=3.10.0" \
     "rank-bm25>=0.2" \
     "mcp>=1.0" \
     "claude-agent-sdk>=0.1.50"
 
-# Gemini 엔진 선택 시 추가 SDK 설치
-RUN if [ "$ENGINE" = "gemini" ]; then \
+# 엔진별 Python SDK 설치
+RUN if [ "$ENGINE" = "claude" ]; then \
+        pip install --no-cache-dir "anthropic>=0.80"; \
+    elif [ "$ENGINE" = "codex" ]; then \
+        pip install --no-cache-dir "openai>=2.0"; \
+    elif [ "$ENGINE" = "gemini" ]; then \
         pip install --no-cache-dir "google-genai>=1.0"; \
     fi
 

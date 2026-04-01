@@ -20,10 +20,9 @@ from pathlib import Path
 from typing import Awaitable, Callable, Literal
 
 from dotenv import load_dotenv
+from loguru import logger
 
 load_dotenv()
-
-from loguru import logger
 
 # COLLAB 태그 파싱 정규식 (양식: [COLLAB:작업 설명|맥락: 요약])
 _COLLAB_TAG_RE = re.compile(

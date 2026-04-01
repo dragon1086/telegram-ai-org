@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# DEPRECATED: 이 파일은 사용되지 않아 _deprecated/로 이동되었습니다.
+# 이동일: 2026-03-31
+# 이유: 코드베이스 어디서도 import되지 않음 (grep 검증 완료)
+# 원래 위치: /Users/rocky/telegram-ai-org/run_e2e_loop.py
 """run_e2e_loop.py — E2E 자율 루프 통합 진입점.
 
 전 조직 봇이 일일회고/주간회의 채팅에 참여해 보고·조치사항을

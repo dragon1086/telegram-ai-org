@@ -2,9 +2,9 @@
 
 이 디렉토리는 프로젝트의 로고, 아키텍처 다이어그램, 온보딩 시각 자료를 포함합니다.
 
-생성일: 2026-03-30
-생성 모델: `gemini-3.1-flash-image-preview` (thinking mode 적용, gemini-2.5-flash 프롬프트 정제)
-재생성 명령: `python scripts/generate_assets.py`
+최초 생성: 2026-03-30 (`gemini-3.1-flash-image-preview`)
+Phase 4 추가: 2026-04-01 (`gemini-2.5-flash-image`)
+재생성 명령: `python tools/generate_assets.py` (기존) / `python scripts/generate_assets_temp.py` (Phase 4)
 
 ---
 
@@ -24,12 +24,23 @@
 
 ```
 assets/
+├── mascot/                          # NanoBunny 마스코트 캐릭터 세트 (2026-04-01 신규)
+│   ├── mascot_v1.png                # 앉아서 손 흔드는 기본 포즈 (512x512)
+│   ├── mascot_wave_v1.png           # 양팔 들어올린 환영 포즈 (512x512)
+│   ├── mascot_think_v1.png          # 턱받침 사고 포즈 (512x512)
+│   └── PROMPT_LOG.md                # 생성 프롬프트 및 선택 이유
 ├── logo/
-│   ├── nanobunny2_logo.png      # 나노바나나2 캐릭터 로고 (1024x1024)
-│   └── nanobunny2_logo_sm.png   # 소형 아이콘 버전 (256x256)
+│   ├── logo_primary_v1.png          # 가로형 배너 로고 1200x400 (2026-04-01 신규)
+│   ├── logo_square_v1.png           # 정방형 소셜/아바타 로고 512x512 (2026-04-01 신규)
+│   ├── nanobunny2_logo.png          # 나노바나나2 캐릭터 로고 (1024x1024)
+│   ├── nanobunny2_logo_sm.png       # 소형 아이콘 버전 (256x256)
+│   └── PROMPT_LOG.md                # 생성 프롬프트 및 선택 이유
 ├── diagrams/
-│   ├── architecture_overview.png  # 멀티봇 전체 아키텍처 다이어그램
-│   └── engine_compat.png          # 3엔진 호환 매트릭스
+│   ├── arch_diagram_v1.png          # 전체 멀티봇 아키텍처 개요 (2026-04-01 신규)
+│   ├── arch_diagram_v2.png          # 엔진 배정 매트릭스 (2026-04-01 신규)
+│   ├── architecture_overview.png    # 멀티봇 전체 아키텍처 다이어그램
+│   ├── engine_compat.png            # 3엔진 호환 매트릭스
+│   └── PROMPT_LOG.md                # 생성 프롬프트 및 선택 이유
 └── onboarding/
     ├── install_flow.png    # 설치 흐름 인포그래픽
     ├── skill_guide.png     # 스킬 추가 가이드 일러스트
@@ -38,7 +49,34 @@ assets/
 
 ---
 
+## Phase 4 신규 자산 (2026-04-01)
+
+| 파일 | 용도 | 크기 | 모델 |
+|------|------|------|------|
+| `mascot/mascot_v1.png` | README 마스코트, 봇 응답 이모지 대체 | ~970 KB | gemini-2.5-flash-image |
+| `mascot/mascot_wave_v1.png` | 성공/환영 상태 UI | ~993 KB | gemini-2.5-flash-image |
+| `mascot/mascot_think_v1.png` | 처리중/로딩 상태 UI | ~993 KB | gemini-2.5-flash-image |
+| `logo/logo_primary_v1.png` | README 헤더 배너, GitHub 소셜 프리뷰 | ~915 KB | gemini-2.5-flash-image |
+| `logo/logo_square_v1.png` | Telegram 봇 아바타, 소셜 아이콘 | ~937 KB | gemini-2.5-flash-image |
+| `diagrams/arch_diagram_v1.png` | 멀티봇 전체 아키텍처 문서 | ~996 KB | gemini-2.5-flash-image |
+| `diagrams/arch_diagram_v2.png` | 엔진 배정 매트릭스 기술 문서 | ~1009 KB | gemini-2.5-flash-image |
+
+---
+
 ## 파일별 상세
+
+### 마스코트 (mascot/)
+
+| 파일 | 용도 | 포즈 |
+|------|------|------|
+| `mascot_v1.png` | 기본 마스코트, README 헤더 | 앉아서 손 흔들기 |
+| `mascot_wave_v1.png` | 성공/완료 상태 | 양팔 들어올린 환영 |
+| `mascot_think_v1.png` | 처리중/사고 상태 | 턱받침 사고 자세 |
+
+**캐릭터 컨셉**: NanoBunny — 귀엽고 친근한 AI 봇 토끼 마스코트.
+민트 그린(#4ECDC4)과 코랄 핑크(#FF6B6B) 배색, 안테나, 귀의 회로 패턴 장식.
+
+---
 
 ### 로고 (logo/)
 
