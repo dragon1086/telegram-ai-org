@@ -227,7 +227,7 @@ async def get_task_graph(
     stats: dict[str, int] = {}
     edges: list[dict[str, Any]] = []
 
-    # Virtual group nodes for RETRO tasks (group by date in ID)
+    # Virtual group nodes for RETRO tasks (group by date in ID, fallback to "misc")
     retro_groups: dict[str, dict[str, Any]] = {}
     for t in root_tasks:
         ttype = _task_type(t["id"], t["description"])
@@ -235,12 +235,17 @@ async def get_task_graph(
             # Extract date from ID like RETRO-daily_retro-20260331-xxx
             parts = t["id"].split("-")
             date_key = next((p for p in parts if p.isdigit() and len(p) == 8), None)
-            if date_key and date_key not in retro_groups:
-                vnode_id = f"RETRO-GROUP-{date_key}"
-                fmt_date = f"{date_key[:4]}-{date_key[4:6]}-{date_key[6:]}"
-                retro_groups[date_key] = {
+            group_key = date_key if date_key else "misc"
+            if group_key not in retro_groups:
+                vnode_id = f"RETRO-GROUP-{group_key}"
+                if date_key:
+                    fmt_date = f"{date_key[:4]}-{date_key[4:6]}-{date_key[6:]}"
+                    label = f"일일회고 {fmt_date}"
+                else:
+                    label = "수명업무 태스크"
+                retro_groups[group_key] = {
                     "id": vnode_id,
-                    "label": f"일일회고 {fmt_date}",
+                    "label": label,
                     "dept": "pm",
                     "status": "done",
                     "depth": 0,
@@ -270,9 +275,10 @@ async def get_task_graph(
         if ttype == "retro":
             parts = t["id"].split("-")
             date_key = next((p for p in parts if p.isdigit() and len(p) == 8), None)
-            if date_key and date_key in retro_groups:
+            group_key = date_key if date_key else "misc"
+            if group_key in retro_groups:
                 edges.append({
-                    "source": retro_groups[date_key]["id"],
+                    "source": retro_groups[group_key]["id"],
                     "target": t["id"],
                 })
 
