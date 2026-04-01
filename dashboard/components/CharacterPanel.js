@@ -41,8 +41,17 @@ const HP_COLORS = {
   low:    '#FF3B3F', // 0~29
 };
 
-/** orgId → PNG 경로 매핑 */
+/** orgId → PNG 경로 매핑 (full orgId 또는 short key 모두 지원) */
 const CHAR_IMG = {
+  // full orgId 형식 (aiorg_*_bot)
+  aiorg_pm_bot:          '/static/chars/pm.png',
+  aiorg_engineering_bot: '/static/chars/engineering.png',
+  aiorg_design_bot:      '/static/chars/design.png',
+  aiorg_growth_bot:      '/static/chars/growth.png',
+  aiorg_ops_bot:         '/static/chars/ops.png',
+  aiorg_research_bot:    '/static/chars/research.png',
+  aiorg_product_bot:     '/static/chars/pm.png',
+  // short key 형식 (fallback)
   pm:          '/static/chars/pm.png',
   engineering: '/static/chars/engineering.png',
   design:      '/static/chars/design.png',

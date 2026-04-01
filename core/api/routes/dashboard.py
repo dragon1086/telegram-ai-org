@@ -320,9 +320,26 @@ _ORG_META = {
 }
 
 
+async def _compute_throughput(hours: float) -> dict[str, Any]:
+    """주어진 시간(hours) 내 완료된 태스크 수와 처리량을 계산합니다."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    rows = await _query(
+        "SELECT COUNT(*) as cnt FROM pm_tasks WHERE status='done' AND updated_at >= ?",
+        (cutoff,),
+    )
+    completed = rows[0]["cnt"] if rows else 0
+    return {
+        "completed": completed,
+        "throughput": round(completed / hours, 3),
+        "period_hours": hours,
+    }
+
+
 @router.get("/snapshot")
 async def get_snapshot() -> dict[str, Any]:
     """봇별 활성 태스크 기반 캐릭터 상태 + 전체 카운트 스냅샷."""
+    # pusher 미초기화 시에도 DB에서 직접 읽어 응답 (pusher는 SSE 전용)
+
     # 최근 2시간 태스크 가져오기
     rows = await _query(
         """
@@ -379,15 +396,81 @@ async def get_snapshot() -> dict[str, Any]:
             "lastUpdated":   datetime.now(timezone.utc).isoformat(),
         })
 
-    # 전체 카운트
+    # 전체 카운트 (pending/in_progress/done/blocked 기본값 포함)
     count_rows = await _query(
         "SELECT status, COUNT(*) as cnt FROM pm_tasks GROUP BY status"
     )
-    counts = {r["status"]: r["cnt"] for r in count_rows}
+    counts: dict[str, int] = {"pending": 0, "in_progress": 0, "done": 0, "blocked": 0}
+    for r in count_rows:
+        status = r["status"]
+        counts[status] = r["cnt"]
+
+    # 시간대별 처리량 집계
+    aggregations = {
+        "1h":  await _compute_throughput(1.0),
+        "6h":  await _compute_throughput(6.0),
+        "24h": await _compute_throughput(24.0),
+    }
 
     return {
-        "characters": characters,
-        "counts":     counts,
-        "thresholds": {},
-        "ts":         datetime.now(timezone.utc).isoformat(),
+        "characters":   characters,
+        "counts":       counts,
+        "aggregations": aggregations,
+        "thresholds":   {},
+        "ts":           datetime.now(timezone.utc).isoformat(),
     }
+
+
+@router.get("/characters")
+async def get_characters() -> dict[str, Any]:
+    """봇별 캐릭터 상태를 반환합니다.
+
+    Returns:
+        dict: orgId → {emoji, name, color, severity, hp, emotion, active_count, blocked_count}
+    """
+    # 최근 2시간 태스크 가져오기
+    rows = await _query(
+        """
+        SELECT assigned_dept, status, description
+        FROM pm_tasks
+        WHERE updated_at >= datetime('now', '-2 hours')
+        ORDER BY updated_at DESC
+        """
+    )
+
+    # dept별로 그룹핑
+    dept_tasks: dict[str, list[dict]] = {}
+    for row in rows:
+        dept = (row.get("assigned_dept") or "pm").strip()
+        dept_tasks.setdefault(dept, []).append(row)
+
+    result: dict[str, Any] = {}
+    for dept, org_id in _DEPT_TO_ORG.items():
+        tasks = dept_tasks.get(dept, [])
+        active  = [t for t in tasks if t["status"] == "in_progress"]
+        blocked = [t for t in tasks if t["status"] == "blocked"]
+
+        if blocked:
+            severity, emotion, hp = "critical", "alert", 25
+        elif len(active) > 5:
+            severity, emotion, hp = "critical", "alert", 30
+        elif len(active) > 2:
+            severity, emotion, hp = "warning", "alert", 55
+        elif active:
+            severity, emotion, hp = "info", "working", 80
+        else:
+            severity, emotion, hp = "info", "idle", 85
+
+        meta = _ORG_META.get(org_id, {})
+        result[org_id] = {
+            "emoji":         meta.get("emoji", "🤖"),
+            "name":          meta.get("name", org_id),
+            "color":         meta.get("color", "#888"),
+            "severity":      severity,
+            "hp":            hp,
+            "emotion":       emotion,
+            "active_count":  len(active),
+            "blocked_count": len(blocked),
+        }
+
+    return result
