@@ -268,7 +268,7 @@ models:
       notes: "Google Search 내장 — 성장실·리서치실 기본 엔진"
 
     image_generation:
-      model: "gemini-2.5-flash-preview-image-generation"
+      model: "gemini-3.1-flash-image-preview"
       status: "Preview"    # GA 아님. 실패 시 production 모델로 fallback
       fallback: "gemini-2.5-flash"
       env_key: GEMINI_FALLBACK_MODEL

@@ -4,7 +4,7 @@
 
 **상황**: `gemini-2.5-flash` 모델로 이미지 생성 시도
 **증상**: 텍스트 응답만 반환, 이미지 없음
-**해결**: 이미지 생성 전용 모델 사용: `gemini-2.5-flash-preview-image-generation`
+**해결**: 이미지 생성 전용 모델 사용: `gemini-3.1-flash-image-preview`
 ```bash
 gemini models list  # 사용 가능한 이미지 모델 확인
 ```
