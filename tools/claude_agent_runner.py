@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 try:
@@ -52,7 +53,7 @@ class ClaudeAgentRunner(BaseRunner, ClaudeSpecificMixin):
         """Execute prompt via claude_agent_sdk.query() and return result text."""
         allowed_tools: list[str] = ctx.engine_config.get("allowed_tools", _DEFAULT_TOOLS)
         permission_mode: str = ctx.engine_config.get("permission_mode", "bypassPermissions")
-        model: str | None = ctx.engine_config.get("model")
+        model: str | None = ctx.engine_config.get("model") or os.environ.get("CLAUDE_DEFAULT_MODEL")
         resume: str | None = ctx.engine_config.get("resume") or ctx.session_id
 
         options = ClaudeAgentOptions(
