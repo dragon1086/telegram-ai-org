@@ -1297,57 +1297,56 @@
 
   function rand(a, b) { return a + Math.random() * (b - a); }
 
+  // speed 단위: normalized-units per millisecond
+  // 1.0 = 오피스 전체 폭. speed 0.00015 → 약 6.6초에 전체 폭 횡단
   function pickTarget(id) {
     const b = BOTS[id];
     const s = rt[id];
     switch (s.state) {
       case 'idle':
-        // Stay at home (tiny drift)
-        s.tx = b.hx + rand(-0.015, 0.015);
-        s.ty = b.hy + rand(-0.025, 0.025);
-        s.speed = 0.0015;
-        s.waitMs = rand(1500, 3000);
+        // 자리에서 거의 안움직임 — 미세 호흡
+        s.tx = b.hx + rand(-0.01, 0.01);
+        s.ty = b.hy + rand(-0.015, 0.015);
+        s.speed = 0.000008;
+        s.waitMs = rand(3000, 6000);
         break;
       case 'working':
-        // Roam freely around office
-        s.tx = rand(0.04, 0.90);
-        s.ty = rand(0.06, 0.88);
-        s.speed = rand(0.006, 0.011);
-        s.waitMs = rand(200, 700);
+        // 사무실 전체 자유 이동 (적당한 속도)
+        s.tx = rand(0.05, 0.88);
+        s.ty = rand(0.08, 0.85);
+        s.speed = rand(0.00012, 0.00018);
+        s.waitMs = rand(600, 1800);
         break;
       case 'waiting':
-        // Slow pace near desk
-        s.tx = b.hx + rand(-0.12, 0.12);
-        s.ty = b.hy + rand(-0.07, 0.07);
-        s.speed = 0.002;
-        s.waitMs = rand(1200, 2500);
+        // 책상 근처 천천히 왔다갔다
+        s.tx = b.hx + rand(-0.10, 0.10);
+        s.ty = b.hy + rand(-0.06, 0.06);
+        s.speed = 0.00005;
+        s.waitMs = rand(2000, 4000);
         break;
       case 'alert':
-        // Jitter in place
-        s.tx = b.hx + rand(-0.02, 0.02);
-        s.ty = b.hy + rand(-0.02, 0.02);
-        s.speed = 0.015;
-        s.waitMs = 180;
+        // 작은 범위 안에서 바들바들
+        s.tx = b.hx + rand(-0.015, 0.015);
+        s.ty = b.hy + rand(-0.015, 0.015);
+        s.speed = 0.0004;
+        s.waitMs = 250;
         break;
       case 'delegated':
         if (s.phase === 'going_pm') {
-          // Walk to PM desk
-          s.tx = PM.hx + rand(-0.04, 0.04);
-          s.ty = PM.hy + 0.08;
-          s.speed = 0.005;
-          s.waitMs = 0; // will switch to at_pm when arrived
-        } else if (s.phase === 'at_pm') {
-          // Linger at PM
           s.tx = PM.hx + rand(-0.03, 0.03);
+          s.ty = PM.hy + 0.08;
+          s.speed = 0.00012;
+          s.waitMs = 0;
+        } else if (s.phase === 'at_pm') {
+          s.tx = PM.hx + rand(-0.02, 0.02);
           s.ty = PM.hy + 0.09;
-          s.speed = 0.002;
-          s.waitMs = rand(2500, 4000);
+          s.speed = 0.00003;
+          s.waitMs = rand(3000, 5000);
         } else {
-          // Return home
           s.tx = b.hx + rand(-0.02, 0.02);
           s.ty = b.hy;
-          s.speed = 0.005;
-          s.waitMs = rand(3000, 6000); // idle at home before going again
+          s.speed = 0.00012;
+          s.waitMs = rand(4000, 8000);
           s.phase = 'returning';
         }
         break;
