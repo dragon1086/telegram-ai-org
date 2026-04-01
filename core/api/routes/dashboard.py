@@ -340,43 +340,52 @@ async def get_snapshot() -> dict[str, Any]:
     """봇별 활성 태스크 기반 캐릭터 상태 + 전체 카운트 스냅샷."""
     # pusher 미초기화 시에도 DB에서 직접 읽어 응답 (pusher는 SSE 전용)
 
-    # 최근 2시간 태스크 가져오기
+    # 최근 24시간 태스크 가져오기 (in_progress 없을 때도 failed/done 반영)
     rows = await _query(
         """
         SELECT assigned_dept, status, description
         FROM pm_tasks
-        WHERE updated_at >= datetime('now', '-2 hours')
+        WHERE updated_at >= datetime('now', '-24 hours')
         ORDER BY updated_at DESC
         """
     )
 
-    # dept별로 그룹핑
+    # orgId → short dept 역매핑 (aiorg_design_bot → design 등)
+    _ORG_TO_DEPT = {v: k for k, v in _DEPT_TO_ORG.items()}
+
+    # dept별로 그룹핑 (full orgId와 short key 모두 지원)
     dept_tasks: dict[str, list[dict]] = {}
     for row in rows:
-        dept = (row.get("assigned_dept") or "pm").strip()
+        raw = (row.get("assigned_dept") or "pm").strip()
+        dept = _ORG_TO_DEPT.get(raw, raw)  # full orgId면 short key로 변환
         dept_tasks.setdefault(dept, []).append(row)
 
     # 각 봇 캐릭터 상태 계산
     characters = []
     for dept, org_id in _DEPT_TO_ORG.items():
         tasks = dept_tasks.get(dept, [])
-        active  = [t for t in tasks if t["status"] == "in_progress"]
-        blocked = [t for t in tasks if t["status"] == "blocked"]
+        active   = [t for t in tasks if t["status"] == "in_progress"]
+        blocked  = [t for t in tasks if t["status"] == "blocked"]
+        failed   = [t for t in tasks if t["status"] == "failed"]
+        done     = [t for t in tasks if t["status"] == "done"]
 
         if blocked:
             severity, emotion, hp = "critical", "alert", 25
-        elif len(active) > 5:
+        elif len(active) > 5 or len(failed) > 3:
             severity, emotion, hp = "critical", "alert", 30
-        elif len(active) > 2:
+        elif len(active) > 2 or len(failed) > 0:
             severity, emotion, hp = "warning", "alert", 55
         elif active:
             severity, emotion, hp = "info", "working", 80
+        elif done:
+            severity, emotion, hp = "info", "happy", 90
         else:
             severity, emotion, hp = "info", "idle", 85
 
         current_task: str | None = None
-        if active:
-            desc = active[0]["description"] or ""
+        recent = active or failed or done
+        if recent:
+            desc = recent[0]["description"] or ""
             current_task = desc[:60] + ("…" if len(desc) > 60 else "")
 
         meta = _ORG_META.get(org_id, {})
