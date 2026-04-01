@@ -1291,8 +1291,8 @@
   const rt = {};
   Object.keys(BOTS).forEach(id => {
     const b = BOTS[id];
-    rt[id] = { x: b.hx, y: b.hy, tx: b.hx, ty: b.hy, speed: 0.003,
-               state: 'idle', waitMs: 0, phase: 'idle', lastDx: 0 };
+    rt[id] = { x: b.hx, y: b.hy, tx: b.hx, ty: b.hy, speed: 0,
+               state: 'idle', waitMs: 999999, phase: 'idle', lastDx: 0 };
   });
 
   function rand(a, b) { return a + Math.random() * (b - a); }
@@ -1304,9 +1304,11 @@
     const s = rt[id];
     switch (s.state) {
       case 'idle':
-        // 자리에 고정 — 완전 정지
+        // 자리에 고정 — 즉시 home으로 스냅 + 완전 정지
         s.tx = b.hx;
         s.ty = b.hy;
+        s.x  = b.hx;
+        s.y  = b.hy;
         s.speed = 0;
         s.waitMs = 999999;
         break;
