@@ -386,9 +386,11 @@ class GoalTracker:
     _LLM_EVALUATE_PROMPT = (
         "You are a project manager evaluating if a goal has been achieved.\n\n"
         "GOAL: {goal}\n\n"
+        "SUCCESS CRITERIA: {success_criteria}\n\n"
         "COMPLETED TASKS AND RESULTS:\n{results}\n\n"
         "PENDING/FAILED TASKS:\n{pending}\n\n"
-        "Based on the completed results, has the GOAL been sufficiently achieved?\n"
+        "Judge achievement strictly against the SUCCESS CRITERIA above.\n"
+        "If no criteria specified, use reasonable judgment based on the goal description.\n"
         "Reply in this exact format (3 lines):\n"
         "ACHIEVED: YES or NO\n"
         "PROGRESS: one-line summary of what's been done\n"
@@ -412,8 +414,18 @@ class GoalTracker:
             for s in subtasks if s["status"] != "done"
         ) or "(없음)"
 
+        meta = goal.get("meta_json") or {}
+        if isinstance(meta, str):
+            import json as _json
+            try:
+                meta = _json.loads(meta)
+            except Exception:
+                meta = {}
+        success_criteria = meta.get("success_criteria", "(없음 — 목표 설명 기준으로 판단)")
+
         prompt = self._LLM_EVALUATE_PROMPT.format(
             goal=goal["description"][:500],
+            success_criteria=success_criteria,
             results=results_text,
             pending=pending_text,
         )
