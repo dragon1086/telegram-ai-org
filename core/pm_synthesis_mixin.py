@@ -205,6 +205,22 @@ class PMSynthesisMixin:
         """
         # cancelled 서브태스크는 이전 iteration 잔재 — synthesis에서 제외
         subtasks = [st for st in subtasks if st.get("status") != "cancelled"]
+
+        # 부모 goal이 terminal 상태면 synthesis 건너뜀 (in-flight 세션 완료 후 재발 방지)
+        _TERMINAL_GOAL_STATUSES = {
+            "achieved", "completed", "max_iterations_reached", "cancelled", "stagnated",
+        }
+        parent_for_goal_check = await self._db.get_pm_task(parent_task_id)
+        if parent_for_goal_check:
+            _goal_id = parent_for_goal_check.get("parent_id")
+            if _goal_id:
+                _goal = await self._db.get_goal(_goal_id)
+                if _goal and _goal.get("status") in _TERMINAL_GOAL_STATUSES:
+                    logger.info(
+                        f"[PM] _synthesize_and_act 건너뜀: goal {_goal_id} 상태={_goal.get('status')}"
+                    )
+                    return
+
         from core.pm_orchestrator import (
             MAX_REWORK_RETRIES,
             SubTask,
