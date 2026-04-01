@@ -458,12 +458,35 @@ PM 봇은 작업 배분 판단 시 최근 대화 이력을 `[CONTEXT]...[/CONTEX
 - `tests/test_pm_context_injection.py` — 통합 테스트 (7개)
 
 ### [2026-03-26] AI_ORG_DATA_DIR — 산출물·데이터 저장 경로 표준화 (전체 조직 공통)
-- **원칙**: `telegram-ai-org/`는 오픈소스 코드만 포함. 모든 산출물·생성 코드·스킬 로그는 `AI_ORG_DATA_DIR`에 저장
+- **원칙**: `telegram-ai-org/`는 오픈소스 소스코드·설정·스킬 정의만 포함. **봇이 생성하는 모든 산출물**은 `AI_ORG_DATA_DIR`에 저장
 - **기본값**: `~/telegram-ai-org-data` (환경변수 미설정 시 자동 사용)
 - **`.env` 설정**: `AI_ORG_DATA_DIR=~/telegram-ai-org-data`
 - **`~/.ai-org/workspace`**: 기존 산출물 보존. 신규 산출물은 `AI_ORG_DATA_DIR`로만 저장
 - **스킬 경로**: `${AI_ORG_DATA_DIR:-$HOME/telegram-ai-org-data}/skills/<skill-name>/data/`
 - **금지**: `../telegram-ai-org-data/` 상대 경로 하드코딩 (오픈소스 사용자 경로 불일치 유발)
+
+#### 봇 산출물 저장 경로 (프로젝트 레포 내 파일 생성 금지)
+
+봇이 작업 중 생성하는 **모든 문서·코드·분석 결과**는 프로젝트 레포가 아닌 `AI_ORG_DATA_DIR`에 저장한다.
+프로젝트 레포(`telegram-ai-org/`)에 쓸 수 있는 것은 **소스코드 변경(코드 수정/버그 픽스)만** 해당한다.
+
+```
+${AI_ORG_DATA_DIR}/
+├── docs/                    # PRD, 설계 문서, 분석 보고서
+│   ├── prd/                 # PRD 문서 (G008-PRD-v2.md 등)
+│   ├── design/              # 설계 문서 (retro-31/ 등)
+│   ├── research/            # 리서치·경쟁 분석
+│   └── audits/              # 감사 보고서
+├── skills/<name>/data/      # 스킬별 런타임 데이터
+├── assets/                  # 봇이 생성한 이미지·다이어그램
+├── reports/                 # 운영 보고서·상태 리포트
+└── tests/                   # 봇이 생성한 테스트 코드 초안
+```
+
+**판단 기준**: 파일을 생성하기 전에 스스로에게 질문하라:
+- "이 파일은 프로젝트 소스코드의 일부인가?" → Yes → 프로젝트 레포에 작성
+- "이 파일은 봇 작업의 산출물(문서, 분석, 보고서, 이미지)인가?" → Yes → `AI_ORG_DATA_DIR`에 작성
+- **`.flag` 파일, 임시 마커, mock 데이터**: `AI_ORG_DATA_DIR`에 작성 (프로젝트 레포 오염 방지)
 
 ---
 
