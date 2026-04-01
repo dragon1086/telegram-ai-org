@@ -25,8 +25,7 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import Response
 
 from core.api import API_VERSION
 from core.api.metrics import record_request
@@ -125,17 +124,6 @@ def create_app(db_path: str | None = None) -> FastAPI:
         app.include_router(events_router)
         app.include_router(dashboard_router)
 
-        # StaticFiles 마운트
-        _static_dir = os.path.join(os.path.dirname(__file__), "static")
-        if os.path.isdir(_static_dir):
-            app.mount("/static", StaticFiles(directory=_static_dir), name="static")
-
-        @app.get("/dashboard", include_in_schema=False, response_class=HTMLResponse)
-        async def dashboard_page() -> HTMLResponse:
-            """대시보드 HTML 페이지."""
-            html_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
-            with open(html_path) as f:
-                return HTMLResponse(f.read())
 
     @app.get("/", include_in_schema=False)
     async def root() -> dict:

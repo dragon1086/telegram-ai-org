@@ -99,6 +99,576 @@
   🎭 개발 모드 — 목(Mock) 데이터 사용 중 | <a href="?mock=0" style="color:var(--comic-blue);">실서버 연결</a>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════
+     태스크 & 목표 섹션 (구 대시보드에서 병합)
+     ══════════════════════════════════════════════════════════ -->
+<style>
+  /* ── Task/Goal Section Variables ─────────────────────── */
+  .task-section-wrap {
+    max-width: 1360px;
+    margin: 0 auto;
+    padding: 32px 20px 60px;
+    font-family: 'IBM Plex Sans KR', system-ui, sans-serif;
+    font-size: 14px;
+    color: #dce8f8;
+  }
+  .task-section-divider {
+    border: none;
+    border-top: 2px solid #1a2540;
+    margin: 0 0 32px;
+  }
+  .ts-section-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #4a5e7a;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ts-section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #1a2540;
+  }
+  .ts-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-bottom: 32px;
+  }
+  .ts-sum-card {
+    background: #0c1220;
+    border: 1px solid #1a2540;
+    border-radius: 10px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .ts-sum-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+    border-radius: 10px 0 0 10px;
+  }
+  .ts-sum-card.active::before  { background: #22d3ee; }
+  .ts-sum-card.done::before    { background: #22c55e; }
+  .ts-sum-card.failed::before  { background: #f87171; }
+  .ts-sum-card .s-label { font-size: 0.75rem; color: #4a5e7a; margin-bottom: 6px; font-family: 'IBM Plex Mono', monospace; }
+  .ts-sum-card .s-value { font-family: 'IBM Plex Mono', monospace; font-size: 2.2rem; font-weight: 600; line-height: 1; }
+  .ts-sum-card.active .s-value { color: #22d3ee; }
+  .ts-sum-card.done   .s-value { color: #22c55e; }
+  .ts-sum-card.failed .s-value { color: #f87171; }
+
+  .ts-goals-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .ts-goal-card {
+    background: #0c1220;
+    border: 1px solid #1a2540;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .ts-goal-card .goal-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #dce8f8;
+  }
+  .ts-goal-card .goal-meta {
+    font-size: 0.72rem;
+    color: #4a5e7a;
+    margin-bottom: 8px;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .ts-goal-footer {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .ts-goal-ts { font-size: 0.68rem; color: #4a5e7a; font-family: 'IBM Plex Mono', monospace; margin-left: auto; }
+  .ts-progress-bar-wrap { background: #1a2540; border-radius: 3px; height: 5px; overflow: hidden; }
+  .ts-progress-bar { height: 100%; background: #3b82f6; border-radius: 3px; transition: width 0.5s ease; }
+  .ts-progress-bar.done-bar { background: #22c55e; }
+  .ts-progress-label { font-size: 0.68rem; color: #4a5e7a; margin-top: 3px; text-align: right; font-family: 'IBM Plex Mono', monospace; }
+
+  .ts-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    font-family: 'IBM Plex Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .ts-badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .ts-badge.s-done, .ts-badge.s-completed     { background: #0a2e1a; color: #22c55e; }
+  .ts-badge.s-done .ts-badge-dot,
+  .ts-badge.s-completed .ts-badge-dot          { background: #22c55e; }
+  .ts-badge.s-active, .ts-badge.s-in_progress  { background: #0e2e3a; color: #22d3ee; }
+  .ts-badge.s-active .ts-badge-dot,
+  .ts-badge.s-in_progress .ts-badge-dot        { background: #22d3ee; animation: ts-pulse-dot 1.4s ease-in-out infinite; }
+  .ts-badge.s-failed, .ts-badge.s-error        { background: #2e0f0f; color: #f87171; }
+  .ts-badge.s-failed .ts-badge-dot,
+  .ts-badge.s-error .ts-badge-dot              { background: #f87171; }
+  .ts-badge.s-cancelled                        { background: #1a1a1a; color: #4a5e7a; }
+  .ts-badge.s-cancelled .ts-badge-dot          { background: #4a5e7a; }
+  .ts-badge.s-needs_review                     { background: #2e1e0a; color: #fb923c; }
+  .ts-badge.s-needs_review .ts-badge-dot       { background: #fb923c; }
+  .ts-badge.s-pending                          { background: #1e1a2e; color: #a78bfa; }
+  .ts-badge.s-pending .ts-badge-dot            { background: #a78bfa; }
+  .ts-badge.s-max_iterations_reached           { background: #2e1e0a; color: #fb923c; }
+  .ts-badge.s-max_iterations_reached .ts-badge-dot { background: #fb923c; }
+  .ts-badge.s-default                          { background: #101828; color: #4a5e7a; }
+  .ts-badge.s-default .ts-badge-dot            { background: #4a5e7a; }
+  @keyframes ts-pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.5; transform: scale(0.7); }
+  }
+
+  .ts-subsection-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #94a3b8;
+    margin-bottom: 10px;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ts-recurring-toggle {
+    cursor: pointer;
+    user-select: none;
+    padding: 8px 12px;
+    background: #0c1220;
+    border: 1px solid #1a2540;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    transition: background 0.15s;
+  }
+  .ts-recurring-toggle:hover { background: #131c34; }
+  .ts-recur-chevron { width: 14px; height: 14px; transition: transform 0.2s; flex-shrink: 0; }
+  .ts-recurring-toggle.is-open .ts-recur-chevron { transform: rotate(90deg); }
+  #ts-recurring-counts { margin-left: 6px; font-size: 0.7rem; color: #64748b; font-weight: 400; }
+  .ts-recurring-section {
+    background: #080c18;
+    border: 1px solid #1a2540;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 28px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .ts-recurring-group-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+  }
+  .ts-goals-grid.small-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 0;
+  }
+  .ts-goals-grid.small-grid .ts-goal-card { padding: 10px 12px; }
+  .ts-goals-grid.small-grid .ts-goal-card .goal-title { font-size: 0.78rem; }
+
+  .ts-task-tree { margin-bottom: 32px; display: flex; flex-direction: column; gap: 8px; }
+  .ts-tree-root {
+    background: #0c1220;
+    border: 1px solid #1a2540;
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .ts-tree-root:hover { border-color: #243050; }
+  .ts-tree-root.is-open { border-color: #1e3a5f; }
+  .ts-tree-root-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+  }
+  .ts-tree-root-header:hover { background: #101828; }
+  .ts-tree-chevron { width: 16px; height: 16px; flex-shrink: 0; color: #4a5e7a; transition: transform 0.2s ease; }
+  .ts-tree-root.is-open .ts-tree-chevron { transform: rotate(90deg); }
+  .ts-tree-root-label { flex: 1; font-size: 0.84rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .ts-tree-root-dept { font-size: 0.7rem; color: #93c5fd; font-family: 'IBM Plex Mono', monospace; flex-shrink: 0; }
+  .ts-tree-root-ts { font-size: 0.68rem; color: #4a5e7a; font-family: 'IBM Plex Mono', monospace; flex-shrink: 0; }
+  .ts-tree-child-count {
+    font-size: 0.65rem; color: #4a5e7a; background: #101828;
+    border: 1px solid #1a2540; border-radius: 10px; padding: 1px 7px;
+    font-family: 'IBM Plex Mono', monospace; flex-shrink: 0;
+  }
+  .ts-tree-children { display: none; border-top: 1px solid #1a2540; }
+  .ts-tree-root.is-open .ts-tree-children { display: block; }
+  .ts-tree-section-divider {
+    font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #475569; padding: 12px 0 8px;
+    border-top: 1px solid #1a2540; margin-top: 8px;
+  }
+  .ts-subtask-table { width: 100%; border-collapse: collapse; }
+  .ts-subtask-table thead tr { background: #080c14; }
+  .ts-subtask-table th {
+    padding: 7px 16px; font-size: 0.68rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em; color: #4a5e7a;
+    text-align: left; font-family: 'IBM Plex Mono', monospace;
+    border-bottom: 1px solid #1a2540;
+  }
+  .ts-subtask-table tbody tr { border-top: 1px solid #1a2540; }
+  .ts-subtask-table tbody tr:hover { background: #0e1628; }
+  .ts-subtask-table td { padding: 9px 16px; font-size: 0.8rem; }
+  .ts-subtask-table td.st-dept { color: #93c5fd; font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; white-space: nowrap; }
+  .ts-subtask-table td.st-desc { max-width: 440px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ts-subtask-table td.st-ts { color: #4a5e7a; font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; white-space: nowrap; }
+  .ts-no-children { padding: 16px; text-align: center; color: #4a5e7a; font-size: 0.78rem; font-family: 'IBM Plex Mono', monospace; }
+
+  .ts-table-wrap { background: #0c1220; border: 1px solid #1a2540; border-radius: 10px; overflow: hidden; margin-bottom: 32px; }
+  table.ts-feed-table { width: 100%; border-collapse: collapse; }
+  table.ts-feed-table thead tr { background: #101828; }
+  table.ts-feed-table th { padding: 9px 14px; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #4a5e7a; text-align: left; font-family: 'IBM Plex Mono', monospace; }
+  table.ts-feed-table tbody tr { border-top: 1px solid #1a2540; }
+  table.ts-feed-table tbody tr:hover { background: #101828; }
+  table.ts-feed-table td { padding: 9px 14px; font-size: 0.8rem; }
+  table.ts-feed-table td.dept { color: #93c5fd; font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; }
+  table.ts-feed-table td.desc { max-width: 380px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  table.ts-feed-table td.ts   { color: #4a5e7a; font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; white-space: nowrap; }
+  .ts-empty { padding: 32px; text-align: center; color: #4a5e7a; font-size: 0.82rem; }
+
+  @media (max-width: 640px) {
+    .ts-summary-grid { grid-template-columns: 1fr 1fr; }
+    .ts-summary-grid .ts-sum-card:last-child { grid-column: span 2; }
+    .ts-tree-root-ts { display: none; }
+  }
+</style>
+
+<hr class="task-section-divider" />
+
+<div class="task-section-wrap">
+  <!-- Summary -->
+  <div class="ts-section-label">현황 요약</div>
+  <div class="ts-summary-grid">
+    <div class="ts-sum-card active">
+      <div class="s-label">🎯 활성 목표</div>
+      <div class="s-value" id="ts-cnt-active-goals">—</div>
+    </div>
+    <div class="ts-sum-card done">
+      <div class="s-label">✅ 완료 태스크</div>
+      <div class="s-value" id="ts-cnt-done-tasks">—</div>
+    </div>
+    <div class="ts-sum-card failed">
+      <div class="s-label">❌ 실패 태스크</div>
+      <div class="s-value" id="ts-cnt-failed-tasks">—</div>
+    </div>
+  </div>
+
+  <!-- Goals Hierarchy -->
+  <div class="ts-section-label">목표 현황</div>
+  <div class="ts-subsection-label">🎯 장기 목표</div>
+  <div class="ts-goals-grid" id="ts-goals-long-term">
+    <div class="ts-empty">로딩 중...</div>
+  </div>
+
+  <!-- Recurring (collapsible) -->
+  <div class="ts-subsection-label ts-recurring-toggle" id="ts-recurring-toggle" onclick="tsToggleRecurring()">
+    <svg class="ts-recur-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="5,3 11,8 5,13"/></svg>
+    🔄 수명 업무 <span id="ts-recurring-counts"></span>
+  </div>
+  <div class="ts-recurring-section" id="ts-recurring-section" style="display:none">
+    <div id="ts-rg-retro">
+      <div class="ts-recurring-group-title">📋 일일회고</div>
+      <div class="ts-goals-grid small-grid" id="ts-goals-retro"></div>
+    </div>
+    <div id="ts-rg-weekly">
+      <div class="ts-recurring-group-title">📅 주간회의</div>
+      <div class="ts-goals-grid small-grid" id="ts-goals-weekly"></div>
+    </div>
+    <div id="ts-rg-audit">
+      <div class="ts-recurring-group-title">🔍 Harness Audit</div>
+      <div class="ts-goals-grid small-grid" id="ts-goals-audit"></div>
+    </div>
+    <div id="ts-rg-other">
+      <div class="ts-recurring-group-title">📌 기타</div>
+      <div class="ts-goals-grid small-grid" id="ts-goals-other"></div>
+    </div>
+  </div>
+
+  <!-- Task Tree -->
+  <div class="ts-section-label">태스크 트리</div>
+  <div class="ts-task-tree" id="ts-task-tree">
+    <div class="ts-empty" style="background:#0c1220;border:1px solid #1a2540;border-radius:10px;padding:32px">로딩 중...</div>
+  </div>
+
+  <!-- Recent Tasks Feed -->
+  <div class="ts-section-label">최근 태스크 피드</div>
+  <div class="ts-table-wrap">
+    <table class="ts-feed-table">
+      <thead>
+        <tr>
+          <th>상태</th>
+          <th>담당 봇</th>
+          <th>내용</th>
+          <th>업데이트</th>
+        </tr>
+      </thead>
+      <tbody id="ts-tasks-tbody">
+        <tr><td colspan="4" class="ts-empty">로딩 중...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Helpers ──────────────────────────────────────────────────────────
+  function tsEsc(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function tsFmtTs(ts) {
+    if (!ts) return '—';
+    try {
+      const d = new Date(ts.replace(' ','T') + (ts.includes('T') ? '' : 'Z'));
+      return d.toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    } catch { return ts.slice(0,16); }
+  }
+  function tsShortDept(dept) {
+    if (!dept) return '—';
+    const map = {
+      aiorg_engineering_bot:'개발실', aiorg_design_bot:'디자인실',
+      aiorg_planning_bot:'기획실',    aiorg_growth_bot:'성장실',
+      aiorg_research_bot:'리서치실',  aiorg_ops_bot:'운영실',
+      aiorg_pm_bot:'PM',
+    };
+    return map[dept] || dept.replace('aiorg_','').replace('_bot','');
+  }
+  function tsBadgeKey(status) {
+    const known = ['done','completed','active','in_progress','failed','error',
+                   'cancelled','needs_review','pending','max_iterations_reached'];
+    return known.includes(status) ? status : 'default';
+  }
+  function tsStatusIcon(status) {
+    const icons = { done:'✅', completed:'✅', active:'🔄', in_progress:'🔄',
+                    failed:'❌', error:'❌', cancelled:'⚫', needs_review:'🟠',
+                    pending:'🔵', max_iterations_reached:'🟠' };
+    return icons[status] || '⚪';
+  }
+  function tsBadge(status) {
+    const k = tsBadgeKey(status);
+    return `<span class="ts-badge s-${k}"><span class="ts-badge-dot"></span>${tsStatusIcon(status)} ${tsEsc(status||'?')}</span>`;
+  }
+
+  // ── Summary ──────────────────────────────────────────────────────────
+  async function tsLoadSummary() {
+    try {
+      const r = await fetch('/api/v1/dashboard/summary');
+      if (!r.ok) return;
+      const d = await r.json();
+      const g = d.goals || {};
+      const t = d.tasks || {};
+      document.getElementById('ts-cnt-active-goals').textContent = g.active || 0;
+      document.getElementById('ts-cnt-done-tasks').textContent   = t.done || t.completed || 0;
+      document.getElementById('ts-cnt-failed-tasks').textContent = t.failed || t.error || 0;
+    } catch (e) { console.warn('[ts] summary error', e); }
+  }
+
+  // ── Goals ────────────────────────────────────────────────────────────
+  function tsRenderGoalCards(goals, containerId, compact) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!goals || !goals.length) {
+      el.innerHTML = `<div class="ts-empty" style="grid-column:1/-1;padding:16px 0;color:#334155">없음</div>`;
+      return;
+    }
+    el.innerHTML = goals.map(g => {
+      const iter    = g.iteration || 0;
+      const maxIter = g.max_iterations || 1;
+      const pct     = Math.min(100, Math.round((iter / maxIter) * 100));
+      const isDone  = ['completed','done','achieved'].includes(g.status);
+      const prog    = g.last_progress
+        ? g.last_progress.slice(0, compact ? 60 : 90) + (g.last_progress.length > (compact ? 60 : 90) ? '…' : '')
+        : '';
+      return `<div class="ts-goal-card">
+        <div class="goal-title" title="${tsEsc(g.title||'')}">${tsEsc(g.title||'(제목 없음)')}</div>
+        ${prog && !compact ? `<div class="goal-meta">${tsEsc(prog)}</div>` : ''}
+        <div class="ts-progress-bar-wrap" style="margin-bottom:3px">
+          <div class="ts-progress-bar${isDone?' done-bar':''}" style="width:${pct}%"></div>
+        </div>
+        <div class="ts-progress-label">${iter} / ${maxIter} iter · ${pct}%</div>
+        <div class="ts-goal-footer">
+          ${tsBadge(g.status)}
+          <span class="ts-goal-ts">${tsFmtTs(g.updated_at)}</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function tsLoadGoals() {
+    try {
+      const r = await fetch('/api/v1/dashboard/goals-hierarchy?limit=60');
+      if (!r.ok) return;
+      const data = await r.json();
+      tsRenderGoalCards(data.long_term || [], 'ts-goals-long-term', false);
+      const rec = data.recurring || {};
+      tsRenderGoalCards(rec.retro  || [], 'ts-goals-retro',  true);
+      tsRenderGoalCards(rec.weekly || [], 'ts-goals-weekly', true);
+      tsRenderGoalCards(rec.audit  || [], 'ts-goals-audit',  true);
+      tsRenderGoalCards(rec.other  || [], 'ts-goals-other',  true);
+      ['retro','weekly','audit','other'].forEach(k => {
+        const grp = document.getElementById(`ts-rg-${k}`);
+        if (grp) grp.style.display = (rec[k] && rec[k].length) ? '' : 'none';
+      });
+      const total = (rec.retro||[]).length + (rec.weekly||[]).length +
+                    (rec.audit||[]).length + (rec.other||[]).length;
+      const countEl = document.getElementById('ts-recurring-counts');
+      if (countEl) countEl.textContent = total ? `(${total}건)` : '';
+    } catch (e) { console.warn('[ts] goals error', e); }
+  }
+
+  window.tsToggleRecurring = function () {
+    const sec = document.getElementById('ts-recurring-section');
+    const tog = document.getElementById('ts-recurring-toggle');
+    if (!sec) return;
+    const open = sec.style.display !== 'none';
+    sec.style.display = open ? 'none' : 'grid';
+    tog.classList.toggle('is-open', !open);
+  };
+
+  // ── Task Tree ────────────────────────────────────────────────────────
+  async function tsLoadTaskTree() {
+    const container = document.getElementById('ts-task-tree');
+    try {
+      const r = await fetch('/api/v1/dashboard/task-graph?days=30&limit=200');
+      if (!r.ok) throw new Error('API error');
+      const data = await r.json();
+      if (!data.nodes || !data.nodes.length) {
+        container.innerHTML = '<div class="ts-empty" style="background:#0c1220;border:1px solid #1a2540;border-radius:10px;padding:32px">최근 30일 내 태스크 없음</div>';
+        return;
+      }
+      const nodeMap    = new Map(data.nodes.map(n => [n.id, n]));
+      const childrenOf = {};
+      (data.edges || []).forEach(e => {
+        if (!childrenOf[e.source]) childrenOf[e.source] = [];
+        const child = nodeMap.get(e.target);
+        if (child) childrenOf[e.source].push(child);
+      });
+      const projectRoots = data.nodes.filter(n => n.depth === 0 && !n.virtual && n.task_type !== 'retro' && n.task_type !== 'weekly');
+      const retroRoots   = data.nodes.filter(n => n.depth === 0 && (n.virtual || n.task_type === 'retro' || n.task_type === 'weekly'));
+      if (!projectRoots.length && !retroRoots.length) {
+        container.innerHTML = '<div class="ts-empty" style="background:#0c1220;border:1px solid #1a2540;border-radius:10px;padding:32px">루트 태스크 없음</div>';
+        return;
+      }
+      function renderRoot(root, idx, prefix) {
+        const children  = childrenOf[root.id] || [];
+        const countLbl  = children.length ? `${children.length}개 서브태스크` : '서브 없음';
+        const childRows = children.length
+          ? `<table class="ts-subtask-table">
+              <thead><tr>
+                <th style="width:90px">담당 봇</th>
+                <th>내용</th>
+                <th style="width:130px">상태</th>
+              </tr></thead>
+              <tbody>
+              ${children.map(c => `<tr>
+                <td class="st-dept">${tsEsc(tsShortDept(c.dept))}</td>
+                <td class="st-desc" title="${tsEsc(c.label||'')}">${tsEsc(c.label||'—')}</td>
+                <td class="st-status">${tsBadge(c.status)}</td>
+              </tr>`).join('')}
+              </tbody>
+            </table>`
+          : `<div class="ts-no-children">하위 태스크 없음</div>`;
+        const nodeId = `ts-${prefix}-${idx}`;
+        return `<div class="ts-tree-root" id="${nodeId}">
+          <div class="ts-tree-root-header" onclick="tsTToggleTree('${nodeId}')">
+            <svg class="ts-tree-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="5,3 11,8 5,13"/></svg>
+            <span class="ts-tree-root-label" title="${tsEsc(root.label||'')}">${tsEsc(root.label||'—')}</span>
+            <span class="ts-tree-root-dept">${tsEsc(tsShortDept(root.dept))}</span>
+            ${tsBadge(root.status)}
+            <span class="ts-tree-child-count">${countLbl}</span>
+            <span class="ts-tree-root-ts">${tsFmtTs(root.updated_at)}</span>
+          </div>
+          <div class="ts-tree-children">${childRows}</div>
+        </div>`;
+      }
+      let html = projectRoots.map((r,i) => renderRoot(r,i,'proj')).join('');
+      if (retroRoots.length) {
+        html += `<div class="ts-tree-section-divider">수명 업무 태스크</div>`;
+        html += retroRoots.map((r,i) => renderRoot(r,i,'retro')).join('');
+      }
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = '<div class="ts-empty" style="background:#0c1220;border:1px solid #1a2540;border-radius:10px;padding:32px">태스크 트리 로드 실패</div>';
+      console.warn('[ts] task tree error', e);
+    }
+  }
+
+  window.tsTToggleTree = function (id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('is-open');
+  };
+
+  // ── Tasks Feed ───────────────────────────────────────────────────────
+  async function tsLoadTasks() {
+    try {
+      const r = await fetch('/api/v1/dashboard/tasks?limit=30');
+      if (!r.ok) return;
+      const tasks  = await r.json();
+      const tbody  = document.getElementById('ts-tasks-tbody');
+      if (!tasks.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="ts-empty">태스크 없음</td></tr>';
+        return;
+      }
+      tbody.innerHTML = tasks.map(t => `<tr>
+        <td>${tsBadge(t.status)}</td>
+        <td class="dept">${tsEsc(tsShortDept(t.assigned_dept))}</td>
+        <td class="desc" title="${tsEsc(t.description||'')}">${tsEsc(t.description||'—')}</td>
+        <td class="ts">${tsFmtTs(t.updated_at)}</td>
+      </tr>`).join('');
+    } catch (e) { console.warn('[ts] tasks error', e); }
+  }
+
+  // ── Refresh loop ─────────────────────────────────────────────────────
+  async function tsRefresh() {
+    await Promise.all([tsLoadSummary(), tsLoadGoals(), tsLoadTasks(), tsLoadTaskTree()]);
+  }
+
+  tsRefresh();
+  setInterval(tsLoadSummary,  30000);
+  setInterval(tsLoadGoals,    30000);
+  setInterval(tsLoadTaskTree, 30000);
+  setInterval(tsLoadTasks,     5000);
+})();
+</script>
+
 <!-- ── ES 모듈 진입점 ── -->
 <script type="module">
   import { TicketStatusPanel }   from './components/TicketStatusPanel.js';
