@@ -31,17 +31,29 @@ images:
     width: 1200
     height: 600
     prompt: >
-      Clean infographic showing the AIMesh workflow in 4 steps, left to right flow:
-      Step 1: A user icon sends a message to a Telegram chat bubble (labeled "Telegram").
-      Step 2: A central brain/hub node (labeled "PM Bot") receives and analyzes the message.
-      Step 3: The PM Bot routes to 6 department icons arranged in a fan pattern:
-        Engineering (code icon), Design (palette icon), Planning (clipboard icon),
-        Growth (chart icon), Research (magnifier icon), Ops (gear icon).
-      Step 4: Results flow back to the user in the Telegram chat.
-      Numbered steps 1→2→3→4 with arrows connecting each stage.
-      Color scheme: indigo (#4F46E5) primary, emerald (#059669) accent, white background.
-      Style: clean flat illustration, modern tech infographic, no text clutter,
-      professional documentation quality. Wide format 2:1 ratio.
+      Wide-format infographic (2.5:1 ratio) showing a LEFT-TO-RIGHT pipeline.
+      White background, flat modern tech style. DO NOT show any column labels,
+      headers, or structural annotations — only icons, arrows, and minimal labels.
+
+      Far left: A person icon with a chat bubble below (labeled "Telegram").
+      Arrow pointing right.
+
+      Center-left: One large indigo (#4F46E5) circle with a brain icon inside,
+      labeled "PM Bot". Six thin arrows fan out to the right.
+
+      Center-right: Exactly 6 small colored circles stacked vertically, evenly
+      spaced. Each has a unique icon — code brackets, palette, clipboard,
+      bar-chart, magnifier, gear. NO DUPLICATES. Each appears exactly once.
+
+      Far right: One large rounded rectangle filled with many tiny colorful
+      avatar dots (labeled "180+ Agents"). Arrows from each department circle
+      point into this pool.
+
+      A single curved return arrow along the bottom connects the agent pool
+      back to the user, showing results flowing back.
+
+      Color palette: indigo (#4F46E5), emerald (#059669), white background.
+      Style: clean vector infographic, minimal labels, no clutter, documentation quality.
 
   # ── 주요 기능 섹션 — 4개 피처 이미지 ──────────────────────────────────────────
 
@@ -96,6 +108,21 @@ images:
       different color (indigo, emerald, amber, rose) representing different skills/plugins.
       Clean flat illustration, white background, minimal tech style.
       Small compact illustration. No text. Vector-style.
+
+  - id: feat_goal_tracking
+    output_path: assets/diagrams/feat_goal_tracking.png
+    model: gemini-3.1-flash-image-preview
+    thinking_mode: true
+    width: 600
+    height: 400
+    prompt: >
+      Simple diagram showing a goal tracking cycle: a target/bullseye icon on the left
+      representing a long-term goal, connected by a circular arrow loop to 3 smaller icons
+      arranged clockwise: a calendar with checkmark (daily retro), a group meeting icon
+      (weekly meeting), and a progress bar/chart (goal tracker dashboard).
+      The circular loop shows continuous iteration. Small sparkle accents suggest progress.
+      Flat design, indigo and emerald palette, white background.
+      Small compact illustration. No text. Clean vector look.
 
   # ── 아키텍처 다이어그램 (Mermaid 교체용) ──────────────────────────────────────
 
