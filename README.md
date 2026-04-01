@@ -64,6 +64,7 @@
 | 🤝 | **멀티봇 협업** | 개발·디자인·기획·성장·리서치·운영 6개 부서 봇이 유기적으로 협력<br/><img src="assets/diagrams/feat_collab.png" alt="멀티봇 협업 다이어그램" width="220"/> |
 | ⚡ | **3종 AI 엔진 지원** | Claude Code · OpenAI Codex · Gemini CLI — 부서별 최적 엔진 자동 배정<br/><img src="assets/diagrams/feat_engines.png" alt="3종 AI 엔진 다이어그램" width="220"/> |
 | 🔌 | **스킬 플러그인 시스템** | 봇에 능력을 추가하는 스킬을 직접 만들고 붙일 수 있음<br/><img src="assets/diagrams/feat_skills.png" alt="스킬 플러그인 다이어그램" width="220"/> |
+| 🎯 | **목표 관리 시스템** | 장기 목표 설정 → 주간회의 · 일일회고 · GoalTracker로 자동 추적 · 이터레이션<br/><img src="assets/diagrams/feat_goal_tracking.png" alt="목표 관리 사이클 다이어그램" width="220"/> |
 | 📊 | **실시간 대시보드** | 봇 상태·메시지 흐름·응답 이력을 웹 UI로 한눈에 모니터링 |
 | 🧩 | **자유로운 조직 구성** | 부서 봇을 추가/삭제해 나만의 AI 조직 구조를 설계 |
 | 🐳 | **Docker 원클릭 실행** | `docker compose up -d` 한 줄로 전체 시스템 기동 |
@@ -173,21 +174,6 @@ PM 봇이 요청을 받아 적절한 팀에 자동으로 위임합니다.
 <p align="center">
   <img src="assets/screenshots/dashboard_bots.png" alt="봇 상태 모니터링 뷰" width="700"/>
 </p>
-
-> 스크린샷이 보이지 않나요? 아래 가이드를 따라 직접 캡처하세요.
-
-<details>
-<summary>📸 스크린샷 업로드 가이드</summary>
-
-1. 대시보드 실행: `python dashboard.py` → `http://localhost:8080` 접속
-2. 브라우저에서 전체 화면 캡처 (권장 해상도: 1920x1080 이상)
-3. 메인 대시보드 뷰 → `assets/screenshots/dashboard_main.png`로 저장
-4. 봇 상태 뷰 → `assets/screenshots/dashboard_bots.png`로 저장
-5. (선택) 라우팅 흐름 뷰 → `assets/screenshots/dashboard_routing.png`
-6. 파일 크기 권장: 각 500KB~2MB
-7. 저장 후 `git add assets/screenshots/ && git commit`
-
-</details>
 
 **대시보드에서 볼 수 있는 것:**
 
