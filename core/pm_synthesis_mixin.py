@@ -210,6 +210,14 @@ class PMSynthesisMixin:
         _TERMINAL_GOAL_STATUSES = {
             "achieved", "completed", "max_iterations_reached", "cancelled", "stagnated",
         }
+        # Case 1: parent_task_id 자체가 goal ID인 경우 (예: G-aiorg_pm_bot-011)
+        _direct_goal = await self._db.get_goal(parent_task_id)
+        if _direct_goal and _direct_goal.get("status") in _TERMINAL_GOAL_STATUSES:
+            logger.info(
+                f"[PM] _synthesize_and_act 건너뜀(goal직접): {parent_task_id} 상태={_direct_goal.get('status')}"
+            )
+            return
+        # Case 2: parent_task_id가 task ID이고 parent_id로 goal을 참조하는 경우
         parent_for_goal_check = await self._db.get_pm_task(parent_task_id)
         if parent_for_goal_check:
             _goal_id = parent_for_goal_check.get("parent_id")
