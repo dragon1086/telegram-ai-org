@@ -367,12 +367,13 @@ async def get_snapshot() -> dict[str, Any]:
     # pusher 미초기화 시에도 DB에서 직접 읽어 응답 (pusher는 SSE 전용)
 
     # Stale 태스크 자동 정리 — 1시간 이상 업데이트 없는 running/in_progress → cancelled
+    # NOTE: updated_at이 ISO 형식(T 구분자)이라 replace로 정규화 후 비교
     stale_cleaned = await _execute(
         """
         UPDATE pm_tasks
         SET status = 'cancelled', updated_at = datetime('now')
         WHERE status IN ('running', 'in_progress', 'active')
-          AND updated_at < datetime('now', '-1 hour')
+          AND replace(substr(updated_at, 1, 19), 'T', ' ') < datetime('now', '-1 hour')
         """,
     )
     if stale_cleaned:

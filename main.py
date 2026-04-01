@@ -125,6 +125,40 @@ if __name__ == "__main__":
         context_db = ContextDB()
         _aio.run(context_db.initialize())
 
+    # ── 봇 시작 시 orphaned running 태스크 정리 ─────────────────────────────
+    # 이전 세션에서 stuck된 running/in_progress 태스크를 cancelled로 전환
+    if ENABLE_PM_ORCHESTRATOR and context_db:
+        import asyncio as _aio2  # noqa: I001
+        _db_path = os.environ.get(
+            "AIMESH_DB_PATH",
+            str(Path.home() / ".ai-org" / "context.db"),
+        )
+        if Path(_db_path).exists():
+            import aiosqlite
+
+            async def _cleanup_orphaned_tasks() -> None:
+                async with aiosqlite.connect(_db_path) as db:
+                    cursor = await db.execute(
+                        """
+                        UPDATE pm_tasks
+                        SET status = 'cancelled',
+                            updated_at = datetime('now'),
+                            result = '봇 재시작으로 자동 cancelled'
+                        WHERE status IN ('running', 'in_progress', 'active')
+                          AND assigned_dept = ?
+                        """,
+                        (org_id,),
+                    )
+                    await db.commit()
+                    if cursor.rowcount:
+                        print(
+                            f"[STARTUP] {org_id}: orphaned 태스크 "
+                            f"{cursor.rowcount}건 cancelled 처리",
+                            flush=True,
+                        )
+
+            _aio2.run(_cleanup_orphaned_tasks())
+
     relay = TelegramRelay(
         token=token,
         allowed_chat_id=chat_id,
