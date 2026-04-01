@@ -119,10 +119,11 @@ app.include_router(dashboard_router)  # Phase 2-B: 대시보드 데이터 API (s
 # ---------------------------------------------------------------------------
 
 if DASHBOARD_DIR.exists():
-    # /dashboard/styles, /dashboard/components 등 하위 경로 서빙
-    app.mount("/styles", StaticFiles(directory=str(DASHBOARD_DIR / "styles")), name="styles")
-    app.mount("/components", StaticFiles(directory=str(DASHBOARD_DIR / "components")), name="components")
-    app.mount("/services", StaticFiles(directory=str(DASHBOARD_DIR / "services")), name="services")
+    # dashboard/ 하위 모든 JS 모듈 경로 서빙
+    for _subdir in ("styles", "components", "services", "hooks", "api", "utils"):
+        _d = DASHBOARD_DIR / _subdir
+        if _d.exists():
+            app.mount(f"/{_subdir}", StaticFiles(directory=str(_d)), name=_subdir)
     _static_dir = DASHBOARD_DIR / "static"
     if _static_dir.exists():
         app.mount("/static", StaticFiles(directory=str(_static_dir)), name="dashboard-static")
