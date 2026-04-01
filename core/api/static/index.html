@@ -116,6 +116,18 @@
     background: var(--border);
   }
 
+  /* ── Task tree divider ───────────────────────────── */
+  .tree-section-divider {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #475569;
+    padding: 12px 0 8px;
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+  }
+
   /* ── Summary Cards ───────────────────────────────── */
   .summary-grid {
     display: grid;
@@ -243,12 +255,77 @@
   .bot-card.state-error .bot-avatar,
   .bot-card.state-error .bot-avatar-svg   { animation: bot-error-shake 0.5s ease 1; }
 
+  /* ── Subsections ─────────────────────────────────── */
+  .subsection-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #94a3b8;
+    margin-bottom: 10px;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .recurring-toggle {
+    cursor: pointer;
+    user-select: none;
+    padding: 8px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    transition: background 0.15s;
+  }
+  .recurring-toggle:hover { background: #131c34; }
+  .recur-chevron {
+    width: 14px; height: 14px;
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+  .recurring-toggle.is-open .recur-chevron { transform: rotate(90deg); }
+  #recurring-counts {
+    margin-left: 6px;
+    font-size: 0.7rem;
+    color: #64748b;
+    font-weight: 400;
+  }
+  .recurring-section {
+    background: #080c18;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 28px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .recurring-group {}
+  .recurring-group-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+  }
+  .goals-grid.small-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 0;
+  }
+  .goals-grid.small-grid .goal-card {
+    padding: 10px 12px;
+  }
+  .goals-grid.small-grid .goal-card .goal-title {
+    font-size: 0.78rem;
+  }
+
   /* ── Goals Grid ──────────────────────────────────── */
   .goals-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 12px;
-    margin-bottom: 32px;
+    margin-bottom: 24px;
   }
   .goal-card {
     background: var(--surface);
@@ -535,13 +612,40 @@
   <div class="section-label">봇 현황</div>
   <div class="bots-row" id="bots-row"></div>
 
-  <!-- Goals -->
+  <!-- Goals Hierarchy -->
   <div class="section-label">목표 현황</div>
-  <div class="goals-grid" id="goals-grid">
+
+  <!-- Long-term goals -->
+  <div class="subsection-label">🎯 장기 목표</div>
+  <div class="goals-grid" id="goals-long-term">
     <div class="empty">로딩 중...</div>
   </div>
 
-  <!-- Task Tree Accordion -->
+  <!-- Recurring operations (collapsible) -->
+  <div class="subsection-label recurring-toggle" id="recurring-toggle" onclick="toggleRecurring()">
+    <svg class="recur-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="5,3 11,8 5,13"/></svg>
+    🔄 수명 업무 <span id="recurring-counts"></span>
+  </div>
+  <div class="recurring-section" id="recurring-section" style="display:none">
+    <div class="recurring-group" id="rg-retro">
+      <div class="recurring-group-title">📋 일일회고</div>
+      <div class="goals-grid small-grid" id="goals-retro"></div>
+    </div>
+    <div class="recurring-group" id="rg-weekly">
+      <div class="recurring-group-title">📅 주간회의</div>
+      <div class="goals-grid small-grid" id="goals-weekly"></div>
+    </div>
+    <div class="recurring-group" id="rg-audit">
+      <div class="recurring-group-title">🔍 Harness Audit</div>
+      <div class="goals-grid small-grid" id="goals-audit"></div>
+    </div>
+    <div class="recurring-group" id="rg-other">
+      <div class="recurring-group-title">📌 기타</div>
+      <div class="goals-grid small-grid" id="goals-other"></div>
+    </div>
+  </div>
+
+  <!-- Task Tree: Project Tasks -->
   <div class="section-label">태스크 트리</div>
   <div class="task-tree" id="task-tree">
     <div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:32px">로딩 중...</div>
@@ -631,45 +735,72 @@
     } catch (e) { console.warn('summary error', e); }
   }
 
-  // ── Goals ────────────────────────────────────────────────────────────────────
+  // ── Goals Hierarchy ──────────────────────────────────────────────────────────
+  function renderGoalCards(goals, containerId, compact) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!goals || !goals.length) {
+      el.innerHTML = `<div class="empty" style="grid-column:1/-1;padding:16px 0;color:#334155">없음</div>`;
+      return;
+    }
+    el.innerHTML = goals.map(g => {
+      const iter    = g.iteration || 0;
+      const maxIter = g.max_iterations || 1;
+      const pct     = Math.min(100, Math.round((iter / maxIter) * 100));
+      const isDone  = g.status === 'completed' || g.status === 'done' || g.status === 'achieved';
+      const prog    = g.last_progress
+        ? g.last_progress.slice(0, compact ? 60 : 90) + (g.last_progress.length > (compact ? 60 : 90) ? '…' : '')
+        : '';
+      return `<div class="goal-card">
+        <div class="goal-title" title="${esc(g.title||'')}">${esc(g.title||'(제목 없음)')}</div>
+        ${prog && !compact ? `<div class="goal-meta">${esc(prog)}</div>` : ''}
+        <div class="progress-bar-wrap" style="margin-bottom:3px">
+          <div class="progress-bar${isDone?' done-bar':''}" style="width:${pct}%"></div>
+        </div>
+        <div class="progress-label">${iter} / ${maxIter} iter · ${pct}%</div>
+        <div class="goal-footer">
+          ${badge(g.status)}
+          <span class="goal-ts">${fmtTs(g.updated_at)}</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
   async function loadGoals() {
     try {
-      const r = await fetch(BASE + '/api/v1/dashboard/goals?limit=20');
+      const r = await fetch(BASE + '/api/v1/dashboard/goals-hierarchy?limit=60');
       if (!r.ok) return;
-      const goals = await r.json();
-      const grid = document.getElementById('goals-grid');
-      if (!goals.length) {
-        grid.innerHTML = '<div class="empty" style="grid-column:1/-1">목표 없음</div>';
-        return;
-      }
-      // Active goals float to top
-      const sorted = [...goals].sort((a, b) => {
-        const aActive = (a.status === 'active') ? 0 : 1;
-        const bActive = (b.status === 'active') ? 0 : 1;
-        return aActive - bActive;
+      const data = await r.json();
+
+      renderGoalCards(data.long_term || [], 'goals-long-term', false);
+
+      const rec = data.recurring || {};
+      renderGoalCards(rec.retro  || [], 'goals-retro',  true);
+      renderGoalCards(rec.weekly || [], 'goals-weekly', true);
+      renderGoalCards(rec.audit  || [], 'goals-audit',  true);
+      renderGoalCards(rec.other  || [], 'goals-other',  true);
+
+      // Show/hide empty recurring groups
+      ['retro','weekly','audit','other'].forEach(k => {
+        const grp = document.getElementById(`rg-${k}`);
+        if (grp) grp.style.display = (rec[k] && rec[k].length) ? '' : 'none';
       });
-      grid.innerHTML = sorted.map(g => {
-        const iter    = g.iteration || 0;
-        const maxIter = g.max_iterations || 1;
-        const pct     = Math.min(100, Math.round((iter / maxIter) * 100));
-        const isDone  = g.status === 'completed' || g.status === 'done';
-        const prog    = g.last_progress
-          ? g.last_progress.slice(0,90) + (g.last_progress.length > 90 ? '…' : '')
-          : '';
-        return `<div class="goal-card">
-          <div class="goal-title" title="${esc(g.title||'')}">${esc(g.title||'(제목 없음)')}</div>
-          ${prog ? `<div class="goal-meta">${esc(prog)}</div>` : ''}
-          <div class="progress-bar-wrap" style="margin-bottom:3px">
-            <div class="progress-bar${isDone?' done-bar':''}" style="width:${pct}%"></div>
-          </div>
-          <div class="progress-label">${iter} / ${maxIter} iter · ${pct}%</div>
-          <div class="goal-footer">
-            ${badge(g.status)}
-            <span class="goal-ts">${fmtTs(g.updated_at)}</span>
-          </div>
-        </div>`;
-      }).join('');
+
+      // Update counts label
+      const total = (rec.retro||[]).length + (rec.weekly||[]).length +
+                    (rec.audit||[]).length + (rec.other||[]).length;
+      const countEl = document.getElementById('recurring-counts');
+      if (countEl) countEl.textContent = total ? `(${total}건)` : '';
     } catch (e) { console.warn('goals error', e); }
+  }
+
+  function toggleRecurring() {
+    const sec = document.getElementById('recurring-section');
+    const tog = document.getElementById('recurring-toggle');
+    if (!sec) return;
+    const open = sec.style.display !== 'none';
+    sec.style.display = open ? 'none' : 'grid';
+    tog.classList.toggle('is-open', !open);
   }
 
   // ── Task Tree (Accordion) ────────────────────────────────────────────────────
@@ -694,15 +825,20 @@
         if (child) childrenOf[e.source].push(child);
       });
 
-      // Root nodes (depth=0), sorted by updated_at DESC from API
-      const roots = data.nodes.filter(n => n.depth === 0);
+      // Separate project tasks from retro/virtual groups
+      const projectRoots = data.nodes.filter(n =>
+        n.depth === 0 && !n.virtual && n.task_type !== 'retro' && n.task_type !== 'weekly'
+      );
+      const retroRoots = data.nodes.filter(n =>
+        n.depth === 0 && (n.virtual || n.task_type === 'retro' || n.task_type === 'weekly')
+      );
 
-      if (!roots.length) {
+      if (!projectRoots.length && !retroRoots.length) {
         container.innerHTML = '<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:32px">루트 태스크 없음</div>';
         return;
       }
 
-      container.innerHTML = roots.map((root, idx) => {
+      function renderRootNode(root, idx, prefix) {
         const children = childrenOf[root.id] || [];
         const countLabel = children.length ? `${children.length}개 서브태스크` : '서브 없음';
         const childRows = children.length
@@ -711,21 +847,19 @@
                 <th style="width:90px">담당 봇</th>
                 <th>내용</th>
                 <th style="width:130px">상태</th>
-                <th style="width:110px">업데이트</th>
               </tr></thead>
               <tbody>
               ${children.map(c => `<tr>
                 <td class="st-dept">${esc(shortDept(c.dept))}</td>
                 <td class="st-desc" title="${esc(c.label||'')}">${esc(c.label||'—')}</td>
                 <td class="st-status">${badge(c.status)}</td>
-                <td class="st-ts">${fmtTs(c.updated_at)}</td>
               </tr>`).join('')}
               </tbody>
             </table>`
           : `<div class="no-children">하위 태스크 없음</div>`;
-
-        return `<div class="tree-root" id="tree-${idx}">
-          <div class="tree-root-header" onclick="toggleTree('tree-${idx}')">
+        const nodeId = `${prefix}-${idx}`;
+        return `<div class="tree-root" id="${nodeId}">
+          <div class="tree-root-header" onclick="toggleTree('${nodeId}')">
             <svg class="tree-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="5,3 11,8 5,13"/>
             </svg>
@@ -739,7 +873,17 @@
             ${childRows}
           </div>
         </div>`;
-      }).join('');
+      }
+
+      let html = '';
+      if (projectRoots.length) {
+        html += projectRoots.map((r, i) => renderRootNode(r, i, 'proj')).join('');
+      }
+      if (retroRoots.length) {
+        html += `<div class="tree-section-divider">수명 업무 태스크</div>`;
+        html += retroRoots.map((r, i) => renderRootNode(r, i, 'retro')).join('');
+      }
+      container.innerHTML = html;
 
     } catch (e) {
       container.innerHTML = '<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:32px">태스크 트리 로드 실패</div>';
