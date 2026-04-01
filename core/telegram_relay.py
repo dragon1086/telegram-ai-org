@@ -1450,6 +1450,10 @@ class TelegramRelay:
             collab_ctx = parts[1].strip() if len(parts) > 1 else ""
             if is_placeholder_collab(collab_task, collab_ctx):
                 continue
+            # 빈/의미없는 협업 요청 차단 (LLM이 빈 [COLLAB:] 태그 생성하는 경우)
+            if len(collab_task) < 5 or collab_task.strip(". …·-") == "":
+                logger.info(f"[collab] 빈/의미없는 협업 요청 무시: '{collab_task[:30]}'")
+                continue
             target_org = await self._infer_collab_target_org(collab_task)
             if target_org is not None and self._pm_orchestrator is not None:
                 # 경로 A: PM 오케스트레이터 경유 (PM 봇 전용, 태스크 그래프 관리)
