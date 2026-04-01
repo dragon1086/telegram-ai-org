@@ -1,0 +1,345 @@
+/* character-animation.css — 캐릭터 keyframe 애니메이션
+ * Phase 2 Dashboard | 2026-03-31
+ * comic-theme.css의 CSS 변수를 의존함
+ */
+
+/* ── idle 애니메이션 (평상시 미세 흔들림 + 부유) ── */
+@keyframes character-idle {
+  0%, 100% { transform: translateY(0px)  rotate(0deg);   }
+  25%       { transform: translateY(-5px) rotate(-1.2deg); }
+  50%       { transform: translateY(-3px) rotate(0deg);   }
+  75%       { transform: translateY(-6px) rotate(1.2deg); }
+}
+
+/* ── alert 애니메이션 (경고 — shake + bounce 복합) ── */
+@keyframes character-alert {
+  0%   { transform: scale(1)    translateY(0);     box-shadow: 0 0 0 0   rgba(255, 107, 0, 0.5); }
+  20%  { transform: scale(1.08) translateY(-6px);  box-shadow: 0 0 0 8px rgba(255, 107, 0, 0.3); }
+  40%  { transform: scale(0.96) translateY(0);     box-shadow: 0 0 0 16px rgba(255, 107, 0, 0);  }
+  60%  { transform: scale(1.04) translateY(-4px);  }
+  80%  { transform: scale(0.98) translateY(0);     }
+  100% { transform: scale(1)    translateY(0);     box-shadow: 0 0 0 0   rgba(255, 107, 0, 0);   }
+}
+
+/* ── danger 애니메이션 (위험 — shake + 빨간 pulse flash) ── */
+@keyframes character-danger {
+  0%, 100% { transform: translateX(0)    rotate(0deg);   filter: brightness(1);    }
+  10%, 50%, 90% { transform: translateX(-9px) rotate(-2.5deg); filter: brightness(1.3) saturate(2); }
+  20%, 40%, 60%, 80% { transform: translateX(9px)  rotate(2.5deg);  filter: brightness(1.1) saturate(1.5); }
+  30%, 70% { transform: translateX(-5px) rotate(-1deg);  filter: brightness(1.4) saturate(2.5); }
+}
+
+/* ── danger 배경 flash ── */
+@keyframes character-danger-bg {
+  0%, 100% { background: transparent; }
+  50%       { background: rgba(183, 28, 28, 0.12); }
+}
+
+/* ── happy 애니메이션 (완료 — 경쾌한 celebration bounce) ── */
+@keyframes character-happy {
+  0%   { transform: translateY(0)     scale(1);    rotate: 0deg;   }
+  15%  { transform: translateY(-22px) scale(1.12); rotate: -5deg;  }
+  30%  { transform: translateY(-8px)  scale(1.06); rotate: 3deg;   }
+  45%  { transform: translateY(-18px) scale(1.1);  rotate: -3deg;  }
+  60%  { transform: translateY(-6px)  scale(1.04); rotate: 2deg;   }
+  75%  { transform: translateY(-12px) scale(1.07); rotate: -2deg;  }
+  100% { transform: translateY(0)     scale(1);    rotate: 0deg;   }
+}
+
+/* ── 말풍선 등장 ── */
+@keyframes bubble-appear {
+  from { opacity: 0; transform: scale(0.5) translateY(10px); }
+  to   { opacity: 1; transform: scale(1)   translateY(0);    }
+}
+
+/* ── HP 게이지 채우기 ── */
+@keyframes hp-fill {
+  from { width: 0%; }
+}
+
+/* ── 기준 변경 마커 flash ── */
+@keyframes criteria-marker-flash {
+  0%, 100% { opacity: 1;   background: var(--comic-yellow); }
+  50%       { opacity: 0.6; background: var(--comic-orange); }
+}
+
+/* ── 숫자 카운터 업 효과 ── */
+@keyframes counter-update {
+  0%   { color: var(--comic-yellow); transform: scale(1.3); }
+  100% { color: inherit;             transform: scale(1);   }
+}
+
+/* ── 클래스 적용 ── */
+.character-anim-idle   { animation: character-idle   3.2s ease-in-out infinite; }
+.character-anim-alert  { animation: character-alert  0.9s ease-in-out infinite; }
+.character-anim-danger {
+  animation:
+    character-danger     0.45s ease-in-out infinite,
+    character-danger-bg  0.45s ease-in-out infinite;
+}
+.character-anim-happy  { animation: character-happy  0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+
+.speech-bubble { animation: bubble-appear 0.3s ease-out; }
+
+.hp-bar-fill   { animation: hp-fill 0.8s ease-out; }
+
+.criteria-marker { animation: criteria-marker-flash 1s ease-in-out 3; }
+
+.counter-updated { animation: counter-update 0.4s ease-out; }
+
+/* ── severity 색상 클래스 (WCAG AA) ── */
+.severity-info     { background: #E3F2FD; color: #0D47A1; border-color: #1565C0; }
+.severity-warning  { background: #FFF3E0; color: #E65100; border-color: #BF360C; }
+.severity-critical { background: #FFEBEE; color: #B71C1C; border-color: #7F0000; }
+
+/* ── 캐릭터 패널 ── */
+.character-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem;
+  background: var(--comic-white);
+  border: var(--comic-border);
+  box-shadow: var(--comic-shadow);
+  border-radius: 8px;
+  min-height: 320px;
+  position: relative;
+  transition: border-color 0.3s ease, background 0.3s ease;
+}
+
+.character-avatar {
+  font-size: 5rem;
+  line-height: 1;
+  margin-bottom: 0.5rem;
+  cursor: default;
+  user-select: none;
+  display: block;
+}
+
+.character-img {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+  display: block;
+}
+
+.character-name {
+  font-family: var(--font-comic-display);
+  font-size: 1.4rem;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.speech-bubble {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  max-width: 140px;
+  padding: 0.4rem 0.7rem;
+  background: var(--comic-yellow);
+  border: 3px solid var(--comic-dark);
+  border-radius: 12px 12px 12px 0;
+  font-family: var(--font-comic-body);
+  font-size: 0.75rem;
+  font-weight: 700;
+  box-shadow: var(--comic-shadow-sm);
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* 말풍선 꼬리 (좌하단 삼각) */
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -14px;
+  left: 12px;
+  border: 7px solid transparent;
+  border-top-color: var(--comic-dark);
+}
+
+.speech-bubble::before {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 13px;
+  border: 6px solid transparent;
+  border-top-color: var(--comic-yellow);
+  z-index: 1;
+}
+
+/* ── 말풍선 severity 색상 변형 ── */
+.speech-bubble.severity-warning {
+  background: #FFF3E0;
+  border-color: #BF360C;
+}
+.speech-bubble.severity-warning::before {
+  border-top-color: #FFF3E0;
+}
+
+.speech-bubble.severity-critical {
+  background: #FFEBEE;
+  border-color: #7F0000;
+}
+.speech-bubble.severity-critical::before {
+  border-top-color: #FFEBEE;
+}
+
+/* ── HP 바 독립형 단축 클래스 (hp-bar-track 없이 단독 사용) ── */
+.hp-bar {
+  width: 100%;
+  height: 12px;
+  background: #eee;
+  border: 2px solid var(--comic-dark);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 0.4rem;
+}
+
+.hp-bar-container {
+  width: 100%;
+  margin-top: 0.8rem;
+}
+
+.hp-bar-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+  display: flex;
+  justify-content: space-between;
+}
+
+.hp-bar-track {
+  width: 100%;
+  height: 12px;
+  background: #eee;
+  border: 2px solid var(--comic-dark);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.hp-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease, background 0.3s ease;
+}
+
+/* ── 메트릭 패널 ── */
+.metrics-panel {
+  padding: 1.5rem;
+  background: var(--comic-white);
+  border: var(--comic-border);
+  box-shadow: var(--comic-shadow);
+  border-radius: 8px;
+}
+
+.metric-counter {
+  font-family: var(--font-comic-display);
+  font-size: 2.5rem;
+  line-height: 1;
+  text-align: center;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.threshold-gauge {
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border: 2px solid var(--comic-dark);
+  border-radius: 6px;
+  transition: background 0.3s ease;
+}
+
+.threshold-bar-fill {
+  height: 8px;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+/* ── 이벤트 로그 패널 ── */
+.event-log-panel {
+  padding: 1.5rem;
+  background: var(--comic-white);
+  border: var(--comic-border);
+  box-shadow: var(--comic-shadow);
+  border-radius: 8px;
+  overflow-y: auto;
+  max-height: 600px;
+}
+
+.event-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.event-item {
+  padding: 0.4rem 0.6rem;
+  border-left: 4px solid var(--comic-blue);
+  margin-bottom: 0.4rem;
+  font-size: 0.8rem;
+  border-radius: 0 4px 4px 0;
+  background: #f8f8f8;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  transition: background 0.2s;
+}
+
+.event-item:hover {
+  background: #f0f0f0;
+}
+
+.event-item.criteria-change {
+  border-left-color: var(--comic-orange);
+  background: #FFF3E0;
+  font-weight: 700;
+  padding: 0.6rem;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* ── 기준 변경 마커 ── */
+.criteria-change-marker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: var(--comic-yellow);
+  border: 3px solid var(--comic-dark);
+  border-radius: 6px;
+  font-family: var(--font-comic-body);
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin: 0.5rem 0;
+  box-shadow: var(--comic-shadow-sm);
+  flex-wrap: wrap;
+}
+
+.criteria-marker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* ── 대시보드 3-패널 그리드 ── */
+.dashboard-character-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr 340px;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+@media (max-width: 1200px) {
+  .dashboard-character-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-character-grid {
+    grid-template-columns: 1fr;
+  }
+}
