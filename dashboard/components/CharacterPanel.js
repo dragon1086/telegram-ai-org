@@ -20,10 +20,11 @@ const SEVERITY_COLORS = {
 
 /** emotion별 말풍선 텍스트 풀 */
 const SPEECH_TEXTS = {
-  idle:   ['⚡ 작업중... 집중집중!', '🎯 OK OK!'],
-  alert:  ['⚠️ 경고! 주의 필요!', '🚨 이상 감지!'],
-  danger: ['🚫 위험! 차단됨!', '💥 CRITICAL!'],
-  happy:  ['✅ 완료! 최고야!', '🎉 DONE!'],
+  idle:    ['⚡ 작업중... 집중집중!', '🎯 OK OK!'],
+  working: ['⚡ 작업중...', '🔧 처리 중!', '💻 실행 중...'],
+  alert:   ['⚠️ 경고! 주의 필요!', '🚨 이상 감지!'],
+  danger:  ['🚫 위험! 차단됨!', '💥 CRITICAL!'],
+  happy:   ['✅ 완료! 최고야!', '🎉 DONE!'],
 };
 
 /** severity → animation class 매핑 */
@@ -74,15 +75,26 @@ export class CharacterPanel {
 
     this._renderCharacter(characterState);
 
-    // 애니메이션 트리거가 명시되어 있으면 우선 적용
+    // emotion → animation class 매핑
+    const emotionToAnim = {
+      idle:    'character-anim-idle',
+      working: 'character-anim-working',
+      alert:   'character-anim-alert',
+      danger:  'character-anim-danger',
+      happy:   'character-anim-happy',
+    };
+    const triggerMap = { pulse: 'character-anim-alert', shake: 'character-anim-danger', bounce: 'character-anim-happy' };
+
+    // 명시적 animationTrigger 우선, 없으면 emotion 기반, emotion도 없으면 severity 기반
     if (characterState.animationTrigger && characterState.animationTrigger !== 'none') {
-      const triggerMap = { pulse: 'character-anim-alert', shake: 'character-anim-danger', bounce: 'character-anim-happy' };
       this._triggerAnimation(triggerMap[characterState.animationTrigger] || SEVERITY_ANIM[characterState.severity]);
     } else {
-      this._triggerAnimation(SEVERITY_ANIM[characterState.severity] || 'character-anim-idle');
+      this._triggerAnimation(
+        emotionToAnim[characterState.emotion] || SEVERITY_ANIM[characterState.severity] || 'character-anim-idle'
+      );
     }
 
-    // severity가 바뀌었거나 처음 렌더링 시 말풍선 갱신
+    // severity 또는 emotion이 바뀌었거나 처음 렌더링 시 말풍선 갱신
     if (!prev || prev.severity !== characterState.severity || prev.emotion !== characterState.emotion) {
       this._renderSpeechBubble(characterState.emotion, characterState.severity);
     }
@@ -137,6 +149,14 @@ export class CharacterPanel {
 
     // 테두리 색상 갱신
     panel.style.borderColor = colors.border;
+
+    // current_task 레이블 갱신
+    panel.dataset.currentTask = state.current_task || '';
+    const taskEl = panel.querySelector('.current-task-label');
+    if (taskEl) {
+      taskEl.textContent = state.current_task || '';
+      taskEl.style.display = state.current_task ? 'block' : 'none';
+    }
   }
 
   /**
@@ -218,6 +238,7 @@ export class CharacterPanel {
 
     avatar.classList.remove(
       'character-anim-idle',
+      'character-anim-working',
       'character-anim-alert',
       'character-anim-danger',
       'character-anim-happy',
@@ -254,6 +275,7 @@ export class CharacterPanel {
             <div class="hp-bar-fill" style="width:0%;background:${HP_COLORS.high};"></div>
           </div>
         </div>
+        <div class="current-task-label" style="display:none;font-size:.72rem;color:#555;margin-top:.3rem;text-align:center;word-break:break-all;max-width:140px;"></div>
       </div>
     `;
   }

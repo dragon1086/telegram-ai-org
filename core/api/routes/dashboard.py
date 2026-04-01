@@ -296,3 +296,98 @@ async def get_task_graph(
         edges.append({"source": t["parent_id"], "target": t["id"]})
 
     return {"nodes": nodes, "edges": edges, "stats": stats}
+
+
+# dept → orgId mapping
+_DEPT_TO_ORG = {
+    "engineering": "aiorg_engineering_bot",
+    "design":      "aiorg_design_bot",
+    "ops":         "aiorg_ops_bot",
+    "product":     "aiorg_product_bot",
+    "growth":      "aiorg_growth_bot",
+    "research":    "aiorg_research_bot",
+    "pm":          "aiorg_pm_bot",
+}
+
+_ORG_META = {
+    "aiorg_engineering_bot": {"name": "개발실",  "emoji": "🦾", "color": "#0057FF"},
+    "aiorg_design_bot":      {"name": "디자인실", "emoji": "🎨", "color": "#9B00FF"},
+    "aiorg_ops_bot":         {"name": "운영실",  "emoji": "⚙️", "color": "#00C851"},
+    "aiorg_product_bot":     {"name": "기획실",  "emoji": "📋", "color": "#FF6B00"},
+    "aiorg_growth_bot":      {"name": "성장실",  "emoji": "📈", "color": "#FF3B3F"},
+    "aiorg_research_bot":    {"name": "리서치실", "emoji": "🔬", "color": "#00B8D4"},
+    "aiorg_pm_bot":          {"name": "PM",      "emoji": "🎯", "color": "#FFD600"},
+}
+
+
+@router.get("/snapshot")
+async def get_snapshot() -> dict[str, Any]:
+    """봇별 활성 태스크 기반 캐릭터 상태 + 전체 카운트 스냅샷."""
+    # 최근 2시간 태스크 가져오기
+    rows = await _query(
+        """
+        SELECT assigned_dept, status, description
+        FROM pm_tasks
+        WHERE updated_at >= datetime('now', '-2 hours')
+        ORDER BY updated_at DESC
+        """
+    )
+
+    # dept별로 그룹핑
+    dept_tasks: dict[str, list[dict]] = {}
+    for row in rows:
+        dept = (row.get("assigned_dept") or "pm").strip()
+        dept_tasks.setdefault(dept, []).append(row)
+
+    # 각 봇 캐릭터 상태 계산
+    characters = []
+    for dept, org_id in _DEPT_TO_ORG.items():
+        tasks = dept_tasks.get(dept, [])
+        active  = [t for t in tasks if t["status"] == "in_progress"]
+        blocked = [t for t in tasks if t["status"] == "blocked"]
+
+        if blocked:
+            severity, emotion, hp = "critical", "alert", 25
+        elif len(active) > 5:
+            severity, emotion, hp = "critical", "alert", 30
+        elif len(active) > 2:
+            severity, emotion, hp = "warning", "alert", 55
+        elif active:
+            severity, emotion, hp = "info", "working", 80
+        else:
+            severity, emotion, hp = "info", "idle", 85
+
+        current_task: str | None = None
+        if active:
+            desc = active[0]["description"] or ""
+            current_task = desc[:60] + ("…" if len(desc) > 60 else "")
+
+        meta = _ORG_META.get(org_id, {})
+        characters.append({
+            "orgId":         org_id,
+            "name":          meta.get("name", org_id),
+            "emoji":         meta.get("emoji", "🤖"),
+            "color":         meta.get("color", "#888"),
+            "severity":      severity,
+            "emotion":       emotion,
+            "hp":            hp,
+            "level":         1,
+            "active_count":  len(active),
+            "blocked_count": len(blocked),
+            "current_task":  current_task,
+            "animationTrigger": "none",
+            "lastUpdated":   datetime.now(timezone.utc).isoformat(),
+        })
+
+    # 전체 카운트
+    count_rows = await _query(
+        "SELECT status, COUNT(*) as cnt FROM pm_tasks GROUP BY status"
+    )
+    counts = {r["status"]: r["cnt"] for r in count_rows}
+
+    return {
+        "characters": characters,
+        "counts":     counts,
+        "thresholds": {},
+        "ts":         datetime.now(timezone.utc).isoformat(),
+    }
