@@ -39,48 +39,261 @@
   </div>
 </header>
 
-<!-- ── 캐릭터 대시보드 (봇 상태 애니메이션) ── -->
-<section id="character-dashboard" style="max-width:1360px;margin:1.5rem auto 0;padding:0 20px;"></section>
+<!-- ── 오피스 플로어 (2D 탑다운 뷰) ── -->
+<section id="character-dashboard" style="max-width:1360px;margin:1.5rem auto 0;padding:0 20px;">
+  <div id="office-floor">
+    <div class="office-floor-header">
+      <span>🏢 AIMESH Office</span>
+      <span class="office-live">● LIVE</span>
+    </div>
+    <div id="office-room">
+      <!-- Desk zones (background) -->
+      <div class="desk-zone" style="left:42%;top:8px;"></div>
+      <div class="desk-zone" style="left:1%;top:90px;"></div>
+      <div class="desk-zone" style="left:17%;top:90px;"></div>
+      <div class="desk-zone" style="left:36%;top:90px;"></div>
+      <div class="desk-zone" style="left:55%;top:90px;"></div>
+      <div class="desk-zone" style="left:74%;top:90px;"></div>
+      <div class="desk-zone" style="left:42%;top:192px;"></div>
+      <!-- Bot sprites -->
+      <div class="bot-sprite" id="office-sprite-aiorg_pm_bot" data-state="idle" style="left:46%;top:14px">
+        <div class="sprite-bubble" id="bubble-aiorg_pm_bot"></div>
+        <div class="sprite-avatar" style="background:#221a00;border-color:#FFD600">🎯</div>
+        <div class="sprite-label">PM</div>
+      </div>
+      <div class="bot-sprite" id="office-sprite-aiorg_engineering_bot" data-state="idle" style="left:4%;top:95px">
+        <div class="sprite-bubble" id="bubble-aiorg_engineering_bot"></div>
+        <div class="sprite-avatar" style="background:#00123a;border-color:#0057FF">🦾</div>
+        <div class="sprite-label">Eng</div>
+      </div>
+      <div class="bot-sprite" id="office-sprite-aiorg_design_bot" data-state="idle" style="left:20%;top:95px">
+        <div class="sprite-bubble" id="bubble-aiorg_design_bot"></div>
+        <div class="sprite-avatar" style="background:#160028;border-color:#9B00FF">🎨</div>
+        <div class="sprite-label">Design</div>
+      </div>
+      <div class="bot-sprite" id="office-sprite-aiorg_product_bot" data-state="idle" style="left:39%;top:95px">
+        <div class="sprite-bubble" id="bubble-aiorg_product_bot"></div>
+        <div class="sprite-avatar" style="background:#221200;border-color:#FF6B00">📋</div>
+        <div class="sprite-label">Product</div>
+      </div>
+      <div class="bot-sprite" id="office-sprite-aiorg_growth_bot" data-state="idle" style="left:58%;top:95px">
+        <div class="sprite-bubble" id="bubble-aiorg_growth_bot"></div>
+        <div class="sprite-avatar" style="background:#220000;border-color:#FF3B3F">📈</div>
+        <div class="sprite-label">Growth</div>
+      </div>
+      <div class="bot-sprite" id="office-sprite-aiorg_research_bot" data-state="idle" style="left:77%;top:95px">
+        <div class="sprite-bubble" id="bubble-aiorg_research_bot"></div>
+        <div class="sprite-avatar" style="background:#001820;border-color:#00B8D4">🔬</div>
+        <div class="sprite-label">Research</div>
+      </div>
+      <div class="bot-sprite" id="office-sprite-aiorg_ops_bot" data-state="idle" style="left:46%;top:196px">
+        <div class="sprite-bubble" id="bubble-aiorg_ops_bot"></div>
+        <div class="sprite-avatar" style="background:#001a08;border-color:#00C851">⚙️</div>
+        <div class="sprite-label">Ops</div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <style>
-  /* ── 봇 스테이지 (풀 와이드) ── */
-  #character-dashboard {
+  /* ── 오피스 플로어 2D 탑다운 ── */
+  #office-floor {
     background: #080c18;
-    border-radius: 0 0 12px 12px;
-    padding-bottom: 1.5rem;
-  }
-  #bot-stage {
-    position: relative;
-    background: #080c18;
-  }
-  #character-panels-grid {
-    background: #080c18;
-  }
-  #character-panels-grid .character-panel {
-    background: #0d1b2e;
-    border: 2.5px solid #1a2e4a;
     border-radius: 12px;
-    padding: 0.75rem;
+    padding: 12px 16px 16px;
+    margin-bottom: 0;
   }
-  #character-panels-grid .character-avatar {
-    background: transparent;
+  .office-floor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #3a5070;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+  }
+  .office-live { color: #00C851; animation: blink 2s ease infinite; }
+  #office-room {
+    position: relative;
+    width: 100%;
+    height: 280px;
+    background: #060d1a;
     border-radius: 10px;
-    overflow: hidden;
-    display: inline-flex;
+    border: 1px solid #1a2e4a;
+    background-image:
+      linear-gradient(rgba(26,46,74,0.2) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(26,46,74,0.2) 1px, transparent 1px);
+    background-size: 48px 48px;
+    overflow: visible;
+  }
+  .desk-zone {
+    position: absolute;
+    width: 76px;
+    height: 50px;
+    background: #0c1828;
+    border: 1px solid #1a2e4a;
+    border-radius: 5px;
+    pointer-events: none;
+  }
+  .bot-sprite {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    z-index: 10;
+    transform: translateX(-50%);
+  }
+  .sprite-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
     align-items: center;
     justify-content: center;
-    padding: 4px;
+    font-size: 1.05rem;
+    border: 2px solid;
+    position: relative;
+    transition: box-shadow 0.4s;
   }
-  #character-panels-grid .character-img {
-    display: block;
-    border-radius: 6px;
+  .bot-sprite[data-state="working"] .sprite-avatar {
+    box-shadow: 0 0 12px;
   }
-  @media (max-width: 900px) {
-    #character-panels-grid { grid-template-columns: repeat(2,1fr) !important; }
+  .bot-sprite[data-state="alert"] .sprite-avatar {
+    box-shadow: 0 0 14px #ff3b3f;
   }
-  @media (max-width: 540px) {
-    #character-panels-grid { grid-template-columns: 1fr !important; }
+  .sprite-label {
+    font-size: 0.58rem;
+    color: #556677;
+    font-weight: 600;
+    white-space: nowrap;
+    letter-spacing: 0.04em;
   }
+  .sprite-bubble {
+    position: absolute;
+    bottom: calc(100% + 40px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #0e1e34;
+    border: 1px solid #2a4a6a;
+    border-radius: 8px;
+    padding: 3px 7px;
+    font-size: 0.58rem;
+    color: #93c5fd;
+    white-space: nowrap;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s;
+    z-index: 30;
+  }
+  .sprite-bubble.visible { opacity: 1; }
+  .sprite-bubble::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #2a4a6a;
+  }
+  /* State animations */
+  .bot-sprite[data-state="working"] .sprite-avatar {
+    animation: bot-walk 2s ease-in-out infinite;
+  }
+  .bot-sprite[data-state="waiting"] .sprite-avatar {
+    animation: bot-pace 3.5s ease-in-out infinite;
+    opacity: 0.7;
+  }
+  .bot-sprite[data-state="alert"] .sprite-avatar {
+    animation: bot-alert 0.45s ease-in-out infinite;
+  }
+  @keyframes bot-walk {
+    0%   { transform: translate(0, 0); }
+    15%  { transform: translate(10px,-7px); }
+    30%  { transform: translate(-7px, 6px); }
+    45%  { transform: translate(9px, 8px); }
+    60%  { transform: translate(-10px,-5px); }
+    80%  { transform: translate(6px,-9px); }
+    100% { transform: translate(0, 0); }
+  }
+  @keyframes bot-pace {
+    0%   { transform: translateX(0); }
+    25%  { transform: translateX(17px); }
+    50%  { transform: translateX(0); }
+    75%  { transform: translateX(-17px); }
+    100% { transform: translateX(0); }
+  }
+  @keyframes bot-alert {
+    0%   { transform: translateX(0); }
+    30%  { transform: translateX(-4px); }
+    70%  { transform: translateX(4px); }
+    100% { transform: translateX(0); }
+  }
+  /* Task detail popup (child task click) */
+  .ts-task-detail-box {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #0e1e34;
+    border: 1px solid #2a4a7a;
+    border-radius: 10px;
+    padding: 12px 14px;
+    min-width: 260px;
+    max-width: 380px;
+    z-index: 9999;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+    animation: slideUp 0.2s ease;
+  }
+  @keyframes slideUp {
+    from { opacity:0; transform: translateY(12px); }
+    to   { opacity:1; transform: translateY(0); }
+  }
+  .ts-task-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .ts-task-detail-id {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    color: #64748b;
+    word-break: break-all;
+  }
+  .ts-task-detail-close {
+    background: none;
+    border: none;
+    color: #4a6080;
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0 2px;
+    line-height: 1;
+  }
+  .ts-task-detail-close:hover { color: #93c5fd; }
+  .ts-task-detail-label {
+    font-size: 0.8rem;
+    color: #c0d4ef;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .ts-tl-child-clickable {
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .ts-tl-child-clickable:hover { background: #101e34; border-radius: 5px; }
+  .ts-tl-child-id {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.58rem;
+    color: #2a4060;
+    flex-shrink: 0;
+    margin-left: 4px;
+  }
+  .ts-tl-child-clickable:hover .ts-tl-child-id { color: #4a7aaa; }
 
   /* ── 모드 뱃지 ── */
   .mode-badge {
@@ -781,14 +994,39 @@
   function tsRenderChildRow(child) {
     const meta = tsDeptMeta(child.dept);
     const lbl = tsEsc(child.label || child.id);
-    return `<div class="ts-tl-child">
+    const sid = tsEsc(child.id || '');
+    const shortId = sid.slice(-10);
+    return `<div class="ts-tl-child ts-tl-child-clickable"
+      data-task-id="${sid}"
+      data-task-label="${tsEsc(child.label || '')}"
+      data-task-status="${tsEsc(child.status || '')}"
+      data-task-dept="${tsEsc(child.dept || '')}"
+      onclick="tsShowTaskDetail(this.dataset)">
       <div class="ts-tl-child-dot" style="background:${tsStatusColor(child.status)}"></div>
       <div style="flex:1;min-width:0">
         <span class="ts-tl-dept" style="background:${meta.color}22;color:${meta.color}">${meta.label}</span>
         <span class="ts-tl-label" style="margin-left:4px">${lbl}</span>
       </div>
+      <span class="ts-tl-child-id">#${shortId}</span>
     </div>`;
   }
+
+  window.tsShowTaskDetail = function(ds) {
+    const popup = document.getElementById('ts-node-popup');
+    if (!popup) return;
+    const statusColor = tsStatusColor(ds.taskStatus);
+    popup.innerHTML = `<div class="ts-task-detail-box">
+      <div class="ts-task-detail-header">
+        <span class="ts-task-detail-id">${ds.taskId}</span>
+        <button class="ts-task-detail-close" onclick="document.getElementById('ts-node-popup').innerHTML=''">✕</button>
+      </div>
+      <div class="ts-task-detail-label">${tsEsc(ds.taskLabel || ds.taskId)}</div>
+      <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+        <span style="font-size:0.65rem;color:#93c5fd">${tsEsc(ds.taskDept || '')}</span>
+        <span style="font-size:0.65rem;color:${statusColor};font-family:'IBM Plex Mono',monospace">${tsEsc(ds.taskStatus || '')}</span>
+      </div>
+    </div>`;
+  };
 
   function tsRenderTimelineItem(node, childrenOf) {
     const meta = tsDeptMeta(node.dept);
@@ -978,23 +1216,59 @@
 
 <!-- ── ES 모듈 진입점 ── -->
 <script type="module">
-  import { DashboardClient }     from './services/client.js';
-  import { Dashboard }           from './components/Dashboard.js';
-  import { createApiClient }     from './api/client.js';
-  import { RealtimeStatusHook }  from './hooks/useRealtimeStatus.js';
+  import { DashboardClient } from './services/client.js';
 
-  // ── 캐릭터 대시보드 (봇 애니메이션 패널) ────────────────────
-  const charDashboardEl = document.getElementById('character-dashboard');
-  if (charDashboardEl) {
-    const apiClient   = createApiClient();
-    const realtimeHook = new RealtimeStatusHook({
-      mode:         'polling',
-      pollInterval: 3000,
-      apiClient,
-    });
-    const charDashboard = new Dashboard(charDashboardEl);
-    charDashboard.init(apiClient, realtimeHook);
+  // ── 오피스 플로어 실시간 업데이트 ──────────────────────────
+  async function updateOfficeFloor() {
+    try {
+      const r = await fetch('/api/v1/dashboard/snapshot');
+      if (!r.ok) return;
+      const snap = await r.json();
+      (snap.characters || []).forEach(char => {
+        const sprite = document.getElementById('office-sprite-' + char.orgId);
+        const bubble = document.getElementById('bubble-' + char.orgId);
+        if (!sprite || !bubble) return;
+
+        const mode     = char.mode     || 'idle';
+        const emotion  = char.emotion  || 'idle';
+        const severity = char.severity || 'info';
+        let state = 'idle';
+        let bubbleText = '';
+
+        if (severity === 'critical' || emotion === 'alert' || emotion === 'danger') {
+          state = 'alert';
+          bubbleText = '⚠️ 주의 필요!';
+        } else if (mode === 'working' || emotion === 'working') {
+          state = 'working';
+          const task = (char.current_task || '').replace(/^\[배경\]\s*상위\s*목표:\s*/i, '');
+          bubbleText = task ? task.substring(0, 38) : '⚡ 작업중...';
+        } else if (mode === 'collab' || (char.collaborating_with && char.collaborating_with.length > 0)) {
+          state = 'waiting';
+          const partners = (char.collaborating_with || [])
+            .map(p => p.replace(/aiorg_|_bot/g, '')).join(', ') || '다른 팀';
+          bubbleText = `⏳ ${partners} 대기중`;
+        } else if (mode === 'meeting') {
+          state = 'waiting';
+          bubbleText = '💬 회의중';
+        } else if (mode === 'retro') {
+          state = 'waiting';
+          bubbleText = '📝 회고중';
+        } else if (mode === 'delegated') {
+          state = 'waiting';
+          bubbleText = '📋 PM 위임 대기';
+        } else if (emotion === 'happy') {
+          state = 'working';
+          bubbleText = '🎉 완료!';
+        }
+
+        sprite.dataset.state = state;
+        bubble.textContent = bubbleText;
+        bubble.classList.toggle('visible', !!bubbleText && state !== 'idle');
+      });
+    } catch (_) { /* ignore */ }
   }
+  updateOfficeFloor();
+  setInterval(updateOfficeFloor, 5000);
 
   // ── DashboardClient 초기화 및 시작 ───────────────────────
   const dashClient = new DashboardClient();
