@@ -429,6 +429,7 @@ class CodexRunner(BaseRunner):
                 stderr=asyncio.subprocess.PIPE,
                 cwd=resolved_workdir,
                 env=clean_env,
+                limit=1024 * 1024 * 10,  # 10MB — 기본 64KB 한도 초과 방지
             )
             if progress_callback is None:
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
@@ -544,7 +545,15 @@ class CodexRunner(BaseRunner):
             if stream is None:
                 return
             while True:
-                raw_line = await stream.readline()
+                try:
+                    raw_line = await stream.readline()
+                except asyncio.LimitOverrunError:
+                    # 단일 라인이 버퍼 한도 초과 — 잔여 데이터 drain 후 계속
+                    try:
+                        await stream.readline()
+                    except asyncio.LimitOverrunError:
+                        pass
+                    continue
                 if not raw_line:
                     break
                 sink.append(raw_line)
