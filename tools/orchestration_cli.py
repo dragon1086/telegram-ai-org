@@ -263,6 +263,49 @@ def cmd_validate_config(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_skill_eval_report(args: argparse.Namespace) -> int:
+    from core.eval_runner import EvalRunner
+
+    target = float(args.target)
+    results = EvalRunner().score_all_skills()
+    payload = {
+        "target_threshold": target,
+        "status": "ok",
+        "skills": [],
+        "below_target": [],
+    }
+
+    for result in results:
+        passed_target = result.score >= target
+        payload["skills"].append({
+            "skill_name": result.skill_name,
+            "score": result.score,
+            "baseline": result.baseline,
+            "delta": result.delta,
+            "passed_target": passed_target,
+        })
+        if not passed_target:
+            payload["below_target"].append({
+                "skill_name": result.skill_name,
+                "score": result.score,
+            })
+
+    if payload["below_target"]:
+        payload["status"] = "warn"
+
+    if getattr(args, "github_warning", False) and payload["below_target"]:
+        failures = ", ".join(
+            f"{item['skill_name']}={item['score']:.1f}"
+            for item in payload["below_target"]
+        )
+        print(f"::warning::Skill eval below {target:.1f}: {failures}")
+
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    if getattr(args, "strict", False) and payload["below_target"]:
+        return 1
+    return 0
+
+
 def cmd_export_legacy_bots(args: argparse.Namespace) -> int:
     cfg = load_orchestration_config(force_reload=True)
     target_dir = Path(args.target_dir or cfg.legacy_exports.get("bots_dir", "bots"))
@@ -411,6 +454,12 @@ def build_parser() -> argparse.ArgumentParser:
     validate = sub.add_parser("validate-config")
     validate.add_argument("--strict", action="store_true")
     validate.set_defaults(func=cmd_validate_config)
+
+    skill_eval = sub.add_parser("skill-eval-report")
+    skill_eval.add_argument("--target", type=float, default=7.5)
+    skill_eval.add_argument("--strict", action="store_true")
+    skill_eval.add_argument("--github-warning", action="store_true")
+    skill_eval.set_defaults(func=cmd_skill_eval_report)
 
     export_bots = sub.add_parser("export-legacy-bots")
     export_bots.add_argument("--target-dir", default="")

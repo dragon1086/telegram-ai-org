@@ -25,7 +25,7 @@ class ImprovementResult:
 class SkillAutoImprover:
     """스킬 SKILL.md를 N개 변형 -> eval -> 최고 점수 keep/revert."""
 
-    def improve(self, skill_name: str) -> ImprovementResult | None:
+    def improve(self, skill_name: str, target_score: float | None = None) -> ImprovementResult | None:
         from core.eval_runner import EvalRunner
         runner = EvalRunner()
         baseline_result = runner.score_skill(skill_name)
@@ -55,7 +55,11 @@ class SkillAutoImprover:
                 best_score = score
                 best_variant = variant
 
-        if best_score >= original_score + MIN_IMPROVEMENT:
+        crosses_target = (
+            target_score is not None
+            and original_score < target_score <= best_score
+        )
+        if best_score >= original_score + MIN_IMPROVEMENT or crosses_target:
             skill_path.write_text(best_variant, encoding="utf-8")
             logger.info(
                 f"[SkillAutoImprover] {skill_name} 개선 적용: "

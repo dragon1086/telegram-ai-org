@@ -16,6 +16,15 @@ allowed-tools: Bash, Read, Glob, Grep
 > [COLLAB: 봇 전체 재시작 필요 — 글로벌 장애 확인됨 | 맥락: bot-triage Step 3d 단계 진입]
 > ```
 
+## Trigger Matrix
+
+- `봇 응답 없음 진단` / `bot down`: Step 1에서 process 상태, 최근 log, watchdog, 리소스를 순서대로 진단한다.
+- `로그 확인` / `error log`: Step 1의 최근 log 확인으로 에러 패턴과 traceback을 먼저 수집한다.
+- `API 연결 상태 점검` / `Telegram 오류 감지`: Step 3d에서 Telegram API 연결과 네트워크 상태를 점검한다.
+- `자동 복구 시도` / `recovery`: Step 3a watchdog 복구 또는 Step 3b 코드 수정 후 재기동으로 이어진다.
+- `인시던트 리포트 생성` / `incident report`: Step 4 템플릿으로 인시던트 문서를 작성하고 Step 5 보고까지 마무리한다.
+- `봇 크래시 원인 분석` / `bot crash`: Step 2에서 crash 원인을 분류하고 Step 3b에서 traceback 기반 수정으로 연결한다.
+
 ## Step 1: 초기 진단 (자동)
 
 ```bash
@@ -27,6 +36,7 @@ diagnose.sh가 수행하는 검사:
 2. **최근 로그** — `tail -50 ~/.ai-org/bot-*.log` 로 에러 패턴 탐지
 3. **watchdog 상태** — `/tmp/bot-watchdog.pid` 존재 여부 + 프로세스 생존
 4. **디스크/메모리** — `df -h /` + `free -m` 로 리소스 고갈 여부
+5. **응답 없음 재현 정보** — 마지막 성공 응답 시각, stuck process 여부, 응답 없음 지속 시간을 기록
 
 ## Step 2: 근본 원인 분류
 
@@ -46,6 +56,8 @@ diagnose.sh 출력을 기반으로 원인을 분류한다:
 python scripts/bot_watchdog.py --once  # 1회 점검 + 재시작
 python scripts/bot_watchdog.py &       # 데몬 모드
 ```
+
+자동 복구 시도 전에는 어떤 recovery 액션을 선택했는지 한 줄로 기록한다.
 
 ## Step 3b: 코드 버그 수정
 

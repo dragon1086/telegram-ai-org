@@ -55,6 +55,8 @@ class ImprovementBus:
     LESSON_REPEAT_THRESHOLD = 3
     # lesson_memory 조회 기간 (일)
     LESSON_LOOKBACK_DAYS = 14
+    # 자가개선이 유지해야 할 최소 skill eval 점수
+    SKILL_SCORE_TARGET = 7.5
 
     def __init__(self, dry_run: bool = False) -> None:
         self.dry_run = dry_run
@@ -150,29 +152,44 @@ class ImprovementBus:
         return signals
 
     def _signals_from_skill_staleness(self) -> list[ImprovementSignal]:
-        """eval.json이 있는 스킬 중 baseline이 낮은 스킬 감지."""
+        """eval.json이 있는 스킬 중 현재 점수가 목표 미달인 스킬 감지."""
         signals: list[ImprovementSignal] = []
         try:
+            import json
+
+            from core.eval_runner import EvalRunner
+
             evals_dir = Path(__file__).parent.parent / "evals" / "skills"
             if not evals_dir.exists():
                 return signals
 
-            import json
+            runner = EvalRunner()
             for skill_eval in evals_dir.glob("*/eval.json"):
                 skill_name = skill_eval.parent.name
                 data = json.loads(skill_eval.read_text())
-                baseline = data.get("baseline", 10.0)
-                if baseline < 7.0:
-                    signals.append(ImprovementSignal(
-                        kind=SignalKind.SKILL_STALE,
-                        priority=7,
-                        target=f"skill:{skill_name}",
-                        evidence={"baseline": baseline, "skill": skill_name},
-                        suggested_action=(
-                            f"{skill_name} 스킬 eval baseline={baseline:.1f}/10. "
-                            "자동 개선 루프 실행 권장."
-                        ),
-                    ))
+                baseline = float(data.get("baseline", 10.0))
+                result = runner.score_skill(skill_name)
+                if result is None or result.score >= self.SKILL_SCORE_TARGET:
+                    continue
+
+                score_gap = max(0.0, self.SKILL_SCORE_TARGET - result.score)
+                priority = min(10, max(7, int(7 + score_gap)))
+                signals.append(ImprovementSignal(
+                    kind=SignalKind.SKILL_STALE,
+                    priority=priority,
+                    target=f"skill:{skill_name}",
+                    evidence={
+                        "baseline": baseline,
+                        "current_score": result.score,
+                        "skill": skill_name,
+                        "target_score": self.SKILL_SCORE_TARGET,
+                    },
+                    suggested_action=(
+                        f"{skill_name} 스킬 eval {result.score:.1f}/10 "
+                        f"(baseline={baseline:.1f}, target={self.SKILL_SCORE_TARGET:.1f}). "
+                        "자동 개선 루프 실행 권장."
+                    ),
+                ))
         except Exception as e:
             logger.warning(f"[ImprovementBus] skill staleness 신호 수집 실패: {e}")
         return signals
@@ -251,6 +268,9 @@ class ImprovementBus:
         if self.dry_run:
             return f"[dry_run] {label}"
 
+        if signal.target.startswith("skill:"):
+            return self._dispatch_skill_signal(signal)
+
         # priority >= 8이고 code 타겟이면 승인 게이트로 전달
         if signal.priority >= 8 and signal.target.startswith("code:"):
             import dataclasses
@@ -264,6 +284,47 @@ class ImprovementBus:
             return f"[pending_approval] {label} approval_id={approval_id}"
 
         return label
+
+    def _dispatch_skill_signal(self, signal: ImprovementSignal) -> str:
+        """skill:* 신호는 eval 재실행 후 필요 시 자동 개선 루프로 연결."""
+        from core.eval_runner import EvalRunner
+        from core.skill_auto_improver import SkillAutoImprover
+
+        skill_name = signal.target.removeprefix("skill:")
+        runner = EvalRunner()
+        before = runner.score_skill(skill_name)
+        if before is None:
+            return f"[skill_missing_eval] {skill_name}"
+
+        if before.score >= self.SKILL_SCORE_TARGET:
+            return (
+                f"[skill_ok] {skill_name}: "
+                f"{before.score:.1f}/10 >= {self.SKILL_SCORE_TARGET:.1f}"
+            )
+
+        result = SkillAutoImprover().improve(skill_name, target_score=self.SKILL_SCORE_TARGET)
+        after = runner.score_skill(skill_name)
+        after_score = after.score if after else before.score
+
+        if result and result.improved and after_score >= self.SKILL_SCORE_TARGET:
+            return (
+                f"[skill_auto_improved] {skill_name}: "
+                f"{before.score:.1f} -> {after_score:.1f} "
+                f"(target={self.SKILL_SCORE_TARGET:.1f})"
+            )
+
+        if result and result.improved:
+            return (
+                f"[skill_partially_improved] {skill_name}: "
+                f"{before.score:.1f} -> {after_score:.1f} "
+                f"(target={self.SKILL_SCORE_TARGET:.1f})"
+            )
+
+        return (
+            f"[skill_no_change] {skill_name}: "
+            f"{before.score:.1f} -> {after_score:.1f} "
+            f"(target={self.SKILL_SCORE_TARGET:.1f})"
+        )
 
     def _format_approval_notification(self, signal: ImprovementSignal, approval_id: str) -> str:
         """승인 요청 알림 메시지 생성."""
