@@ -202,6 +202,27 @@ bash scripts/start_all.sh
     "[COLLAB:머지/푸시/재기동 요청|맥락: 코드 수정 완료]"
   ```
 
+### [2026-04-01] 봇 코드 변경 → 반영 절차 (전체 조직 공통)
+
+> 봇들은 `.worktrees/bot-runtime/`(detached HEAD)에서 실행된다. worktree 안에서 바로 commit하면 main 브랜치에 반영되지 않아 request_restart.sh 이후 변경사항이 사라진다.
+
+**올바른 절차** (운영실 전담 — 다른 조직은 COLLAB 위임):
+
+```bash
+# 1. worktree 안에서 브랜치 생성 후 커밋
+git checkout -b fix/<작업명>
+git add <변경파일> && git commit -m "fix: 변경 내용"
+
+# 2. main에 머지 후 push (운영실만)
+git checkout main && git merge fix/<작업명> --no-ff
+git push origin main
+
+# 3. 재시작 요청 (watchdog → restart_bots.sh → start_all.sh 체인)
+bash scripts/request_restart.sh --reason "변경 사유"
+```
+
+**절대 금지**: worktree 안에서 commit만 하고 request_restart.sh 호출 → main HEAD로 worktree 재생성 시 커밋 유실
+
 ### [2026-03-25] Docker Compose 다중 엔진 실행 가이드
 
 서비스 구조: `x-bot-common`(공통 앵커) + 엔진 프로파일 3개 (`claude` / `codex` / `gemini`)
