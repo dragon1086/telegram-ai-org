@@ -217,7 +217,9 @@ async def get_task_graph(
         tuple(root_ids),
     )
 
-    def _label(text: str, max_len: int = 35) -> str:
+    def _label(text: str, max_len: int = 40) -> str:
+        import re
+        text = re.sub(r'^\[배경\]\s*상위\s*목표:\s*', '', text or '').strip()
         return text[:max_len] + "…" if len(text) > max_len else text
 
     def _task_type(task_id: str, description: str) -> str:
@@ -259,6 +261,7 @@ async def get_task_graph(
                     "depth": 0,
                     "task_type": "retro",
                     "virtual": True,
+                    "updated_at": "",
                 }
 
     # Add virtual retro group nodes
@@ -276,6 +279,7 @@ async def get_task_graph(
             "status": t["status"],
             "depth": 0 if ttype not in ("retro",) else 1,
             "task_type": ttype,
+            "updated_at": t.get("updated_at") or "",
         })
         stats[t["status"]] = stats.get(t["status"], 0) + 1
 
@@ -299,6 +303,7 @@ async def get_task_graph(
             "status": t["status"],
             "depth": 2 if ttype == "retro" else 1,
             "task_type": ttype,
+            "updated_at": t.get("updated_at") or "",
         })
         stats[t["status"]] = stats.get(t["status"], 0) + 1
         edges.append({"source": t["parent_id"], "target": t["id"]})
