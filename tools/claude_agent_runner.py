@@ -5,16 +5,24 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from claude_agent_sdk import (
-    AssistantMessage,
-    ClaudeAgentOptions,
-    CLIConnectionError,
-    CLINotFoundError,
-    ResultMessage,
-    SystemMessage,
-    query,
-)
-from claude_agent_sdk.types import TextBlock
+try:
+    from claude_agent_sdk import (
+        AssistantMessage,
+        ClaudeAgentOptions,
+        CLIConnectionError,
+        CLINotFoundError,
+        ResultMessage,
+        SystemMessage,
+        query,
+    )
+    from claude_agent_sdk.types import TextBlock
+    _SDK_AVAILABLE = True
+except ImportError as _sdk_import_error:
+    raise ImportError(
+        "claude-agent-sdk is not installed. "
+        "Install with: pip install 'telegram-ai-org[sdk]' "
+        "or fall back to subprocess runner automatically."
+    ) from _sdk_import_error
 
 from tools.base_runner import (
     BaseRunner,
