@@ -129,12 +129,18 @@ if DASHBOARD_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(_static_dir)), name="dashboard-static")
 
 
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    "Pragma": "no-cache",
+}
+
+
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def serve_dashboard():
     """대시보드 메인 HTML 서빙."""
     index_html = DASHBOARD_DIR / "index.html"
     if index_html.exists():
-        return FileResponse(str(index_html))
+        return FileResponse(str(index_html), headers=_NO_CACHE_HEADERS)
     return HTMLResponse(
         content="<h1>⚠️ dashboard/index.html 없음</h1><p>dashboard/ 디렉토리를 확인하세요.</p>",
         status_code=404,
