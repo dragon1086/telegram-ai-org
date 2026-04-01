@@ -99,38 +99,19 @@ app.add_middleware(
 # 라우터 마운트 (core API 라우터 재사용)
 # ---------------------------------------------------------------------------
 
+from core.api.routes.dashboard import router as dashboard_router  # noqa: E402
+from core.api.routes.events import router as events_router  # noqa: E402
 from core.api.routes.health import router as health_router  # noqa: E402
 from core.api.routes.metrics import router as metrics_router  # noqa: E402
-from core.api.routes.tasks import router as tasks_router  # noqa: E402
-from core.api.routes.events import router as events_router  # noqa: E402
 from core.api.routes.streams import router as streams_router  # noqa: E402
+from core.api.routes.tasks import router as tasks_router  # noqa: E402
 
 app.include_router(health_router)
 app.include_router(metrics_router)
 app.include_router(tasks_router)
 app.include_router(events_router)
 app.include_router(streams_router)  # Phase 2: 채널별 전용 SSE 스트림
-
-# ---------------------------------------------------------------------------
-# 대시보드 스냅샷 API
-# ---------------------------------------------------------------------------
-
-
-@app.get("/api/v1/dashboard/snapshot", tags=["dashboard"])
-async def dashboard_snapshot():
-    """현재 티켓 상태 스냅샷 반환 (초기 로드용)."""
-    from fastapi import Request
-    pusher = getattr(app.state, "pusher", None)
-    if pusher is None:
-        return {"error": "pusher not initialized"}
-    return pusher.get_snapshot()
-
-
-@app.get("/api/v1/dashboard/characters", tags=["dashboard"])
-async def dashboard_characters():
-    """부서별 캐릭터 정보 반환."""
-    from core.dashboard.models import ORG_CHARACTERS
-    return ORG_CHARACTERS
+app.include_router(dashboard_router)  # Phase 2-B: 대시보드 데이터 API (snapshot 포함)
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +143,7 @@ async def serve_dashboard():
 
 if __name__ == "__main__":
     import argparse
+
     import uvicorn
 
     parser = argparse.ArgumentParser(description="AIMesh 실시간 대시보드")

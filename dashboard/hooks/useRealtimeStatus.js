@@ -164,6 +164,11 @@ export class RealtimeStatusHook {
               this._processEvent('task_complete', task);
             }
           });
+
+          // character_update — 각 봇의 새 상태 발행
+          (curr.characters || []).forEach((char) => {
+            this._processEvent('character_update', char);
+          });
         } else {
           // 첫 번째 폴링 — 현재 상태 발행
           if (snapshot.counts) this._processEvent('ticket_update', snapshot.counts);

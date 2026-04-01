@@ -69,9 +69,17 @@
   100% { color: inherit;             transform: scale(1);   }
 }
 
+/* ── working 애니메이션 (작업 중 — 부드러운 pulse glow) ── */
+@keyframes character-working {
+  0%, 100% { transform: translateY(0) scale(1);     filter: brightness(1)    drop-shadow(0 0 0px rgba(0,87,255,0)); }
+  30%       { transform: translateY(-4px) scale(1.04); filter: brightness(1.1) drop-shadow(0 0 8px rgba(0,87,255,0.5)); }
+  60%       { transform: translateY(-2px) scale(1.02); filter: brightness(1.05) drop-shadow(0 0 4px rgba(0,87,255,0.3)); }
+}
+
 /* ── 클래스 적용 ── */
-.character-anim-idle   { animation: character-idle   3.2s ease-in-out infinite; }
-.character-anim-alert  { animation: character-alert  0.9s ease-in-out infinite; }
+.character-anim-idle    { animation: character-idle    3.2s ease-in-out infinite; }
+.character-anim-working { animation: character-working 1.8s ease-in-out infinite; }
+.character-anim-alert   { animation: character-alert   0.9s ease-in-out infinite; }
 .character-anim-danger {
   animation:
     character-danger     0.45s ease-in-out infinite,
@@ -86,6 +94,18 @@
 .criteria-marker { animation: criteria-marker-flash 1s ease-in-out 3; }
 
 .counter-updated { animation: counter-update 0.4s ease-out; }
+
+/* ── 현재 태스크 레이블 ── */
+.current-task-label {
+  font-size: .72rem;
+  color: #555;
+  margin-top: .3rem;
+  text-align: center;
+  word-break: break-all;
+  max-width: 140px;
+  line-height: 1.3;
+  font-style: italic;
+}
 
 /* ── severity 색상 클래스 (WCAG AA) ── */
 .severity-info     { background: #E3F2FD; color: #0D47A1; border-color: #1565C0; }

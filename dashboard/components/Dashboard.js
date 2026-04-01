@@ -137,7 +137,13 @@ export class Dashboard {
 
       case 'character_update': {
         const orgId = event.org_id || event.orgId;
-        if (orgId && event.severity && this._stateManager) {
+        if (!orgId) break;
+        const panel = this._characterPanels.get(orgId);
+        if (panel) {
+          const charMeta = ORG_CHARACTERS.find((c) => c.orgId === orgId) || {};
+          panel.update({ ...charMeta, ...event });
+        }
+        if (event.severity && this._stateManager) {
           this._stateManager.updateFromSeverity(orgId, event.severity);
         }
         break;
