@@ -5,6 +5,7 @@ PMOrchestrator에서 분리된 Mixin 클래스.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -29,6 +30,65 @@ class PMSynthesisMixin:
     self.dispatch, self.collab_dispatch, self._debate_synthesize,
     self._discussion_summarize 등은 PMOrchestrator/다른 Mixin에서 제공된다.
     """
+
+    _PHASE_BLOCK_RE = re.compile(
+        r"(\s*===\s*Phase\s+\d+:[\s\S]*?)(?=\n\s*===\s*Phase\s+\d+:|\Z)",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _truncate_rework_text(text: str, max_chars: int) -> str:
+        compact = re.sub(r"\s+", " ", (text or "")).strip()
+        if len(compact) <= max_chars:
+            return compact
+        return compact[: max_chars - 1].rstrip() + "…"
+
+    @classmethod
+    def _narrow_rework_scope(
+        cls,
+        original_description: str,
+        *,
+        max_phases: int = 2,
+        max_chars: int = 360,
+    ) -> str:
+        """재작업 시 전체 브리프 재전송 대신 좁은 범위만 남긴다."""
+        cleaned = re.sub(r"^\[보완 필요\]\s*", "", (original_description or "")).strip()
+        phase_blocks = cls._PHASE_BLOCK_RE.findall(cleaned)
+
+        if phase_blocks:
+            focused_lines: list[str] = []
+            for block in phase_blocks[:max_phases]:
+                lines = [line.strip() for line in block.splitlines() if line.strip()]
+                focused_lines.extend(lines[:4])
+            narrowed = "\n".join(focused_lines)
+        else:
+            narrowed = "\n".join(
+                line.strip()
+                for line in cleaned.splitlines()
+                if line.strip()
+            )
+
+        return cls._truncate_rework_text(narrowed, max_chars)
+
+    @classmethod
+    def _build_rework_follow_up_description(cls, subtask: dict) -> str:
+        """타임아웃 재작업용 보완 프롬프트를 짧고 구체적으로 구성한다."""
+        metadata = subtask.get("metadata") or {}
+        original = metadata.get("original_description") or subtask.get("description", "")
+        narrowed_scope = cls._narrow_rework_scope(original)
+        previous_result = cls._truncate_rework_text(subtask.get("result") or "", 180)
+        task_type = metadata.get("task_type") or "미지정"
+
+        return (
+            "[보완 필요]\n"
+            f"원래 배정 범위: {narrowed_scope or '(원문 없음)'}\n"
+            "이번 재작업 목표: 이전 제출물에서 부족했던 부분만 보완하세요. "
+            "전체 목표를 처음부터 다시 수행하지 말고, 가장 중요한 누락 산출물 1개를 우선 완성하세요.\n"
+            f"태스크 유형 유지: {task_type}\n"
+            "제약: 1-2개 단계만 수행하고 3개 이상 Phase로 확장하지 마세요.\n"
+            f"이전 결과 요약: {previous_result or '(결과 없음)'}\n"
+            "응답 형식: 첫 문단에서 직접 답하고, 확인한 내용·바뀐 점·다음 조치를 구체적으로 적으세요."
+        )
 
     async def _fire_collab_triggers(
         self, task_id: str, result: str, chat_id: int
@@ -490,13 +550,11 @@ class PMSynthesisMixin:
                     # LLM이 follow-up을 안 줬으면 완료된 서브태스크를 "보완 필요" 프롬프트로 재발행
                     follow_ups = [
                         SubTask(
-                            description=(
-                                f"[보완 필요] {st.get('metadata', {}).get('original_description', st.get('description', ''))}\n\n"
-                                f"이전 결과가 충분하지 않습니다. 더 구체적이고 완성도 높은 결과를 제출해주세요.\n"
-                                f"이전 결과 요약: {(st.get('result') or '')[:200]}"
-                            ),
+                            description=self._build_rework_follow_up_description(st),
                             assigned_dept=st["assigned_dept"],
                             workdir=parent_workdir,
+                            task_type=(st.get("metadata", {}) or {}).get("task_type"),
+                            allow_file_change=(st.get("metadata", {}) or {}).get("allow_file_change"),
                         )
                         for st in subtasks
                         if st.get("assigned_dept") and st.get("status") == "done"

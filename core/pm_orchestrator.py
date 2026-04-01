@@ -893,7 +893,12 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
             f"    DEPT:engineering|TASK:Phase 2 — 핵심 로직 구현|DEPENDS:0\n"
             f"    DEPT:engineering|TASK:Phase 3 — 테스트 및 검증|DEPENDS:1\n"
             f"- Each subtask's TASK description should contain only 1-2 phases (≤{int(SUBTASK_TIMEOUT_SEC // 60)} minutes of work).\n"
-            f"- A single subtask with 3+ '=== Phase ===' sections is likely to timeout. Split it.\n\n"
+            f"- A single subtask with 3+ '=== Phase ===' sections is likely to timeout. Split it.\n"
+            f"- Retry/rework markers ('[보완 필요]', '재시도', 'retry', 'attempt 초과') mean the prior attempt was too broad.\n"
+            f"  Reissue ONLY the smallest missing deliverable instead of copying the full original brief.\n"
+            f"- For retry/rework tasks, preserve the current department unless the missing deliverable clearly belongs elsewhere.\n"
+            f"- If the request mixes 조사/분석 and 구현/수정, ALWAYS split it into sequential subtasks instead of assigning one mixed brief.\n"
+            f"- Never paste more than 500 characters of the user's original request into one TASK field. Summarize the next action narrowly.\n\n"
             f"User request: {message[:500]}"
         )
 
@@ -911,12 +916,20 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
         if subtasks:
             for subtask in subtasks:
                 subtask.workdir = workdir
+                subtask.description = self._tighten_subtask_description(
+                    subtask.description,
+                    task_type=subtask.task_type,
+                )
             logger.info(f"[PM] LLM 분해 결과: {len(subtasks)}개 서브태스크")
             return subtasks
 
         subtasks = self._keyword_decompose(user_message)
         for subtask in subtasks:
             subtask.workdir = workdir
+            subtask.description = self._tighten_subtask_description(
+                subtask.description,
+                task_type=subtask.task_type,
+            )
         logger.info(f"[PM] 키워드 분해 결과: {len(subtasks)}개 서브태스크")
         return subtasks
 
@@ -984,6 +997,60 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
     _VALID_TASK_TYPES = frozenset(["조사", "분석", "기획", "설계", "검토", "수정", "구현", "운영"])
     # 파일 변경이 허용되는 실행형 유형
     _EXECUTION_TYPES = frozenset(["구현", "수정", "운영"])
+    _PHASE_BLOCK_RE = re.compile(
+        r"(\s*===\s*Phase\s+\d+:[\s\S]*?)(?=\n\s*===\s*Phase\s+\d+:|\Z)",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _truncate_subtask_text(text: str, max_chars: int) -> str:
+        compact = re.sub(r"\s+", " ", (text or "")).strip()
+        if len(compact) <= max_chars:
+            return compact
+        return compact[: max_chars - 1].rstrip() + "…"
+
+    @classmethod
+    def _tighten_subtask_description(
+        cls,
+        description: str,
+        *,
+        task_type: str | None = None,
+    ) -> str:
+        """과도하게 긴 단일 태스크를 타임아웃 안전한 범위로 압축한다."""
+        text = (description or "").strip()
+        text = re.sub(r"^(?:\s*\[보완 필요\]\s*)+", "", text)
+        text = re.sub(r"^\s*Phase\s+\d+\s*[—:-]\s*", "", text, flags=re.IGNORECASE)
+        phase_blocks = cls._PHASE_BLOCK_RE.findall(text)
+        retry_markers = ("[보완 필요]", "재시도", "retry", "attempt 초과")
+        needs_tightening = (
+            len(text) > 500
+            or len(phase_blocks) >= 3
+            or any(marker.lower() in text.lower() for marker in retry_markers)
+        )
+        if not needs_tightening:
+            return text
+
+        if phase_blocks:
+            focused_lines: list[str] = []
+            for block in phase_blocks[:2]:
+                lines = [line.strip() for line in block.splitlines() if line.strip()]
+                focused_lines.extend(lines[:4])
+            narrowed = "\n".join(focused_lines)
+        else:
+            narrowed = "\n".join(
+                line.strip()
+                for line in text.splitlines()
+                if line.strip()
+            )
+
+        narrowed = cls._truncate_subtask_text(narrowed, 360)
+        type_hint = f"태스크 유형 유지: {task_type}\n" if task_type else ""
+        return (
+            f"{narrowed}\n\n"
+            f"{type_hint}"
+            "제약: 이번 태스크에서는 위 범위 중 첫 번째 완성 가능한 산출물만 제출하세요. "
+            "전체 목표를 처음부터 다시 수행하거나 3개 이상 Phase로 확장하지 마세요."
+        ).strip()
 
     @staticmethod
     def _parse_decompose(response: str) -> list[SubTask]:
@@ -1028,7 +1095,10 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
                 allow_file_change = None
 
             subtasks.append(SubTask(
-                description=task_desc,
+                description=PMOrchestrator._tighten_subtask_description(
+                    task_desc,
+                    task_type=task_type,
+                ),
                 assigned_dept=dept,
                 depends_on=deps,
                 task_type=task_type,

@@ -115,6 +115,43 @@ class TestParseDecompose:
         assert result[0].description == "레거시 태스크"
         assert result[0].task_type is None
 
+    def test_decompose_prompt_mentions_retry_scope_reduction(self):
+        """재시도/보완 필요 태스크는 좁은 범위로 재분해하라는 지침이 있어야 한다."""
+        orch = PMOrchestrator.__new__(PMOrchestrator)
+        orch._dept_profiles = lambda: {
+            "aiorg_engineering_bot": {
+                "dept_name": "개발실",
+                "role": "개발",
+                "specialties": ["구현", "테스트"],
+            }
+        }
+
+        prompt = orch._build_decompose_prompt("[보완 필요] 재시도", ["aiorg_engineering_bot"])
+        assert "smallest missing deliverable" in prompt
+        assert "Retry/rework markers" in prompt
+        assert "Never paste more than 500 characters" in prompt
+
+    def test_tighten_subtask_description_shrinks_overscoped_retry_task(self):
+        text = """
+        [보완 필요] Phase 3 — 대시보드 프론트엔드 구현
+
+        === Phase 1: 구현 ===
+        백엔드 API 연동
+
+        === Phase 2: 시각화 ===
+        애니메이션과 상태 변화 표현
+
+        === Phase 3: 검증 ===
+        E2E 동작 검증
+        """
+
+        tightened = PMOrchestrator._tighten_subtask_description(text, task_type="구현")
+        assert "Phase 1" in tightened
+        assert "Phase 2" in tightened
+        assert "Phase 3" not in tightened
+        assert "태스크 유형 유지: 구현" in tightened
+        assert len(tightened) < 600
+
 
 # ─── StructuredPrompt.render() 태스크 유형 경계 표시 테스트 ──────────────────
 
