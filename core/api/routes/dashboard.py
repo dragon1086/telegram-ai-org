@@ -8,9 +8,12 @@
 """
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import aiosqlite
 from fastapi import APIRouter, Query
@@ -29,6 +32,16 @@ async def _query(sql: str, params: tuple = ()) -> list[dict[str, Any]]:
         async with db.execute(sql, params) as cursor:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
+
+
+async def _execute(sql: str, params: tuple = ()) -> int:
+    """INSERT/UPDATE/DELETE 등 변경 쿼리 실행 후 영향받은 행 수 반환."""
+    if not os.path.exists(_DB_PATH):
+        return 0
+    async with aiosqlite.connect(_DB_PATH) as db:
+        cursor = await db.execute(sql, params)
+        await db.commit()
+        return cursor.rowcount
 
 
 @router.get("/summary")
@@ -352,6 +365,18 @@ async def _compute_throughput(hours: float) -> dict[str, Any]:
 async def get_snapshot() -> dict[str, Any]:
     """봇별 활성 태스크 기반 캐릭터 상태 + 전체 카운트 스냅샷."""
     # pusher 미초기화 시에도 DB에서 직접 읽어 응답 (pusher는 SSE 전용)
+
+    # Stale 태스크 자동 정리 — 1시간 이상 업데이트 없는 running/in_progress → cancelled
+    stale_cleaned = await _execute(
+        """
+        UPDATE pm_tasks
+        SET status = 'cancelled', updated_at = datetime('now')
+        WHERE status IN ('running', 'in_progress', 'active')
+          AND updated_at < datetime('now', '-1 hour')
+        """,
+    )
+    if stale_cleaned:
+        logger.info("🧹 stale 태스크 %d건 자동 cancelled 처리", stale_cleaned)
 
     # 최근 24시간 태스크 가져오기 (in_progress 없을 때도 failed/done 반영)
     rows = await _query(
