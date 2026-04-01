@@ -244,6 +244,95 @@
   td.dept { color: #93c5fd; }
   .ts { color: #475569; font-size: 0.72rem; }
   .empty { padding: 32px; text-align: center; color: #475569; }
+
+  /* Bot Characters */
+  .bots-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 36px;
+  }
+  .bot-card {
+    background: #0d1224;
+    border: 1px solid #1e2a45;
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 120px;
+    position: relative;
+    transition: border-color 0.3s;
+  }
+  .bot-card.state-working { border-color: #22d3ee; }
+  .bot-card.state-done    { border-color: #22c55e; }
+  .bot-card.state-error   { border-color: #f87171; }
+  .bot-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #1e2a45;
+  }
+  .bot-avatar-svg {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+    background: #1e2a45;
+  }
+  .bot-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-align: center;
+  }
+  .bot-state-label {
+    font-size: 0.65rem;
+    color: #475569;
+  }
+  @keyframes bot-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.7; transform: scale(0.97); }
+  }
+  @keyframes bot-spin-glow {
+    0%   { filter: drop-shadow(0 0 4px #22d3ee); }
+    50%  { filter: drop-shadow(0 0 12px #22d3ee); }
+    100% { filter: drop-shadow(0 0 4px #22d3ee); }
+  }
+  @keyframes bot-done-bounce {
+    0%, 100% { transform: translateY(0); }
+    40%       { transform: translateY(-8px); }
+    60%       { transform: translateY(-4px); }
+  }
+  @keyframes bot-error-shake {
+    0%, 100% { transform: translateX(0); }
+    20%       { transform: translateX(-5px); }
+    40%       { transform: translateX(5px); }
+    60%       { transform: translateX(-3px); }
+    80%       { transform: translateX(3px); }
+  }
+  .bot-card.state-idle .bot-avatar,
+  .bot-card.state-idle .bot-avatar-svg    { animation: bot-pulse 3s ease-in-out infinite; }
+  .bot-card.state-working .bot-avatar,
+  .bot-card.state-working .bot-avatar-svg { animation: bot-spin-glow 1.5s ease-in-out infinite; }
+  .bot-card.state-done .bot-avatar,
+  .bot-card.state-done .bot-avatar-svg    { animation: bot-done-bounce 0.6s ease 1; }
+  .bot-card.state-error .bot-avatar,
+  .bot-card.state-error .bot-avatar-svg   { animation: bot-error-shake 0.5s ease 1; }
+  .bot-task-bubble {
+    position: absolute;
+    top: -8px; right: -8px;
+    background: #22d3ee;
+    color: #0a0e1a;
+    border-radius: 10px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    display: none;
+  }
+  .bot-card.state-working .bot-task-bubble { display: block; }
 </style>
 </head>
 <body>
@@ -270,6 +359,12 @@
       <div class="label">❌ 실패 태스크</div>
       <div class="value" id="cnt-failed-tasks">—</div>
     </div>
+  </div>
+
+  <!-- Bot Characters -->
+  <div class="section-title">봇 현황</div>
+  <div class="bots-row" id="bots-row">
+    <!-- JS로 렌더링 -->
   </div>
 
   <!-- Task Graph -->
@@ -671,23 +766,70 @@
       setTimeout(connectSSE, 5000);
     };
     es.addEventListener('ticket_update', () => {
-      loadGoals(); loadTasks(); loadGraph(currentDays);
+      loadGoals(); loadTasks(); loadGraph(currentDays); syncBotStates();
     });
     es.addEventListener('task_complete', () => {
-      loadSummary(); loadGoals(); loadTasks(); loadGraph(currentDays);
+      loadSummary(); loadGoals(); loadTasks(); loadGraph(currentDays); syncBotStates();
     });
+  }
+
+  // ── Bot Characters ─────────────────────────────────────────────────────────
+  const BOTS = [
+    { id: 'pm',          name: 'PM',      dept: 'aiorg_pm_bot',           emoji: '🤖', img: 'chars/pm.png' },
+    { id: 'engineering', name: '개발실',  dept: 'aiorg_engineering_bot',  emoji: '⚙️', img: 'chars/engineering.png' },
+    { id: 'design',      name: '디자인실', dept: 'aiorg_design_bot',      emoji: '🎨', img: 'chars/design.png' },
+    { id: 'growth',      name: '성장실',  dept: 'aiorg_growth_bot',       emoji: '🚀', img: 'chars/growth.png' },
+    { id: 'research',    name: '리서치실', dept: 'aiorg_research_bot',    emoji: '🔬', img: 'chars/research.png' },
+    { id: 'ops',         name: '운영실',  dept: 'aiorg_ops_bot',          emoji: '🖥️', img: 'chars/ops.png' },
+  ];
+
+  const botStates = {};
+  BOTS.forEach(b => { botStates[b.dept] = { state: 'idle', task: '' }; });
+
+  function renderBots() {
+    const row = document.getElementById('bots-row');
+    if (!row) return;
+    const stateLabels = { idle: '대기중', working: '작업중', done: '완료', error: '오류' };
+    row.innerHTML = BOTS.map(b => {
+      const bs = botStates[b.dept] || { state: 'idle', task: '' };
+      const avatarHtml = `<img class="bot-avatar" src="${b.img}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="bot-avatar-svg" style="display:none">${b.emoji}</div>`;
+      return `<div class="bot-card state-${bs.state}" id="bot-card-${b.id}">
+        <div class="bot-task-bubble">BUSY</div>
+        ${avatarHtml}
+        <div class="bot-name">${b.name}</div>
+        <div class="bot-state-label">${stateLabels[bs.state] || bs.state}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function syncBotStates() {
+    try {
+      const r = await fetch(BASE + '/api/v1/dashboard/tasks?limit=50');
+      if (!r.ok) return;
+      const tasks = await r.json();
+      BOTS.forEach(b => { botStates[b.dept] = { state: 'idle', task: '' }; });
+      tasks.forEach(t => {
+        if ((t.status === 'active' || t.status === 'in_progress') && t.assigned_dept) {
+          botStates[t.assigned_dept] = { state: 'working', task: t.description || '' };
+        }
+      });
+      renderBots();
+    } catch (e) { console.warn('botSync error', e); }
   }
 
   // ── Init ───────────────────────────────────────────────────────────────────
   async function refresh() {
     await Promise.all([loadSummary(), loadGoals(), loadTasks()]);
     loadGraph(currentDays);
+    syncBotStates();
   }
 
+  renderBots();
   refresh();
   connectSSE();
   setInterval(loadSummary, 30000);
   setInterval(() => loadGraph(currentDays), 30000);
+  setInterval(syncBotStates, 15000);
 </script>
 </body>
 </html>
