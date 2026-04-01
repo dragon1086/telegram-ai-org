@@ -721,6 +721,19 @@ async def handle_nl_set_goal(
     if decision_client is None:
         return False
 
+    # 질문/상태확인 패턴 → 목표 등록 아님, 직접 답변으로 흘려보냄
+    # "G009 장기목표 완료됐어?" 같은 상태 질문이 오탐하는 것을 방지
+    _stripped = text.strip()
+    if _stripped.endswith("?") or _stripped.endswith("？"):
+        return False
+    _query_endings = [
+        "됐어", "됐나요", "됐나", "어때요", "어때", "상태야", "상태예요",
+        "현황이야", "현황이에요", "했어", "했나요", "했나", "완료됐어",
+        "달성됐어", "끝났어", "끝났나", "됐는지", "됐어요",
+    ]
+    if any(_stripped.endswith(e) for e in _query_endings):
+        return False
+
     from core.goal_nlp import parse_goal_from_text
     parsed = await parse_goal_from_text(text, decision_client)
     if parsed is None:
