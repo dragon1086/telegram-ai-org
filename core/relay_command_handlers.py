@@ -741,16 +741,27 @@ async def handle_nl_set_goal(
 
     chat_id = update.effective_chat.id if update.effective_chat else 0
     try:
+        meta: dict = {}
+        if parsed.success_criteria:
+            meta["success_criteria"] = parsed.success_criteria
+
         goal_id = await goal_tracker.start_goal(
             title=parsed.title,
             description=parsed.description,
             chat_id=chat_id,
+            meta=meta,
         )
         from core.telegram_formatting import escape_html
+        sc_line = (
+            f"\n✅ <i>{escape_html(parsed.success_criteria)}</i>\n"
+            if parsed.success_criteria
+            else ""
+        )
         await update.message.reply_text(
             f"🎯 <b>장기목표로 등록했습니다</b>\n\n"
             f"📌 <b>{escape_html(parsed.title)}</b>\n"
-            f"📝 {escape_html(parsed.description)}\n\n"
+            f"📝 {escape_html(parsed.description)}"
+            f"{sc_line}\n"
             f"🆔 <code>{goal_id}</code>\n"
             f"🔄 자율 달성 루프가 시작됩니다.",
             parse_mode="HTML",
