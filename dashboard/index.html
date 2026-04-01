@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AIMesh 실시간 대시보드</title>
   <link rel="stylesheet" href="styles/comic-theme.css" />
+  <link rel="stylesheet" href="styles/character-animation.css" />
   <style>
     /* 헤더 실시간 시계 */
     #live-clock {
@@ -36,6 +37,28 @@
     </div>
   </div>
 </header>
+
+<!-- ── 캐릭터 대시보드 (봇 상태 애니메이션) ── -->
+<section id="character-dashboard" style="max-width:1360px;margin:1.5rem auto 0;padding:0 20px;"></section>
+
+<style>
+  /* 캐릭터 대시보드 3컬럼 레이아웃 */
+  .dashboard-character-grid {
+    display: grid;
+    grid-template-columns: 1fr minmax(260px,320px) minmax(220px,280px);
+    gap: 1.25rem;
+    align-items: start;
+  }
+  #character-panels-grid .character-panel {
+    background: var(--comic-card-bg, #0d1b2e);
+    border: 2.5px solid #1a2e4a;
+    border-radius: 12px;
+    padding: 0.75rem;
+  }
+  @media (max-width: 900px) {
+    .dashboard-character-grid { grid-template-columns: 1fr; }
+  }
+</style>
 
 <!-- ── 대시보드 그리드 ── -->
 <main class="dashboard-grid">
@@ -676,11 +699,27 @@
   import { RemoteAccessPanel }   from './components/RemoteAccessPanel.js';
   import { DashboardClient }     from './services/client.js';
   import { isMockMode }          from './services/mockEventEmitter.js';
+  import { Dashboard }           from './components/Dashboard.js';
+  import { createApiClient }     from './api/client.js';
+  import { RealtimeStatusHook }  from './hooks/useRealtimeStatus.js';
 
   // ── 패널 초기화 ────────────────────────────────────────────
   const ticketPanel  = new TicketStatusPanel(document.getElementById('ticket-status-panel'));
   const tasksPanel   = new CompletedTasksPanel(document.getElementById('completed-tasks-panel'));
   const remotePanel  = new RemoteAccessPanel(document.getElementById('remote-access-panel'));
+
+  // ── 캐릭터 대시보드 (봇 애니메이션 패널) ────────────────────
+  const charDashboardEl = document.getElementById('character-dashboard');
+  if (charDashboardEl) {
+    const apiClient   = createApiClient();
+    const realtimeHook = new RealtimeStatusHook({
+      mode:         'polling',
+      pollInterval: 3000,
+      apiClient,
+    });
+    const charDashboard = new Dashboard(charDashboardEl);
+    charDashboard.init(apiClient, realtimeHook);
+  }
 
   // ── 목 모드 배너 ──────────────────────────────────────────
   if (isMockMode()) {
