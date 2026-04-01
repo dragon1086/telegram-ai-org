@@ -249,7 +249,7 @@ def generate_image(client, prompt: str, output_path: Path, asset_name: str, mode
 
 def generate_image_fallback_imagen(client, prompt: str, output_path: Path, asset_name: str) -> bool:
     """Imagen 3 fallback 생성 시도."""
-    print(f"  [Fallback] Imagen 3 으로 재시도 중...")
+    print("  [Fallback] Imagen 3 으로 재시도 중...")
     try:
         from google.genai import types
 
@@ -324,17 +324,17 @@ def run_generation(target: str = "all") -> dict:
 
         # Step 3: 실패 시 gemini-2.5-flash-image fallback
         if not success:
-            print(f"  ↪ Primary 실패 — gemini-2.5-flash-image fallback 시도...")
+            print("  ↪ Primary 실패 — gemini-2.5-flash-image fallback 시도...")
             success = generate_image(client, refined_prompt, output_path, name, model=IMAGE_GEN_FALLBACK)
 
         # Step 4: Imagen 4 fallback
         if not success:
-            print(f"  ↪ Imagen 4 fallback 시도...")
+            print("  ↪ Imagen 4 fallback 시도...")
             success = generate_image_fallback_imagen(client, refined_prompt, output_path, name)
 
         # Step 5: 원본 프롬프트로 최종 재시도
         if not success:
-            print(f"  ↪ Original 프롬프트로 최종 재시도...")
+            print("  ↪ Original 프롬프트로 최종 재시도...")
             success = generate_image(client, base_prompt, output_path, name, model=IMAGE_GEN_MODEL)
 
         results[name] = {
