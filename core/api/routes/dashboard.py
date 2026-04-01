@@ -1,13 +1,15 @@
 """core.api.routes.dashboard — 대시보드 데이터 REST API (Phase 2-B).
 
 엔드포인트:
-    GET /api/v1/dashboard/summary  — 전체 요약 (인증 불필요)
-    GET /api/v1/dashboard/goals    — 목표 목록 (인증 불필요)
-    GET /api/v1/dashboard/tasks    — 최근 태스크 목록 (인증 불필요)
+    GET /api/v1/dashboard/summary    — 전체 요약 (인증 불필요)
+    GET /api/v1/dashboard/goals      — 목표 목록 (인증 불필요)
+    GET /api/v1/dashboard/tasks      — 최근 태스크 목록 (인증 불필요)
+    GET /api/v1/dashboard/task-graph — 태스크 계층 그래프 nodes+edges (인증 불필요)
 """
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiosqlite
@@ -102,3 +104,82 @@ async def get_tasks(
         """,
         (limit,),
     )
+
+
+@router.get("/task-graph")
+async def get_task_graph(
+    days: int = Query(default=7, ge=1, le=90),
+    limit: int = Query(default=80, ge=1, le=300),
+) -> dict[str, Any]:
+    """태스크 계층 그래프 데이터(nodes + edges)를 반환합니다.
+
+    D3.js force-directed 그래프용.
+    root 태스크(parent_id IS NULL)와 그 자식 태스크를 함께 반환.
+
+    Args:
+        days: 최근 N일 이내 root 태스크만 포함 (기본 7일).
+        limit: root 태스크 최대 개수 (기본 80).
+
+    Returns:
+        nodes: [{id, label, dept, status, depth}]
+        edges: [{source, target}]
+        stats: status별 노드 카운트
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+    root_tasks = await _query(
+        """
+        SELECT id, description, assigned_dept, status, updated_at
+        FROM pm_tasks
+        WHERE parent_id IS NULL AND updated_at >= ?
+        ORDER BY updated_at DESC
+        LIMIT ?
+        """,
+        (cutoff, limit),
+    )
+
+    if not root_tasks:
+        return {"nodes": [], "edges": [], "stats": {}}
+
+    root_ids = [r["id"] for r in root_tasks]
+    placeholders = ",".join("?" * len(root_ids))
+
+    child_tasks = await _query(
+        f"""
+        SELECT id, description, assigned_dept, status, parent_id, updated_at
+        FROM pm_tasks
+        WHERE parent_id IN ({placeholders})
+        ORDER BY updated_at DESC
+        """,
+        tuple(root_ids),
+    )
+
+    def _label(text: str, max_len: int = 35) -> str:
+        return text[:max_len] + "…" if len(text) > max_len else text
+
+    nodes: list[dict[str, Any]] = []
+    stats: dict[str, int] = {}
+
+    for t in root_tasks:
+        nodes.append({
+            "id": t["id"],
+            "label": _label(t["description"]),
+            "dept": t["assigned_dept"] or "pm",
+            "status": t["status"],
+            "depth": 0,
+        })
+        stats[t["status"]] = stats.get(t["status"], 0) + 1
+
+    for t in child_tasks:
+        nodes.append({
+            "id": t["id"],
+            "label": _label(t["description"]),
+            "dept": t["assigned_dept"] or "pm",
+            "status": t["status"],
+            "depth": 1,
+        })
+        stats[t["status"]] = stats.get(t["status"], 0) + 1
+
+    edges = [{"source": t["parent_id"], "target": t["id"]} for t in child_tasks]
+
+    return {"nodes": nodes, "edges": edges, "stats": stats}

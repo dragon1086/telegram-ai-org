@@ -40,7 +40,7 @@
     transition: background 0.3s;
   }
   #sse-dot.connected { background: #22c55e; }
-  main { max-width: 1200px; margin: 0 auto; padding: 28px 20px 0; }
+  main { max-width: 1280px; margin: 0 auto; padding: 28px 20px 0; }
   .section-title {
     font-size: 0.85rem;
     font-weight: 600;
@@ -62,18 +62,105 @@
     border-radius: 12px;
     padding: 20px 24px;
   }
-  .card .label {
-    font-size: 0.82rem;
-    color: #64748b;
-    margin-bottom: 8px;
-  }
-  .card .value {
-    font-size: 2rem;
-    font-weight: 700;
-  }
+  .card .label { font-size: 0.82rem; color: #64748b; margin-bottom: 8px; }
+  .card .value { font-size: 2rem; font-weight: 700; }
   .card.active .value { color: #22d3ee; }
   .card.done   .value { color: #22c55e; }
   .card.failed .value { color: #f87171; }
+
+  /* Graph section */
+  .graph-wrap {
+    background: #0d1224;
+    border: 1px solid #1e2a45;
+    border-radius: 12px;
+    margin-bottom: 36px;
+    position: relative;
+    overflow: hidden;
+  }
+  .graph-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #1e2a45;
+    flex-wrap: wrap;
+  }
+  .graph-toolbar span { font-size: 0.8rem; color: #64748b; }
+  .graph-days-btn {
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid #1e2a45;
+    background: transparent;
+    color: #94a3b8;
+    font-size: 0.76rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .graph-days-btn.active, .graph-days-btn:hover {
+    background: #1e3a5f;
+    border-color: #3b82f6;
+    color: #93c5fd;
+  }
+  #graph-stats {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-left: auto;
+  }
+  .stat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: #111827;
+  }
+  .stat-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  #graph-svg-container {
+    width: 100%;
+    height: 480px;
+    position: relative;
+  }
+  #graph-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  #graph-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #475569;
+    font-size: 0.9rem;
+    pointer-events: none;
+  }
+  /* Tooltip */
+  #g-tooltip {
+    position: fixed;
+    background: #111827;
+    border: 1px solid #1e2a45;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.78rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 100;
+    max-width: 260px;
+    line-height: 1.6;
+  }
+  #g-tooltip .tt-label { font-weight: 600; color: #e2e8f0; margin-bottom: 4px; }
+  #g-tooltip .tt-dept  { color: #93c5fd; }
+  #g-tooltip .tt-status { }
+
   /* Goals section */
   .goals-grid {
     display: grid;
@@ -185,6 +272,23 @@
     </div>
   </div>
 
+  <!-- Task Graph -->
+  <div class="section-title">태스크 계층 그래프</div>
+  <div class="graph-wrap">
+    <div class="graph-toolbar">
+      <span>최근</span>
+      <button class="graph-days-btn active" data-days="3">3일</button>
+      <button class="graph-days-btn active" data-days="7" id="btn-7d">7일</button>
+      <button class="graph-days-btn" data-days="14">14일</button>
+      <button class="graph-days-btn" data-days="30">30일</button>
+      <div id="graph-stats"></div>
+    </div>
+    <div id="graph-svg-container">
+      <svg id="graph-svg"></svg>
+      <div id="graph-empty">그래프 로딩 중...</div>
+    </div>
+  </div>
+
   <!-- Goals -->
   <div class="section-title">목표 목록</div>
   <div class="goals-grid" id="goals-grid">
@@ -210,26 +314,67 @@
   </div>
 </main>
 
+<div id="g-tooltip">
+  <div class="tt-label" id="tt-label"></div>
+  <div class="tt-dept" id="tt-dept"></div>
+  <div class="tt-status" id="tt-status"></div>
+</div>
+
+<!-- D3.js v7 -->
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <script>
   const BASE = '';
 
-  // --- helpers ---
-  function badgeClass(status) {
-    const map = { active: 'active', completed: 'completed',
-                  max_iterations_reached: 'max_iterations_reached', failed: 'failed' };
-    return map[status] || 'default';
+  // ── Status colour palette ──────────────────────────────────────────────────
+  const STATUS_COLOR = {
+    done:       '#22c55e',
+    completed:  '#22c55e',
+    active:     '#22d3ee',
+    in_progress:'#38bdf8',
+    pending:    '#a78bfa',
+    failed:     '#f87171',
+    error:      '#f87171',
+    cancelled:  '#475569',
+    needs_review:'#fb923c',
+    blocked:    '#ef4444',
+  };
+  function nodeColor(status) {
+    return STATUS_COLOR[status] || '#64748b';
   }
 
+  // ── helpers ────────────────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function badgeClass(status) {
+    const map = { active:'active', completed:'completed',
+                  max_iterations_reached:'max_iterations_reached', failed:'failed' };
+    return map[status] || 'default';
+  }
   function fmtTs(ts) {
     if (!ts) return '—';
     try {
-      const d = new Date(ts.replace(' ', 'T') + (ts.includes('T') ? '' : 'Z'));
-      return d.toLocaleString('ko-KR', { month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit' });
-    } catch { return ts.slice(0, 16); }
+      const d = new Date(ts.replace(' ','T') + (ts.includes('T') ? '' : 'Z'));
+      return d.toLocaleString('ko-KR', { month:'2-digit', day:'2-digit',
+        hour:'2-digit', minute:'2-digit' });
+    } catch { return ts.slice(0,16); }
+  }
+  function shortDept(dept) {
+    if (!dept) return '—';
+    const map = {
+      aiorg_engineering_bot: '개발실',
+      aiorg_design_bot:      '디자인실',
+      aiorg_planning_bot:    '기획실',
+      aiorg_growth_bot:      '성장실',
+      aiorg_research_bot:    '리서치실',
+      aiorg_ops_bot:         '운영실',
+      aiorg_pm_bot:          'PM',
+    };
+    return map[dept] || dept.replace('aiorg_','').replace('_bot','');
   }
 
-  // --- summary ---
+  // ── Summary ────────────────────────────────────────────────────────────────
   async function loadSummary() {
     try {
       const r = await fetch(BASE + '/api/v1/dashboard/summary');
@@ -237,16 +382,13 @@
       const d = await r.json();
       const g = d.goals || {};
       const t = d.tasks || {};
-      document.getElementById('cnt-active-goals').textContent =
-        (g.active || 0);
-      document.getElementById('cnt-done-tasks').textContent =
-        (t.done || t.completed || 0);
-      document.getElementById('cnt-failed-tasks').textContent =
-        (t.failed || t.error || 0);
+      document.getElementById('cnt-active-goals').textContent = (g.active || 0);
+      document.getElementById('cnt-done-tasks').textContent = (t.done || t.completed || 0);
+      document.getElementById('cnt-failed-tasks').textContent = (t.failed || t.error || 0);
     } catch (e) { console.warn('summary error', e); }
   }
 
-  // --- goals ---
+  // ── Goals ──────────────────────────────────────────────────────────────────
   async function loadGoals() {
     try {
       const r = await fetch(BASE + '/api/v1/dashboard/goals?limit=20');
@@ -263,11 +405,11 @@
         const pct = Math.min(100, Math.round((iter / maxIter) * 100));
         const bc = badgeClass(g.status);
         const prog = g.last_progress
-          ? g.last_progress.slice(0, 80) + (g.last_progress.length > 80 ? '…' : '')
+          ? g.last_progress.slice(0,80) + (g.last_progress.length > 80 ? '…' : '')
           : '';
         return `<div class="goal-card">
-          <div class="goal-title" title="${esc(g.title || '')}">${esc(g.title || '(제목 없음)')}</div>
-          <span class="status-badge ${bc}">${esc(g.status || 'unknown')}</span>
+          <div class="goal-title" title="${esc(g.title||'')}">${esc(g.title||'(제목 없음)')}</div>
+          <span class="status-badge ${bc}">${esc(g.status||'unknown')}</span>
           <div class="progress-bar-wrap">
             <div class="progress-bar" style="width:${pct}%"></div>
           </div>
@@ -279,7 +421,7 @@
     } catch (e) { console.warn('goals error', e); }
   }
 
-  // --- tasks ---
+  // ── Tasks ──────────────────────────────────────────────────────────────────
   async function loadTasks() {
     try {
       const r = await fetch(BASE + '/api/v1/dashboard/tasks?limit=20');
@@ -293,21 +435,226 @@
       tbody.innerHTML = tasks.map(t => {
         const bc = badgeClass(t.status);
         return `<tr>
-          <td><span class="status-badge ${bc}">${esc(t.status || '?')}</span></td>
-          <td class="dept">${esc(t.assigned_dept || '—')}</td>
-          <td class="desc" title="${esc(t.description || '')}">${esc(t.description || '—')}</td>
+          <td><span class="status-badge ${bc}">${esc(t.status||'?')}</span></td>
+          <td class="dept">${esc(shortDept(t.assigned_dept))}</td>
+          <td class="desc" title="${esc(t.description||'')}">${esc(t.description||'—')}</td>
           <td class="ts">${fmtTs(t.updated_at)}</td>
         </tr>`;
       }).join('');
     } catch (e) { console.warn('tasks error', e); }
   }
 
-  function esc(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  // ── D3 Force Graph ─────────────────────────────────────────────────────────
+  let currentDays = 7;
+  let simulation = null;
+
+  const tooltip = document.getElementById('g-tooltip');
+
+  function showTooltip(event, d) {
+    document.getElementById('tt-label').textContent = d.label;
+    document.getElementById('tt-dept').textContent = '담당: ' + shortDept(d.dept);
+    document.getElementById('tt-status').innerHTML =
+      '<span style="color:' + nodeColor(d.status) + '">' + (d.status||'?') + '</span>' +
+      (d.depth === 0 ? ' · 루트' : ' · 서브태스크');
+    tooltip.style.opacity = '1';
+    moveTooltip(event);
+  }
+  function moveTooltip(event) {
+    const tx = event.clientX + 14;
+    const ty = event.clientY - 10;
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top  = ty + 'px';
+  }
+  function hideTooltip() {
+    tooltip.style.opacity = '0';
   }
 
-  // --- SSE ---
+  function renderStats(stats) {
+    const container = document.getElementById('graph-stats');
+    const order = ['done','completed','active','in_progress','pending','failed','cancelled','needs_review','blocked'];
+    const allKeys = [...new Set([...order, ...Object.keys(stats)])].filter(k => stats[k]);
+    container.innerHTML = allKeys.map(k => {
+      if (!stats[k]) return '';
+      return `<span class="stat-chip">
+        <span class="stat-dot" style="background:${nodeColor(k)}"></span>
+        ${esc(k)} ${stats[k]}
+      </span>`;
+    }).join('');
+  }
+
+  async function loadGraph(days) {
+    currentDays = days;
+    const emptyEl = document.getElementById('graph-empty');
+    emptyEl.textContent = '로딩 중...';
+    emptyEl.style.display = 'flex';
+
+    try {
+      const r = await fetch(`${BASE}/api/v1/dashboard/task-graph?days=${days}&limit=100`);
+      if (!r.ok) throw new Error('API error');
+      const data = await r.json();
+
+      if (!data.nodes || data.nodes.length === 0) {
+        emptyEl.textContent = `최근 ${days}일 내 태스크 없음`;
+        renderStats({});
+        return;
+      }
+
+      emptyEl.style.display = 'none';
+      renderStats(data.stats || {});
+      drawGraph(data.nodes, data.edges || []);
+    } catch (e) {
+      emptyEl.textContent = '그래프 로드 실패';
+      console.warn('graph error', e);
+    }
+  }
+
+  function drawGraph(nodes, edges) {
+    const container = document.getElementById('graph-svg-container');
+    const W = container.clientWidth || 960;
+    const H = 480;
+
+    // Kill previous simulation
+    if (simulation) simulation.stop();
+
+    const svg = d3.select('#graph-svg')
+      .attr('viewBox', `0 0 ${W} ${H}`)
+      .attr('width', W)
+      .attr('height', H);
+
+    svg.selectAll('*').remove();
+
+    // Zoom layer
+    const g = svg.append('g');
+    svg.call(
+      d3.zoom()
+        .scaleExtent([0.15, 4])
+        .on('zoom', (event) => g.attr('transform', event.transform))
+    );
+
+    // Arrow marker (for directed edges)
+    svg.append('defs').append('marker')
+      .attr('id', 'arrow')
+      .attr('viewBox', '0 -4 8 8')
+      .attr('refX', 14)
+      .attr('refY', 0)
+      .attr('markerWidth', 6)
+      .attr('markerHeight', 6)
+      .attr('orient', 'auto')
+      .append('path')
+      .attr('d', 'M0,-4L8,0L0,4')
+      .attr('fill', '#334155');
+
+    // Build link & node data
+    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+    const links = edges.map(e => ({
+      source: e.source,
+      target: e.target,
+    })).filter(e => nodeMap.has(e.source) && nodeMap.has(e.target));
+
+    // Links
+    const link = g.append('g').attr('class', 'links')
+      .selectAll('line')
+      .data(links)
+      .join('line')
+      .attr('stroke', '#1e3a5f')
+      .attr('stroke-width', 1.5)
+      .attr('marker-end', 'url(#arrow)');
+
+    // Nodes
+    const nodeGroup = g.append('g').attr('class', 'nodes')
+      .selectAll('g')
+      .data(nodes)
+      .join('g')
+      .attr('cursor', 'pointer')
+      .call(
+        d3.drag()
+          .on('start', (event, d) => {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x; d.fy = d.y;
+          })
+          .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+          .on('end', (event, d) => {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null; d.fy = null;
+          })
+      )
+      .on('mouseover', (event, d) => showTooltip(event, d))
+      .on('mousemove', (event) => moveTooltip(event))
+      .on('mouseout', hideTooltip);
+
+    // Circle
+    nodeGroup.append('circle')
+      .attr('r', d => d.depth === 0 ? 10 : 6)
+      .attr('fill', d => nodeColor(d.status))
+      .attr('fill-opacity', d => d.depth === 0 ? 0.9 : 0.7)
+      .attr('stroke', d => d.depth === 0 ? '#fff' : 'none')
+      .attr('stroke-width', d => d.depth === 0 ? 1.5 : 0);
+
+    // Label (only root nodes by default, toggle on hover)
+    nodeGroup.append('text')
+      .attr('dy', d => d.depth === 0 ? -14 : -9)
+      .attr('text-anchor', 'middle')
+      .attr('font-size', d => d.depth === 0 ? '10px' : '8px')
+      .attr('fill', '#94a3b8')
+      .attr('pointer-events', 'none')
+      .attr('opacity', d => d.depth === 0 ? 1 : 0)
+      .text(d => d.label ? d.label.slice(0, 22) + (d.label.length > 22 ? '…' : '') : '');
+
+    // Show sub labels on root hover
+    nodeGroup.filter(d => d.depth === 0)
+      .on('mouseover', function(event, d) {
+        showTooltip(event, d);
+        // Highlight connected children
+        const childIds = new Set(links.filter(l => l.source.id === d.id || l.source === d.id).map(l =>
+          typeof l.target === 'object' ? l.target.id : l.target));
+        nodeGroup.selectAll('text')
+          .attr('opacity', nd =>
+            nd.id === d.id ? 1 : (childIds.has(nd.id) ? 0.9 : (nd.depth === 0 ? 0.4 : 0)));
+        link.attr('stroke', l => {
+          const src = typeof l.source === 'object' ? l.source.id : l.source;
+          return src === d.id ? '#3b82f6' : '#1e2a45';
+        }).attr('stroke-opacity', l => {
+          const src = typeof l.source === 'object' ? l.source.id : l.source;
+          return src === d.id ? 1 : 0.3;
+        });
+      })
+      .on('mouseout', function() {
+        hideTooltip();
+        nodeGroup.selectAll('text')
+          .attr('opacity', nd => nd.depth === 0 ? 1 : 0);
+        link.attr('stroke', '#1e3a5f').attr('stroke-opacity', 1);
+      });
+
+    // Force simulation
+    simulation = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links).id(d => d.id).distance(d =>
+        (d.source.depth === 0 ? 60 : 30)))
+      .force('charge', d3.forceManyBody().strength(d => d.depth === 0 ? -120 : -40))
+      .force('center', d3.forceCenter(W / 2, H / 2))
+      .force('collision', d3.forceCollide().radius(d => d.depth === 0 ? 18 : 10))
+      .on('tick', () => {
+        link
+          .attr('x1', d => d.source.x)
+          .attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x)
+          .attr('y2', d => d.target.y);
+        nodeGroup.attr('transform', d => `translate(${d.x},${d.y})`);
+      });
+  }
+
+  // Day filter buttons
+  document.querySelectorAll('.graph-days-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.graph-days-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      loadGraph(parseInt(btn.dataset.days, 10));
+    });
+  });
+  // Default active = 7d
+  document.querySelectorAll('.graph-days-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.days === '7'));
+
+  // ── SSE ────────────────────────────────────────────────────────────────────
   const dot = document.getElementById('sse-dot');
   const sseLabel = document.getElementById('sse-label');
 
@@ -323,18 +670,24 @@
       es.close();
       setTimeout(connectSSE, 5000);
     };
-    es.addEventListener('ticket_update', () => { loadGoals(); loadTasks(); });
-    es.addEventListener('task_complete', () => { loadSummary(); loadGoals(); loadTasks(); });
+    es.addEventListener('ticket_update', () => {
+      loadGoals(); loadTasks(); loadGraph(currentDays);
+    });
+    es.addEventListener('task_complete', () => {
+      loadSummary(); loadGoals(); loadTasks(); loadGraph(currentDays);
+    });
   }
 
-  // --- init ---
+  // ── Init ───────────────────────────────────────────────────────────────────
   async function refresh() {
     await Promise.all([loadSummary(), loadGoals(), loadTasks()]);
+    loadGraph(currentDays);
   }
 
   refresh();
   connectSSE();
   setInterval(loadSummary, 30000);
+  setInterval(() => loadGraph(currentDays), 30000);
 </script>
 </body>
 </html>
