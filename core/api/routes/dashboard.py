@@ -432,16 +432,39 @@ async def get_snapshot() -> dict[str, Any]:
         tasks = dept_tasks.get(dept, [])
         active   = [t for t in tasks if t["status"] in ("in_progress", "running", "active")]
         blocked  = [t for t in tasks if t["status"] == "blocked"]
-        # 최근 1시간 내 실패만 alert 대상 (과거 실패는 무시)
+        done     = [t for t in tasks if t["status"] in ("done", "completed")]
+
+        # PM/orchestrator 패턴: pending 태스크의 하위 태스크가 다른 부서에서
+        # running이면 → "delegated" (오케스트레이션 중)로 판정
+        if not active:
+            pending = [t for t in tasks if t["status"] == "pending"]
+            if pending:
+                pending_ids = {t["id"] for t in pending}
+                has_running_children = any(
+                    r.get("parent_id") in pending_ids
+                    for r in rows
+                    if r["status"] in ("running", "in_progress", "active")
+                )
+                if has_running_children:
+                    active = pending[:1]  # delegated 상태로 active 취급
+
+        # 최근 1시간 내 실패만 alert 대상 + 현재 active 워크플로우와 관련된 것만
         one_hour_ago = (
             datetime.now(timezone.utc) - timedelta(hours=1)
         ).strftime("%Y-%m-%dT%H:%M:%S")
-        failed   = [
+        active_parent_ids = {t.get("parent_id") for t in active if t.get("parent_id")}
+        active_ids = {t["id"] for t in active}
+        failed = [
             t for t in tasks
             if t["status"] == "failed"
             and (t.get("updated_at") or "") >= one_hour_ago
+            and not _is_resolved_failed(t)
+            and (
+                not active  # active 없으면 모든 최근 실패 카운트
+                or (t.get("parent_id") and t["parent_id"] in active_parent_ids)  # 형제
+                or (t.get("parent_id") and t["parent_id"] in active_ids)  # 자식
+            )
         ]
-        done     = [t for t in tasks if t["status"] in ("done", "completed")]
 
         if blocked:
             severity, emotion, hp = "critical", "alert", 25
