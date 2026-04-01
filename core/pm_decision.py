@@ -4,6 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from loguru import logger
+
 from core.eval_context import inject_eval_context
 from core.orchestration_config import load_orchestration_config
 from core.pm_identity import PMIdentity
@@ -21,15 +23,29 @@ class DecisionClientProtocol(Protocol):
 
 
 def _resolve_engine(org_id: str, engine: str) -> str:
-    if engine in {"claude-code", "codex", "gemini"}:
+    if engine in {"claude-code", "codex", "gemini", "gemini-cli"}:
         return engine
     try:
         org = load_orchestration_config().get_org(org_id)
     except Exception:
         org = None
-    if org and org.preferred_engine in {"claude-code", "codex", "gemini"}:
+    if org and org.preferred_engine in {"claude-code", "codex", "gemini", "gemini-cli"}:
         return org.preferred_engine
     return "claude-code"
+
+
+def _resolve_fallback_engine(org_id: str) -> str | None:
+    """organizations.yaml의 fallback_engine 반환. 없거나 preferred와 같으면 None."""
+    try:
+        org = load_orchestration_config().get_org(org_id)
+    except Exception:
+        return "gemini-cli"
+    if not org:
+        return "gemini-cli"
+    fallback = org.fallback_engine
+    if fallback and fallback != org.preferred_engine:
+        return fallback
+    return "gemini-cli"
 
 
 class PMDecisionClient:
@@ -84,26 +100,59 @@ class PMDecisionClient:
         system_prompt: str = "",
         workdir: str | None = None,
     ) -> str:
-        runner = self._get_runner()
         resolved_workdir = workdir or self._default_workdir
         combined_system = self._base_system_prompt()
         if system_prompt:
             combined_system = f"{combined_system}\n\n{system_prompt}"
 
+        from tools.base_runner import RunContext, RunnerError
+
+        try:
+            return await self._execute(
+                self._get_runner(), self.engine,
+                prompt, combined_system, resolved_workdir,
+            )
+        except (RunnerError, RuntimeError) as primary_err:
+            err_msg = str(primary_err).lower()
+            is_rate_limit = any(k in err_msg for k in (
+                "hit your limit", "rate limit", "quota", "overloaded",
+            ))
+            if not is_rate_limit:
+                raise
+
+            fallback_engine = _resolve_fallback_engine(self.org_id)
+            if not fallback_engine or fallback_engine == self.engine:
+                raise
+
+            logger.warning(
+                f"[PMDecisionClient] {self.engine} rate limit → "
+                f"fallback to {fallback_engine}: {primary_err}"
+            )
+            from tools.base_runner import RunnerFactory
+            fallback_runner = RunnerFactory.create(fallback_engine)
+            return await self._execute(
+                fallback_runner, fallback_engine,
+                prompt, combined_system, resolved_workdir,
+            )
+
+    async def _execute(
+        self, runner, engine: str,
+        prompt: str, system_prompt: str, workdir: str,
+    ) -> str:
         from tools.base_runner import RunContext
 
-        if self.engine == "codex":
-            full_prompt = f"{combined_system}\n\n{prompt}"
+        if engine == "codex":
+            full_prompt = f"{system_prompt}\n\n{prompt}"
             return await runner.run(RunContext(
                 prompt=full_prompt,
-                workdir=resolved_workdir,
+                workdir=workdir,
             ))
 
         return await runner.run_single(RunContext(
             prompt=prompt,
-            system_prompt=combined_system,
+            system_prompt=system_prompt,
             org_id=self.org_id,
             session_store=self._session_store,
             global_context=None,
-            workdir=resolved_workdir,
+            workdir=workdir,
         ))
