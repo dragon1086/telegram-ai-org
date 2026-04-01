@@ -7,9 +7,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aiosqlite
+from contextlib import asynccontextmanager
 from loguru import logger
 
 DEFAULT_DB_PATH = Path(os.environ.get("CONTEXT_DB_PATH", "~/.ai-org/context.db")).expanduser()
+
+# SQLite busy timeout (ms) — 다른 프로세스가 lock을 잡고 있을 때 최대 대기 시간
+_BUSY_TIMEOUT_MS = 30_000
 
 
 def _utcnow_iso() -> str:
@@ -23,9 +27,17 @@ class ContextDB:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
+    @asynccontextmanager
+    async def _connect(self):
+        """WAL 모드 + busy_timeout이 적용된 DB 연결을 반환한다."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+            await db.execute("PRAGMA journal_mode = WAL")
+            yield db
+
     async def initialize(self) -> None:
         """DB 스키마 초기화."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.executescript("""
                 CREATE TABLE IF NOT EXISTS projects (
                     id TEXT PRIMARY KEY,
@@ -196,7 +208,7 @@ class ContextDB:
     async def create_project(self, project_id: str, name: str, description: str = "") -> None:
         """프로젝트 생성."""
         now = _utcnow_iso()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 "INSERT OR IGNORE INTO projects (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                 (project_id, name, description, now, now),
@@ -208,7 +220,7 @@ class ContextDB:
     ) -> None:
         """컨텍스트 슬롯 저장 (PM만 호출해야 함)."""
         now = _utcnow_iso()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             existing = await db.execute(
                 "SELECT version FROM context_slots WHERE id = ?", (slot_id,)
             )
@@ -227,7 +239,7 @@ class ContextDB:
 
     async def read_context(self, slot_id: str) -> dict | None:
         """컨텍스트 슬롯 읽기 (모든 봇 가능)."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "SELECT id, project_id, slot_type, content, version, updated_at FROM context_slots WHERE id = ?",
                 (slot_id,),
@@ -246,19 +258,19 @@ class ContextDB:
 
     async def delete_context(self, slot_id: str) -> None:
         """컨텍스트 슬롯 삭제."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute("DELETE FROM context_slots WHERE id = ?", (slot_id,))
             await db.commit()
 
     async def delete_project_contexts(self, project_id: str) -> None:
         """프로젝트의 모든 컨텍스트 슬롯 삭제."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute("DELETE FROM context_slots WHERE project_id = ?", (project_id,))
             await db.commit()
 
     async def list_project_contexts(self, project_id: str) -> list[dict]:
         """프로젝트의 모든 컨텍스트 슬롯 조회."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "SELECT id, slot_type, content, version, updated_at FROM context_slots WHERE project_id = ?",
                 (project_id,),
@@ -275,7 +287,7 @@ class ContextDB:
         """PM 태스크 생성 (크로스 프로세스 공유)."""
         now = _utcnow_iso()
         meta = json.dumps(metadata or {})
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 """INSERT OR IGNORE INTO pm_tasks (id, parent_id, description, assigned_dept, status,
                    created_by, created_at, updated_at, metadata)
@@ -292,7 +304,7 @@ class ContextDB:
                                      result: str | None = None) -> dict | None:
         """PM 태스크 상태 업데이트."""
         now = _utcnow_iso()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             if result is not None:
                 await db.execute(
                     "UPDATE pm_tasks SET status=?, result=?, updated_at=? WHERE id=?",
@@ -321,7 +333,7 @@ class ContextDB:
         merged = dict(task.get("metadata") or {})
         merged.update(metadata)
         now = _utcnow_iso()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 "UPDATE pm_tasks SET metadata=?, updated_at=? WHERE id=?",
                 (json.dumps(merged, ensure_ascii=False), now, task_id),
@@ -331,7 +343,7 @@ class ContextDB:
 
     async def get_pm_task(self, task_id: str) -> dict | None:
         """PM 태스크 조회."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT * FROM pm_tasks WHERE id=?", (task_id,))
             row = await cursor.fetchone()
@@ -341,7 +353,7 @@ class ContextDB:
 
     async def get_subtasks(self, parent_id: str) -> list[dict]:
         """부모 태스크의 자식 태스크들 조회."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT * FROM pm_tasks WHERE parent_id=? ORDER BY created_at",
@@ -352,7 +364,7 @@ class ContextDB:
 
     async def get_active_parent_tasks(self) -> list[dict]:
         """활성 상태의 루트(부모 없는) 태스크 목록 조회 (StalenessChecker 및 backpressure용)."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT * FROM pm_tasks WHERE parent_id IS NULL "
@@ -364,7 +376,7 @@ class ContextDB:
 
     async def add_dependency(self, task_id: str, depends_on: str) -> None:
         """태스크 의존성 추가."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 "INSERT OR IGNORE INTO pm_task_dependencies (task_id, depends_on) VALUES (?, ?)",
                 (task_id, depends_on),
@@ -373,7 +385,7 @@ class ContextDB:
 
     async def get_tasks_depending_on(self, task_id: str) -> list[str]:
         """이 태스크에 직접 의존하는 태스크 ID 목록 (역방향 조회)."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "SELECT task_id FROM pm_task_dependencies WHERE depends_on=?",
                 (task_id,),
@@ -383,7 +395,7 @@ class ContextDB:
 
     async def get_ready_tasks(self, parent_id: str) -> list[dict]:
         """의존성이 모두 완료된 실행 가능 태스크 조회."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("""
                 SELECT t.* FROM pm_tasks t
@@ -420,7 +432,7 @@ class ContextDB:
         """토론 생성."""
         now = _utcnow_iso()
         parts_json = json.dumps(participants)
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 """INSERT INTO pm_discussions
                    (id, topic, parent_task_id, status, participants,
@@ -440,7 +452,7 @@ class ContextDB:
                                       from_dept: str, round_num: int) -> dict:
         """토론 메시지 추가."""
         now = _utcnow_iso()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 """INSERT INTO pm_discussion_messages
                    (discussion_id, msg_type, topic, content, from_dept, round_num, created_at)
@@ -455,7 +467,7 @@ class ContextDB:
 
     async def get_discussion(self, discussion_id: str) -> dict | None:
         """토론 조회."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT * FROM pm_discussions WHERE id=?", (discussion_id,))
             row = await cursor.fetchone()
@@ -468,7 +480,7 @@ class ContextDB:
     async def get_discussion_messages(self, discussion_id: str,
                                        round_num: int | None = None) -> list[dict]:
         """토론 메시지 조회. round_num 지정 시 해당 라운드만."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             if round_num is not None:
                 cursor = await db.execute(
@@ -485,7 +497,7 @@ class ContextDB:
 
     async def get_recent_pm_tasks(self, limit: int = 10) -> list[dict]:
         """최근 PM 태스크 이력 조회 (updated_at DESC)."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT id, description, assigned_dept, status, created_at, updated_at "
@@ -501,7 +513,7 @@ class ContextDB:
         if not disc:
             return False
         current_round = disc["current_round"]
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 """SELECT COUNT(*) FROM pm_discussion_messages
                    WHERE discussion_id=? AND round_num=? AND msg_type='COUNTER'""",
@@ -517,7 +529,7 @@ class ContextDB:
                                         decision: str | None = None) -> dict | None:
         """토론 상태 업데이트."""
         now = _utcnow_iso()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             if decision is not None:
                 await db.execute(
                     "UPDATE pm_discussions SET status=?, decision=?, updated_at=? WHERE id=?",
@@ -534,7 +546,7 @@ class ContextDB:
     async def advance_discussion_round(self, discussion_id: str) -> int:
         """토론 라운드 진행. 새 라운드 번호 반환."""
         now = _utcnow_iso()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 "UPDATE pm_discussions SET current_round=current_round+1, updated_at=? WHERE id=?",
                 (now, discussion_id),
@@ -545,7 +557,7 @@ class ContextDB:
 
     async def get_active_discussions(self) -> list[dict]:
         """진행 중인 토론 목록."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT * FROM pm_discussions WHERE status='open' ORDER BY created_at"
@@ -564,7 +576,7 @@ class ContextDB:
         'assigned' 태스크 + 의존성이 모두 완료된 'pending' 태스크도 함께 반환.
         pm_orchestrator 알림 없이도 의존성 체인이 자동 해제된다.
         """
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("""
                 SELECT * FROM pm_tasks t
@@ -605,7 +617,7 @@ class ContextDB:
                     continue
                 if task["status"] == "pending":
                     deps_ready = True
-                    async with aiosqlite.connect(self.db_path) as dep_db:
+                    async with self._connect() as dep_db:
                         dep_cursor = await dep_db.execute(
                             """SELECT d.depends_on, dep.status FROM pm_task_dependencies d
                                JOIN pm_tasks dep ON dep.id = d.depends_on
@@ -710,7 +722,7 @@ class ContextDB:
         TOCTOU 방지: SELECT + UPDATE를 단일 트랜잭션(BEGIN IMMEDIATE)으로 처리.
         무한 재시작 루프 방지: attempt_count/total_attempt_count 초과 시 자동 failed.
         """
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             # BEGIN IMMEDIATE: 다른 writer를 즉시 차단하여 TOCTOU 방지
             await db.execute("BEGIN IMMEDIATE")
@@ -846,7 +858,7 @@ class ContextDB:
         status = task["status"]
         if requeue_if_running and status == "running":
             status = "assigned"
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 "UPDATE pm_tasks SET status=?, metadata=?, updated_at=? WHERE id=?",
                 (status, json.dumps(metadata, ensure_ascii=False), now, task_id),
@@ -880,7 +892,7 @@ class ContextDB:
         cutoff = (now - timedelta(seconds=stale_seconds)).isoformat()
         max_age_cutoff = (now - timedelta(seconds=self.RECOVER_MAX_AGE_SECONDS)).isoformat()
         recovered = 0
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 """SELECT id, metadata, parent_id FROM pm_tasks
@@ -950,7 +962,7 @@ class ContextDB:
     async def get_stalled_tasks(self, stall_minutes: int = 30) -> list[str]:
         """지정 시간 이상 진행 없는 태스크 ID 목록 반환."""
         cutoff = (datetime.now(UTC) - timedelta(minutes=stall_minutes)).isoformat()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 """SELECT id FROM pm_tasks
                    WHERE status IN ('assigned', 'in_progress')
@@ -974,7 +986,7 @@ class ContextDB:
         """교차 검증 요청 생성. 자동 생성된 ID 반환."""
         now = _utcnow_iso()
         # 고유 ID: V-{task_id}-{counter}
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "SELECT COUNT(*) FROM pm_verifications WHERE task_id=?",
                 (task_id,),
@@ -995,7 +1007,7 @@ class ContextDB:
 
     async def get_verification(self, verification_id: str) -> dict | None:
         """검증 레코드 조회."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT * FROM pm_verifications WHERE id=?",
@@ -1018,7 +1030,7 @@ class ContextDB:
     ) -> dict | None:
         """검증 결과 업데이트."""
         now = _utcnow_iso()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 """UPDATE pm_verifications
                    SET verdict=?, issues=?, suggestions=?, status='completed', updated_at=?
@@ -1031,7 +1043,7 @@ class ContextDB:
 
     async def get_verifications_for_task(self, task_id: str) -> list[dict]:
         """태스크에 대한 모든 검증 레코드 조회."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT * FROM pm_verifications WHERE task_id=? ORDER BY created_at",
@@ -1054,7 +1066,7 @@ class ContextDB:
         Migration 001: 기존 테이블이 있을 때 ALTER TABLE로 컬럼 추가.
         SQLite는 ADD COLUMN이 이미 존재하면 오류이므로 try/except로 처리.
         """
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             for col_sql in [
                 "ALTER TABLE pm_goals ADD COLUMN title TEXT DEFAULT ''",
                 "ALTER TABLE pm_goals ADD COLUMN meta_json TEXT DEFAULT '{}'",
@@ -1090,7 +1102,7 @@ class ContextDB:
             meta_json: 메타데이터 JSON 문자열 (sprint, due_date 등).
         """
         now = _utcnow_iso()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 """INSERT INTO pm_goals
                    (id, title, description, status, milestones, iteration, max_iterations,
@@ -1108,7 +1120,7 @@ class ContextDB:
 
     async def get_goal(self, goal_id: str) -> dict | None:
         """PM 목표 조회."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT * FROM pm_goals WHERE id=?", (goal_id,))
             row = await cursor.fetchone()
@@ -1134,7 +1146,7 @@ class ContextDB:
         Args:
             org_id: 필터링할 조직 ID (created_by 컬럼). None이면 전체 반환.
         """
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             if org_id:
                 cursor = await db.execute(
@@ -1166,7 +1178,7 @@ class ContextDB:
     async def _query_max_goal_counter(self, org_id: str) -> int:
         """기존 goal ID에서 최대 카운터 값을 추출. restart-safe ID 생성용."""
         prefix = f"G-{org_id}-"
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "SELECT id FROM pm_goals WHERE id LIKE ? ORDER BY id DESC LIMIT 1",
                 (f"{prefix}%",),
@@ -1189,7 +1201,7 @@ class ContextDB:
         Returns:
             [{id, status, title}] 리스트. 없으면 빈 리스트.
         """
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "SELECT id, status, title FROM pm_goals WHERE title=? ORDER BY created_at DESC",
                 (title,),
@@ -1206,7 +1218,7 @@ class ContextDB:
         Returns:
             [{id, status, title}] 리스트.
         """
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "SELECT id, status, title FROM pm_goals WHERE status=? ORDER BY created_at DESC",
                 (status,),
@@ -1246,7 +1258,7 @@ class ContextDB:
         values.append(goal_id)
 
         set_clause = ", ".join(set_parts)
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 f"UPDATE pm_goals SET {set_clause} WHERE id=?",
                 values,
@@ -1269,7 +1281,7 @@ class ContextDB:
         timestamp: str,
     ) -> None:
         """대화 메시지 삽입."""
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 """INSERT INTO conversation_messages
                    (msg_id, chat_id, user_id, bot_id, role, is_bot, content, timestamp)
@@ -1300,7 +1312,7 @@ class ContextDB:
             params.append(int(is_bot))
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         params.append(limit)
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 f"SELECT * FROM conversation_messages {where} ORDER BY timestamp DESC LIMIT ?",
@@ -1313,7 +1325,7 @@ class ContextDB:
         """retention_days일 이전 메시지를 삭제한다. 삭제된 행 수 반환."""
         from datetime import UTC, datetime, timedelta
         cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             cursor = await db.execute(
                 "DELETE FROM conversation_messages WHERE timestamp < ?", (cutoff,)
             )
@@ -1340,7 +1352,7 @@ class ContextDB:
             week = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
         now_iso = _utcnow_iso()
         sc_delta = 1 if success else 0
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             await db.execute(
                 """
                 INSERT INTO bot_performance
@@ -1368,7 +1380,7 @@ class ContextDB:
         if week is None:
             now = datetime.now(UTC)
             week = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT * FROM bot_performance WHERE bot_id=? AND week=?",
@@ -1385,7 +1397,7 @@ class ContextDB:
         if week is None:
             now = datetime.now(UTC)
             week = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
-        async with aiosqlite.connect(self.db_path) as db:
+        async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT * FROM bot_performance WHERE week=? "
