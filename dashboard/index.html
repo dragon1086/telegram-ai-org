@@ -110,17 +110,6 @@
   })();
 </script>
 
-<!-- ── 모드 표시 배너 (목 모드 시) ── -->
-<div id="mock-banner" style="
-  display:none;
-  position:fixed; bottom:0; left:0; right:0;
-  background:var(--comic-yellow); border-top:3px solid var(--comic-dark);
-  text-align:center; padding:0.5rem;
-  font-family:var(--font-comic-body); font-weight:700; font-size:0.875rem;
-  z-index:9998;
-">
-  🎭 개발 모드 — 목(Mock) 데이터 사용 중 | <a href="?mock=0" style="color:var(--comic-blue);">실서버 연결</a>
-</div>
 
 <!-- ══════════════════════════════════════════════════════════
      태스크 & 목표 섹션 (구 대시보드에서 병합)
@@ -698,7 +687,6 @@
   import { CompletedTasksPanel } from './components/CompletedTasksPanel.js';
   import { RemoteAccessPanel }   from './components/RemoteAccessPanel.js';
   import { DashboardClient }     from './services/client.js';
-  import { isMockMode }          from './services/mockEventEmitter.js';
   import { Dashboard }           from './components/Dashboard.js';
   import { createApiClient }     from './api/client.js';
   import { RealtimeStatusHook }  from './hooks/useRealtimeStatus.js';
@@ -719,11 +707,6 @@
     });
     const charDashboard = new Dashboard(charDashboardEl);
     charDashboard.init(apiClient, realtimeHook);
-  }
-
-  // ── 목 모드 배너 ──────────────────────────────────────────
-  if (isMockMode()) {
-    document.getElementById('mock-banner').style.display = 'block';
   }
 
   // ── DashboardClient 초기화 및 시작 ───────────────────────
