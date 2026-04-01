@@ -47,7 +47,10 @@ logger = logging.getLogger(__name__)
 
 DASHBOARD_DIR = Path(__file__).parent / "dashboard"
 POLL_INTERVAL = float(os.environ.get("DASHBOARD_POLL_INTERVAL", "5"))
-DB_PATH = os.environ.get("AIMESH_DB_PATH", "data/tasks.db")
+DB_PATH = os.environ.get(
+    "AIMESH_DB_PATH",
+    str(Path.home() / ".ai-org" / "context.db"),
+)
 
 # ---------------------------------------------------------------------------
 # Lifespan — DashboardPusher 시작/중단

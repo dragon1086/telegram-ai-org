@@ -12,9 +12,6 @@
  */
 
 import { CharacterPanel }       from './CharacterPanel.js';
-import { MetricsPanel }         from './MetricsPanel.js';
-import { EventLogPanel }        from './EventLogPanel.js';
-import { CriteriaChangeMarker } from './CriteriaChangeMarker.js';
 import { CharacterStateManager } from '../hooks/useCharacterStateMachine.js';
 
 /** ORG_CHARACTERS 설정 */
@@ -36,12 +33,6 @@ export class Dashboard {
     this.container = container;
     /** @type {Map<string, CharacterPanel>} */
     this._characterPanels = new Map();
-    /** @type {MetricsPanel | null} */
-    this._metricsPanel    = null;
-    /** @type {EventLogPanel | null} */
-    this._eventLogPanel   = null;
-    /** @type {CriteriaChangeMarker | null} */
-    this._criteriaMarker  = null;
     /** @type {CharacterStateManager | null} */
     this._stateManager    = null;
     /** @type {any | null} */
@@ -95,10 +86,8 @@ export class Dashboard {
         this._stateManager.updateFromSeverity(char.orgId, char.severity);
       });
 
-      // 메트릭 초기 적용
-      if (this._metricsPanel && snapshot.counts) {
-        this._metricsPanel.update(snapshot.counts, this._thresholds);
-      }
+      // 협업 선 렌더링
+      this._updateCollabLines(snapshot.characters || []);
     } catch (err) {
       console.error('[Dashboard] 초기 스냅샷 로드 실패:', err);
     }
@@ -117,14 +106,8 @@ export class Dashboard {
    * @param {{ type: string, [key: string]: any }} event
    */
   _handleRealtimeEvent(event) {
-    // 이벤트 로그 추가
-    if (this._eventLogPanel) this._eventLogPanel.addEvent(event);
-
     switch (event.type) {
       case 'ticket_update':
-        if (this._metricsPanel) {
-          this._metricsPanel.update(event, this._thresholds);
-        }
         break;
 
       case 'task_complete': {
@@ -156,12 +139,6 @@ export class Dashboard {
    * @param {import('../api/types').CriteriaChangeEvent} event
    */
   _handleCriteriaChange(event) {
-    // 이벤트 로그 특별 렌더링
-    if (this._eventLogPanel) this._eventLogPanel.addCriteriaChange(event);
-
-    // 기준 변경 마커 표시
-    if (this._criteriaMarker) this._criteriaMarker.show(event);
-
     // 상태 머신에 기준 변경 통보
     if (this._stateManager) {
       ORG_CHARACTERS.forEach(({ orgId }) => {
@@ -233,22 +210,16 @@ export class Dashboard {
   destroy() {
     if (this._realtimeHook) this._realtimeHook.stop();
     this._characterPanels.clear();
-    this._metricsPanel   = null;
-    this._eventLogPanel  = null;
-    this._criteriaMarker = null;
     this._stateManager   = null;
   }
 
   /** 초기 DOM 구조 렌더링 */
   _render() {
     this.container.innerHTML = `
-      <div class="dashboard-character-grid">
-        <div id="dashboard-characters-col">
-          <div id="criteria-marker-zone" style="margin-bottom:1rem;"></div>
-          <div id="character-panels-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;"></div>
-        </div>
-        <div id="dashboard-metrics-col"></div>
-        <div id="dashboard-events-col"></div>
+      <div id="bot-stage" style="position:relative;">
+        <div id="criteria-marker-zone" style="margin-bottom:0.5rem;"></div>
+        <div id="character-panels-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;"></div>
+        <svg id="collab-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;"></svg>
       </div>
     `;
 
@@ -260,20 +231,54 @@ export class Dashboard {
       grid.appendChild(wrapper);
       const panel = new CharacterPanel(wrapper, { orgId: char.orgId });
       // 기본 상태로 초기화
-      panel.update({ ...char, hp: 85, level: 1, emotion: 'idle', animationTrigger: 'none', severity: 'info', lastUpdated: Date.now() });
+      panel.update({ ...char, hp: 85, level: 1, emotion: 'idle', animationTrigger: 'none', severity: 'info', lastUpdated: Date.now(), mode: 'idle', collaborating_with: [] });
       this._characterPanels.set(char.orgId, panel);
     });
+  }
 
-    // 메트릭 패널
-    const metricsCol = this.container.querySelector('#dashboard-metrics-col');
-    this._metricsPanel = new MetricsPanel(metricsCol);
+  /**
+   * 협업 봇 간 SVG 연결선 렌더링
+   * @param {Array<{orgId:string, collaborating_with:string[]}>} characters
+   */
+  _updateCollabLines(characters) {
+    const svg = this.container.querySelector('#collab-overlay');
+    if (!svg) return;
+    svg.innerHTML = '';
 
-    // 이벤트 로그 패널
-    const eventsCol = this.container.querySelector('#dashboard-events-col');
-    this._eventLogPanel = new EventLogPanel(eventsCol);
+    const stage = this.container.querySelector('#bot-stage');
+    if (!stage) return;
+    const stageRect = stage.getBoundingClientRect();
 
-    // 기준 변경 마커
-    const markerZone = this.container.querySelector('#criteria-marker-zone');
-    this._criteriaMarker = new CriteriaChangeMarker(markerZone);
+    // Track already-drawn pairs to avoid duplicates
+    const drawn = new Set();
+
+    characters.forEach((char) => {
+      if (!char.collaborating_with || char.collaborating_with.length === 0) return;
+      char.collaborating_with.forEach((partnerId) => {
+        const pairKey = [char.orgId, partnerId].sort().join('|');
+        if (drawn.has(pairKey)) return;
+        drawn.add(pairKey);
+
+        const fromEl = this.container.querySelector(`#char-panel-${char.orgId}`);
+        const toEl   = this.container.querySelector(`#char-panel-${partnerId}`);
+        if (!fromEl || !toEl) return;
+
+        const fromRect = fromEl.getBoundingClientRect();
+        const toRect   = toEl.getBoundingClientRect();
+
+        const x1 = fromRect.left + fromRect.width / 2 - stageRect.left;
+        const y1 = fromRect.top  + fromRect.height / 2 - stageRect.top;
+        const x2 = toRect.left   + toRect.width  / 2 - stageRect.left;
+        const y2 = toRect.top    + toRect.height  / 2 - stageRect.top;
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
+        line.setAttribute('class', 'collab-line');
+        svg.appendChild(line);
+      });
+    });
   }
 }

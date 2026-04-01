@@ -184,13 +184,21 @@ async def get_task_graph(
 
     root_tasks = await _query(
         """
-        SELECT id, description, assigned_dept, status, updated_at
-        FROM pm_tasks
-        WHERE parent_id IS NULL AND updated_at >= ?
-        ORDER BY updated_at DESC
+        SELECT id, description, assigned_dept, status, updated_at,
+               (SELECT COUNT(*) FROM pm_tasks c WHERE c.parent_id = t.id) AS child_count
+        FROM pm_tasks t
+        WHERE (parent_id IS NULL OR parent_id NOT IN (SELECT id FROM pm_tasks))
+          AND (
+            updated_at >= ?
+            OR id IN (
+              SELECT DISTINCT parent_id FROM pm_tasks
+              WHERE parent_id IS NOT NULL AND updated_at >= ?
+            )
+          )
+        ORDER BY child_count DESC, updated_at DESC
         LIMIT ?
         """,
-        (cutoff, limit),
+        (cutoff, cutoff, limit),
     )
 
     if not root_tasks:
@@ -343,7 +351,7 @@ async def get_snapshot() -> dict[str, Any]:
     # 최근 24시간 태스크 가져오기 (in_progress 없을 때도 failed/done 반영)
     rows = await _query(
         """
-        SELECT assigned_dept, status, description
+        SELECT id, assigned_dept, status, description
         FROM pm_tasks
         WHERE updated_at >= datetime('now', '-24 hours')
         ORDER BY updated_at DESC
@@ -364,10 +372,10 @@ async def get_snapshot() -> dict[str, Any]:
     characters = []
     for dept, org_id in _DEPT_TO_ORG.items():
         tasks = dept_tasks.get(dept, [])
-        active   = [t for t in tasks if t["status"] == "in_progress"]
+        active   = [t for t in tasks if t["status"] in ("in_progress", "running", "active")]
         blocked  = [t for t in tasks if t["status"] == "blocked"]
         failed   = [t for t in tasks if t["status"] == "failed"]
-        done     = [t for t in tasks if t["status"] == "done"]
+        done     = [t for t in tasks if t["status"] in ("done", "completed")]
 
         if blocked:
             severity, emotion, hp = "critical", "alert", 25
@@ -383,10 +391,37 @@ async def get_snapshot() -> dict[str, Any]:
             severity, emotion, hp = "info", "idle", 85
 
         current_task: str | None = None
+        current_task_id: str | None = None
         recent = active or failed or done
         if recent:
             desc = recent[0]["description"] or ""
             current_task = desc[:60] + ("…" if len(desc) > 60 else "")
+            current_task_id = recent[0].get("id")
+
+        # Detect collaboration mode — only from currently active tasks
+        mode = "idle"
+        collaborating_with: list[str] = []
+
+        if any("주간회의" in (t.get("description") or "") for t in active):
+            mode = "meeting"
+        elif any("회고" in (t.get("description") or "") for t in active):
+            mode = "retro"
+        elif active:
+            # Check for COLLAB tags
+            collab_task = next(
+                (t for t in active if "[COLLAB:" in (t.get("description") or "")),
+                None,
+            )
+            if collab_task:
+                mode = "collab"
+                desc_lower = (collab_task.get("description") or "").lower()
+                for partner_dept, partner_org in _DEPT_TO_ORG.items():
+                    if partner_dept != dept and partner_dept in desc_lower:
+                        collaborating_with.append(partner_org)
+            elif any(t.get("created_by") == "aiorg_pm_bot" for t in active):
+                mode = "delegated"
+            else:
+                mode = "working"
 
         meta = _ORG_META.get(org_id, {})
         characters.append({
@@ -400,9 +435,12 @@ async def get_snapshot() -> dict[str, Any]:
             "level":         1,
             "active_count":  len(active),
             "blocked_count": len(blocked),
-            "current_task":  current_task,
+            "current_task":    current_task,
+            "current_task_id": current_task_id,
             "animationTrigger": "none",
             "lastUpdated":   datetime.now(timezone.utc).isoformat(),
+            "mode":              mode,
+            "collaborating_with": collaborating_with,
         })
 
     # 전체 카운트 (pending/in_progress/done/blocked 기본값 포함)

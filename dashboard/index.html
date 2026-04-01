@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AIMesh 실시간 대시보드</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>" />
   <link rel="stylesheet" href="styles/comic-theme.css" />
   <link rel="stylesheet" href="styles/character-animation.css" />
   <style>
@@ -42,30 +43,162 @@
 <section id="character-dashboard" style="max-width:1360px;margin:1.5rem auto 0;padding:0 20px;"></section>
 
 <style>
-  /* 캐릭터 대시보드 3컬럼 레이아웃 */
-  .dashboard-character-grid {
-    display: grid;
-    grid-template-columns: 1fr minmax(260px,320px) minmax(220px,280px);
-    gap: 1.25rem;
-    align-items: start;
+  /* ── 봇 스테이지 (풀 와이드) ── */
+  #character-dashboard {
+    background: #080c18;
+    border-radius: 0 0 12px 12px;
+    padding-bottom: 1.5rem;
+  }
+  #bot-stage {
+    position: relative;
+    background: #080c18;
+  }
+  #character-panels-grid {
+    background: #080c18;
   }
   #character-panels-grid .character-panel {
-    background: var(--comic-card-bg, #0d1b2e);
+    background: #0d1b2e;
     border: 2.5px solid #1a2e4a;
     border-radius: 12px;
     padding: 0.75rem;
   }
+  #character-panels-grid .character-avatar {
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    box-shadow: 0 0 0 2px #1a2e4a;
+  }
+  #character-panels-grid .character-img {
+    display: block;
+    border-radius: 6px;
+  }
   @media (max-width: 900px) {
-    .dashboard-character-grid { grid-template-columns: 1fr; }
+    #character-panels-grid { grid-template-columns: repeat(2,1fr) !important; }
+  }
+  @media (max-width: 540px) {
+    #character-panels-grid { grid-template-columns: 1fr !important; }
+  }
+
+  /* ── 모드 뱃지 ── */
+  .mode-badge {
+    border-radius: 10px;
+    padding: 2px 7px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    pointer-events: none;
+  }
+  .mode-badge.mode-working   { background: #0e2e3a; color: #22d3ee; }
+  .mode-badge.mode-meeting   { background: #1a2e00; color: #a3e635; animation: modePulse 1.5s ease infinite; }
+  .mode-badge.mode-retro     { background: #1e0e3a; color: #c084fc; }
+  .mode-badge.mode-collab    { background: #0a2e1a; color: #22c55e; }
+  .mode-badge.mode-delegated { background: #2e1400; color: #fb923c; }
+  @keyframes modePulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
+  /* ── 협업 선 (SVG) ── */
+  .collab-line {
+    stroke: #22c55e;
+    stroke-width: 2;
+    stroke-dasharray: 6 3;
+    opacity: 0.7;
   }
 </style>
 
-<!-- ── 대시보드 그리드 ── -->
-<main class="dashboard-grid">
-  <div id="ticket-status-panel"></div>
-  <div id="completed-tasks-panel"></div>
-  <div id="remote-access-panel"></div>
-</main>
+<style>
+  /* ── Horizontal Task Graph ── */
+  :root { --ts-node-h: 58px; --ts-node-mid: 29px; }
+  .ts-graph-container { padding: 8px 0; }
+  .ts-graph-section-title {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em;
+    color: #4a6080; margin: 16px 0 8px; padding-left: 4px;
+  }
+  .ts-graph-row {
+    display: flex; align-items: flex-start; margin-bottom: 14px; overflow-x: auto; padding-bottom: 2px;
+  }
+  .ts-gnode {
+    min-height: var(--ts-node-h);
+    background: #0c1a2e; border: 2px solid #1e3a5f; border-radius: 10px;
+    padding: 7px 10px; cursor: pointer; flex-shrink: 0; position: relative;
+    box-sizing: border-box; transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+  }
+  .ts-gnode:hover { border-color: #3b82f6; background: #0f2040; box-shadow: 0 0 0 3px rgba(59,130,246,0.18); }
+  .ts-gnode.ts-node-highlight {
+    border-color: #fbbf24 !important; background: #130f00 !important;
+    box-shadow: 0 0 0 4px rgba(251,191,36,0.3) !important;
+    animation: tsNodePulse 0.5s ease;
+  }
+  @keyframes tsNodePulse { 0%{transform:scale(1.06)} 100%{transform:scale(1)} }
+  .ts-gnode-parent { width: 185px; }
+  .ts-gnode-child  { width: 175px; }
+  .ts-gnode-label {
+    font-size: 0.71rem; color: #c5d4e8; line-height: 1.38;
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+  .ts-gnode-status-row { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+  .ts-gnode-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .ts-gnode-status-text { font-size: 0.6rem; color: #6a8caa; }
+  .ts-gnode-dept { font-size: 0.6rem; color: #3a5070; margin-top: 2px; }
+  .ts-gnode.st-done, .ts-gnode.st-completed { border-color: #173825; }
+  .ts-gnode.st-failed, .ts-gnode.st-error   { border-color: #3a1515; }
+  .ts-gnode.st-in_progress, .ts-gnode.st-active { border-color: #1a3560; }
+  .ts-gnode.st-cancelled { border-color: #1a2030; opacity: 0.65; }
+  /* Connector */
+  .ts-graph-h-line {
+    width: 20px; height: 2px; background: #1e3a5f; flex-shrink: 0;
+    align-self: flex-start; margin-top: var(--ts-node-mid); transform: translateY(-1px);
+  }
+  .ts-children-col {
+    display: flex; flex-direction: column; gap: 6px;
+    border-left: 2px solid #1e3a5f; padding-left: 14px;
+  }
+  .ts-gnode-child::before {
+    content: ''; position: absolute; left: -16px;
+    top: calc(var(--ts-node-mid) - 2px); width: 14px; height: 2px; background: #1e3a5f;
+  }
+  /* Current task link in character panels */
+  .current-task-link {
+    color: #60a5fa; text-decoration: none; font-size: 0.7rem;
+    display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding: 2px 4px; border-radius: 4px; transition: background 0.15s;
+    font-family: var(--font-comic-body, sans-serif);
+  }
+  .current-task-link:hover { background: rgba(96,165,250,0.15); text-decoration: underline; }
+  /* Task detail popup */
+  #ts-node-popup {
+    position: fixed; background: #080f1e; border: 2px solid #2a4f80; border-radius: 10px;
+    padding: 10px 13px; max-width: 280px; min-width: 160px; z-index: 9000;
+    pointer-events: none; opacity: 0; transition: opacity 0.12s;
+    font-size: 0.73rem; color: #c5d4e8; box-shadow: 0 8px 24px rgba(0,0,0,0.7);
+  }
+  #ts-node-popup.visible { opacity: 1; }
+  .ts-popup-id   { font-size: 0.58rem; color: #4a6080; margin-bottom: 3px; word-break: break-all; }
+  .ts-popup-desc { line-height: 1.45; color: #c5d4e8; margin-bottom: 5px; }
+  .ts-popup-dept { color: #5a7090; font-size: 0.63rem; }
+  /* Filter tabs */
+  .ts-tree-tabs { display: flex; gap: 4px; }
+  .ts-tab {
+    padding: 4px 11px; border-radius: 6px; border: 1.5px solid #1e3a5f;
+    background: transparent; color: #6a8caa; font-size: 0.7rem; cursor: pointer;
+    font-family: var(--font-comic-body, sans-serif); transition: all 0.15s;
+  }
+  .ts-tab:hover { border-color: #3b82f6; color: #90b4d4; }
+  .ts-tab.active { background: #1a3560; border-color: #3b82f6; color: #c5d4e8; }
+  /* Show more / collapse */
+  .ts-show-more { text-align: center; padding: 8px 0 2px; }
+  .ts-show-more-btn {
+    padding: 5px 18px; border-radius: 8px; border: 1.5px solid #1e3a5f;
+    background: #0c1a2e; color: #6a8caa; font-size: 0.7rem; cursor: pointer;
+    font-family: var(--font-comic-body, sans-serif); transition: all 0.15s;
+  }
+  .ts-show-more-btn:hover { border-color: #3b82f6; color: #c5d4e8; background: #0f2040; }
+</style>
+
 
 <!-- ── 퀵스타트 배너 (첫 방문 시만 표시, localStorage로 dismissed 저장) ── -->
 <div id="quickstart-banner" style="
@@ -432,7 +565,14 @@
   </div>
 
   <!-- Task Tree -->
-  <div class="ts-section-label">태스크 트리</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin:1.2rem 0 0.5rem;">
+    <div class="ts-section-label" style="margin:0">태스크 트리</div>
+    <div class="ts-tree-tabs" id="ts-tree-tabs">
+      <button class="ts-tab" data-filter="running" onclick="tsSetTreeFilter('running')">🔄 진행중</button>
+      <button class="ts-tab" data-filter="failed" onclick="tsSetTreeFilter('failed')">❌ 실패</button>
+      <button class="ts-tab active" data-filter="all" onclick="tsSetTreeFilter('all')">📋 전체</button>
+    </div>
+  </div>
   <div class="ts-task-tree" id="ts-task-tree">
     <div class="ts-empty" style="background:#0c1220;border:1px solid #1a2540;border-radius:10px;padding:32px">로딩 중...</div>
   </div>
@@ -575,7 +715,113 @@
     tog.classList.toggle('is-open', !open);
   };
 
-  // ── Task Tree ────────────────────────────────────────────────────────
+  // ── Task Graph (Horizontal) ──────────────────────────────────────────
+  window._tsNodeData = {};
+
+  function tsNodeDotColor(status) {
+    const m = { done:'#00C851', completed:'#00C851', active:'#3b82f6', in_progress:'#3b82f6',
+                failed:'#FF3B3F', error:'#FF3B3F', cancelled:'#6b7280', pending:'#a78bfa',
+                blocked:'#FF6B00', max_iterations_reached:'#FF6B00' };
+    return m[status] || '#6b7280';
+  }
+
+  function tsStatusCls(status) {
+    const k = (status || '').replace(/[^a-z_]/g, '');
+    return ['done','completed','active','in_progress','failed','error','cancelled','pending','blocked'].includes(k)
+      ? 'st-' + k : '';
+  }
+
+  function tsRenderNode(node, isParent) {
+    const cls = isParent ? 'ts-gnode-parent' : 'ts-gnode-child';
+    const sc  = tsStatusCls(node.status);
+    const lbl = tsEsc(node.label || node.id || '—');
+    const sid = tsEsc(node.id);
+    window._tsNodeData[node.id] = { id: node.id, label: node.label || node.id, dept: node.dept, status: node.status };
+    return `<div class="ts-gnode ${cls} ${sc}" id="task-${sid}"
+      onmouseenter="tsShowPopup(event,'${sid}')"
+      onmouseleave="tsHidePopup()"
+      onclick="tsClickNode('${sid}')">
+      <div class="ts-gnode-label" title="${lbl}">${lbl}</div>
+      <div class="ts-gnode-status-row">
+        <span class="ts-gnode-dot" style="background:${tsNodeDotColor(node.status)}"></span>
+        <span class="ts-gnode-status-text">${tsEsc(node.status || '?')}</span>
+      </div>
+      <div class="ts-gnode-dept">${tsEsc(tsShortDept(node.dept))}</div>
+    </div>`;
+  }
+
+  function tsRenderGraphRow(root, childrenOf) {
+    const children = childrenOf[root.id] || [];
+    const parentHtml = tsRenderNode(root, true);
+    if (!children.length) {
+      return `<div class="ts-graph-row">${parentHtml}</div>`;
+    }
+    const childrenHtml = children.map(c => tsRenderNode(c, false)).join('');
+    return `<div class="ts-graph-row">
+      ${parentHtml}
+      <div class="ts-graph-h-line"></div>
+      <div class="ts-children-col">${childrenHtml}</div>
+    </div>`;
+  }
+
+  // ── Tree filter/pagination state ─────────────────────────────────────
+  const _TREE_PAGE = 12;
+  window._tsTreeCache    = null;   // { projectRoots, retroRoots, childrenOf }
+  window._tsTreeFilter   = 'all';
+  window._tsTreeExpanded = false;
+
+  function _tsActiveStatuses(filter) {
+    if (filter === 'running') return new Set(['running','active','in_progress']);
+    if (filter === 'failed')  return new Set(['failed','error']);
+    return null; // all
+  }
+
+  function _tsFilterRoots(roots, childrenOf, filter) {
+    const s = _tsActiveStatuses(filter);
+    if (!s) return roots;
+    return roots.filter(r => s.has(r.status) || (childrenOf[r.id] || []).some(c => s.has(c.status)));
+  }
+
+  function tsRenderTreeFromCache() {
+    const container = document.getElementById('ts-task-tree');
+    if (!window._tsTreeCache) return;
+    const { projectRoots, retroRoots, childrenOf } = window._tsTreeCache;
+    const filter   = window._tsTreeFilter;
+    const filtered = _tsFilterRoots(projectRoots, childrenOf, filter);
+    const limit    = window._tsTreeExpanded ? Infinity : _TREE_PAGE;
+    const visible  = filtered.slice(0, limit);
+    const hidden   = filtered.length - visible.length;
+
+    if (!visible.length && !retroRoots.length) {
+      const label = filter === 'running' ? '현재 진행중인 태스크 없음' : filter === 'failed' ? '실패 태스크 없음' : '태스크 없음';
+      container.innerHTML = `<div class="ts-empty" style="background:#0c1220;border:1px solid #1a2540;border-radius:10px;padding:24px;text-align:center">${label}</div>`;
+      return;
+    }
+
+    let html = '<div class="ts-graph-container">';
+    html += visible.map(r => tsRenderGraphRow(r, childrenOf)).join('');
+    if (hidden > 0) {
+      html += `<div class="ts-show-more"><button class="ts-show-more-btn" onclick="tsExpandTree()">▼ ${hidden}개 더 보기</button></div>`;
+    } else if (window._tsTreeExpanded && filtered.length > _TREE_PAGE) {
+      html += `<div class="ts-show-more"><button class="ts-show-more-btn" onclick="tsCollapseTree()">▲ 접기</button></div>`;
+    }
+    if (retroRoots.length && filter === 'all') {
+      html += '<div class="ts-graph-section-title">🔄 수명 업무</div>';
+      html += retroRoots.map(r => tsRenderGraphRow(r, childrenOf)).join('');
+    }
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  window.tsSetTreeFilter = function (filter) {
+    window._tsTreeFilter   = filter;
+    window._tsTreeExpanded = false;
+    document.querySelectorAll('.ts-tab').forEach(t => t.classList.toggle('active', t.dataset.filter === filter));
+    tsRenderTreeFromCache();
+  };
+  window.tsExpandTree   = function () { window._tsTreeExpanded = true;  tsRenderTreeFromCache(); };
+  window.tsCollapseTree = function () { window._tsTreeExpanded = false; tsRenderTreeFromCache(); };
+
   async function tsLoadTaskTree() {
     const container = document.getElementById('ts-task-tree');
     try {
@@ -593,59 +839,58 @@
         const child = nodeMap.get(e.target);
         if (child) childrenOf[e.source].push(child);
       });
-      const projectRoots = data.nodes.filter(n => n.depth === 0 && !n.virtual && n.task_type !== 'retro' && n.task_type !== 'weekly');
-      const retroRoots   = data.nodes.filter(n => n.depth === 0 && (n.virtual || n.task_type === 'retro' || n.task_type === 'weekly'));
-      if (!projectRoots.length && !retroRoots.length) {
-        container.innerHTML = '<div class="ts-empty" style="background:#0c1220;border:1px solid #1a2540;border-radius:10px;padding:32px">루트 태스크 없음</div>';
-        return;
-      }
-      function renderRoot(root, idx, prefix) {
-        const children  = childrenOf[root.id] || [];
-        const countLbl  = children.length ? `${children.length}개 서브태스크` : '서브 없음';
-        const childRows = children.length
-          ? `<table class="ts-subtask-table">
-              <thead><tr>
-                <th style="width:90px">담당 봇</th>
-                <th>내용</th>
-                <th style="width:130px">상태</th>
-              </tr></thead>
-              <tbody>
-              ${children.map(c => `<tr>
-                <td class="st-dept">${tsEsc(tsShortDept(c.dept))}</td>
-                <td class="st-desc" title="${tsEsc(c.label||'')}">${tsEsc(c.label||'—')}</td>
-                <td class="st-status">${tsBadge(c.status)}</td>
-              </tr>`).join('')}
-              </tbody>
-            </table>`
-          : `<div class="ts-no-children">하위 태스크 없음</div>`;
-        const nodeId = `ts-${prefix}-${idx}`;
-        return `<div class="ts-tree-root" id="${nodeId}">
-          <div class="ts-tree-root-header" onclick="tsTToggleTree('${nodeId}')">
-            <svg class="ts-tree-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="5,3 11,8 5,13"/></svg>
-            <span class="ts-tree-root-label" title="${tsEsc(root.label||'')}">${tsEsc(root.label||'—')}</span>
-            <span class="ts-tree-root-dept">${tsEsc(tsShortDept(root.dept))}</span>
-            ${tsBadge(root.status)}
-            <span class="ts-tree-child-count">${countLbl}</span>
-            <span class="ts-tree-root-ts">${tsFmtTs(root.updated_at)}</span>
-          </div>
-          <div class="ts-tree-children">${childRows}</div>
-        </div>`;
-      }
-      let html = projectRoots.map((r,i) => renderRoot(r,i,'proj')).join('');
-      if (retroRoots.length) {
-        html += `<div class="ts-tree-section-divider">수명 업무 태스크</div>`;
-        html += retroRoots.map((r,i) => renderRoot(r,i,'retro')).join('');
-      }
-      container.innerHTML = html;
+      window._tsTreeCache = {
+        projectRoots: data.nodes.filter(n => n.depth === 0 && !n.virtual && n.task_type !== 'retro' && n.task_type !== 'weekly'),
+        retroRoots:   data.nodes.filter(n => n.depth === 0 && (n.virtual || n.task_type === 'retro' || n.task_type === 'weekly')),
+        childrenOf,
+      };
+      tsRenderTreeFromCache();
     } catch (e) {
       container.innerHTML = '<div class="ts-empty" style="background:#0c1220;border:1px solid #1a2540;border-radius:10px;padding:32px">태스크 트리 로드 실패</div>';
       console.warn('[ts] task tree error', e);
     }
   }
 
-  window.tsTToggleTree = function (id) {
-    const el = document.getElementById(id);
-    if (el) el.classList.toggle('is-open');
+  // ── Global graph interaction ──────────────────────────────────────────
+  window.tsHighlightNode = function (taskId) {
+    const el = document.getElementById('task-' + taskId);
+    if (!el) {
+      document.getElementById('ts-task-tree')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('ts-node-highlight');
+    setTimeout(() => el.classList.remove('ts-node-highlight'), 2000);
+  };
+  window.tsShowPopup = function (evt, nodeId) {
+    const p = document.getElementById('ts-node-popup');
+    if (!p) return;
+    const d = window._tsNodeData[nodeId];
+    if (!d) return;
+    p.innerHTML = `<div class="ts-popup-id">${tsEsc(d.id)}</div>
+      <div class="ts-popup-desc">${tsEsc(d.label)}</div>
+      <div class="ts-popup-dept">${tsEsc(tsShortDept(d.dept))}</div>
+      <div style="margin-top:4px;display:flex;align-items:center;gap:4px">
+        <span style="width:7px;height:7px;border-radius:50%;background:${tsNodeDotColor(d.status)};display:inline-block;flex-shrink:0"></span>
+        <span style="font-size:0.62rem;color:#6a8caa">${tsEsc(d.status || '?')}</span>
+      </div>`;
+    const rect = evt.currentTarget.getBoundingClientRect();
+    p.style.left = (rect.right + 10) + 'px';
+    p.style.top  = rect.top + 'px';
+    p.classList.add('visible');
+    requestAnimationFrame(() => {
+      const pr = p.getBoundingClientRect();
+      if (pr.right  > window.innerWidth  - 8) p.style.left = (rect.left - pr.width - 10) + 'px';
+      if (pr.bottom > window.innerHeight - 8) p.style.top  = (window.innerHeight - pr.height - 8) + 'px';
+    });
+  };
+  window.tsHidePopup = () => document.getElementById('ts-node-popup')?.classList.remove('visible');
+  window.tsClickNode = function (nodeId) {
+    const el = document.getElementById('task-' + nodeId);
+    if (el) {
+      el.classList.add('ts-node-highlight');
+      setTimeout(() => el.classList.remove('ts-node-highlight'), 1500);
+    }
   };
 
   // ── Tasks Feed ───────────────────────────────────────────────────────
@@ -683,18 +928,10 @@
 
 <!-- ── ES 모듈 진입점 ── -->
 <script type="module">
-  import { TicketStatusPanel }   from './components/TicketStatusPanel.js';
-  import { CompletedTasksPanel } from './components/CompletedTasksPanel.js';
-  import { RemoteAccessPanel }   from './components/RemoteAccessPanel.js';
   import { DashboardClient }     from './services/client.js';
   import { Dashboard }           from './components/Dashboard.js';
   import { createApiClient }     from './api/client.js';
   import { RealtimeStatusHook }  from './hooks/useRealtimeStatus.js';
-
-  // ── 패널 초기화 ────────────────────────────────────────────
-  const ticketPanel  = new TicketStatusPanel(document.getElementById('ticket-status-panel'));
-  const tasksPanel   = new CompletedTasksPanel(document.getElementById('completed-tasks-panel'));
-  const remotePanel  = new RemoteAccessPanel(document.getElementById('remote-access-panel'));
 
   // ── 캐릭터 대시보드 (봇 애니메이션 패널) ────────────────────
   const charDashboardEl = document.getElementById('character-dashboard');
@@ -727,5 +964,7 @@
   updateClock();
   setInterval(updateClock, 1000);
 </script>
+<!-- Task node detail popup (hover) -->
+<div id="ts-node-popup"></div>
 </body>
 </html>

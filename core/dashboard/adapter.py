@@ -19,17 +19,20 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Callable, Awaitable, Optional
+from typing import Awaitable, Callable, Optional
 
-from core.dashboard.models import TicketStatus, TicketState
+from core.dashboard.models import TicketState, TicketStatus
 
 logger = logging.getLogger(__name__)
 
 # 기본 폴링 주기 (초)
 DEFAULT_POLL_INTERVAL: float = float(os.environ.get("DASHBOARD_POLL_INTERVAL", "5"))
 
-# SQLite DB 기본 경로
-DEFAULT_DB_PATH: str = os.environ.get("AIMESH_DB_PATH", "data/tasks.db")
+# SQLite DB 기본 경로 (실제 봇 DB 우선)
+DEFAULT_DB_PATH: str = os.environ.get(
+    "AIMESH_DB_PATH",
+    str(Path.home() / ".ai-org" / "context.db"),
+)
 
 # YAML 소스 기본 경로
 DEFAULT_YAML_PATH: str = os.environ.get("DASHBOARD_YAML_PATH", "data/pm_tasks.yaml")
@@ -158,7 +161,10 @@ class DataSourceAdapter:
     # ------------------------------------------------------------------
 
     async def _load_from_db(self) -> list[TicketStatus]:
-        """SQLite DB에서 태스크 목록을 TicketStatus 리스트로 로드."""
+        """SQLite DB에서 태스크 목록을 TicketStatus 리스트로 로드.
+
+        pm_tasks 테이블(실제 봇 DB)을 우선 시도하고, 없으면 tasks 테이블로 폴백.
+        """
         try:
             import aiosqlite
 
@@ -167,46 +173,17 @@ class DataSourceAdapter:
                 return []
 
             async with aiosqlite.connect(str(db_file)) as conn:
-                # tasks 테이블 존재 여부 확인
+                # 어떤 테이블이 있는지 확인
                 async with conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'"
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('pm_tasks', 'tasks')"
                 ) as cur:
-                    if not await cur.fetchone():
-                        return []
+                    tables = {row[0] for row in await cur.fetchall()}
 
-                async with conn.execute(
-                    "SELECT task_id, org_id, description, status, created_at, updated_at, result "
-                    "FROM tasks ORDER BY updated_at DESC LIMIT 200"
-                ) as cur:
-                    rows = await cur.fetchall()
-
-            tickets = []
-            for row in rows:
-                task_id, org_id, description, status, created_at, updated_at, result = row
-                state = _map_status(status)
-
-                # started_at / completed_at 추론
-                started_at = None
-                completed_at = None
-                if state == TicketState.IN_PROGRESS:
-                    started_at = updated_at
-                elif state == TicketState.DONE:
-                    completed_at = updated_at
-                    started_at = created_at  # 근사값
-
-                tickets.append(
-                    TicketStatus(
-                        ticket_id=task_id,
-                        state=state,
-                        assignee=org_id or "unassigned",
-                        created_at=created_at or time.time(),
-                        started_at=started_at,
-                        completed_at=completed_at,
-                        title=description[:80] if description else "",
-                        org_id=org_id or "",
-                    )
-                )
-            return tickets
+                if "pm_tasks" in tables:
+                    return await self._load_pm_tasks(conn)
+                elif "tasks" in tables:
+                    return await self._load_legacy_tasks(conn)
+                return []
 
         except ImportError:
             logger.debug("aiosqlite 미설치 — DB 소스 스킵")
@@ -214,6 +191,104 @@ class DataSourceAdapter:
         except Exception as exc:
             logger.warning("DB 로드 오류: %s", exc)
             return []
+
+    @staticmethod
+    def _to_epoch(value: object) -> float | None:
+        """ISO 8601 문자열 또는 epoch float → epoch float 변환."""
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        s = str(value)
+        if not s:
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            pass
+        try:
+            from datetime import datetime, timezone
+            # Python 3.7+ fromisoformat은 +HH:MM 오프셋 지원
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except Exception:
+            return None
+
+    async def _load_pm_tasks(self, conn: "aiosqlite.Connection") -> list[TicketStatus]:
+        """pm_tasks 테이블 (실제 봇 DB: ~/.ai-org/context.db) 로드."""
+        async with conn.execute(
+            "SELECT id, assigned_dept, description, status, created_at, updated_at "
+            "FROM pm_tasks ORDER BY updated_at DESC LIMIT 500"
+        ) as cur:
+            rows = await cur.fetchall()
+
+        tickets = []
+        now = time.time()
+        for row in rows:
+            task_id, org_id, description, status, created_at, updated_at = row
+            state = _map_status(status or "pending")
+
+            ca = self._to_epoch(created_at) or now
+            ua = self._to_epoch(updated_at)
+
+            started_at = None
+            completed_at = None
+            if state == TicketState.IN_PROGRESS:
+                started_at = ua
+            elif state == TicketState.DONE:
+                completed_at = ua
+                started_at = ca
+
+            tickets.append(
+                TicketStatus(
+                    ticket_id=str(task_id),
+                    state=state,
+                    assignee=org_id or "unassigned",
+                    created_at=ca,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    title=(description or "")[:80],
+                    org_id=org_id or "",
+                )
+            )
+        return tickets
+
+    async def _load_legacy_tasks(self, conn: "aiosqlite.Connection") -> list[TicketStatus]:
+        """tasks 테이블 (레거시 data/tasks.db) 로드."""
+        async with conn.execute(
+            "SELECT task_id, org_id, description, status, created_at, updated_at, result "
+            "FROM tasks ORDER BY updated_at DESC LIMIT 200"
+        ) as cur:
+            rows = await cur.fetchall()
+
+        tickets = []
+        for row in rows:
+            task_id, org_id, description, status, created_at, updated_at, result = row
+            state = _map_status(status)
+
+            started_at = None
+            completed_at = None
+            if state == TicketState.IN_PROGRESS:
+                started_at = updated_at
+            elif state == TicketState.DONE:
+                completed_at = updated_at
+                started_at = created_at
+
+            tickets.append(
+                TicketStatus(
+                    ticket_id=task_id,
+                    state=state,
+                    assignee=org_id or "unassigned",
+                    created_at=created_at or time.time(),
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    title=description[:80] if description else "",
+                    org_id=org_id or "",
+                )
+            )
+        return tickets
 
     # ------------------------------------------------------------------
     # YAML 소스 (폴백)

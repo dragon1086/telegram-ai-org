@@ -76,7 +76,7 @@ export class CharacterPanel {
 
   /**
    * 상태 업데이트 → 애니메이션 트리거
-   * @param {import('../api/types').CharacterState} characterState
+   * @param {import('../api/types').CharacterState & { mode?: string, collaborating_with?: string[] }} characterState
    */
   update(characterState) {
     const prev = this._state;
@@ -159,12 +159,44 @@ export class CharacterPanel {
     // 테두리 색상 갱신
     panel.style.borderColor = colors.border;
 
+    // mode badge 렌더링
+    const modeBadgeConfig = {
+      working:   { label: '🔧 작업중',  cls: 'mode-working' },
+      meeting:   { label: '💬 회의중',  cls: 'mode-meeting' },
+      retro:     { label: '📝 회고중',  cls: 'mode-retro' },
+      collab:    { label: '🤝 협업중',  cls: 'mode-collab' },
+      delegated: { label: '📋 PM위임',  cls: 'mode-delegated' },
+    };
+    let badge = panel.querySelector('.mode-badge');
+    const modeKey = state.mode || 'idle';
+    const badgeCfg = modeBadgeConfig[modeKey];
+    if (badgeCfg) {
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.className = 'mode-badge';
+        panel.appendChild(badge);
+      }
+      badge.textContent = badgeCfg.label;
+      badge.className = `mode-badge ${badgeCfg.cls}`;
+      badge.style.display = '';
+    } else if (badge) {
+      badge.style.display = 'none';
+    }
+
     // current_task 레이블 갱신
     panel.dataset.currentTask = state.current_task || '';
+    panel.dataset.currentTaskId = state.current_task_id || '';
     const taskEl = panel.querySelector('.current-task-label');
     if (taskEl) {
-      taskEl.textContent = state.current_task || '';
       taskEl.style.display = state.current_task ? 'block' : 'none';
+      if (state.current_task) {
+        const escaped = state.current_task.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        if (state.current_task_id) {
+          taskEl.innerHTML = `<a href="#task-${state.current_task_id}" class="current-task-link" onclick="if(window.tsHighlightNode)window.tsHighlightNode('${state.current_task_id}');return false;">${escaped}</a>`;
+        } else {
+          taskEl.textContent = state.current_task;
+        }
+      }
     }
   }
 
