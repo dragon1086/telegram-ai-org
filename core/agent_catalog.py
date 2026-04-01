@@ -1,6 +1,7 @@
 """Agent catalog — ~/.claude/agents/ 디렉토리에서 에이전트 페르소나를 동적으로 로드."""
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -8,7 +9,7 @@ from pathlib import Path
 import yaml
 from loguru import logger
 
-DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = os.environ.get("CLAUDE_DEFAULT_MODEL", "claude-sonnet-4-6")
 
 # keyword → agent name mapping for recommend()
 # 실제 ~/.claude/agents 페르소나 파일명(stem)을 사용한다. 추상 역할명(executor 등) 사용 금지.
