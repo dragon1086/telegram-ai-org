@@ -55,41 +55,41 @@
       <div class="desk-zone" style="left:55%;top:90px;"></div>
       <div class="desk-zone" style="left:74%;top:90px;"></div>
       <div class="desk-zone" style="left:42%;top:192px;"></div>
-      <!-- Bot sprites -->
-      <div class="bot-sprite" id="office-sprite-aiorg_pm_bot" data-state="idle" style="left:46%;top:14px">
+      <!-- Bot sprites (PNG images, JS-driven movement) -->
+      <div class="bot-sprite" id="office-sprite-aiorg_pm_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_pm_bot"></div>
-        <div class="sprite-avatar" style="background:#221a00;border-color:#FFD600">🎯</div>
-        <div class="sprite-label">PM</div>
+        <img class="sprite-img" src="/static/chars/pm.png" alt="PM" />
+        <div class="sprite-label" style="color:#FFD600">PM</div>
       </div>
-      <div class="bot-sprite" id="office-sprite-aiorg_engineering_bot" data-state="idle" style="left:4%;top:95px">
+      <div class="bot-sprite" id="office-sprite-aiorg_engineering_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_engineering_bot"></div>
-        <div class="sprite-avatar" style="background:#00123a;border-color:#0057FF">🦾</div>
-        <div class="sprite-label">Eng</div>
+        <img class="sprite-img" src="/static/chars/engineering.png" alt="Eng" />
+        <div class="sprite-label" style="color:#4477ff">Eng</div>
       </div>
-      <div class="bot-sprite" id="office-sprite-aiorg_design_bot" data-state="idle" style="left:20%;top:95px">
+      <div class="bot-sprite" id="office-sprite-aiorg_design_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_design_bot"></div>
-        <div class="sprite-avatar" style="background:#160028;border-color:#9B00FF">🎨</div>
-        <div class="sprite-label">Design</div>
+        <img class="sprite-img" src="/static/chars/design.png" alt="Design" />
+        <div class="sprite-label" style="color:#bb66ff">Design</div>
       </div>
-      <div class="bot-sprite" id="office-sprite-aiorg_product_bot" data-state="idle" style="left:39%;top:95px">
+      <div class="bot-sprite" id="office-sprite-aiorg_product_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_product_bot"></div>
-        <div class="sprite-avatar" style="background:#221200;border-color:#FF6B00">📋</div>
-        <div class="sprite-label">Product</div>
+        <img class="sprite-img" src="/static/chars/planning.png" alt="Product" />
+        <div class="sprite-label" style="color:#ff9944">Product</div>
       </div>
-      <div class="bot-sprite" id="office-sprite-aiorg_growth_bot" data-state="idle" style="left:58%;top:95px">
+      <div class="bot-sprite" id="office-sprite-aiorg_growth_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_growth_bot"></div>
-        <div class="sprite-avatar" style="background:#220000;border-color:#FF3B3F">📈</div>
-        <div class="sprite-label">Growth</div>
+        <img class="sprite-img" src="/static/chars/growth.png" alt="Growth" />
+        <div class="sprite-label" style="color:#ff7777">Growth</div>
       </div>
-      <div class="bot-sprite" id="office-sprite-aiorg_research_bot" data-state="idle" style="left:77%;top:95px">
+      <div class="bot-sprite" id="office-sprite-aiorg_research_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_research_bot"></div>
-        <div class="sprite-avatar" style="background:#001820;border-color:#00B8D4">🔬</div>
-        <div class="sprite-label">Research</div>
+        <img class="sprite-img" src="/static/chars/research.png" alt="Research" />
+        <div class="sprite-label" style="color:#44ddee">Research</div>
       </div>
-      <div class="bot-sprite" id="office-sprite-aiorg_ops_bot" data-state="idle" style="left:46%;top:196px">
+      <div class="bot-sprite" id="office-sprite-aiorg_ops_bot" data-state="idle">
         <div class="sprite-bubble" id="bubble-aiorg_ops_bot"></div>
-        <div class="sprite-avatar" style="background:#001a08;border-color:#00C851">⚙️</div>
-        <div class="sprite-label">Ops</div>
+        <img class="sprite-img" src="/static/chars/ops.png" alt="Ops" />
+        <div class="sprite-label" style="color:#44ff88">Ops</div>
       </div>
     </div>
   </div>
@@ -146,30 +146,42 @@
     z-index: 10;
     transform: translateX(-50%);
   }
-  .sprite-avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.05rem;
-    border: 2px solid;
-    position: relative;
-    transition: box-shadow 0.4s;
+  .sprite-img {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    background: transparent;
+    transition: filter 0.4s, transform 0.2s, opacity 0.4s;
+    display: block;
   }
-  .bot-sprite[data-state="working"] .sprite-avatar {
-    box-shadow: 0 0 12px;
+  .bot-sprite[data-state="idle"] .sprite-img {
+    opacity: 0.65;
+    filter: brightness(0.8) grayscale(0.3);
   }
-  .bot-sprite[data-state="alert"] .sprite-avatar {
-    box-shadow: 0 0 14px #ff3b3f;
+  .bot-sprite[data-state="working"] .sprite-img {
+    opacity: 1;
+    filter: brightness(1.1) drop-shadow(0 0 5px rgba(255,255,255,0.3));
+  }
+  .bot-sprite[data-state="waiting"] .sprite-img {
+    opacity: 0.6;
+    filter: brightness(0.75) saturate(0.7);
+  }
+  .bot-sprite[data-state="alert"] .sprite-img {
+    opacity: 1;
+    filter: brightness(1.2) drop-shadow(0 0 7px #ff3b3f);
+    animation: bot-alert-shake 0.4s ease-in-out infinite;
+  }
+  @keyframes bot-alert-shake {
+    0%,100% { transform: translateX(0); }
+    25%      { transform: translateX(-3px); }
+    75%      { transform: translateX(3px); }
   }
   .sprite-label {
     font-size: 0.58rem;
-    color: #556677;
     font-weight: 600;
     white-space: nowrap;
     letter-spacing: 0.04em;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
   }
   .sprite-bubble {
     position: absolute;
@@ -201,39 +213,7 @@
     border: 5px solid transparent;
     border-top-color: #2a4a6a;
   }
-  /* State animations */
-  .bot-sprite[data-state="working"] .sprite-avatar {
-    animation: bot-walk 2s ease-in-out infinite;
-  }
-  .bot-sprite[data-state="waiting"] .sprite-avatar {
-    animation: bot-pace 3.5s ease-in-out infinite;
-    opacity: 0.7;
-  }
-  .bot-sprite[data-state="alert"] .sprite-avatar {
-    animation: bot-alert 0.45s ease-in-out infinite;
-  }
-  @keyframes bot-walk {
-    0%   { transform: translate(0, 0); }
-    15%  { transform: translate(10px,-7px); }
-    30%  { transform: translate(-7px, 6px); }
-    45%  { transform: translate(9px, 8px); }
-    60%  { transform: translate(-10px,-5px); }
-    80%  { transform: translate(6px,-9px); }
-    100% { transform: translate(0, 0); }
-  }
-  @keyframes bot-pace {
-    0%   { transform: translateX(0); }
-    25%  { transform: translateX(17px); }
-    50%  { transform: translateX(0); }
-    75%  { transform: translateX(-17px); }
-    100% { transform: translateX(0); }
-  }
-  @keyframes bot-alert {
-    0%   { transform: translateX(0); }
-    30%  { transform: translateX(-4px); }
-    70%  { transform: translateX(4px); }
-    100% { transform: translateX(0); }
-  }
+  /* JS-driven movement — no CSS keyframes for position */
   /* Task detail popup (child task click) */
   .ts-task-detail-box {
     position: fixed;
@@ -1262,6 +1242,7 @@
         }
 
         sprite.dataset.state = state;
+        if (window._officeSetState) window._officeSetState(char.orgId, state);
         bubble.textContent = bubbleText;
         bubble.classList.toggle('visible', !!bubbleText && state !== 'idle');
       });
@@ -1290,5 +1271,186 @@
 </script>
 <!-- Task node detail popup (hover) -->
 <div id="ts-node-popup"></div>
+
+<!-- ── 오피스 애니메이션 엔진 (JS-driven movement) ── -->
+<script>
+(function() {
+  // Bot home positions (normalized 0-1 for x, absolute px for y within 280px room)
+  const BOTS = {
+    'aiorg_pm_bot':          { hx: 0.46, hy: 0.12, img: 'pm' },
+    'aiorg_engineering_bot': { hx: 0.06, hy: 0.44, img: 'engineering' },
+    'aiorg_design_bot':      { hx: 0.22, hy: 0.44, img: 'design' },
+    'aiorg_product_bot':     { hx: 0.40, hy: 0.44, img: 'planning' },
+    'aiorg_growth_bot':      { hx: 0.58, hy: 0.44, img: 'growth' },
+    'aiorg_research_bot':    { hx: 0.76, hy: 0.44, img: 'research' },
+    'aiorg_ops_bot':         { hx: 0.46, hy: 0.76, img: 'ops' },
+  };
+  const PM = BOTS['aiorg_pm_bot'];
+
+  // Runtime state per bot
+  const rt = {};
+  Object.keys(BOTS).forEach(id => {
+    const b = BOTS[id];
+    rt[id] = { x: b.hx, y: b.hy, tx: b.hx, ty: b.hy, speed: 0.003,
+               state: 'idle', waitMs: 0, phase: 'idle', lastDx: 0 };
+  });
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  function pickTarget(id) {
+    const b = BOTS[id];
+    const s = rt[id];
+    switch (s.state) {
+      case 'idle':
+        // Stay at home (tiny drift)
+        s.tx = b.hx + rand(-0.015, 0.015);
+        s.ty = b.hy + rand(-0.025, 0.025);
+        s.speed = 0.0015;
+        s.waitMs = rand(1500, 3000);
+        break;
+      case 'working':
+        // Roam freely around office
+        s.tx = rand(0.04, 0.90);
+        s.ty = rand(0.06, 0.88);
+        s.speed = rand(0.006, 0.011);
+        s.waitMs = rand(200, 700);
+        break;
+      case 'waiting':
+        // Slow pace near desk
+        s.tx = b.hx + rand(-0.12, 0.12);
+        s.ty = b.hy + rand(-0.07, 0.07);
+        s.speed = 0.002;
+        s.waitMs = rand(1200, 2500);
+        break;
+      case 'alert':
+        // Jitter in place
+        s.tx = b.hx + rand(-0.02, 0.02);
+        s.ty = b.hy + rand(-0.02, 0.02);
+        s.speed = 0.015;
+        s.waitMs = 180;
+        break;
+      case 'delegated':
+        if (s.phase === 'going_pm') {
+          // Walk to PM desk
+          s.tx = PM.hx + rand(-0.04, 0.04);
+          s.ty = PM.hy + 0.08;
+          s.speed = 0.005;
+          s.waitMs = 0; // will switch to at_pm when arrived
+        } else if (s.phase === 'at_pm') {
+          // Linger at PM
+          s.tx = PM.hx + rand(-0.03, 0.03);
+          s.ty = PM.hy + 0.09;
+          s.speed = 0.002;
+          s.waitMs = rand(2500, 4000);
+        } else {
+          // Return home
+          s.tx = b.hx + rand(-0.02, 0.02);
+          s.ty = b.hy;
+          s.speed = 0.005;
+          s.waitMs = rand(3000, 6000); // idle at home before going again
+          s.phase = 'returning';
+        }
+        break;
+    }
+  }
+
+  let last = 0;
+  function frame(ts) {
+    const dt = Math.min(ts - last, 60);
+    last = ts;
+    const room = document.getElementById('office-room');
+    if (!room) { requestAnimationFrame(frame); return; }
+    const H = room.offsetHeight || 280;
+
+    Object.keys(rt).forEach(id => {
+      const s = rt[id];
+      const el = document.getElementById('office-sprite-' + id);
+      if (!el) return;
+
+      // Decrement wait
+      if (s.waitMs > 0) {
+        s.waitMs -= dt;
+      } else {
+        // Phase transitions for delegated
+        if (s.state === 'delegated') {
+          if (s.phase === 'going_pm') {
+            const dx = s.tx - s.x, dy = s.ty - s.y;
+            if (Math.sqrt(dx*dx + dy*dy) < 0.03) {
+              s.phase = 'at_pm';
+              pickTarget(id);
+            }
+          } else if (s.phase === 'at_pm') {
+            s.phase = 'going_home';
+            pickTarget(id);
+          } else if (s.phase === 'returning' || s.phase === 'going_home') {
+            // Back home, wait then go again
+            s.phase = 'going_pm';
+            pickTarget(id);
+          } else {
+            s.phase = 'going_pm';
+            pickTarget(id);
+          }
+        } else {
+          pickTarget(id);
+        }
+      }
+
+      // Move toward target
+      const dx = s.tx - s.x;
+      const dy = s.ty - s.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const step = s.speed * dt;
+      if (dist > step && dist > 0.005) {
+        s.x += (dx / dist) * step;
+        s.y += (dy / dist) * step;
+        s.lastDx = dx;
+      } else {
+        s.x = s.tx;
+        s.y = s.ty;
+      }
+
+      // Clamp
+      s.x = Math.max(0.02, Math.min(0.93, s.x));
+      s.y = Math.max(0.04, Math.min(0.90, s.y));
+
+      // Apply position
+      el.style.left = (s.x * 100) + '%';
+      el.style.top  = (s.y * H) + 'px';
+
+      // Flip image when moving left
+      const img = el.querySelector('.sprite-img');
+      if (img && Math.abs(dx) > 0.008) {
+        img.style.transform = dx < 0 ? 'scaleX(-1)' : 'scaleX(1)';
+      }
+    });
+
+    requestAnimationFrame(frame);
+  }
+
+  // Wait for DOM then initialise
+  function init() {
+    Object.keys(rt).forEach(id => { pickTarget(id); });
+    requestAnimationFrame(frame);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  // Expose so the snapshot poller can update states
+  window._officeSetState = function(id, state) {
+    if (!rt[id]) return;
+    const prev = rt[id].state;
+    rt[id].state = state;
+    if (state !== prev) {
+      if (state === 'delegated') rt[id].phase = 'going_pm';
+      rt[id].waitMs = 0; // pick new target immediately
+      pickTarget(id);
+    }
+  };
+})();
+</script>
 </body>
 </html>
