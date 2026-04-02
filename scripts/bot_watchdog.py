@@ -285,14 +285,16 @@ class BotWatchdog:
 
         import subprocess
         if target == "all":
-            restart_script = RUNTIME_DIR / "scripts" / "restart_bots.sh"
-            subprocess.run(["bash", str(restart_script)], check=False)
+            # 알림을 먼저 전송 — restart_bots.sh가 watchdog 자신을 kill하므로
+            # subprocess.run 이후 코드는 실행되지 않는다.
             notify_rocky(
                 f"<b>봇 재기동 (deferred)</b>\n"
                 f"대상: 전체\n"
                 f"요청자: <code>{requested_by}</code>\n"
                 f"사유: {reason or '(없음)'}"
             )
+            restart_script = RUNTIME_DIR / "scripts" / "restart_bots.sh"
+            subprocess.run(["bash", str(restart_script)], check=False)
         else:
             # 특정 봇만 재시작
             from scripts.bot_manager import start_bot, stop_bot
