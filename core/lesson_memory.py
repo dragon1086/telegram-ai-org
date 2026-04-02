@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / ".ai-org" / "lesson_memory.db"
+DB_PATH = Path(
+    os.environ.get("AI_ORG_DATA_DIR", str(Path.home() / ".ai-org"))
+).expanduser() / "lesson_memory.db"
 
 CATEGORIES = [
     "timeout",

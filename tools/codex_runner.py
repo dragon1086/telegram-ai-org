@@ -5,6 +5,7 @@ import asyncio
 import os
 import re
 import shlex
+import subprocess
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -387,7 +388,7 @@ class CodexRunner(BaseRunner):
             "exec",
             "--dangerously-bypass-approvals-and-sandbox",
             "--skip-git-repo-check",
-            full_prompt,
+            "-",
         ]
         if model:
             cmd += ["-c", f"model={model}"]
@@ -425,6 +426,7 @@ class CodexRunner(BaseRunner):
                 clean_env["PATH"] = f"{_hb}:{clean_env.get('PATH', '/usr/bin:/bin')}"
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=resolved_workdir,
@@ -432,10 +434,17 @@ class CodexRunner(BaseRunner):
                 limit=1024 * 1024 * 10,  # 10MB — 기본 64KB 한도 초과 방지
             )
             if progress_callback is None:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(full_prompt.encode("utf-8")),
+                    timeout=timeout_sec,
+                )
             else:
                 stdout, stderr = await asyncio.wait_for(
-                    self._communicate_with_progress(proc, progress_callback),
+                    self._communicate_with_progress(
+                        proc,
+                        progress_callback,
+                        stdin_payload=full_prompt.encode("utf-8"),
+                    ),
                     timeout=timeout_sec,
                 )
 
@@ -534,11 +543,17 @@ class CodexRunner(BaseRunner):
         self,
         proc,
         progress_callback: Callable[[str], Awaitable[None]],
+        stdin_payload: bytes | None = None,
     ) -> tuple[bytes, bytes]:
         stdout_chunks: list[bytes] = []
         stderr_chunks: list[bytes] = []
         last_progress = 0.0
         recent: set[str] = set()
+
+        if stdin_payload is not None and getattr(proc, "stdin", None) is not None:
+            proc.stdin.write(stdin_payload)
+            await proc.stdin.drain()
+            proc.stdin.close()
 
         async def _drain(stream, sink: list[bytes]) -> None:
             nonlocal last_progress

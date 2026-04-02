@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 import sqlite3
 import uuid
 from collections import Counter
@@ -10,7 +11,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / ".ai-org" / "collaboration.db"
+DB_PATH = Path(
+    os.environ.get("AI_ORG_DATA_DIR", str(Path.home() / ".ai-org"))
+).expanduser() / "collaboration.db"
 
 
 @dataclass

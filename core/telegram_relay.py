@@ -3052,9 +3052,8 @@ class TelegramRelay:
         if self._goal_tracker is None:
             return
         import asyncio as _asyncio
-        from pathlib import Path as _Path
-
         import yaml as _yaml
+        from project_paths import project_path as _project_path
         try:
             # resume_goals 완료 대기 (10초)
             await _asyncio.sleep(10)
@@ -3065,7 +3064,7 @@ class TelegramRelay:
                 )
                 return
 
-            yaml_path = _Path(__file__).parent.parent / "orchestration.yaml"
+            yaml_path = _project_path("orchestration.yaml", anchor=__file__)
             cfg = _yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
             goals = cfg.get("long_term_goals", [])
             if not goals:

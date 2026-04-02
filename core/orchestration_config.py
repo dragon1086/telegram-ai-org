@@ -16,10 +16,9 @@ from typing import Any
 
 import yaml
 from loguru import logger
+from project_paths import project_path
 
 _VALID_ENGINES = {"claude-code", "codex", "gemini-cli", "auto"}
-_DEFAULT_ORGS_PATH = Path("organizations.yaml")
-_DEFAULT_ORCH_PATH = Path("orchestration.yaml")
 
 
 def _resolve_env(value: Any) -> Any:
@@ -198,8 +197,12 @@ class OrchestrationConfig:
         orgs_path: str | Path | None = None,
         orchestration_path: str | Path | None = None,
     ) -> None:
-        self.orgs_path = Path(orgs_path or _DEFAULT_ORGS_PATH)
-        self.orchestration_path = Path(orchestration_path or _DEFAULT_ORCH_PATH)
+        self.orgs_path = Path(orgs_path) if orgs_path else project_path("organizations.yaml", anchor=__file__)
+        self.orchestration_path = (
+            Path(orchestration_path)
+            if orchestration_path
+            else project_path("orchestration.yaml", anchor=__file__)
+        )
         self.organizations: dict[str, OrganizationConfig] = {}
         self.team_profiles: dict[str, TeamProfile] = {}
         self.verification_profiles: dict[str, VerificationProfile] = {}

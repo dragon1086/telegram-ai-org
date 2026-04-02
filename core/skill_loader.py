@@ -5,12 +5,13 @@ import logging
 from pathlib import Path
 
 import yaml
+from project_paths import project_path
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).parent.parent
-SKILLS_DIR = PROJECT_ROOT / "skills"
-ORGS_FILE = PROJECT_ROOT / "organizations.yaml"
+PROJECT_ROOT = project_path(anchor=__file__)
+SKILLS_DIR = project_path("skills", anchor=__file__)
+ORGS_FILE = project_path("organizations.yaml", anchor=__file__)
 
 _orgs_cache: list[dict] | None = None
 

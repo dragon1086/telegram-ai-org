@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
+from project_paths import project_path
 
 # ------------------------------------------------------------------
 # 설정 로드
@@ -29,7 +30,7 @@ from loguru import logger
 
 def _load_thresholds() -> dict:
     """improvement_thresholds.yaml 로드. 실패 시 기본값 반환."""
-    config_path = Path(__file__).parent.parent / "improvement_thresholds.yaml"
+    config_path = project_path("improvement_thresholds.yaml", anchor=__file__)
     try:
         import yaml  # type: ignore
         with open(config_path) as f:

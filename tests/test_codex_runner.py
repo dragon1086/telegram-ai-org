@@ -110,16 +110,20 @@ async def test_agent_prompt_paths_do_not_override_workdir(tmp_path: Path, monkey
         lambda *args, **kwargs: "[Agent: scientist]\nPath: ~/.claude/agents",
     )
 
-    captured: dict[str, str] = {}
+    captured: dict[str, object] = {}
 
     class _FakeProc:
         returncode = 0
+        stdin = None
 
-        async def communicate(self):
+        async def communicate(self, input=None):
+            captured["stdin_input"] = input
             return b"ok", b""
 
     async def fake_exec(*cmd, **kwargs):
         captured["cwd"] = kwargs.get("cwd")
+        captured["stdin"] = kwargs.get("stdin")
+        captured["cmd"] = cmd
         return _FakeProc()
 
     monkeypatch.setattr(codex_runner.asyncio, "create_subprocess_exec", fake_exec)
@@ -128,6 +132,10 @@ async def test_agent_prompt_paths_do_not_override_workdir(tmp_path: Path, monkey
 
     assert result == "ok"
     assert captured["cwd"] == str(fallback)
+    assert captured["stdin"] is not None
+    assert captured["cmd"][-1] == "-"
+    assert "시장조사 정리해줘".encode("utf-8") in captured["stdin_input"]
+    assert b"[Agent: scientist]" in captured["stdin_input"]
 
 
 @pytest.mark.asyncio
@@ -139,16 +147,20 @@ async def test_workdir_hint_is_used_instead_of_prompt_metadata_paths(
     fallback.mkdir()
     runner = CodexRunner(workdir=str(fallback))
 
-    captured: dict[str, str] = {}
+    captured: dict[str, object] = {}
 
     class _FakeProc:
         returncode = 0
+        stdin = None
 
-        async def communicate(self):
+        async def communicate(self, input=None):
+            captured["stdin_input"] = input
             return b"ok", b""
 
     async def fake_exec(*cmd, **kwargs):
         captured["cwd"] = kwargs.get("cwd")
+        captured["stdin"] = kwargs.get("stdin")
+        captured["cmd"] = cmd
         return _FakeProc()
 
     monkeypatch.setattr(codex_runner.asyncio, "create_subprocess_exec", fake_exec)
@@ -161,6 +173,9 @@ async def test_workdir_hint_is_used_instead_of_prompt_metadata_paths(
 
     assert result == "ok"
     assert captured["cwd"] == str(fallback)
+    assert captured["stdin"] is not None
+    assert captured["cmd"][-1] == "-"
+    assert "전체 목록: ~/.claude/agents/\n\n시장조사 정리해줘".encode("utf-8") in captured["stdin_input"]
 
 
 def test_sanitize_codex_output_keeps_final_team_response() -> None:

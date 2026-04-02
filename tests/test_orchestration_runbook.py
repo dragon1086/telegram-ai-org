@@ -75,3 +75,38 @@ verification_profiles:
     state = runbook.advance_phase(run_id, note="planning started")
     assert state["current_phase"] == "planning"
     assert (tmp_path / "docs" / "orchestration-v2" / "runs" / run_id / "plan.md").exists()
+
+
+def test_runbook_uses_project_root_env(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "organizations.yaml").write_text(
+        """
+schema_version: 2
+organizations:
+  - id: global
+    enabled: true
+    kind: orchestrator
+    description: global
+    telegram: {}
+    identity: {}
+    routing: {}
+    execution: {}
+    team: {}
+    collaboration: {}
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "orchestration.yaml").write_text(
+        """
+schema_version: 1
+runtime:
+  docs_root: docs/orchestration-v2
+  run_state_root: .ai-org/runs
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AIMESH_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.chdir(Path("/"))
+
+    runbook = OrchestrationRunbook(".")
+
+    assert runbook.repo_root == tmp_path.resolve()

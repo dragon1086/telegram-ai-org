@@ -114,7 +114,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 # 루트 레벨 모듈 (cli.py, main.py 등) — entry_point 참조용
-py-modules = ["cli", "main", "simulation_mode"]
+py-modules = ["cli", "main", "project_paths", "simulation_mode"]
 
 [tool.setuptools.packages.find]
 where = ["."]

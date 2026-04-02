@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
 import sqlite3
 import uuid
@@ -11,7 +12,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
-DB_PATH = Path(__file__).parent.parent / ".ai-org" / "shoutout.db"
+DB_PATH = Path(
+    os.environ.get("AI_ORG_DATA_DIR", str(Path.home() / ".ai-org"))
+).expanduser() / "shoutout.db"
 
 logger = logging.getLogger(__name__)
 

@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / ".ai-org" / "agent_persona_memory.db"
+DB_PATH = Path(
+    os.environ.get("AI_ORG_DATA_DIR", str(Path.home() / ".ai-org"))
+).expanduser() / "agent_persona_memory.db"
 
 # Canonical task_type vocabulary — shared between _infer_task_type (pm_orchestrator)
 # and update_from_task (agent_persona_memory). Must stay in sync.

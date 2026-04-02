@@ -8,9 +8,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from loguru import logger
+from project_paths import project_path
 
 # bots/ 디렉토리 위치
-_BOTS_DIR = Path(__file__).parent.parent / "bots"
+_BOTS_DIR = project_path("bots", anchor=__file__)
 
 _FALLBACK_ENGINES: dict[str, str] = {
     "aiorg_engineering_bot": "claude-code",

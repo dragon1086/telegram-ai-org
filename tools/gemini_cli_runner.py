@@ -4,10 +4,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
+from project_paths import get_project_root
 from tools.base_runner import BaseRunner, RunContext, RunnerError, RunnerTimeoutError
 
 GEMINI_CLI = os.environ.get("GEMINI_CLI_PATH", "gemini")
@@ -53,6 +55,7 @@ class GeminiCLIRunner(BaseRunner):
     def __init__(self, **kwargs: Any) -> None:
         self.cli_path = GEMINI_CLI
         self.timeout = DEFAULT_TIMEOUT
+        self.workdir = str(get_project_root(anchor=__file__))
         self._last_metrics: dict[str, int | str] = {}
 
     async def run(self, ctx: RunContext) -> str:
@@ -88,7 +91,10 @@ class GeminiCLIRunner(BaseRunner):
             if k not in ("GEMINI_API_KEY", "GOOGLE_API_KEY")
         }
 
-        workdir = ctx.workdir or os.getcwd()
+        gemini_home = Path.home() / ".gemini"
+        gemini_home.mkdir(parents=True, exist_ok=True)
+
+        workdir = ctx.workdir or self.workdir
         model_label = model or "(기본)"
         logger.debug(
             f"[GeminiCLI] 실행: 프롬프트 {len(ctx.prompt)}자, model={model_label}, cwd={workdir}"

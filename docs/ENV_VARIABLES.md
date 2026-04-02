@@ -188,5 +188,4 @@
 | 코드베이스 전체 env var 수집 | ✅ 완료 | 총 ~55개 변수 |
 | .env.example 커버리지 | ✅ 100% | 모든 변수 포함 |
 | 코드에 있고 .env.example에 없는 변수 | ✅ 없음 | 완전 일치 |
-| Redis 연결 변수 (`REDIS_URL` 등) | N/A | 현재 코드에서 Redis 미사용 (docker-compose 사이드카만) |
 | `PYTHONUNBUFFERED`, `PYTHONDONTWRITEBYTECODE` | Docker 내부 | Dockerfile ENV에만 존재, .env 불필요 |

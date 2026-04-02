@@ -1,12 +1,15 @@
 """사용자 정의 스케줄 영속 저장소 — SQLite WAL 모드."""
 from __future__ import annotations
 
+import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / ".ai-org" / "user_schedules.db"
+DB_PATH = Path(
+    os.environ.get("AI_ORG_DATA_DIR", str(Path.home() / ".ai-org"))
+).expanduser() / "user_schedules.db"
 
 
 def _utcnow_iso() -> str:

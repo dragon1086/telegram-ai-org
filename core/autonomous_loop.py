@@ -20,6 +20,7 @@ from enum import Enum
 from typing import Awaitable, Callable
 
 from loguru import logger
+from project_paths import project_path
 
 # GoalTracker와 동일 feature flag
 ENABLE_GOAL_TRACKER = os.environ.get("ENABLE_GOAL_TRACKER", "1") == "1"
@@ -214,14 +215,10 @@ def load_loop_config(orchestration_yaml_path: str | None = None) -> dict:
     Returns:
         {idle_sleep_sec: int, max_dispatch: int}
     """
-    from pathlib import Path
-
     import yaml
 
     default = {"idle_sleep_sec": DEFAULT_IDLE_SLEEP_SEC, "max_dispatch": DEFAULT_MAX_DISPATCH_PER_CYCLE}
-    yaml_path = orchestration_yaml_path or str(
-        Path(__file__).parent.parent / "orchestration.yaml"
-    )
+    yaml_path = orchestration_yaml_path or str(project_path("orchestration.yaml", anchor=__file__))
     try:
         with open(yaml_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}

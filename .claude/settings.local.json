@@ -103,7 +103,13 @@
       "Bash(cp coverage_e2e.json /Users/rocky/telegram-ai-org-data/)",
       "Bash(cp .coverage_e2e.json /Users/rocky/telegram-ai-org-data/)",
       "Bash(cp trivy-scan-report.txt /Users/rocky/telegram-ai-org-data/)",
-      "Bash(bash scripts/request_restart.sh --reason \"AI_ORG_DATA_DIR 마이그레이션 완료 — 산출물 경로 표준화\" 2>&1)"
+      "Bash(bash scripts/request_restart.sh --reason \"AI_ORG_DATA_DIR 마이그레이션 완료 — 산출물 경로 표준화\" 2>&1)",
+      "Bash(bash:*)",
+      "Bash(docker compose restart:*)",
+      "Bash(pkill -f \"watchdog.sh\")",
+      "Bash(pkill -f \"main.py\")",
+      "Bash(rm -f ~/.ai-org/restart_requested)",
+      "Bash(docker compose:*)"
     ]
   },
   "hooks": {

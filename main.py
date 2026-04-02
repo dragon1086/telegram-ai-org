@@ -8,7 +8,9 @@ import os
 import time
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent
+from project_paths import get_project_root
+
+PROJECT_ROOT = get_project_root(__file__)
 
 # ── httpcore/sniffio 호환성 패치 ─────────────────────────────────────────────
 # Python 3.14 + httpcore 1.0.9 + sniffio: polling 종료 시 async context 소실로
@@ -60,7 +62,8 @@ from core.telegram_relay import TelegramRelay  # noqa: E402
 
 
 def _resolve_runtime_binding(org_id: str) -> tuple[str, int, str]:
-    token = os.environ.get("PM_BOT_TOKEN", "")
+    is_pm_org = org_id in {"global", "aiorg_pm_bot"} or org_id.endswith("_pm_bot")
+    token = os.environ.get("PM_BOT_TOKEN", "") if is_pm_org else ""
     chat_id_raw = os.environ.get("TELEGRAM_GROUP_CHAT_ID", "")
     engine = "claude-code"
 

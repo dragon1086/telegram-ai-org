@@ -67,6 +67,32 @@ async def test_run_shell_command_kills_session_on_timeout(monkeypatch, tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_run_shell_command_detaches_stdin(monkeypatch, tmp_path: Path) -> None:
+    manager = SessionManager()
+    calls: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(manager, "_tmux_available", lambda: True)
+    monkeypatch.setattr(manager, "shell_session_name", lambda team_id, purpose="exec": "aiorg_demo_codex-batch")
+    monkeypatch.setattr(manager, "_ensure_shell_session_name", lambda name, reset=False: name)
+    monkeypatch.setattr("core.session_manager.Path.home", lambda: tmp_path)
+
+    def fake_run_tmux(*args: str) -> str:
+        calls.append(args)
+        return ""
+
+    async def fake_wait_for_output(output_file, progress_callback=None, session_name=None):  # type: ignore[override]
+        return "__EXIT_CODE__:0\n__DONE__\n"
+
+    monkeypatch.setattr(manager, "_run_tmux", fake_run_tmux)
+    monkeypatch.setattr(manager, "_wait_for_output", fake_wait_for_output)
+
+    await manager.run_shell_command("demo", "echo hi", purpose="codex-batch", timeout=1)
+
+    send_keys = next(call for call in calls if call[:3] == ("send-keys", "-t", "aiorg_demo_codex-batch"))
+    assert "< /dev/null" in send_keys[3]
+
+
+@pytest.mark.asyncio
 async def test_wait_for_output_streams_progress(tmp_path: Path) -> None:
     manager = SessionManager()
     output_file = tmp_path / "demo.out"

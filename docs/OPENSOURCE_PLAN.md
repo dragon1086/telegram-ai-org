@@ -35,7 +35,7 @@
 ### Day 3-4 (2026-03-26~27): 패키징 & 테스트
 - [x] 원클릭 설치 스크립트 개선 (`scripts/setup.sh` → 3엔진 자동 감지 + --version 검증 + .env 자동 주입)
 - [x] `.env.example` 완성 (GEMINI/CLAUDE/CODEX_CLI_PATH + DEFAULT_ENGINE 키 추가 및 모든 필수 키 문서화)
-- [x] Docker Compose 지원 (engine runtime + redis + 봇 멀티 컨테이너, 선택 엔진별 프로파일)
+- [x] Docker Compose 지원 (engine runtime + 봇 멀티 컨테이너, 선택 엔진별 프로파일)
 - [ ] E2E 테스트 스위트 구현
 - [ ] Gemini 이미지 생성 스킬 구현
 
@@ -129,7 +129,6 @@ docker compose --profile claude --profile gemini up -d
 
 | 서비스 | 역할 | 프로필 | 이미지 |
 |--------|------|--------|--------|
-| `aiorg-redis` | 태스크 큐·상태 공유 (포트 6379) | 항상 실행 | `redis:7-alpine` |
 | `claude-runtime` | Claude Code CLI 상태 보증 | `claude` | `telegram-ai-org:claude` |
 | `codex-runtime` | Codex CLI 상태 보증 | `codex` | `telegram-ai-org:codex` |
 | `gemini-runtime` | Gemini CLI 상태 보증 | `gemini` | `telegram-ai-org:gemini` |
@@ -144,8 +143,6 @@ docker compose --profile claude --profile gemini up -d
 ### 시작 순서 (자동 제어)
 
 ```
-aiorg-redis (healthy)
-    ↓
 claude-runtime (healthy)  ←  aiorg-pm, aiorg-product-bot, aiorg-design-bot, aiorg-engineering-bot
 codex-runtime  (healthy)  ←  aiorg-ops-bot
 gemini-runtime (healthy)  ←  aiorg-growth-bot, aiorg-research-bot
@@ -157,15 +154,18 @@ gemini-runtime (healthy)  ←  aiorg-growth-bot, aiorg-research-bot
 
 ### Gemini CLI 인증 (Docker 환경)
 
-Gemini CLI는 OAuth 인증이 필요합니다. 호스트에서 인증 후 컨테이너에 마운트하세요:
+Gemini CLI는 OAuth 인증이 필요합니다. 호스트에서 인증하면 Docker가 `${HOME}/.gemini`를 자동 마운트합니다:
 
 ```bash
 # 1) 호스트에서 먼저 인증
 gemini auth login   # 브라우저 로그인 → ~/.gemini/oauth_creds.json 생성
 
-# 2) docker-compose.yml의 gemini 서비스에 볼륨 추가 (선택)
-# 또는 환경변수 GEMINI_OAUTH_CREDS 에 JSON 내용을 직접 주입 (CI/CD 환경 권장)
+# 2) Docker 실행
+docker compose --profile gemini up -d
 ```
+
+컨테이너는 호스트 `~/.gemini`를 `/gemini-oauth`로 읽기 전용 마운트하고,
+시작 시 `/home/aiorg/.gemini`로 복사해 writable project registry(`projects.json`)를 유지한다.
 
 ### 자주 쓰는 관리 명령
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -171,6 +172,24 @@ async def test_api_keys_removed_from_env(runner: GeminiCLIRunner) -> None:
 
     assert "GEMINI_API_KEY" not in captured_env
     assert "GOOGLE_API_KEY" not in captured_env
+
+
+@pytest.mark.asyncio
+async def test_run_uses_project_root_env_as_default_workdir(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_exec(*args, **kwargs):  # type: ignore[override]
+        captured["cwd"] = kwargs.get("cwd")
+        return _make_proc(b'{"response": "ok", "stats": {}}')
+
+    (tmp_path / "orchestration.yaml").write_text("runtime: {}\n", encoding="utf-8")
+    monkeypatch.setenv("AIMESH_PROJECT_ROOT", str(tmp_path))
+
+    with patch("asyncio.create_subprocess_exec", fake_exec):
+        runner = GeminiCLIRunner()
+        await runner.run(RunContext(prompt="test"))
+
+    assert captured["cwd"] == str(tmp_path)
 
 
 # ---------------------------------------------------------------------------

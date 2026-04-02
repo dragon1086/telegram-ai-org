@@ -187,7 +187,7 @@ class SessionManager:
         output_file.write_text("", encoding="utf-8")
 
         command_body = (
-            f"({command}) > {shlex.quote(str(output_file))} 2>&1; "
+            f"({command}) < /dev/null > {shlex.quote(str(output_file))} 2>&1; "
             "status=$?; "
             f"printf '\\n__EXIT_CODE__:%s\\n__DONE__\\n' \"$status\" >> {shlex.quote(str(output_file))}"
         )

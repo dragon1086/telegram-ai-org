@@ -76,7 +76,7 @@
 | 🎯 | **OKR 목표 관리** | Objective→KR→Initiative→Task 4계층 OKR · 자연어로 목표 설정 · 일일회고/주간점검/월간리뷰/분기평가 자동 사이클 · KPI 기반 진척률 · 성과평가→봇 성격 진화 연동<br/><img src="assets/diagrams/feat_okr_system.png" alt="OKR 목표 관리 시스템 다이어그램" width="220"/> |
 | 📊 | **실시간 대시보드** | 봇 상태·메시지 흐름·응답 이력을 웹 UI로 한눈에 모니터링 |
 | 🧩 | **자유로운 조직 구성** | 부서 봇을 추가/삭제해 나만의 AI 조직 구조를 설계 |
-| 🐳 | **Docker 원클릭 실행** | `docker compose up -d` 한 줄로 전체 시스템 기동 |
+| 🐳 | **Docker 원클릭 실행** | 프로파일 포함 `docker compose ... up -d` 로 전체 시스템 기동 |
 | 🔒 | **독립 메모리** | 봇마다 독립 컨텍스트를 유지해 일관된 성격과 맥락 보존<br/><img src="assets/bot_memory_mechanism.png" alt="봇 메모리 메커니즘" width="220"/> |
 
 ---
@@ -146,8 +146,8 @@ PM 봇이 요청을 받아 적절한 팀에 자동으로 위임합니다.
 # organizations.yaml — 개발실 예시
 - id: aiorg_engineering_bot
   execution:
-    preferred_engine: codex        # 주 엔진
-    fallback_engine: claude-code   # 장애 시 대체 엔진
+    preferred_engine: gemini-cli   # 주 엔진
+    fallback_engine: gemini-cli    # 장애 시 대체 엔진
 ```
 
 | 설정 | 위치 | 설명 |
@@ -204,13 +204,13 @@ python dashboard.py
 
 | 봇 | 역할 | 주 엔진 | 폴백 엔진 |
 |----|------|---------|----------|
-| 🧠 `aiorg_pm_bot` | 전체 조율, 라우팅 | Claude Code | Gemini CLI |
-| 💻 `aiorg_engineering_bot` | 코드 작성, API 구현, 버그 수정 | Codex | Claude Code |
-| 🎨 `aiorg_design_bot` | UI/UX 설계, 와이어프레임 | Gemini CLI | Claude Code |
-| 📋 `aiorg_product_bot` | 기획, 요구사항 분석, PRD | Codex | Gemini CLI |
-| 📣 `aiorg_growth_bot` | 성장 전략, 마케팅, 지표 분석 | Gemini CLI | Claude Code |
-| 🔭 `aiorg_research_bot` | 시장조사, 경쟁사 분석 | Gemini CLI | Claude Code |
-| ⚙️ `aiorg_ops_bot` | 배포, 인프라, 모니터링 | Gemini CLI | Claude Code |
+| 🧠 `aiorg_pm_bot` | 전체 조율, 라우팅 | Gemini CLI | Gemini CLI |
+| 💻 `aiorg_engineering_bot` | 코드 작성, API 구현, 버그 수정 | Gemini CLI | Gemini CLI |
+| 🎨 `aiorg_design_bot` | UI/UX 설계, 와이어프레임 | Gemini CLI | Gemini CLI |
+| 📋 `aiorg_product_bot` | 기획, 요구사항 분석, PRD | Gemini CLI | Gemini CLI |
+| 📣 `aiorg_growth_bot` | 성장 전략, 마케팅, 지표 분석 | Gemini CLI | Gemini CLI |
+| 🔭 `aiorg_research_bot` | 시장조사, 경쟁사 분석 | Gemini CLI | Gemini CLI |
+| ⚙️ `aiorg_ops_bot` | 배포, 인프라, 모니터링 | Gemini CLI | Gemini CLI |
 
 > 봇 수와 역할은 `organizations.yaml`과 `orchestration.yaml`을 수정해 자유롭게 바꿀 수 있습니다.
 
@@ -220,15 +220,37 @@ python dashboard.py
 
 ```bash
 # 전체 시스템 실행
-docker compose up -d
+docker compose --profile gemini up -d
 
 # AI 엔진 프로파일 선택
-docker compose --profile claude up -d   # Claude Code 전용
-docker compose --profile codex up -d    # Codex 전용
 docker compose --profile gemini up -d   # Gemini CLI 전용
 
 # 복수 엔진 동시 실행
-docker compose --profile claude --profile gemini up -d
+docker compose --profile gemini up -d
+```
+
+### Docker 운영 주의사항
+
+- Docker 실행은 로컬 `watchdog.sh` / `bot_watchdog.py` 체인을 사용하지 않습니다.
+- Docker에서 봇 생명주기 관리는 watchdog이 아니라 컨테이너가 담당합니다.
+- Gemini OAuth를 쓰려면 호스트에서 먼저 `gemini auth login`을 실행해 `~/.gemini`를 만든 뒤 Docker를 띄워야 합니다.
+- Docker는 호스트 `${HOME}/.gemini`를 `/gemini-oauth`로 읽기 전용 마운트한 뒤, 컨테이너의 `/home/aiorg/.gemini`로 복사해서 사용합니다.
+- 코드 변경 후 반영은 자동 hot reload가 아닙니다. 이미지를 다시 빌드하고 컨테이너를 재생성해야 합니다.
+
+```bash
+# 코드 변경 반영
+docker compose --profile gemini up -d --build
+
+# 특정 봇만 다시 올리기
+docker compose up -d --build aiorg-engineering-bot aiorg-product-bot
+```
+
+- `bash scripts/request_restart.sh` 는 로컬 `.venv` + watchdog 실행용입니다. Docker 실행 중에는 사용하지 않습니다.
+- Docker로 띄운 뒤에도 대시보드는 별도로 실행해야 합니다.
+
+```bash
+python dashboard.py
+# 브라우저에서 http://localhost:8080 접속
 ```
 
 ---

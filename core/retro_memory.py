@@ -1,6 +1,7 @@
 """주간 회고 메모리 — 성공률 추적 + 패턴 리포트."""
 from __future__ import annotations
 
+import os
 import sqlite3
 from collections import Counter
 from dataclasses import dataclass, field
@@ -9,7 +10,9 @@ from pathlib import Path
 
 from core.lesson_memory import LessonMemory
 
-DB_PATH = Path(__file__).parent.parent / ".ai-org" / "retro_memory.db"
+DB_PATH = Path(
+    os.environ.get("AI_ORG_DATA_DIR", str(Path.home() / ".ai-org"))
+).expanduser() / "retro_memory.db"
 
 
 @dataclass

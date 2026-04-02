@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from core.orchestration_config import PhasePolicy, load_orchestration_config
+from project_paths import get_project_root
 
 
 def _utcnow() -> str:
@@ -30,7 +31,7 @@ class RunbookPaths:
 
 class OrchestrationRunbook:
     def __init__(self, repo_root: str | Path = ".") -> None:
-        self.repo_root = Path(repo_root)
+        self.repo_root = get_project_root(anchor=Path(repo_root).expanduser())
         cfg = load_orchestration_config(
             self.repo_root / "organizations.yaml",
             self.repo_root / "orchestration.yaml",

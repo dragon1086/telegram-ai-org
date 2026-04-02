@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from project_paths import project_path
 
 if TYPE_CHECKING:
     pass
@@ -34,7 +35,7 @@ from core.improvement_actions import (
 
 def _load_auto_actions() -> dict[str, str]:
     """improvement_thresholds.yaml의 auto_actions 섹션 로드."""
-    config_path = Path(__file__).parent.parent / "improvement_thresholds.yaml"
+    config_path = project_path("improvement_thresholds.yaml", anchor=__file__)
     try:
         import yaml  # type: ignore
         with open(config_path) as f:
