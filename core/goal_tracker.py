@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone  # noqa: F401
+from enum import Enum  # noqa: F401 — GoalType에서 사용
 from typing import Awaitable, Callable
 
 from loguru import logger
@@ -22,6 +24,215 @@ from core.context_db import ContextDB
 from core.pm_orchestrator import PMOrchestrator
 
 ENABLE_GOAL_TRACKER = os.environ.get("ENABLE_GOAL_TRACKER", "1") == "1"
+
+
+class GoalType(str, Enum):
+    """OKR 계층 유형."""
+
+    OBJECTIVE = "objective"
+    KEY_RESULT = "key_result"
+    INITIATIVE = "initiative"
+    TASK = "task"
+
+
+# 계층별 평가 전략 설정
+EVALUATION_CONFIG: dict[GoalType, dict] = {
+    GoalType.OBJECTIVE: {
+        "method": "rollup",
+        "check_interval": "quarterly",
+        "rollover_on_miss": True,
+    },
+    GoalType.KEY_RESULT: {
+        "method": "kpi_tracking",
+        "check_interval": "monthly",
+        "rollover_on_miss": False,
+    },
+    GoalType.INITIATIVE: {
+        "method": "milestone",
+        "check_interval": "weekly",
+        "rollover_on_miss": False,
+    },
+    GoalType.TASK: {
+        "method": "iteration",
+        "check_interval": "daily",
+        "rollover_on_miss": False,
+    },
+}
+
+
+# ── DeadlineChecker (Phase 1.4) ───────────────────────────────────
+
+
+class DeadlineSeverity(str, Enum):
+    """마감 임박 심각도."""
+
+    NONE = "none"          # 마감 여유 충분 (>14일)
+    INFO = "info"          # 마감 접근 중 (7~14일)
+    WARNING = "warning"    # 마감 임박 (3~7일)
+    CRITICAL = "critical"  # 마감 직전 (1~3일)
+    EMERGENCY = "emergency"  # 마감 초과
+
+
+@dataclass
+class DeadlineAlert:
+    """마감 알림 결과."""
+
+    goal_id: str
+    title: str
+    goal_type: str
+    deadline: str
+    days_remaining: int
+    severity: DeadlineSeverity
+    progress: float
+    message: str
+
+
+class DeadlineChecker:
+    """시간 기반 마감 알림 체커.
+
+    각 목표의 deadline을 확인하여 심각도별 알림을 생성한다.
+    """
+
+    # 심각도 임계값 (일 기준)
+    THRESHOLDS = {
+        DeadlineSeverity.EMERGENCY: 0,    # 마감 초과
+        DeadlineSeverity.CRITICAL: 3,     # 3일 이내
+        DeadlineSeverity.WARNING: 7,      # 7일 이내
+        DeadlineSeverity.INFO: 14,        # 14일 이내
+    }
+
+    def __init__(self, context_db: ContextDB) -> None:
+        self._db = context_db
+
+    def check_deadline(
+        self,
+        goal: dict,
+        now: datetime | None = None,
+    ) -> DeadlineAlert | None:
+        """단일 목표의 마감 상태를 확인.
+
+        Args:
+            goal: 목표 dict (deadline 필드 필수).
+            now: 현재 시각 (테스트용). None이면 UTC now.
+
+        Returns:
+            DeadlineAlert 또는 None (deadline 미설정 시).
+        """
+        deadline_str = goal.get("deadline")
+        if not deadline_str:
+            return None
+
+        if now is None:
+            now = datetime.now(timezone.utc)
+
+        try:
+            deadline_dt = datetime.strptime(
+                deadline_str, "%Y-%m-%d",
+            ).replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+
+        days_remaining = (deadline_dt - now).days
+        severity = self._classify_severity(days_remaining)
+
+        if severity == DeadlineSeverity.NONE:
+            return None
+
+        progress = goal.get("progress", 0.0) or 0.0
+        message = self._build_message(
+            goal.get("title", goal.get("id", "")),
+            days_remaining,
+            severity,
+            progress,
+        )
+
+        return DeadlineAlert(
+            goal_id=goal.get("id", ""),
+            title=goal.get("title", ""),
+            goal_type=goal.get("goal_type", "task"),
+            deadline=deadline_str,
+            days_remaining=days_remaining,
+            severity=severity,
+            progress=progress,
+            message=message,
+        )
+
+    def _classify_severity(self, days_remaining: int) -> DeadlineSeverity:
+        """남은 일수로 심각도 분류."""
+        if days_remaining < 0:
+            return DeadlineSeverity.EMERGENCY
+        if days_remaining <= self.THRESHOLDS[DeadlineSeverity.CRITICAL]:
+            return DeadlineSeverity.CRITICAL
+        if days_remaining <= self.THRESHOLDS[DeadlineSeverity.WARNING]:
+            return DeadlineSeverity.WARNING
+        if days_remaining <= self.THRESHOLDS[DeadlineSeverity.INFO]:
+            return DeadlineSeverity.INFO
+        return DeadlineSeverity.NONE
+
+    def _build_message(
+        self,
+        title: str,
+        days_remaining: int,
+        severity: DeadlineSeverity,
+        progress: float,
+    ) -> str:
+        """알림 메시지 생성."""
+        pct = int(progress * 100)
+        if severity == DeadlineSeverity.EMERGENCY:
+            return (
+                f"🚨 [{title}] 마감 {abs(days_remaining)}일 초과! "
+                f"(진척률 {pct}%) — 즉시 조치 필요"
+            )
+        if severity == DeadlineSeverity.CRITICAL:
+            return (
+                f"⚠️ [{title}] 마감 {days_remaining}일 남음 "
+                f"(진척률 {pct}%) — 긴급 점검 필요"
+            )
+        if severity == DeadlineSeverity.WARNING:
+            return (
+                f"⏰ [{title}] 마감 {days_remaining}일 남음 "
+                f"(진척률 {pct}%) — 점검 권장"
+            )
+        return (
+            f"📋 [{title}] 마감 {days_remaining}일 남음 "
+            f"(진척률 {pct}%)"
+        )
+
+    async def check_all_active(
+        self,
+        now: datetime | None = None,
+    ) -> list[DeadlineAlert]:
+        """모든 활성 목표의 마감 상태를 확인."""
+        goals = await self._db.get_active_goals()
+        alerts = []
+        for goal in (goals or []):
+            alert = self.check_deadline(goal, now=now)
+            if alert:
+                alerts.append(alert)
+        # 심각도순 정렬 (emergency → critical → warning → info)
+        severity_order = {
+            DeadlineSeverity.EMERGENCY: 0,
+            DeadlineSeverity.CRITICAL: 1,
+            DeadlineSeverity.WARNING: 2,
+            DeadlineSeverity.INFO: 3,
+        }
+        alerts.sort(key=lambda a: severity_order.get(a.severity, 99))
+        return alerts
+
+    async def check_by_type(
+        self,
+        goal_type: str,
+        now: datetime | None = None,
+    ) -> list[DeadlineAlert]:
+        """특정 goal_type의 활성 목표 마감 상태를 확인."""
+        goals = await self._db.get_goals_by_type(goal_type, status="active")
+        alerts = []
+        for goal in (goals or []):
+            alert = self.check_deadline(goal, now=now)
+            if alert:
+                alerts.append(alert)
+        return alerts
+
 
 # 정체 판정: 연속 N회 진전 없으면 escalate
 DEFAULT_MAX_STAGNATION = 3
@@ -119,17 +330,32 @@ class GoalTracker:
         meta: dict | None = None,
         chat_id: int = 0,
         org_id: str | None = None,
+        goal_type: GoalType | str = GoalType.TASK,
+        parent_goal_id: str | None = None,
+        deadline: str | None = None,
+        kpi_metric: str | None = None,
+        kpi_target: float | None = None,
+        kpi_unit: str | None = None,
+        weight: float | None = None,
     ) -> str:
         """목표를 DB에 저장하고 자율 루프를 백그라운드 태스크로 시작.
 
         Phase 1 신규 메서드 — idle→evaluate→replan→dispatch 루프를
         asyncio.create_task()로 백그라운드에서 실행한다.
+        OKR 계층 지원: goal_type이 TASK일 때만 자율 루프 시작.
 
         Args:
             title: 목표 제목 (짧은 레이블).
             description: 목표 상세 설명.
             meta: 메타데이터 dict (sprint, due_date, tags 등). None이면 빈 dict.
             chat_id: Telegram 채팅방 ID (0이면 _org_id 채널 전송 생략).
+            goal_type: OKR 계층 유형 (objective/key_result/initiative/task).
+            parent_goal_id: 상위 목표 ID.
+            deadline: 마감일 (YYYY-MM-DD).
+            kpi_metric: KPI 측정 지표명.
+            kpi_target: KPI 목표값.
+            kpi_unit: KPI 단위.
+            weight: 가중치 (0.0~1.0).
 
         Returns:
             goal_id: 생성된 목표 ID (예: "G-pm-001").
@@ -171,6 +397,11 @@ class GoalTracker:
         meta_json = _json.dumps(meta or {}, ensure_ascii=False)
         full_desc = f"{title}\n\n{description}" if description else title
 
+        # goal_type을 문자열로 정규화
+        gt = GoalType(goal_type) if isinstance(goal_type, str) else goal_type
+        config = EVALUATION_CONFIG.get(gt, EVALUATION_CONFIG[GoalType.TASK])
+        check_interval = config.get("check_interval", "daily")
+
         await self._db.create_goal(
             goal_id=goal_id,
             title=title,
@@ -179,14 +410,23 @@ class GoalTracker:
             chat_id=chat_id,
             max_iterations=self._max_iterations,
             meta_json=meta_json,
+            goal_type=gt.value,
+            parent_goal_id=parent_goal_id,
+            deadline=deadline,
+            check_interval=check_interval,
+            kpi_metric=kpi_metric,
+            kpi_target=kpi_target,
+            kpi_unit=kpi_unit,
+            weight=weight,
         )
-        logger.info(f"[GoalTracker] start_goal: {goal_id} — {title[:80]}")
+        logger.info(f"[GoalTracker] start_goal: {goal_id} ({gt.value}) — {title[:80]}")
 
-        # 자율 루프를 백그라운드 태스크로 시작
-        asyncio.create_task(
-            self.run_loop(goal_id),
-            name=f"goal-loop-{goal_id}",
-        )
+        # TASK만 자율 루프 시작 (Objective/KR/Initiative는 시간 기반 평가)
+        if gt == GoalType.TASK:
+            asyncio.create_task(
+                self.run_loop(goal_id),
+                name=f"goal-loop-{goal_id}",
+            )
         return goal_id
 
     async def get_goals_by_title(self, title: str) -> list[dict]:
@@ -674,3 +914,219 @@ class GoalTracker:
 
         if waited >= max_wait:
             logger.warning(f"[GoalTracker] {goal_id} 대기 시간 초과 ({max_wait}s)")
+
+    # ── OKR 계층 CRUD (Phase 1.2) ──────────────────────────────────
+
+    async def create_objective(
+        self,
+        title: str,
+        description: str,
+        deadline: str,
+        chat_id: int = 0,
+    ) -> str:
+        """Objective(연간/분기 목표) 생성."""
+        return await self.start_goal(
+            title=title,
+            description=description,
+            goal_type=GoalType.OBJECTIVE,
+            deadline=deadline,
+            chat_id=chat_id,
+        )
+
+    async def create_key_result(
+        self,
+        title: str,
+        description: str,
+        parent_objective_id: str,
+        deadline: str,
+        kpi_metric: str | None = None,
+        kpi_target: float | None = None,
+        kpi_unit: str | None = None,
+        weight: float | None = None,
+    ) -> str:
+        """Key Result 생성 (Objective 하위)."""
+        return await self.start_goal(
+            title=title,
+            description=description,
+            goal_type=GoalType.KEY_RESULT,
+            parent_goal_id=parent_objective_id,
+            deadline=deadline,
+            kpi_metric=kpi_metric,
+            kpi_target=kpi_target,
+            kpi_unit=kpi_unit,
+            weight=weight,
+        )
+
+    async def create_initiative(
+        self,
+        title: str,
+        description: str,
+        parent_kr_id: str,
+        deadline: str | None = None,
+    ) -> str:
+        """Initiative 생성 (KR 하위)."""
+        return await self.start_goal(
+            title=title,
+            description=description,
+            goal_type=GoalType.INITIATIVE,
+            parent_goal_id=parent_kr_id,
+            deadline=deadline,
+        )
+
+    async def get_children(
+        self,
+        parent_id: str,
+        goal_type: GoalType | None = None,
+    ) -> list[dict]:
+        """특정 목표의 하위 목표 조회."""
+        gt_str = goal_type.value if goal_type else None
+        return await self._db.get_children_goals(parent_id, goal_type=gt_str)
+
+    async def get_objectives(self, status: str = "active") -> list[dict]:
+        """Objective 목록 조회."""
+        return await self._db.get_goals_by_type("objective", status=status)
+
+    async def get_key_results(
+        self,
+        parent_id: str | None = None,
+        status: str = "active",
+    ) -> list[dict]:
+        """Key Result 목록 조회."""
+        krs = await self._db.get_goals_by_type("key_result", status=status)
+        if parent_id:
+            krs = [kr for kr in krs if kr.get("parent_goal_id") == parent_id]
+        return krs
+
+    async def update_kpi(
+        self,
+        goal_id: str,
+        kpi_current: float,
+    ) -> dict:
+        """KPI 현재값 업데이트 + 진척률 자동 계산."""
+        goal = await self._db.get_goal(goal_id)
+        if not goal:
+            raise ValueError(f"Goal not found: {goal_id}")
+        kpi_target = goal.get("kpi_target")
+        progress = 0.0
+        if kpi_target and kpi_target > 0:
+            progress = min(kpi_current / kpi_target, 1.0)
+        updated = await self._db.update_goal(
+            goal_id, kpi_current=kpi_current, progress=progress,
+        )
+        return updated
+
+    async def trace_to_kr(self, goal_id: str) -> dict | None:
+        """Task/Initiative에서 상위 KR까지 추적 (최대 3단계)."""
+        current_id = goal_id
+        for _ in range(3):
+            goal = await self._db.get_goal(current_id)
+            if not goal:
+                return None
+            if goal.get("goal_type") == GoalType.KEY_RESULT.value:
+                return goal
+            parent_id = goal.get("parent_goal_id")
+            if not parent_id:
+                return None
+            current_id = parent_id
+        return None
+
+    async def record_snapshot(
+        self,
+        goal_id: str,
+        snapshot_type: str,
+        snapshot_date: str,
+    ) -> None:
+        """진척 스냅샷 기록."""
+        goal = await self._db.get_goal(goal_id)
+        if not goal:
+            return
+        await self._db.record_progress_snapshot(
+            goal_id=goal_id,
+            progress=goal.get("progress", 0.0),
+            snapshot_type=snapshot_type,
+            snapshot_date=snapshot_date,
+            kpi_current=goal.get("kpi_current"),
+        )
+
+    # ── 계층 진척률 집계 (Phase 1.3) ──────────────────────────────
+
+    async def calculate_progress(self, goal_id: str) -> float:
+        """계층 진척률 집계: 하위 목표 → 상위 목표 롤업.
+
+        - Task: 자체 progress 반환 (iteration 기반)
+        - Initiative: 하위 Task들의 평균 progress
+        - KR: kpi_current/kpi_target 또는 하위 Initiative 평균
+        - Objective: 하위 KR들의 가중 평균 (weight 기반)
+
+        Returns:
+            0.0~1.0 사이 진척률.
+        """
+        goal = await self._db.get_goal(goal_id)
+        if not goal:
+            return 0.0
+
+        goal_type = goal.get("goal_type", "task")
+        children = await self._db.get_children_goals(goal_id)
+
+        # Task: 하위 없음 — 자체 progress 반환
+        if goal_type == GoalType.TASK.value or not children:
+            return goal.get("progress", 0.0)
+
+        # KR: KPI가 설정되어 있으면 KPI 기반 진척률 우선
+        if goal_type == GoalType.KEY_RESULT.value:
+            kpi_target = goal.get("kpi_target")
+            kpi_current = goal.get("kpi_current")
+            if kpi_target and kpi_target > 0 and kpi_current is not None:
+                return min(kpi_current / kpi_target, 1.0)
+
+        # Objective: 가중 평균 (weight 기반)
+        if goal_type == GoalType.OBJECTIVE.value:
+            return await self._weighted_average_progress(children)
+
+        # Initiative / KR(KPI 없음): 하위 목표 단순 평균
+        return await self._simple_average_progress(children)
+
+    async def _weighted_average_progress(
+        self, children: list[dict],
+    ) -> float:
+        """가중 평균 진척률 계산 (Objective → KR 롤업)."""
+        total_weight = 0.0
+        weighted_sum = 0.0
+        for child in children:
+            child_progress = await self.calculate_progress(child["id"])
+            w = child.get("weight") or 1.0
+            weighted_sum += child_progress * w
+            total_weight += w
+        if total_weight == 0:
+            return 0.0
+        return weighted_sum / total_weight
+
+    async def _simple_average_progress(
+        self, children: list[dict],
+    ) -> float:
+        """단순 평균 진척률 계산 (Initiative → Task 롤업)."""
+        if not children:
+            return 0.0
+        total = 0.0
+        for child in children:
+            total += await self.calculate_progress(child["id"])
+        return total / len(children)
+
+    async def update_hierarchy_progress(self, goal_id: str) -> float:
+        """계층 진척률을 재계산하고 DB에 저장.
+
+        하위 → 상위 방향으로 진척률을 롤업하고,
+        부모 목표의 progress 필드도 함께 업데이트한다.
+
+        Returns:
+            업데이트된 진척률.
+        """
+        progress = await self.calculate_progress(goal_id)
+        await self._db.update_goal(goal_id, progress=progress)
+
+        # 부모 목표도 재귀적으로 업데이트
+        goal = await self._db.get_goal(goal_id)
+        if goal and goal.get("parent_goal_id"):
+            await self.update_hierarchy_progress(goal["parent_goal_id"])
+
+        return progress

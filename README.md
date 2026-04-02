@@ -64,7 +64,7 @@
 | 🤝 | **멀티봇 협업** | 개발·디자인·기획·성장·리서치·운영 6개 부서 봇이 유기적으로 협력<br/><img src="assets/diagrams/feat_collab.png" alt="멀티봇 협업 다이어그램" width="220"/> |
 | ⚡ | **3종 AI 엔진 지원** | Claude Code · OpenAI Codex · Gemini CLI — 부서별 최적 엔진 자동 배정<br/><img src="assets/diagrams/feat_engines.png" alt="3종 AI 엔진 다이어그램" width="220"/> |
 | 🔌 | **스킬 플러그인 시스템** | 봇에 능력을 추가하는 스킬을 직접 만들고 붙일 수 있음<br/><img src="assets/diagrams/feat_skills.png" alt="스킬 플러그인 다이어그램" width="220"/> |
-| 🎯 | **목표 관리 시스템** | 장기 목표 설정 → 주간회의 · 일일회고 · GoalTracker로 자동 추적 · 이터레이션<br/><img src="assets/diagrams/feat_goal_tracking.png" alt="목표 관리 사이클 다이어그램" width="220"/> |
+| 🎯 | **OKR 목표 관리** | Objective→KR→Initiative→Task 4계층 OKR · 자연어로 목표 설정 · 일일회고/주간점검/월간리뷰/분기평가 자동 사이클 · KPI 기반 진척률 · 성과평가→봇 성격 진화 연동<br/><img src="assets/diagrams/feat_okr_system.png" alt="OKR 목표 관리 시스템 다이어그램" width="220"/> |
 | 📊 | **실시간 대시보드** | 봇 상태·메시지 흐름·응답 이력을 웹 UI로 한눈에 모니터링 |
 | 🧩 | **자유로운 조직 구성** | 부서 봇을 추가/삭제해 나만의 AI 조직 구조를 설계 |
 | 🐳 | **Docker 원클릭 실행** | `docker compose up -d` 한 줄로 전체 시스템 기동 |
