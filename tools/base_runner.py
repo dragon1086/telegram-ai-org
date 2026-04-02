@@ -182,14 +182,51 @@ class RunnerFactory:
 
     @classmethod
     def _create_claude_runner(cls, **kwargs: Any) -> BaseRunner:
-        """Create Claude runner with SDK fallback to subprocess."""
+        """Create Claude runner based on CLAUDE_RUNNER_MODE env var.
+
+        Modes:
+          - "cli" (default): Use Claude Code CLI subprocess — supports all auth
+            methods (OAuth token, API key, z.ai proxy). Recommended for most setups.
+          - "sdk": Use claude_agent_sdk Python package — requires ANTHROPIC_API_KEY.
+            Faster for short prompts but limited auth options.
+          - "auto": Prefer CLI when any auth token is detected, fall back to SDK.
+
+        The CLI subprocess inherits env vars (ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL,
+        ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN) and handles routing automatically.
+        """
+        import os
+
+        mode = os.environ.get("CLAUDE_RUNNER_MODE", "cli").lower()
+
+        # Determine if we should prefer CLI
+        prefer_cli = (
+            mode == "cli"
+            or (mode == "auto" and (
+                os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+                or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+                or not os.environ.get("ANTHROPIC_API_KEY")
+            ))
+        )
+
+        if prefer_cli:
+            try:
+                from tools.claude_subprocess_runner import ClaudeSubprocessRunner
+                _auth = "AUTH_TOKEN" if os.environ.get("ANTHROPIC_AUTH_TOKEN") else (
+                    "OAUTH" if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") else "API_KEY"
+                )
+                logger.info(f"Claude runner: CLI subprocess (auth={_auth}, mode={mode})")
+                return ClaudeSubprocessRunner(**kwargs)
+            except (ImportError, Exception) as e:
+                logger.warning("CLI runner unavailable (%s), trying SDK", e)
+
+        # SDK fallback
         try:
             from tools.claude_agent_runner import ClaudeAgentRunner
+            logger.info("Claude runner: SDK (mode=%s)", mode)
             return ClaudeAgentRunner(**kwargs)
         except (ImportError, Exception) as e:
             logger.warning(
-                "ClaudeAgentRunner unavailable (%s), falling back to subprocess runner",
-                e,
+                "SDK runner unavailable (%s), falling back to CLI subprocess", e,
             )
             from tools.claude_subprocess_runner import ClaudeSubprocessRunner
             return ClaudeSubprocessRunner(**kwargs)
