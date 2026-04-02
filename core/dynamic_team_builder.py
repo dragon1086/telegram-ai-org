@@ -11,6 +11,7 @@ from loguru import logger
 
 from core.agent_catalog import AgentCatalog, AgentPersona
 from core.pm_decision import DecisionClientProtocol
+from project_paths import project_path
 
 
 def load_personas(agents_dir: Path | None = None) -> list[str]:
@@ -170,7 +171,7 @@ class DynamicTeamBuilder:
         """agent_hints.yaml에서 카테고리 힌트 로드 (캐시)."""
         if self._hints:
             return self._hints
-        hints_path = Path(__file__).parent.parent / "agent_hints.yaml"
+        hints_path = project_path("agent_hints.yaml", anchor=__file__)
         if hints_path.exists():
             try:
                 import yaml  # type: ignore[import]
@@ -516,8 +517,13 @@ class DynamicTeamBuilder:
         # structured_team always needs Claude Code unless org explicitly fixed to codex/gemini-cli
         if execution_mode == ExecutionMode.structured_team and preferred_engine not in ("codex", "gemini-cli"):
             engine = "claude-code"
-
-        if execution_mode != ExecutionMode.sequential and engine == "codex":
+        # agent_teams requires Claude Code — gemini-cli/codex fallback to sequential
+        if execution_mode == ExecutionMode.agent_teams and engine in ("gemini-cli", "codex"):
+            logger.info(
+                "agent_teams mode unavailable for {}, falling back to sequential",
+                engine,
+            )
+            execution_mode = ExecutionMode.sequential
             reasoning = (
                 "org preferred codex; 복잡 작업이지만 다중 페르소나를 Codex 프롬프트 컨텍스트로 압축 실행"
             )
