@@ -40,7 +40,7 @@ COPY tools/ ./tools/
 COPY skills/ ./skills/
 COPY bots/ ./bots/
 COPY telegram_ai_org/ ./telegram_ai_org/
-COPY cli.py main.py orchestration.yaml organizations.yaml workers.yaml \
+COPY cli.py main.py project_paths.py orchestration.yaml organizations.yaml workers.yaml \
      agent_hints.yaml improvement_thresholds.yaml ./
 
 # PEP 517 빌드 — dist/*.whl 생성
@@ -116,15 +116,17 @@ COPY --from=builder /build/workers.yaml /app/workers.yaml
 COPY --from=builder /build/agent_hints.yaml /app/agent_hints.yaml
 COPY --from=builder /build/improvement_thresholds.yaml /app/improvement_thresholds.yaml
 COPY --from=builder /build/bots /app/bots
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
 # ④ Node CLI 복사 (엔진별)
 COPY --from=node-installer /opt/cli /opt/cli
 ENV PATH="/opt/cli/bin:$PATH"
+RUN chmod +x /app/docker-entrypoint.sh
 
 # ⑤ 데이터 디렉토리 생성 및 비루트 사용자 설정
 RUN mkdir -p /app/logs /app/data /app/reports /app/tasks \
-    && useradd -r -u 1001 -g root -s /sbin/nologin aiorg \
-    && chown -R aiorg:root /app
+    && useradd -m -d /home/aiorg -r -u 1001 -g root -s /sbin/nologin aiorg \
+    && chown -R aiorg:root /app /home/aiorg
 USER aiorg
 
 # ─── 환경변수 기본값 ──────────────────────────────────────────────────────────
@@ -138,10 +140,12 @@ USER aiorg
 ENV CLAUDE_CLI_PATH="/opt/cli/bin/claude" \
     CODEX_CLI_PATH="/opt/cli/bin/codex" \
     GEMINI_CLI_PATH="/opt/cli/bin/gemini" \
+    AIMESH_PROJECT_ROOT="/app" \
     GEMINI_CLI_DEFAULT_TIMEOUT_SEC="1800" \
-    GEMINI_CLI_MODEL="gemini-2.5-flash" \
+    GEMINI_CLI_MODEL="gemini-2.5-pro" \
     CLAUDE_DEFAULT_TIMEOUT_SEC="14400" \
     CODEX_DEFAULT_TIMEOUT_SEC="1800" \
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS="1" \
     AI_ENGINE="" \
     ENGINE_TYPE="" \
     ENABLE_PM_ORCHESTRATOR="1" \
@@ -155,6 +159,7 @@ ENV CLAUDE_CLI_PATH="/opt/cli/bin/claude" \
     AIORG_REPORT_DIR="/app/reports" \
     DB_PATH="/app/data/context.db" \
     PM_HOURLY_CALL_LIMIT="40" \
+    HOME="/home/aiorg" \
     PYTHONUNBUFFERED="1" \
     PYTHONDONTWRITEBYTECODE="1"
 
@@ -162,6 +167,6 @@ ENV CLAUDE_CLI_PATH="/opt/cli/bin/claude" \
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
     CMD test -f /tmp/telegram-ai-org-${PM_ORG_NAME:-global}.pid || exit 1
 
-# 기본 진입점: PyPI 패키지 CLI 또는 main.py 직접 실행
-ENTRYPOINT ["python", "-m", "telegram_ai_org"]
+# 기본 진입점: Gemini OAuth 설정 동기화 후 telegram_ai_org 실행
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD []
