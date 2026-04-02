@@ -613,3 +613,90 @@ async def get_characters() -> dict[str, Any]:
         }
 
     return result
+
+
+# ─── OKR Dashboard Endpoints ─────────────────────────────────────────────
+
+
+@router.get("/okrs")
+async def get_okrs() -> dict[str, Any]:
+    """OKR 계층 현황 — Objective + KR + Initiative 트리."""
+    objectives = await _query(
+        """
+        SELECT id, title, status, progress, deadline, updated_at
+        FROM pm_goals
+        WHERE goal_type = 'objective'
+          AND status IN ('active', 'in_progress')
+        ORDER BY updated_at DESC
+        """
+    )
+
+    result = []
+    for obj in objectives:
+        krs = await _query(
+            """
+            SELECT id, title, status, progress, deadline,
+                   kpi_metric, kpi_target, kpi_current, kpi_unit, weight
+            FROM pm_goals
+            WHERE parent_goal_id = ? AND goal_type = 'key_result'
+            ORDER BY created_at ASC
+            """,
+            (obj["id"],),
+        )
+
+        kr_list = []
+        for kr in krs:
+            initiatives = await _query(
+                """
+                SELECT id, title, status, progress
+                FROM pm_goals
+                WHERE parent_goal_id = ?
+                  AND goal_type = 'initiative'
+                ORDER BY created_at ASC
+                """,
+                (kr["id"],),
+            )
+            kr["initiatives"] = initiatives
+            kr_list.append(kr)
+
+        obj["key_results"] = kr_list
+
+        if obj.get("deadline"):
+            try:
+                dl = datetime.strptime(obj["deadline"], "%Y-%m-%d")
+                obj["d_day"] = (dl - datetime.now()).days
+            except ValueError:
+                obj["d_day"] = None
+        else:
+            obj["d_day"] = None
+
+        result.append(obj)
+
+    total = len(result)
+    avg = sum((o.get("progress") or 0) for o in result) / max(total, 1)
+
+    return {
+        "objectives": result,
+        "summary": {
+            "total_objectives": total,
+            "avg_progress": round(avg * 100, 1),
+        },
+    }
+
+
+@router.get("/okr-evaluations")
+async def get_okr_evaluations(
+    limit: int = Query(default=10, ge=1, le=50),
+) -> list[dict[str, Any]]:
+    """최근 성과 평가 결과."""
+    return await _query(
+        """
+        SELECT dept_id, period_start, period_end, period_type,
+               overall_score, grade, criteria_scores,
+               strengths, weaknesses, created_at
+        FROM performance_evaluations
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
