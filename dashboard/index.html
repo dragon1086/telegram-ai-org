@@ -726,6 +726,22 @@
     </div>
   </div>
 
+  <!-- OKR Dashboard -->
+  <div class="ts-section-label">📊 OKR 대시보드</div>
+  <div id="okr-summary" style="display:flex;gap:12px;margin-bottom:16px;">
+    <div class="s-card" style="flex:1">
+      <div class="s-label">Objective 수</div>
+      <div class="s-value" id="okr-obj-count">—</div>
+    </div>
+    <div class="s-card" style="flex:1">
+      <div class="s-label">평균 진척률</div>
+      <div class="s-value" id="okr-avg-progress">—</div>
+    </div>
+  </div>
+  <div id="okr-tree" style="background:#0c1220;border:1px solid #1a2540;border-radius:10px;padding:16px;margin-bottom:24px;font-family:'IBM Plex Mono',monospace;font-size:0.82rem;line-height:1.8;color:#c5d4e8;">
+    <div class="ts-empty">OKR 데이터 로딩 중...</div>
+  </div>
+
   <!-- Goals Hierarchy -->
   <div class="ts-section-label">목표 현황</div>
   <div class="ts-subsection-label">🎯 장기 목표</div>
@@ -1186,11 +1202,76 @@
     await Promise.all([tsLoadSummary(), tsLoadGoals(), tsLoadTasks(), tsLoadTaskTree()]);
   }
 
+  // ─── OKR Dashboard ───────────────────────────────
+  async function loadOKRDashboard() {
+    try {
+      const resp = await fetch('/api/v1/dashboard/okrs');
+      if (!resp.ok) return;
+      const data = await resp.json();
+
+      const objCount = document.getElementById('okr-obj-count');
+      const avgProg = document.getElementById('okr-avg-progress');
+      if (objCount) objCount.textContent = data.summary?.total_objectives ?? 0;
+      if (avgProg) avgProg.textContent = (data.summary?.avg_progress ?? 0) + '%';
+
+      const tree = document.getElementById('okr-tree');
+      if (!tree) return;
+
+      if (!data.objectives || data.objectives.length === 0) {
+        tree.innerHTML = '<div style="color:#4a5e7a;text-align:center;padding:20px;">등록된 OKR이 없습니다</div>';
+        return;
+      }
+
+      function okrBar(pct) {
+        const f = Math.min(Math.max(Math.round(pct / 10), 0), 10);
+        return '<span style="color:#3b82f6">[</span><span style="color:#22c55e">' + '▓'.repeat(f) + '</span><span style="color:#1e3a5f">' + '░'.repeat(10 - f) + '</span><span style="color:#3b82f6">]</span>';
+      }
+
+      let html = '';
+      data.objectives.forEach(obj => {
+        const pct = Math.round((obj.progress || 0) * 100);
+        const dday = obj.d_day != null
+          ? (obj.d_day < 0 ? '<span style="color:#ef4444">🚨 D+' + Math.abs(obj.d_day) + '</span>'
+            : obj.d_day <= 3 ? '<span style="color:#f59e0b">⚠️ D-' + obj.d_day + '</span>'
+            : '<span style="color:#4a5e7a">⏰ D-' + obj.d_day + '</span>')
+          : '';
+        html += '<div style="margin-bottom:12px;">';
+        html += '<div>🎯 <strong>' + (obj.title || obj.id) + '</strong>  ' + okrBar(pct) + ' ' + pct + '%  ' + dday + '</div>';
+
+        (obj.key_results || []).forEach((kr, ki) => {
+          const isLast = ki === obj.key_results.length - 1;
+          const pfx = isLast ? '└─' : '├─';
+          const cPfx = isLast ? '   ' : '│  ';
+          const kPct = Math.round((kr.progress || 0) * 100);
+          let kpi = '';
+          if (kr.kpi_metric && kr.kpi_target != null) {
+            kpi = '<span style="color:#4a5e7a">(' + (kr.kpi_current ?? 0) + '/' + kr.kpi_target + (kr.kpi_unit || '') + ')</span>';
+          }
+          html += '<div>' + pfx + ' 📈 ' + (kr.title || kr.id) + '  ' + okrBar(kPct) + ' ' + kPct + '%  ' + kpi + '</div>';
+
+          (kr.initiatives || []).forEach((init, ii) => {
+            const iLast = ii === kr.initiatives.length - 1;
+            const iPfx = iLast ? '└─' : '├─';
+            const iPct = Math.round((init.progress || 0) * 100);
+            html += '<div>' + cPfx + iPfx + ' 📋 ' + (init.title || init.id) + '  ' + okrBar(iPct) + ' ' + iPct + '%</div>';
+          });
+        });
+        html += '</div>';
+      });
+
+      tree.innerHTML = html;
+    } catch (e) {
+      console.warn('[OKR] load failed:', e);
+    }
+  }
+
   tsRefresh();
+  loadOKRDashboard();
   setInterval(tsLoadSummary,  30000);
   setInterval(tsLoadGoals,    30000);
   setInterval(tsLoadTaskTree, 30000);
   setInterval(tsLoadTasks,     5000);
+  setInterval(loadOKRDashboard, 15000);
 })();
 </script>
 
