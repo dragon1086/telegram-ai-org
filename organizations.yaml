@@ -33,9 +33,8 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    # gemini-cli: Claude 주간한도 절약 (2026-04-02), fallback으로 claude-code 유지
-    preferred_engine: gemini-cli
-    fallback_engine: claude-code
+    preferred_engine: claude-code
+    fallback_engine: gemini-cli
     team_profile: design_strategy
     verification_profile: specialist_default
     phase_policy: default
@@ -79,10 +78,8 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    # claude-code: 복잡한 코드 아키텍처, 멀티스텝 디버깅, 테스트 작성에 최적
-    # codex: Claude 주간한도 절약 (2026-04-02), 코딩 특화
-    preferred_engine: codex
-    fallback_engine: claude-code
+    preferred_engine: claude-code
+    fallback_engine: gemini-cli
     team_profile: engineering_delivery
     verification_profile: specialist_default
     phase_policy: default
@@ -128,7 +125,7 @@ organizations:
   execution:
     # gemini-cli: Google 검색 내장 → 최신 시장 데이터 실시간 조회, 대규모 컨텍스트 처리
     preferred_engine: gemini-cli
-    fallback_engine: claude-code
+    fallback_engine: gemini-cli
     team_profile: growth_strategy
     verification_profile: specialist_default
     phase_policy: default
@@ -175,7 +172,7 @@ organizations:
   execution:
     # gemini-cli: Google 검색 내장 → 운영 모니터링/인프라 분석에 최적 (2026-03-26 전환)
     preferred_engine: gemini-cli
-    fallback_engine: claude-code
+    fallback_engine: gemini-cli
     team_profile: ops_delivery
     verification_profile: specialist_default
     phase_policy: default
@@ -199,7 +196,7 @@ organizations:
   description: 프로젝트 총괄/부서 조율/진행 관리
   telegram:
     username: aiorg_pm_bot
-    token_env: GLOBAL_PM_BOT_TOKEN
+    token_env: PM_BOT_TOKEN
     chat_id: -5203707291
   identity:
     dept_name: PM
@@ -264,8 +261,7 @@ organizations:
     confidence_threshold: 5
     orchestration_mode: skill_cli
   execution:
-    # codex: Claude 주간한도 절약 (2026-04-02), 기획/문서 작업
-    preferred_engine: codex
+    preferred_engine: claude-code
     fallback_engine: gemini-cli
     team_profile: product_strategy
     verification_profile: specialist_default
@@ -311,7 +307,7 @@ organizations:
   execution:
     # gemini-cli: 실시간 웹 검색 내장 → 경쟁사·시장 최신 데이터 즉시 조회, 멀티소스 비교에 최적
     preferred_engine: gemini-cli
-    fallback_engine: claude-code
+    fallback_engine: gemini-cli
     team_profile: research_strategy
     verification_profile: specialist_default
     phase_policy: default
