@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone  # noqa: F401
 from enum import Enum  # noqa: F401 — GoalType에서 사용
 from typing import Awaitable, Callable
 
@@ -57,6 +58,181 @@ EVALUATION_CONFIG: dict[GoalType, dict] = {
         "rollover_on_miss": False,
     },
 }
+
+
+# ── DeadlineChecker (Phase 1.4) ───────────────────────────────────
+
+
+class DeadlineSeverity(str, Enum):
+    """마감 임박 심각도."""
+
+    NONE = "none"          # 마감 여유 충분 (>14일)
+    INFO = "info"          # 마감 접근 중 (7~14일)
+    WARNING = "warning"    # 마감 임박 (3~7일)
+    CRITICAL = "critical"  # 마감 직전 (1~3일)
+    EMERGENCY = "emergency"  # 마감 초과
+
+
+@dataclass
+class DeadlineAlert:
+    """마감 알림 결과."""
+
+    goal_id: str
+    title: str
+    goal_type: str
+    deadline: str
+    days_remaining: int
+    severity: DeadlineSeverity
+    progress: float
+    message: str
+
+
+class DeadlineChecker:
+    """시간 기반 마감 알림 체커.
+
+    각 목표의 deadline을 확인하여 심각도별 알림을 생성한다.
+    """
+
+    # 심각도 임계값 (일 기준)
+    THRESHOLDS = {
+        DeadlineSeverity.EMERGENCY: 0,    # 마감 초과
+        DeadlineSeverity.CRITICAL: 3,     # 3일 이내
+        DeadlineSeverity.WARNING: 7,      # 7일 이내
+        DeadlineSeverity.INFO: 14,        # 14일 이내
+    }
+
+    def __init__(self, context_db: ContextDB) -> None:
+        self._db = context_db
+
+    def check_deadline(
+        self,
+        goal: dict,
+        now: datetime | None = None,
+    ) -> DeadlineAlert | None:
+        """단일 목표의 마감 상태를 확인.
+
+        Args:
+            goal: 목표 dict (deadline 필드 필수).
+            now: 현재 시각 (테스트용). None이면 UTC now.
+
+        Returns:
+            DeadlineAlert 또는 None (deadline 미설정 시).
+        """
+        deadline_str = goal.get("deadline")
+        if not deadline_str:
+            return None
+
+        if now is None:
+            now = datetime.now(timezone.utc)
+
+        try:
+            deadline_dt = datetime.strptime(
+                deadline_str, "%Y-%m-%d",
+            ).replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+
+        days_remaining = (deadline_dt - now).days
+        severity = self._classify_severity(days_remaining)
+
+        if severity == DeadlineSeverity.NONE:
+            return None
+
+        progress = goal.get("progress", 0.0) or 0.0
+        message = self._build_message(
+            goal.get("title", goal.get("id", "")),
+            days_remaining,
+            severity,
+            progress,
+        )
+
+        return DeadlineAlert(
+            goal_id=goal.get("id", ""),
+            title=goal.get("title", ""),
+            goal_type=goal.get("goal_type", "task"),
+            deadline=deadline_str,
+            days_remaining=days_remaining,
+            severity=severity,
+            progress=progress,
+            message=message,
+        )
+
+    def _classify_severity(self, days_remaining: int) -> DeadlineSeverity:
+        """남은 일수로 심각도 분류."""
+        if days_remaining < 0:
+            return DeadlineSeverity.EMERGENCY
+        if days_remaining <= self.THRESHOLDS[DeadlineSeverity.CRITICAL]:
+            return DeadlineSeverity.CRITICAL
+        if days_remaining <= self.THRESHOLDS[DeadlineSeverity.WARNING]:
+            return DeadlineSeverity.WARNING
+        if days_remaining <= self.THRESHOLDS[DeadlineSeverity.INFO]:
+            return DeadlineSeverity.INFO
+        return DeadlineSeverity.NONE
+
+    def _build_message(
+        self,
+        title: str,
+        days_remaining: int,
+        severity: DeadlineSeverity,
+        progress: float,
+    ) -> str:
+        """알림 메시지 생성."""
+        pct = int(progress * 100)
+        if severity == DeadlineSeverity.EMERGENCY:
+            return (
+                f"🚨 [{title}] 마감 {abs(days_remaining)}일 초과! "
+                f"(진척률 {pct}%) — 즉시 조치 필요"
+            )
+        if severity == DeadlineSeverity.CRITICAL:
+            return (
+                f"⚠️ [{title}] 마감 {days_remaining}일 남음 "
+                f"(진척률 {pct}%) — 긴급 점검 필요"
+            )
+        if severity == DeadlineSeverity.WARNING:
+            return (
+                f"⏰ [{title}] 마감 {days_remaining}일 남음 "
+                f"(진척률 {pct}%) — 점검 권장"
+            )
+        return (
+            f"📋 [{title}] 마감 {days_remaining}일 남음 "
+            f"(진척률 {pct}%)"
+        )
+
+    async def check_all_active(
+        self,
+        now: datetime | None = None,
+    ) -> list[DeadlineAlert]:
+        """모든 활성 목표의 마감 상태를 확인."""
+        goals = await self._db.get_active_goals()
+        alerts = []
+        for goal in (goals or []):
+            alert = self.check_deadline(goal, now=now)
+            if alert:
+                alerts.append(alert)
+        # 심각도순 정렬 (emergency → critical → warning → info)
+        severity_order = {
+            DeadlineSeverity.EMERGENCY: 0,
+            DeadlineSeverity.CRITICAL: 1,
+            DeadlineSeverity.WARNING: 2,
+            DeadlineSeverity.INFO: 3,
+        }
+        alerts.sort(key=lambda a: severity_order.get(a.severity, 99))
+        return alerts
+
+    async def check_by_type(
+        self,
+        goal_type: str,
+        now: datetime | None = None,
+    ) -> list[DeadlineAlert]:
+        """특정 goal_type의 활성 목표 마감 상태를 확인."""
+        goals = await self._db.get_goals_by_type(goal_type, status="active")
+        alerts = []
+        for goal in (goals or []):
+            alert = self.check_deadline(goal, now=now)
+            if alert:
+                alerts.append(alert)
+        return alerts
+
 
 # 정체 판정: 연속 N회 진전 없으면 escalate
 DEFAULT_MAX_STAGNATION = 3
