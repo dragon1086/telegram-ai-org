@@ -1460,6 +1460,7 @@ class ContextDB:
         "check_interval", "kpi_metric", "kpi_target", "kpi_current",
         "kpi_unit", "progress", "weight", "rolled_over_from",
         "rollover_count", "title", "description", "meta_json",
+        "created_by",
     }
 
     async def update_goal(self, goal_id: str, **kwargs) -> dict | None:
