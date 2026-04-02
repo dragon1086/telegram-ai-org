@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aiosqlite
-from contextlib import asynccontextmanager
 from loguru import logger
 
 DEFAULT_DB_PATH = Path(os.environ.get("CONTEXT_DB_PATH", "~/.ai-org/context.db")).expanduser()
@@ -204,6 +204,8 @@ class ContextDB:
             await db.commit()
         # Migration 001: title, meta_json 컬럼 추가 (idempotent)
         await self._migrate_goals_schema()
+        # Migration 002~004: OKR 계층 + 스냅샷 + 평가 (idempotent)
+        await self._migrate_okr_schema()
 
     async def create_project(self, project_id: str, name: str, description: str = "") -> None:
         """프로젝트 생성."""
@@ -1085,38 +1087,263 @@ class ContextDB:
                     pass
             await db.commit()
 
-    async def create_goal(self, goal_id: str, description: str,
-                          created_by: str, chat_id: int,
-                          max_iterations: int = 10,
-                          title: str = "",
-                          meta_json: str = "{}") -> dict:
-        """PM 목표 생성.
+    async def _migrate_okr_schema(self) -> None:
+        """Migration 002~004: OKR 계층 + 스냅샷 + 평가 테이블 (idempotent)."""
+        async with self._connect() as db:
+            # Migration 002: OKR 컬럼 추가
+            for col_sql in [
+                "ALTER TABLE pm_goals ADD COLUMN goal_type TEXT DEFAULT 'task'",
+                "ALTER TABLE pm_goals ADD COLUMN parent_goal_id TEXT",
+                "ALTER TABLE pm_goals ADD COLUMN deadline TEXT",
+                "ALTER TABLE pm_goals ADD COLUMN check_interval TEXT DEFAULT 'daily'",
+                "ALTER TABLE pm_goals ADD COLUMN kpi_metric TEXT",
+                "ALTER TABLE pm_goals ADD COLUMN kpi_target REAL",
+                "ALTER TABLE pm_goals ADD COLUMN kpi_current REAL",
+                "ALTER TABLE pm_goals ADD COLUMN kpi_unit TEXT",
+                "ALTER TABLE pm_goals ADD COLUMN progress REAL DEFAULT 0",
+                "ALTER TABLE pm_goals ADD COLUMN weight REAL",
+                "ALTER TABLE pm_goals ADD COLUMN rolled_over_from TEXT",
+                "ALTER TABLE pm_goals ADD COLUMN rollover_count INTEGER DEFAULT 0",
+            ]:
+                try:
+                    await db.execute(col_sql)
+                except Exception:
+                    pass
+            for idx_sql in [
+                "CREATE INDEX IF NOT EXISTS idx_goals_parent ON pm_goals(parent_goal_id)",
+                "CREATE INDEX IF NOT EXISTS idx_goals_type ON pm_goals(goal_type)",
+                "CREATE INDEX IF NOT EXISTS idx_goals_deadline ON pm_goals(deadline)",
+                "CREATE INDEX IF NOT EXISTS idx_goals_type_status ON pm_goals(goal_type, status)",
+            ]:
+                try:
+                    await db.execute(idx_sql)
+                except Exception:
+                    pass
 
-        Args:
-            goal_id: 고유 목표 ID (예: G-pm-001).
-            description: 목표 상세 설명.
-            created_by: 생성 org_id.
-            chat_id: Telegram 채팅방 ID.
-            max_iterations: 최대 반복 횟수.
-            title: 목표 제목 (short label).
-            meta_json: 메타데이터 JSON 문자열 (sprint, due_date 등).
-        """
+            # Migration 003: progress_snapshots 테이블
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS progress_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    goal_id TEXT NOT NULL,
+                    progress REAL NOT NULL,
+                    snapshot_type TEXT NOT NULL,
+                    snapshot_date TEXT NOT NULL,
+                    kpi_current REAL,
+                    notes TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(goal_id, snapshot_type, snapshot_date)
+                )
+            """)
+
+            # Migration 004: performance_evaluations 테이블
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS performance_evaluations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dept_id TEXT NOT NULL,
+                    period_start TEXT NOT NULL,
+                    period_end TEXT NOT NULL,
+                    period_type TEXT NOT NULL,
+                    overall_score REAL,
+                    grade TEXT,
+                    criteria_scores TEXT DEFAULT '{}',
+                    strengths TEXT DEFAULT '[]',
+                    weaknesses TEXT DEFAULT '[]',
+                    prompt_fragment TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            await db.commit()
+
+    # ── OKR CRUD (Phase 1.1) ──────────────────────────────────────
+
+    async def get_children_goals(
+        self, parent_id: str, goal_type: str | None = None,
+    ) -> list[dict]:
+        """특정 목표의 하위 목표 조회."""
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            if goal_type:
+                cursor = await db.execute(
+                    "SELECT * FROM pm_goals WHERE parent_goal_id=? AND goal_type=?",
+                    (parent_id, goal_type),
+                )
+            else:
+                cursor = await db.execute(
+                    "SELECT * FROM pm_goals WHERE parent_goal_id=?",
+                    (parent_id,),
+                )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def get_goals_by_type(
+        self, goal_type: str, status: str | None = None,
+    ) -> list[dict]:
+        """goal_type별 목표 조회."""
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            if status:
+                cursor = await db.execute(
+                    "SELECT * FROM pm_goals WHERE goal_type=? AND status=?",
+                    (goal_type, status),
+                )
+            else:
+                cursor = await db.execute(
+                    "SELECT * FROM pm_goals WHERE goal_type=?",
+                    (goal_type,),
+                )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def record_progress_snapshot(
+        self,
+        goal_id: str,
+        progress: float,
+        snapshot_type: str,
+        snapshot_date: str,
+        kpi_current: float | None = None,
+        notes: str | None = None,
+    ) -> None:
+        """진척 스냅샷 기록 (upsert)."""
+        now = _utcnow_iso()
+        async with self._connect() as db:
+            await db.execute(
+                """INSERT INTO progress_snapshots
+                   (goal_id, progress, snapshot_type, snapshot_date,
+                    kpi_current, notes, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(goal_id, snapshot_type, snapshot_date)
+                   DO UPDATE SET progress=?, kpi_current=?, notes=?, created_at=?""",
+                (goal_id, progress, snapshot_type, snapshot_date,
+                 kpi_current, notes, now,
+                 progress, kpi_current, notes, now),
+            )
+            await db.commit()
+
+    async def get_progress_snapshots(
+        self, goal_id: str, snapshot_type: str | None = None,
+    ) -> list[dict]:
+        """진척 스냅샷 조회."""
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            if snapshot_type:
+                cursor = await db.execute(
+                    "SELECT * FROM progress_snapshots WHERE goal_id=? AND snapshot_type=? ORDER BY snapshot_date",
+                    (goal_id, snapshot_type),
+                )
+            else:
+                cursor = await db.execute(
+                    "SELECT * FROM progress_snapshots WHERE goal_id=? ORDER BY snapshot_date",
+                    (goal_id,),
+                )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def save_performance_evaluation(
+        self,
+        dept_id: str,
+        period_start: str,
+        period_end: str,
+        period_type: str,
+        overall_score: float,
+        grade: str,
+        criteria_scores: str = "{}",
+        strengths: str = "[]",
+        weaknesses: str = "[]",
+        prompt_fragment: str = "",
+    ) -> int:
+        """성과 평가 저장."""
+        now = _utcnow_iso()
+        async with self._connect() as db:
+            cursor = await db.execute(
+                """INSERT INTO performance_evaluations
+                   (dept_id, period_start, period_end, period_type,
+                    overall_score, grade, criteria_scores, strengths,
+                    weaknesses, prompt_fragment, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (dept_id, period_start, period_end, period_type,
+                 overall_score, grade, criteria_scores, strengths,
+                 weaknesses, prompt_fragment, now),
+            )
+            await db.commit()
+            return cursor.lastrowid
+
+    async def get_performance_evaluations(
+        self, dept_id: str | None = None,
+    ) -> list[dict]:
+        """성과 평가 조회."""
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            if dept_id:
+                cursor = await db.execute(
+                    "SELECT * FROM performance_evaluations WHERE dept_id=? ORDER BY period_start DESC",
+                    (dept_id,),
+                )
+            else:
+                cursor = await db.execute(
+                    "SELECT * FROM performance_evaluations ORDER BY period_start DESC",
+                )
+            rows = await cursor.fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                for field in ("criteria_scores", "strengths", "weaknesses"):
+                    raw = d.get(field, "{}")
+                    if isinstance(raw, str):
+                        try:
+                            d[field] = json.loads(raw)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                result.append(d)
+            return result
+
+    async def create_goal(
+        self, goal_id: str, description: str,
+        created_by: str, chat_id: int = 0,
+        max_iterations: int = 10,
+        title: str = "",
+        meta_json: str = "{}",
+        goal_type: str = "task",
+        parent_goal_id: str | None = None,
+        deadline: str | None = None,
+        check_interval: str | None = None,
+        kpi_metric: str | None = None,
+        kpi_target: float | None = None,
+        kpi_current: float | None = None,
+        kpi_unit: str | None = None,
+        weight: float | None = None,
+    ) -> dict:
+        """PM 목표 생성 (OKR 계층 지원)."""
         now = _utcnow_iso()
         async with self._connect() as db:
             await db.execute(
                 """INSERT INTO pm_goals
-                   (id, title, description, status, milestones, iteration, max_iterations,
-                    stagnation_count, chat_id, created_by, meta_json, created_at, updated_at)
-                   VALUES (?, ?, ?, 'active', '[]', 0, ?, 0, ?, ?, ?, ?, ?)""",
-                (goal_id, title, description, max_iterations, chat_id, created_by,
-                 meta_json, now, now),
+                   (id, title, description, status, milestones, iteration,
+                    max_iterations, stagnation_count, chat_id, created_by,
+                    meta_json, created_at, updated_at,
+                    goal_type, parent_goal_id, deadline, check_interval,
+                    kpi_metric, kpi_target, kpi_current, kpi_unit,
+                    progress, weight, rollover_count)
+                   VALUES (?, ?, ?, 'active', '[]', 0, ?, 0, ?, ?, ?, ?, ?,
+                           ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)""",
+                (goal_id, title, description, max_iterations, chat_id,
+                 created_by, meta_json, now, now,
+                 goal_type, parent_goal_id, deadline, check_interval,
+                 kpi_metric, kpi_target, kpi_current, kpi_unit, weight),
             )
             await db.commit()
-        return {"id": goal_id, "title": title, "description": description,
-                "status": "active", "milestones": [], "iteration": 0,
-                "max_iterations": max_iterations, "stagnation_count": 0,
-                "chat_id": chat_id, "created_by": created_by,
-                "meta_json": meta_json, "created_at": now, "updated_at": now}
+        return {
+            "id": goal_id, "title": title, "description": description,
+            "status": "active", "milestones": [], "iteration": 0,
+            "max_iterations": max_iterations, "stagnation_count": 0,
+            "chat_id": chat_id, "created_by": created_by,
+            "meta_json": meta_json, "created_at": now, "updated_at": now,
+            "goal_type": goal_type, "parent_goal_id": parent_goal_id,
+            "deadline": deadline, "check_interval": check_interval,
+            "kpi_metric": kpi_metric, "kpi_target": kpi_target,
+            "kpi_current": kpi_current, "kpi_unit": kpi_unit,
+            "progress": 0, "weight": weight,
+            "rolled_over_from": None, "rollover_count": 0,
+        }
 
     async def get_goal(self, goal_id: str) -> dict | None:
         """PM 목표 조회."""
@@ -1226,29 +1453,31 @@ class ContextDB:
             rows = await cursor.fetchall()
             return [{"id": r[0], "status": r[1], "title": r[2]} for r in rows]
 
+    # 업데이트 허용 컬럼 화이트리스트 (SQL injection 방지)
+    _ALLOWED_COLUMNS = {
+        "status", "milestones", "iteration", "stagnation_count",
+        "last_progress", "goal_type", "parent_goal_id", "deadline",
+        "check_interval", "kpi_metric", "kpi_target", "kpi_current",
+        "kpi_unit", "progress", "weight", "rolled_over_from",
+        "rollover_count", "title", "description", "meta_json",
+    }
+
     async def update_goal(self, goal_id: str, **kwargs) -> dict | None:
-        """PM 목표 업데이트. milestones, status, iteration, stagnation_count, last_progress 지원."""
+        """PM 목표 업데이트 (OKR 컬럼 포함)."""
         now = _utcnow_iso()
 
-        # 각 컬럼을 명시적으로 처리 (SQL injection 방지)
         set_parts: list[str] = []
         values: list = []
 
-        if "status" in kwargs:
-            set_parts.append("status=?")
-            values.append(kwargs["status"])
-        if "milestones" in kwargs:
-            set_parts.append("milestones=?")
-            values.append(json.dumps(kwargs["milestones"]))
-        if "iteration" in kwargs:
-            set_parts.append("iteration=?")
-            values.append(kwargs["iteration"])
-        if "stagnation_count" in kwargs:
-            set_parts.append("stagnation_count=?")
-            values.append(kwargs["stagnation_count"])
-        if "last_progress" in kwargs:
-            set_parts.append("last_progress=?")
-            values.append(kwargs["last_progress"])
+        for col, val in kwargs.items():
+            if col not in self._ALLOWED_COLUMNS:
+                continue
+            if col == "milestones":
+                set_parts.append("milestones=?")
+                values.append(json.dumps(val))
+            else:
+                set_parts.append(f"{col}=?")
+                values.append(val)
 
         if not set_parts:
             return await self.get_goal(goal_id)
