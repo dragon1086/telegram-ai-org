@@ -407,6 +407,11 @@ class TelegramRelay:
         from tools.base_runner import RunnerFactory
         return RunnerFactory.create("codex")
 
+    @staticmethod
+    def _make_gemini_runner():
+        from tools.base_runner import RunnerFactory
+        return RunnerFactory.create("gemini-cli")
+
     async def _build_pm_db_context(self) -> str:
         """진행 중인 PM 태스크를 짧은 컨텍스트 문자열로 만든다."""
         if self._pm_orchestrator is None or self.context_db is None:
@@ -1357,7 +1362,13 @@ class TelegramRelay:
             if progress_callback:
                 await progress_callback("tmux unavailable -> resume_session fallback")
 
-        runner = self._make_claude_runner()
+        # engine 기준 러너 생성 — codex는 위에서 이미 처리됨
+        if team_config.engine == "gemini-cli":
+            runner = self._make_gemini_runner()
+        elif team_config.engine == "codex":
+            runner = self._make_codex_runner()
+        else:
+            runner = self._make_claude_runner()
         session_store = self.session_store if backend == "resume_session" else None
         counts: dict[str, int] = {}
         for name in agent_names:
@@ -1401,17 +1412,35 @@ class TelegramRelay:
             self._apply_runner_metrics(runner)
             await self._maybe_emit_session_alert(self.org_id)
             return result
-        persona = unique_agents[0] if unique_agents else None
-        result = await runner.run_single(RunContext(
-            prompt=task,
-            persona=persona,
-            progress_callback=progress_callback,
-            session_store=session_store,
-            org_id=self.org_id,
-            global_context=self.global_context,
-            system_prompt=system_prompt,
-            workdir=workdir,
-        ))
+
+        # gemini-cli는 run_single 대신 run(RunContext) 사용 — persona를 프롬프트에 주입
+        if team_config.engine == "gemini-cli":
+            persona = unique_agents[0] if unique_agents else None
+            prompt = task
+            if persona:
+                prompt = f"[Persona: {persona}] {prompt}"
+            if agent_names and len(agent_names) > 1:
+                prompt = f"[Personas: {', '.join(agent_names)}] {task}"
+            if system_prompt:
+                prompt = f"{system_prompt}\n\n{prompt}"
+            result = await runner.run(RunContext(
+                prompt=prompt,
+                workdir=workdir,
+                progress_callback=progress_callback,
+                engine_config={"agents": agent_names},
+            ))
+        else:
+            persona = unique_agents[0] if unique_agents else None
+            result = await runner.run_single(RunContext(
+                prompt=task,
+                persona=persona,
+                progress_callback=progress_callback,
+                session_store=session_store,
+                org_id=self.org_id,
+                global_context=self.global_context,
+                system_prompt=system_prompt,
+                workdir=workdir,
+            ))
         self._apply_runner_metrics(runner)
         await self._maybe_emit_session_alert(self.org_id)
         return result
@@ -3052,7 +3081,9 @@ class TelegramRelay:
         if self._goal_tracker is None:
             return
         import asyncio as _asyncio
+
         import yaml as _yaml
+
         from project_paths import project_path as _project_path
         try:
             # resume_goals 완료 대기 (10초)
