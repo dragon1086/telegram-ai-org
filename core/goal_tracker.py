@@ -561,6 +561,15 @@ class GoalTracker:
         event = self._cancel_events.get(goal_id)
         return event is not None and event.is_set()
 
+    def has_active_loop(self, goal_id: str) -> bool:
+        """해당 목표의 _run_loop_inner 백그라운드 루프가 실행 중인지 확인.
+
+        AutonomousLoop._tick()에서 중복 replan 방지용.
+        _cancel_events에 존재하고 아직 취소되지 않았으면 실행 중으로 판단.
+        """
+        event = self._cancel_events.get(goal_id)
+        return event is not None and not event.is_set()
+
     async def evaluate_progress(self, goal_id: str) -> GoalStatus:
         """현재까지의 부서 결과를 수집하고 LLM으로 목표 달성도 평가.
 

@@ -20,6 +20,7 @@ from enum import Enum
 from typing import Awaitable, Callable
 
 from loguru import logger
+
 from project_paths import project_path
 
 # GoalTracker와 동일 feature flag
@@ -139,6 +140,24 @@ class AutonomousLoop:
 
         for goal in active_goals[:self._max_dispatch]:
             goal_id = goal["id"]
+
+            # ── 루프 중복 방지 ──────────────────────────────────────────────
+            # _run_loop_inner가 이미 해당 목표를 관리 중이면 _tick이
+            # 개입하지 않는다. _run_loop_inner가 _wait_for_completion()으로
+            # 적절히 대기·평가·replan하므로, 여기서 중복 dispatch하면
+            # 서브태스크가 즉시 취소되는 race condition이 발생한다.
+            _hal = getattr(self._tracker, "has_active_loop", None)
+            if _hal:
+                _active = _hal(goal_id)
+                # AsyncMock 호환: sync 메서드라도 mock 환경에선 coroutine 반환 가능
+                if asyncio.iscoroutine(_active):
+                    _active = await _active
+                if _active:
+                    logger.debug(
+                        f"[AutonomousLoop] SKIP {goal_id} — _run_loop_inner 이미 실행 중"
+                    )
+                    continue
+
             try:
                 status = await self._tracker.evaluate_progress(goal_id)
                 if status.achieved:

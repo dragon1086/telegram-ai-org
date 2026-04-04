@@ -5,7 +5,7 @@ import asyncio
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -228,6 +228,8 @@ class TestAutonomousLoopClass:
         t.replan = AsyncMock(return_value=[])
         # tick_iteration은 (new_iteration, max_iterations) 튜플 반환
         t.tick_iteration = AsyncMock(return_value=(1, 10))
+        # _run_loop_inner 백그라운드 루프 미실행 (중복 방지 가드 통과용)
+        t.has_active_loop = Mock(return_value=False)
         return t
 
     @pytest.fixture
@@ -329,6 +331,8 @@ class TestAutonomousLoopIterationTracking:
         t.tick_iteration = AsyncMock(side_effect=tick_iteration)
         t.update_goal_status = AsyncMock(return_value={"id": "G-pm-001", "status": "active"})
         t.replan = AsyncMock(return_value=[])
+        # _run_loop_inner 백그라운드 루프 미실행 (중복 방지 가드 통과용)
+        t.has_active_loop = Mock(return_value=False)
         return t, goal_state
 
     @pytest.mark.asyncio
