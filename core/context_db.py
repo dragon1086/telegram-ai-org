@@ -283,10 +283,31 @@ class ContextDB:
                 for r in rows
             ]
 
+    # ── 회고 기반 태스크 생성 차단 키워드 (최종 관문) ──
+    _RETRO_BLOCK_KEYWORDS = (
+        "일일회고", "DAILY_RETRO", "friday_retro", "weekly_retro",
+        "회고 시작", "발언 차례", "통합_회고",
+    )
+
     async def create_pm_task(self, task_id: str, description: str, assigned_dept: str | None,
                              created_by: str, parent_id: str | None = None,
                              metadata: dict | None = None) -> dict:
-        """PM 태스크 생성 (크로스 프로세스 공유)."""
+        """PM 태스크 생성 (크로스 프로세스 공유).
+
+        회고 기반 태스크는 ENABLE_RETRO_DISPATCH=1이 아니면 차단.
+        """
+        # ── 회고 태스크 차단 (2026-04-06): 모든 생성 경로의 최종 관문 ──
+        if os.environ.get("ENABLE_RETRO_DISPATCH", "0") != "1":
+            desc_lower = (description or "").lower()
+            if any(kw.lower() in desc_lower for kw in self._RETRO_BLOCK_KEYWORDS):
+                logger.warning(
+                    f"[ContextDB] 회고 기반 태스크 생성 차단: {task_id} "
+                    f"(ENABLE_RETRO_DISPATCH=0)"
+                )
+                return {"id": task_id, "parent_id": parent_id, "description": description,
+                        "assigned_dept": assigned_dept, "status": "blocked",
+                        "created_by": created_by, "created_at": _utcnow_iso(),
+                        "updated_at": _utcnow_iso(), "metadata": metadata or {}}
         now = _utcnow_iso()
         meta = json.dumps(metadata or {})
         async with self._connect() as db:
