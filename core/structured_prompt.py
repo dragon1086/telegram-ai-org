@@ -208,7 +208,7 @@ class StructuredPromptGenerator:
             try:
                 response = await asyncio.wait_for(
                     self._decision_client.complete(prompt),
-                    timeout=35.0,
+                    timeout=120.0,
                 )
                 phases = self._parse_phases(response)
                 if not phases:

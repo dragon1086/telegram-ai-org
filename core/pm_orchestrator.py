@@ -456,7 +456,7 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
         try:
             response = await asyncio.wait_for(
                 self._decision_client.complete(prompt, workdir=workdir),
-                timeout=35.0,
+                timeout=120.0,
             )
             text = response.strip()
             if "```" in text:
@@ -552,7 +552,7 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
         try:
             response = await asyncio.wait_for(
                 self._decision_client.complete(prompt, workdir=workdir),
-                timeout=25.0,
+                timeout=90.0,
             )
             lane = response.strip().split()[0].strip().lower()
             if lane in {
@@ -655,7 +655,7 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
         try:
             response = await asyncio.wait_for(
                 self._decision_client.complete(prompt, workdir=workdir),
-                timeout=35.0,
+                timeout=120.0,
             )
             return self._parse_request_plan(response, dept_hints)
         except Exception as e:
@@ -979,7 +979,7 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
             try:
                 response = await asyncio.wait_for(
                     self._decision_client.complete(prompt, workdir=workdir),
-                    timeout=45.0,
+                    timeout=180.0,
                 )
                 return self._parse_decompose(response)
             except Exception as e:

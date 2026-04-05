@@ -48,7 +48,7 @@ class ConfidenceScorer:
         try:
             score = await asyncio.wait_for(
                 self._engine_score(message, specialties, decision_client),
-                timeout=15.0,
+                timeout=60.0,
             )
             logger.debug(f"[confidence] engine score: {score}")
             return score

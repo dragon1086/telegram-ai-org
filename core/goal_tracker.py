@@ -682,7 +682,7 @@ class GoalTracker:
         try:
             response = await asyncio.wait_for(
                 decision_client.complete(prompt),
-                timeout=35.0,
+                timeout=120.0,
             )
             return self._parse_evaluation(response)
         except Exception as e:
