@@ -115,12 +115,16 @@ class OrgScheduler:
             id="morning_standup", misfire_grace_time=300,
             replace_existing=True,
         )
-        self.scheduler.add_job(
-            self.daily_retro,
-            CronTrigger(hour=23, minute=30, timezone=KST),
-            id="daily_retro", misfire_grace_time=300,
-            replace_existing=True,
-        )
+        # ── 일일 회고 비활성화 (2026-04-06) ──
+        # PM이 실패 태스크를 무한 재배정하는 문제로 인해 비활성화.
+        # 환경변수 ENABLE_DAILY_RETRO=1 로 다시 활성화 가능.
+        if os.environ.get("ENABLE_DAILY_RETRO", "0") == "1":
+            self.scheduler.add_job(
+                self.daily_retro,
+                CronTrigger(hour=23, minute=30, timezone=KST),
+                id="daily_retro", misfire_grace_time=300,
+                replace_existing=True,
+            )
         # weekly_standup APScheduler 잡 제거 (2026-03-31)
         # weekly_meeting_multibot(openclaw cron, 09:03 KST)이 상위호환이므로 중복 제거.
         # self.scheduler.add_job(
@@ -129,12 +133,15 @@ class OrgScheduler:
         #     id="weekly_standup", misfire_grace_time=300,
         #     replace_existing=True,
         # )
-        self.scheduler.add_job(
-            self.friday_retro,
-            CronTrigger(day_of_week="fri", hour=18, minute=0, timezone=KST),
-            id="friday_retro", misfire_grace_time=300,
-            replace_existing=True,
-        )
+        # ── 금요일 회고 비활성화 (2026-04-06) ──
+        # 일일 회고와 동일 사유로 비활성화. ENABLE_FRIDAY_RETRO=1 로 재활성화.
+        if os.environ.get("ENABLE_FRIDAY_RETRO", "0") == "1":
+            self.scheduler.add_job(
+                self.friday_retro,
+                CronTrigger(day_of_week="fri", hour=18, minute=0, timezone=KST),
+                id="friday_retro", misfire_grace_time=300,
+                replace_existing=True,
+            )
         if self._claim_manager is not None:
             self.scheduler.add_job(
                 self._cleanup_claims,

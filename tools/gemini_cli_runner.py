@@ -15,6 +15,18 @@ from tools.base_runner import BaseRunner, RunContext, RunnerError, RunnerTimeout
 GEMINI_CLI = os.environ.get("GEMINI_CLI_PATH", "gemini")
 DEFAULT_TIMEOUT = int(os.environ.get("GEMINI_CLI_DEFAULT_TIMEOUT_SEC", "1800"))
 GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
+# ── 글로벌 동시 프로세스 제한 (모든 GeminiCLIRunner 인스턴스 공유) ──
+MAX_GEMINI_CONCURRENT = int(os.environ.get("GEMINI_MAX_CONCURRENT", "4"))
+_gemini_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_gemini_semaphore() -> asyncio.Semaphore:
+    """이벤트 루프 내에서 글로벌 세마포어를 lazy-init."""
+    global _gemini_semaphore
+    if _gemini_semaphore is None:
+        _gemini_semaphore = asyncio.Semaphore(MAX_GEMINI_CONCURRENT)
+        logger.info(f"[GeminiCLI] 글로벌 동시성 제한 초기화: {MAX_GEMINI_CONCURRENT}개")
+    return _gemini_semaphore
 
 # Gemini CLI가 stdout에 출력하는 노이즈 라인 (소문자 비교)
 _NOISE_LINE_PREFIXES = (
@@ -79,7 +91,13 @@ class GeminiCLIRunner(BaseRunner):
             raise
 
     async def _run_with_model(self, ctx: RunContext, model: str | None) -> str:
-        """지정된 모델로 Gemini CLI를 실행하고 결과 텍스트를 반환한다."""
+        """지정된 모델로 Gemini CLI를 실행하고 결과 텍스트를 반환한다 (글로벌 세마포어 적용)."""
+        sem = _get_gemini_semaphore()
+        async with sem:
+            return await self._run_with_model_inner(ctx, model)
+
+    async def _run_with_model_inner(self, ctx: RunContext, model: str | None) -> str:
+        """실제 Gemini CLI 실행 (세마포어 내부)."""
         cmd = [self.cli_path, "-p", ctx.prompt, "--output-format", "json"]
         if model:
             cmd += ["--model", model]

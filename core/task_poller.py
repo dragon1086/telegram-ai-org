@@ -25,6 +25,10 @@ from core.context_db import ContextDB
 DEFAULT_POLL_INTERVAL = 2.0  # 의존성 체인 중간 태스크 감지 (PM_DONE은 최종 합성만 처리)
 DEFAULT_LEASE_TTL_SEC = 180.0
 DEFAULT_HEARTBEAT_INTERVAL_SEC = 30.0
+# ── 동시성 제한 ──
+MAX_CONCURRENT_TASKS = int(os.environ.get("POLLER_MAX_CONCURRENT_TASKS", "2"))
+# ── Stale 복구 시 최대 재시도 횟수 ──
+MAX_TASK_RETRIES = int(os.environ.get("POLLER_MAX_TASK_RETRIES", "3"))
 # Fast-failure 감지: 짧은 시간에 연속 실패 시 백오프
 FAST_FAIL_WINDOW_SEC = 60.0  # 이 시간 내 연속 실패 횟수 추적
 FAST_FAIL_THRESHOLD = 3  # 이 횟수 이상이면 백오프 적용
@@ -64,6 +68,9 @@ class TaskPoller:
         self._worker_id = f"{org_id}:{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
         # Fast-failure 감지: 태스크별 최근 실패 타임스탬프
         self._fail_timestamps: dict[str, list[float]] = {}
+        # ── 동시성 세마포어: 동시 실행 태스크 수 제한 ──
+        self._semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
+        logger.info(f"[TaskPoller:{org_id}] 동시성 제한: {MAX_CONCURRENT_TASKS}개")
 
     def start(self) -> None:
         """백그라운드 폴링 시작."""
@@ -108,20 +115,53 @@ class TaskPoller:
             except asyncio.CancelledError:
                 break
 
+    def _get_attempt_count(self, task: dict) -> int:
+        """태스크의 총 시도 횟수를 반환."""
+        meta = task.get("metadata") or {}
+        if isinstance(meta, str):
+            import json as _json
+            try:
+                meta = _json.loads(meta)
+            except Exception:
+                meta = {}
+        return int(meta.get("total_attempt_count", meta.get("attempt_count", 0)))
+
     async def _check_for_tasks(self) -> None:
-        """assigned 상태인 태스크를 찾아 콜백 실행."""
+        """assigned 상태인 태스크를 찾아 콜백 실행 (동시성 세마포어 적용)."""
         tasks = await self._db.get_tasks_for_dept(self._org_id, status="assigned")
         for task in tasks:
             task_id = task["id"]
             if task_id in self._processing:
                 continue
+            # ── 최대 재시도 초과 시 자동 실패 처리 ──
+            attempts = self._get_attempt_count(task)
+            if attempts >= MAX_TASK_RETRIES:
+                logger.warning(
+                    f"[TaskPoller:{self._org_id}] 태스크 {task_id} 최대 재시도 초과 "
+                    f"({attempts}/{MAX_TASK_RETRIES}) — 자동 실패 처리"
+                )
+                try:
+                    await self._db.update_pm_task(
+                        task_id, status="failed",
+                        result=f"최대 재시도 횟수 초과 ({attempts}회)",
+                    )
+                except Exception:
+                    logger.exception(f"[TaskPoller:{self._org_id}] 자동 실패 처리 오류: {task_id}")
+                continue
+            # ── 세마포어 비차단 확인: 슬롯 없으면 이번 폴링에서 스킵 ──
+            if self._semaphore.locked():
+                logger.debug(
+                    f"[TaskPoller:{self._org_id}] 동시성 한도 도달 — "
+                    f"태스크 {task_id} 대기 (현재 {len(self._processing)}개 실행 중)"
+                )
+                break
             claimed = await self._db.claim_pm_task_lease(task_id, self._worker_id, self._lease_ttl_sec)
             if claimed is None:
                 continue
             self._processing.add(task_id)
             logger.info(f"[TaskPoller:{self._org_id}] 태스크 감지: {task_id}")
             self._heartbeat_tasks[task_id] = asyncio.create_task(self._heartbeat_loop(task_id))
-            # 비동기로 태스크 처리 (폴링 루프를 블로킹하지 않음)
+            # 비동기로 태스크 처리 (세마포어로 동시성 제한)
             asyncio.create_task(self._execute_task(claimed))
 
     async def _heartbeat_loop(self, task_id: str) -> None:
@@ -158,50 +198,57 @@ class TaskPoller:
         return any(kw in error_str for kw in TOKEN_LIMIT_KEYWORDS)
 
     async def _execute_task(self, task: dict) -> None:
-        """태스크 콜백 실행 및 완료 후 processing set에서 제거."""
+        """태스크 콜백 실행 (세마포어로 동시성 제한) 및 완료 후 processing set에서 제거."""
         task_id = task["id"]
         task_succeeded = False
 
-        # ── Fast-failure 감지: 빠른 연속 실패 시 백오프 ──
-        if self._is_fast_failing(task_id):
-            logger.warning(
-                f"[TaskPoller:{self._org_id}] 태스크 {task_id} fast-fail 감지 — "
-                f"{FAST_FAIL_BACKOFF_SEC}초 백오프"
+        async with self._semaphore:
+            logger.debug(
+                f"[TaskPoller:{self._org_id}] 세마포어 획득: {task_id} "
+                f"(실행 중 {len(self._processing)}개)"
             )
-            await asyncio.sleep(FAST_FAIL_BACKOFF_SEC)
 
-        try:
-            await self._on_task(task)
-            task_succeeded = True
-            # 성공 시 실패 이력 초기화
-            self._fail_timestamps.pop(task_id, None)
-        except Exception as exc:
-            self._record_failure(task_id)
-            if self._is_token_limit_error(exc):
-                logger.error(
-                    f"[TaskPoller:{self._org_id}] 태스크 {task_id} 토큰/레이트 리밋 감지 — "
-                    f"{TOKEN_LIMIT_BACKOFF_SEC}초 장기 백오프 적용: {exc}"
-                )
-                await asyncio.sleep(TOKEN_LIMIT_BACKOFF_SEC)
-            else:
-                logger.exception(f"[TaskPoller:{self._org_id}] 태스크 실행 오류: {task_id}")
-        finally:
-            self._processing.discard(task_id)
-            hb_task = self._heartbeat_tasks.pop(task_id, None)
-            if hb_task and not hb_task.done():
-                hb_task.cancel()
-            try:
-                await self._db.release_pm_task_lease(
-                    task_id,
-                    self._worker_id,
-                    requeue_if_running=not task_succeeded,
-                    **(
-                        {"retry_delay_seconds": max(self._lease_ttl_sec, self._poll_interval * 4)}
-                        if not task_succeeded
-                        else {}
-                    ),
-                )
-            except Exception as _rel_e:
+            # ── Fast-failure 감지: 빠른 연속 실패 시 백오프 ──
+            if self._is_fast_failing(task_id):
                 logger.warning(
-                    f"[TaskPoller:{self._org_id}] lease release 실패 (무시): {task_id} — {_rel_e}"
+                    f"[TaskPoller:{self._org_id}] 태스크 {task_id} fast-fail 감지 — "
+                    f"{FAST_FAIL_BACKOFF_SEC}초 백오프"
                 )
+                await asyncio.sleep(FAST_FAIL_BACKOFF_SEC)
+
+            try:
+                await self._on_task(task)
+                task_succeeded = True
+                # 성공 시 실패 이력 초기화
+                self._fail_timestamps.pop(task_id, None)
+            except Exception as exc:
+                self._record_failure(task_id)
+                if self._is_token_limit_error(exc):
+                    logger.error(
+                        f"[TaskPoller:{self._org_id}] 태스크 {task_id} 토큰/레이트 리밋 감지 — "
+                        f"{TOKEN_LIMIT_BACKOFF_SEC}초 장기 백오프 적용: {exc}"
+                    )
+                    await asyncio.sleep(TOKEN_LIMIT_BACKOFF_SEC)
+                else:
+                    logger.exception(f"[TaskPoller:{self._org_id}] 태스크 실행 오류: {task_id}")
+
+        # 세마포어 해제 후 정리
+        self._processing.discard(task_id)
+        hb_task = self._heartbeat_tasks.pop(task_id, None)
+        if hb_task and not hb_task.done():
+            hb_task.cancel()
+        try:
+            await self._db.release_pm_task_lease(
+                task_id,
+                self._worker_id,
+                requeue_if_running=not task_succeeded,
+                **(
+                    {"retry_delay_seconds": max(self._lease_ttl_sec, self._poll_interval * 4)}
+                    if not task_succeeded
+                    else {}
+                ),
+            )
+        except Exception as _rel_e:
+            logger.warning(
+                f"[TaskPoller:{self._org_id}] lease release 실패 (무시): {task_id} — {_rel_e}"
+            )

@@ -942,7 +942,8 @@ class ContextDB:
                 metadata.pop("lease_expires_at", None)
                 metadata.pop("lease_heartbeat_at", None)
                 metadata.pop("retry_after_at", None)
-                metadata["attempt_count"] = 0
+                # attempt_count는 리셋하지 않음 — 리셋하면 무한 재시도 루프 발생
+                # total_attempt_count와 함께 누적 유지
                 metadata["recovery_count"] = recovery_count
                 metadata["recovered_at"] = now.isoformat()
                 now_iso = now.isoformat()
