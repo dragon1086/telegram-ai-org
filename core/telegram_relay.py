@@ -3395,7 +3395,7 @@ class TelegramRelay:
                             OR (t.parent_id LIKE 'G-%' AND EXISTS (
                                 SELECT 1 FROM pm_goals g
                                 WHERE g.id = t.parent_id
-                                  AND g.status NOT IN ('completed', 'failed')
+                                  AND g.status NOT IN ('completed', 'failed', 'achieved', 'cancelled', 'max_iterations_reached', 'stagnated')
                             ))
                         )
                         AND NOT EXISTS (
