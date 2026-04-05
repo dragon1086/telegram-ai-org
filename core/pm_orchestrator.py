@@ -902,11 +902,28 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
             f"User request: {message[:500]}"
         )
 
+    # ── 회고 기반 태스크 재분배 차단 키워드 ──
+    _RETRO_BLOCK_KEYWORDS = (
+        "일일회고", "DAILY_RETRO", "friday_retro", "weekly_retro",
+        "회고 시작", "발언 차례", "통합_회고",
+    )
+
     async def decompose(self, user_message: str) -> list[SubTask]:
         """사용자 메시지를 부서별 서브태스크로 분해.
 
         LLM 기반 분해를 시도하고, 실패 시 키워드 기반 fallback.
         """
+        # ── 회고 기반 태스크 재분배 차단 (2026-04-06) ──
+        # 회고 활동에서 파생된 "보완 필요" 재배정이 무한 루프를 일으키므로
+        # 환경변수 ENABLE_RETRO_DISPATCH=1 로 명시 활성화하지 않으면 차단.
+        if os.environ.get("ENABLE_RETRO_DISPATCH", "0") != "1":
+            msg_lower = user_message.lower()
+            if any(kw.lower() in msg_lower for kw in self._RETRO_BLOCK_KEYWORDS):
+                logger.info(
+                    f"[PM] 회고 기반 태스크 분배 차단 — 회고 키워드 감지 "
+                    f"(ENABLE_RETRO_DISPATCH=0)"
+                )
+                return []
         if not self._dept_map():
             logger.info("[PM] 활성 specialist 조직이 없어 분해를 건너뜁니다.")
             return []
