@@ -298,6 +298,20 @@ class PMSynthesisMixin:
 
         # 원래 요청 복원
         parent = await self._db.get_pm_task(parent_task_id)
+        if parent is None and parent_task_id.startswith("G-"):
+            # Goal ID가 parent_task_id로 직접 사용된 레거시 케이스 — pm_goals에서 fallback
+            _goal = await self._db.get_goal(parent_task_id)
+            if _goal:
+                parent = {
+                    "id": parent_task_id,
+                    "description": _goal.get("description", _goal.get("title", "")),
+                    "metadata": {"goal_id": parent_task_id, "_fallback_from_goal": True},
+                    "status": _goal.get("status", "active"),
+                }
+                logger.warning(
+                    f"[PM] _synthesize_and_act: parent_task_id={parent_task_id}가 "
+                    "pm_tasks에 없음 — pm_goals fallback 사용"
+                )
         original_request = parent["description"][:1500] if parent else ""
 
         parent_meta = parent.get("metadata", {}) if parent else {}

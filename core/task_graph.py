@@ -56,12 +56,29 @@ class TaskGraph:
             return []
         target_status = "failed" if policy == "cascade_fail" else "skipped"
         affected = await self._get_all_successors(task_id)
+        retroactive: list[str] = []  # 이미 running/assigned 상태였던 태스크
         for s_id in affected:
+            existing = await self._db.get_pm_task(s_id)
+            was_active = existing and existing.get("status") in ("assigned", "running", "in_progress")
             await self._db.update_pm_task_status(
                 s_id, target_status,
                 result=f"cascade from failed task {task_id}",
             )
             logger.warning(f"TaskGraph: {s_id} → {target_status} (cascade from {task_id})")
+            if was_active:
+                retroactive.append(s_id)
+                logger.warning(
+                    f"TaskGraph: {s_id} 실행 중이었으나 소급 취소됨 "
+                    f"(was={existing['status']}, cascade from {task_id})"
+                )
+        if retroactive:
+            # MessageBus 연동 시도 (없으면 무시)
+            try:
+                from core.improvement_bus import ImprovementBus
+                bus = ImprovementBus(dry_run=True)  # 이벤트 전송용 인터페이스 존재 시에만
+                _ = bus  # 현재는 log만; Phase 2에서 TASK_CANCELLED 이벤트 발행 예정
+            except Exception:
+                pass
         return affected
 
     async def _get_all_successors(self, task_id: str) -> list[str]:

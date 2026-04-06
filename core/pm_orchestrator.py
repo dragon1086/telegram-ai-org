@@ -1352,6 +1352,28 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
                 return []
         except Exception as _bp_e:
             logger.debug(f"[PM] backpressure check 실패 (무시): {_bp_e}")
+        # ── Coordinator 태스크 패턴 ─────────────────────────────────────────────
+        # parent_task_id가 pm_goals ID(G-로 시작)이면 coordinator pm_task를 먼저 생성해
+        # goal ↔ subtask 간 중간 노드를 pm_tasks 테이블 안에 확보한다.
+        # 이렇게 하면 _synthesize_and_act가 get_pm_task(coordinator_id)로 정상 조회 가능.
+        if parent_task_id.startswith("G-") and not await self._db.get_pm_task(parent_task_id):
+            _goal = await self._db.get_goal(parent_task_id)
+            if _goal:
+                coordinator_id = await self._next_task_id()
+                _iter_meta = {"coordinator": True, "goal_id": parent_task_id}
+                await self._db.create_pm_task(
+                    task_id=coordinator_id,
+                    description=f"[Coordinator] {_goal.get('title', parent_task_id)}",
+                    assigned_dept=None,
+                    created_by=self._org_id,
+                    parent_id=parent_task_id,
+                    metadata=_iter_meta,
+                )
+                logger.info(
+                    f"[PM] coordinator 태스크 {coordinator_id} 생성 (goal={parent_task_id})"
+                )
+                parent_task_id = coordinator_id  # 이후 모든 subtask의 parent = coordinator
+
         parent_task = await self._db.get_pm_task(parent_task_id)
         parent_metadata = parent_task.get("metadata", {}) if parent_task else {}
         parent_description = parent_task.get("description", "") if parent_task else ""

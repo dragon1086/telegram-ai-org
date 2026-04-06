@@ -426,7 +426,7 @@ class ContextDB:
                 AND NOT EXISTS (
                     SELECT 1 FROM pm_task_dependencies d
                     JOIN pm_tasks dep ON dep.id = d.depends_on
-                    WHERE d.task_id = t.id AND dep.status != 'done'
+                    WHERE d.task_id = t.id AND dep.status NOT IN ('done', 'failed', 'cancelled', 'skipped')
                 )
             """, (parent_id,))
             rows = await cursor.fetchall()
@@ -449,7 +449,7 @@ class ContextDB:
                     SELECT 1 FROM pm_task_dependencies d
                     JOIN pm_tasks dep ON dep.id = d.depends_on
                     WHERE d.task_id = t.id
-                    AND dep.status NOT IN ('done', 'failed', 'cancelled')
+                    AND dep.status NOT IN ('done', 'failed', 'cancelled', 'skipped')
                 )
                 ORDER BY t.created_at ASC
             """)
