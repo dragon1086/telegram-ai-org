@@ -8,9 +8,56 @@ Feature Flag: ENABLE_REFACTORED_SENDER (기본값: True)
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
+from typing import Tuple
 
 from loguru import logger
+
+# ---------------------------------------------------------------------------
+# [경로 사전 검증] 환각/비파일 경로 업로드 시도를 원천 차단
+# ---------------------------------------------------------------------------
+# 블랙리스트: CLI 명령어 경로, 단일 세그먼트 경로, 템플릿 보간 잔여물 등
+# 실제 파일 시스템 경로가 될 수 없는 패턴을 정규식으로 정의.
+_UPLOAD_PATH_BLACKLIST: tuple[re.Pattern, ...] = (
+    # 단일 세그먼트 CLI-like 경로: /goal, /health, /status, /dashboard, /help, ...
+    re.compile(r"^/[a-z_]{1,30}$"),
+    # 템플릿 보간 잔여물: <...>, {...} 포함 경로
+    re.compile(r"[<>{}]"),
+    # URL 스키마: http/https/ftp 등 (로컬 파일이 아님)
+    re.compile(r"^[a-z]{2,10}://"),
+)
+
+
+def _validate_upload_path(raw_path: str) -> Tuple[bool, str]:
+    """업로드 경로가 유효한 로컬 파일인지 검증.
+
+    Returns:
+        (True, expanded_path)  — 유효한 경로
+        (False, reason)        — 무효 사유
+    """
+    text = raw_path.strip()
+
+    # 1) 블랙리스트 패턴 매칭
+    for pattern in _UPLOAD_PATH_BLACKLIST:
+        if pattern.search(text):
+            return False, f"blacklisted pattern: {pattern.pattern!r}"
+
+    # 2) 경로 확장 (~/... → 절대경로)
+    expanded = os.path.abspath(os.path.expanduser(text))
+
+    # 3) 파일 존재 여부
+    if not os.path.isfile(expanded):
+        return False, f"file not found: {expanded}"
+
+    # 4) 빈 파일 검증
+    try:
+        if os.path.getsize(expanded) == 0:
+            return False, f"empty file: {expanded}"
+    except OSError as exc:
+        return False, f"cannot stat file: {exc}"
+
+    return True, expanded
 
 ENABLE_REFACTORED_SENDER = os.environ.get("ENABLE_REFACTORED_SENDER", "1") == "1"
 
@@ -57,6 +104,7 @@ async def auto_upload(
 
     seen: set[str] = set()
     uploaded_count = 0
+    skipped_count = 0
     for raw in candidates:
         path_text = os.path.expanduser(raw.strip())
         if path_text in seen:
@@ -65,7 +113,20 @@ async def auto_upload(
             logger.debug(f"[auto_upload:{org_id}] 중복 업로드 스킵: {path_text}")
             continue
         seen.add(path_text)
-        path = Path(path_text)
+
+        # --- [경로 사전 검증] 디스크 존재 + 블랙리스트 필터 ---
+        valid, reason_or_path = _validate_upload_path(path_text)
+        if not valid:
+            logger.warning(
+                f"[auto_upload:{org_id}] 업로드 스킵 — {reason_or_path} "
+                f"(원본: {path_text!r})"
+            )
+            skipped_count += 1
+            continue
+        # 검증 통과 시 정규화된 경로 사용
+        path = Path(reason_or_path)
+        # --- [경로 사전 검증 끝] ---
+
         bundle = prepare_upload_bundle(path)
         if not bundle:
             logger.warning(
@@ -84,7 +145,10 @@ async def auto_upload(
                 uploaded_count += 1
             except Exception as exc:
                 logger.warning(f"[auto_upload:{org_id}] 업로드 실패 {artifact}: {exc}")
-    logger.info(f"[auto_upload:{org_id}] 완료 — 후보 {len(candidates)}건 / 업로드 {uploaded_count}건")
+    logger.info(
+        f"[auto_upload:{org_id}] 완료 — 후보 {len(candidates)}건 / "
+        f"업로드 {uploaded_count}건 / 스킵 {skipped_count}건"
+    )
 
 
 async def upload_artifacts_to(
@@ -108,7 +172,16 @@ async def upload_artifacts_to(
     from tools.telegram_uploader import upload_file
 
     for raw in extract_local_artifact_paths(result):
-        for p in prepare_upload_bundle(raw):
+        # --- [경로 사전 검증] 환각/비파일 경로 스킵 ---
+        valid, reason_or_path = _validate_upload_path(raw)
+        if not valid:
+            logger.warning(
+                f"[upload_artifacts_to:{org_id}] 업로드 스킵 — {reason_or_path} "
+                f"(원본: {raw!r})"
+            )
+            continue
+        # --- [경로 사전 검증 끝] ---
+        for p in prepare_upload_bundle(reason_or_path):
             p_str = str(p)
             if p_str not in uploaded_artifacts:
                 caption = f"📎 {org_id} 산출물: {p.name}"
