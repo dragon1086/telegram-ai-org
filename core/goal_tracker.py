@@ -586,6 +586,15 @@ class GoalTracker:
             return GoalStatus(achieved=False, progress_summary="아직 태스크가 없음",
                               remaining_work="태스크 분해 필요", confidence=0.0)
 
+        # coordinator 패턴: goal 직계 자식이 coordinator면 leaf 태스크로 교체
+        # (GoalTracker._wait_for_completion은 coordinator 단위, evaluate는 leaf 단위로 평가)
+        if all(s.get("metadata", {}).get("coordinator") for s in subtasks):
+            leaf_tasks = []
+            for coord in subtasks:
+                leaf_tasks.extend(await self._db.get_subtasks(coord["id"]))
+            if leaf_tasks:
+                subtasks = leaf_tasks
+
         # cancelled 서브태스크 제외 — 이전 iteration 이력이 평가에 섞이지 않도록
         active_subtasks = [s for s in subtasks if s["status"] != "cancelled"]
         if not active_subtasks:

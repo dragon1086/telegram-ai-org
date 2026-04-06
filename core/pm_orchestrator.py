@@ -1641,6 +1641,9 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
             if all_done:
                 if not skip_synthesis:
                     await self._synthesize_and_act(parent_id, siblings, chat_id)
+                # 모든 하위 태스크 완료 → 부모(coordinator) done 처리
+                # GoalTracker._wait_for_completion이 coordinator terminal 감지 후 다음 iter로 진행
+                await self._db.update_pm_task_status(parent_id, "done")
             else:
                 await self._send(chat_id, await self.build_status_snapshot(parent_id))
 
