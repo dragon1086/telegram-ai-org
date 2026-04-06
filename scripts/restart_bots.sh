@@ -17,6 +17,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "=== 봇 안전 재시작 시작 ==="
 bash "$SCRIPT_DIR/bot_control.sh" stop all
 
+# ── 잔존 봇 프로세스 강제 정리 (bot_control.sh 누락 대비 안전망) ─────────────
+# bot_control.sh stop은 PM_ORG_NAME= 환경변수 감지에 의존 → 감지 실패 시 프로세스 생존
+# pkill -f 로 bot-runtime/main.py 전체를 직접 제거해 race condition 원천 차단
+echo "--- bot-runtime 잔존 프로세스 정리 ---"
+_remaining=$(pgrep -f "bot-runtime/main.py" 2>/dev/null | wc -l | tr -d ' ')
+if [ "${_remaining}" -gt 0 ]; then
+  echo "▶ 잔존 ${_remaining}개 프로세스 SIGTERM..."
+  pkill -TERM -f "bot-runtime/main.py" 2>/dev/null || true
+  _deadline=$(( $(date +%s) + 8 ))
+  while [ "$(date +%s)" -lt "$_deadline" ]; do
+    _remaining=$(pgrep -f "bot-runtime/main.py" 2>/dev/null | wc -l | tr -d ' ')
+    [ "${_remaining}" -eq 0 ] && break
+    sleep 0.5
+  done
+  if [ "${_remaining}" -gt 0 ]; then
+    echo "▶ SIGKILL 잔존 ${_remaining}개..."
+    pkill -KILL -f "bot-runtime/main.py" 2>/dev/null || true
+    sleep 1
+  fi
+fi
+echo "✅ bot-runtime 프로세스 없음 확인"
+
 # agent_monitor도 함께 종료 (start_all.sh에서 새로 시작됨)
 MONITOR_PID_FILE="/tmp/agent-monitor.pid"
 if [ -f "$MONITOR_PID_FILE" ]; then

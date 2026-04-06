@@ -93,6 +93,42 @@ if command -v python3 &>/dev/null; then
     python3 "$(dirname "$0")/cleanup_tmux.py" 2>/dev/null || true
 fi
 
+# ── 기존 bot-runtime 프로세스 전체 종료 (안전망) ─────────────────────────────
+# bot_manager.py stop은 PM_ORG_NAME= 환경변수 감지에 의존하므로 감지 누락 시
+# 프로세스가 생존해 중복 실행(race condition)이 발생한다.
+# 여기서 bot-runtime/main.py 를 직접 pkill로 일괄 종료하여 완전한 clean slate 보장.
+_kill_all_bot_processes() {
+  local _count
+  _count=$(pgrep -f "bot-runtime/main.py" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${_count}" -eq 0 ]; then
+    echo "· 실행 중인 봇 프로세스 없음 (clean)"
+    return
+  fi
+  echo "▶ 기존 봇 프로세스 ${_count}개 종료 중 (SIGTERM)..."
+  pkill -TERM -f "bot-runtime/main.py" 2>/dev/null || true
+  # 최대 8초 graceful 종료 대기
+  local _deadline=$(( $(date +%s) + 8 ))
+  while [ "$(date +%s)" -lt "$_deadline" ]; do
+    _count=$(pgrep -f "bot-runtime/main.py" 2>/dev/null | wc -l | tr -d ' ')
+    [ "${_count}" -eq 0 ] && break
+    sleep 0.5
+  done
+  # 잔존 프로세스 강제 종료
+  _count=$(pgrep -f "bot-runtime/main.py" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${_count}" -gt 0 ]; then
+    echo "▶ SIGKILL로 잔존 프로세스 ${_count}개 강제 종료..."
+    pkill -KILL -f "bot-runtime/main.py" 2>/dev/null || true
+    sleep 1
+  fi
+  _count=$(pgrep -f "bot-runtime/main.py" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${_count}" -eq 0 ]; then
+    echo "✅ 모든 기존 봇 프로세스 종료 완료"
+  else
+    echo "⚠️  ${_count}개 프로세스가 여전히 실행 중 — 계속 진행"
+  fi
+}
+_kill_all_bot_processes
+
 BOT_ROWS=$("$PYTHON_BIN" - <<'PY'
 from core.orchestration_config import load_orchestration_config
 
