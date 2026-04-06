@@ -3325,11 +3325,12 @@ class TelegramRelay:
         if self._pm_orchestrator:
             try:
                 if event_type == "완료":
-                    newly = await self._pm_orchestrator.dispatch_newly_ready(
-                        task_id, self.allowed_chat_id
+                    # on_task_complete: dep unlock + COLLAB triggers + LessonMemory
+                    # skip_synthesis=True — synthesis는 아래 _synthesizing 가드 블록에서 처리
+                    await self._pm_orchestrator.on_task_complete(
+                        task_id, None, self.allowed_chat_id, skip_synthesis=True
                     )
-                    if newly:
-                        logger.info(f"[PM_DONE 이벤트] 즉시 unlock → {newly}")
+                    logger.info(f"[PM_DONE 이벤트] {task_id} on_task_complete 완료")
                 elif event_type == "실패":
                     affected = await self._pm_orchestrator._graph.handle_task_failure(task_id)
                     if affected:
