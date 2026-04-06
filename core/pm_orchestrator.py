@@ -920,8 +920,8 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
             msg_lower = user_message.lower()
             if any(kw.lower() in msg_lower for kw in self._RETRO_BLOCK_KEYWORDS):
                 logger.info(
-                    f"[PM] 회고 기반 태스크 분배 차단 — 회고 키워드 감지 "
-                    f"(ENABLE_RETRO_DISPATCH=0)"
+                    "[PM] 회고 기반 태스크 분배 차단 — 회고 키워드 감지 "
+                    "(ENABLE_RETRO_DISPATCH=0)"
                 )
                 return []
         if not self._dept_map():
@@ -1610,6 +1610,50 @@ class PMOrchestrator(PMDiscussionMixin, PMSynthesisMixin):
             else:
                 await self._send(chat_id, await self.build_status_snapshot(parent_id))
 
+
+    async def dispatch_newly_ready(self, completed_task_id: str, chat_id: int) -> list[str]:
+        """완료된 태스크로 인해 새로 unlock된 태스크를 즉시 dispatch (이벤트 기반).
+
+        synthesis/COLLAB 트리거 없이 의존성 해제 + 메시지 발송만 수행.
+        _handle_pm_done_event()에서 호출 — 기존 폴링(get_tasks_for_dept) 대비
+        즉각 반응(완료 후 ~0ms, 폴링 대비 2s 단축).
+        """
+        newly_ready = await self._graph.mark_complete(completed_task_id)
+        if not newly_ready:
+            return []
+        logger.info(f"[PM 이벤트 unlock] {completed_task_id} 완료 → 즉시 dispatch: {newly_ready}")
+        for tid in newly_ready:
+            task = await self._db.get_pm_task(tid)
+            if not task:
+                continue
+            dept = task["assigned_dept"]
+            dept_name = KNOWN_DEPTS.get(dept, dept)
+            dept_mention = self._org_mention(dept)
+            requester = self._requester_mention(task.get("metadata"))
+            prefix = f"{dept_mention} "
+            if requester:
+                prefix += f"(요청자: {requester}) "
+            task_meta = task.get("metadata") or {}
+            _task_type = task_meta.get("task_type", "")
+            _allow_fc = task_meta.get("allow_file_change")
+            _type_line = f"\n태스크 유형: {_task_type}" if _task_type else ""
+            _fc_line = (
+                f"\n파일·코드 변경 허용: {'예' if _allow_fc else '아니오'}"
+                if _allow_fc is not None else ""
+            )
+            msg = (
+                f"{prefix}[PM_TASK:{tid}|dept:{dept}] {dept_name}에 배정"
+                f"{_type_line}{_fc_line}\n{task['description'][:300]}"
+            )
+            await self._db.update_pm_task_status(tid, "assigned")
+            try:
+                await self._send(
+                    chat_id, msg,
+                    reply_to_message_id=self._reply_message_id(task.get("metadata")),
+                )
+            except Exception as _e:
+                logger.warning(f"[PM 이벤트 unlock] {tid} 알림 전송 실패 (assigned 상태 유지): {_e}")
+        return newly_ready
 
     async def _handle_improve_status(self, chat_id: int) -> str:
         """자가개선 상태를 수집·평가하고 요약 메시지를 반환한다.

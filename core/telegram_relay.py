@@ -3318,6 +3318,26 @@ class TelegramRelay:
         task_id = m.group(1).strip()
         event_type = m.group(2)
         logger.info(f"[PM_DONE 이벤트] {task_id} {event_type} 수신 → 합성 체크")
+
+        # ── 이벤트 기반 의존성 해제 ─────────────────────────────────────────────
+        # 완료/실패 수신 즉시 downstream 태스크를 unlock 또는 cascade-fail.
+        # 기존 폴링(worker get_tasks_for_dept, 2s 주기)은 fallback으로 유지.
+        if self._pm_orchestrator:
+            try:
+                if event_type == "완료":
+                    newly = await self._pm_orchestrator.dispatch_newly_ready(
+                        task_id, self.allowed_chat_id
+                    )
+                    if newly:
+                        logger.info(f"[PM_DONE 이벤트] 즉시 unlock → {newly}")
+                elif event_type == "실패":
+                    affected = await self._pm_orchestrator._graph.handle_task_failure(task_id)
+                    if affected:
+                        logger.warning(f"[PM_DONE 이벤트] cascade-fail → {affected}")
+            except Exception as _ev_e:
+                logger.warning(f"[PM_DONE 이벤트] 이벤트 unlock 실패 (폴링 fallback 유지): {_ev_e}")
+        # ────────────────────────────────────────────────────────────────────────
+
         try:
             task_info = await self.context_db.get_pm_task(task_id)
             if task_info and event_type == "완료":
