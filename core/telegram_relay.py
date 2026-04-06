@@ -3000,6 +3000,12 @@ class TelegramRelay:
             self._org_scheduler.start()
             logger.info(f"[{self.org_id}] OrgScheduler 시작됨")
 
+        # 재시작 후 미배분 pending 태스크 자동 dispatch (PM봇 전용)
+        if self._is_pm_org and self._pm_orchestrator is not None:
+            import asyncio as _asyncio
+            _asyncio.create_task(self._dispatch_pending_tasks_on_startup())
+            logger.info(f"[{self.org_id}] startup pending dispatch 태스크 시작됨")
+
         # GoalTracker 활성 목표 재개 (재시작 복구) + 장기 목표 시딩
         if self._goal_tracker is not None:
             import asyncio as _asyncio
@@ -3041,6 +3047,59 @@ class TelegramRelay:
             import asyncio as _asyncio
             _asyncio.create_task(self._warm_pool.start())
             logger.info(f"[{self.org_id}] WarmSessionPool 예열 시작 (engine={self.engine})")
+
+    async def _dispatch_pending_tasks_on_startup(self) -> None:
+        """재시작 후 미배분 pending 태스크를 자동 dispatch (PM봇 전용).
+
+        의존성이 모두 충족된 pending 태스크를 찾아 즉시 해당 부서로 발송.
+        재시작으로 PM 컨텍스트가 소멸해도 배분 대기 태스크가 영구 방치되는 문제 해결.
+        """
+        if not self._is_pm_org or self._pm_orchestrator is None or self.context_db is None:
+            return
+        import asyncio as _asyncio
+        await _asyncio.sleep(8)  # 다른 startup 태스크 완료 대기
+        try:
+            pending = await self.context_db.get_globally_ready_tasks()
+            if not pending:
+                logger.info(f"[{self.org_id}] startup dispatch: 배분 가능한 pending 태스크 없음")
+                return
+            logger.info(f"[{self.org_id}] startup dispatch: {len(pending)}개 배분 시작")
+            from core.pm_orchestrator import KNOWN_DEPTS
+            dispatched = []
+            for task in pending:
+                task_id = task["id"]
+                dept = task.get("assigned_dept") or ""
+                if not dept:
+                    continue
+                dept_name = KNOWN_DEPTS.get(dept, dept)
+                dept_mention = self._pm_orchestrator._org_mention(dept)
+                task_meta = task.get("metadata") or {}
+                _task_type = task_meta.get("task_type", "")
+                _allow_fc = task_meta.get("allow_file_change")
+                _type_line = f"\n태스크 유형: {_task_type}" if _task_type else ""
+                _fc_line = (
+                    f"\n파일·코드 변경 허용: {'예' if _allow_fc else '아니오'}"
+                    if _allow_fc is not None else ""
+                )
+                prefix = f"{dept_mention} "
+                requester = self._pm_orchestrator._requester_mention(task_meta)
+                if requester:
+                    prefix += f"(요청자: {requester}) "
+                msg = (
+                    f"{prefix}[PM_TASK:{task_id}|dept:{dept}] {dept_name}에 배정"
+                    f"{_type_line}{_fc_line}\n{task['description'][:300]}"
+                )
+                await self.context_db.update_pm_task_status(task_id, "assigned")
+                await self._pm_send_message(self.allowed_chat_id, msg)
+                dispatched.append(task_id)
+                logger.info(f"[startup dispatch] {task_id} → {dept} 배분 완료")
+            if dispatched:
+                await self._pm_send_message(
+                    self.allowed_chat_id,
+                    f"♻️ [PM] 재시작 복구: {len(dispatched)}개 미배분 태스크 자동 배분 완료",
+                )
+        except Exception as e:
+            logger.error(f"[{self.org_id}] startup dispatch 실패: {e}")
 
     async def _resume_goals_on_startup(self) -> None:
         """봇 재시작 시 DB의 활성 GoalTracker 목표를 루프 재개 + 중단 목표 자동 복구."""

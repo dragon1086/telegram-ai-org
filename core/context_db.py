@@ -432,6 +432,30 @@ class ContextDB:
             rows = await cursor.fetchall()
             return [self._decode_pm_task_row(r) for r in rows]
 
+    async def get_globally_ready_tasks(self) -> list[dict]:
+        """의존성이 모두 충족된 전체 pending 태스크 조회 (parent 무관).
+
+        재시작 후 미배분 태스크 자동 dispatch 등에 사용.
+        CASCADE-FAIL 정책: failed/cancelled 의존성도 블로킹으로 보지 않음
+        (cascade-fail이 별도로 처리하므로).
+        """
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("""
+                SELECT t.* FROM pm_tasks t
+                WHERE t.status = 'pending'
+                AND t.assigned_dept IS NOT NULL
+                AND NOT EXISTS (
+                    SELECT 1 FROM pm_task_dependencies d
+                    JOIN pm_tasks dep ON dep.id = d.depends_on
+                    WHERE d.task_id = t.id
+                    AND dep.status NOT IN ('done', 'failed', 'cancelled')
+                )
+                ORDER BY t.created_at ASC
+            """)
+            rows = await cursor.fetchall()
+            return [self._decode_pm_task_row(r) for r in rows]
+
     @staticmethod
     def _decode_pm_task_row(row: aiosqlite.Row) -> dict:
         data = dict(row)
