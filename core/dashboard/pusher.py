@@ -11,11 +11,10 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Optional
 
 from core.dashboard.adapter import DataSourceAdapter
 from core.dashboard.aggregator import aggregate_all_periods, count_by_state
-from core.dashboard.models import TicketStatus, TicketState
+from core.dashboard.models import TicketState, TicketStatus
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +84,7 @@ class DashboardPusher:
     async def _on_tickets_updated(self, tickets: list[TicketStatus]) -> None:
         """폴링 콜백 — 변경 감지 후 SSE 이벤트 발행."""
         try:
-            from core.api.routes.events import publish_event, _set_pusher
+            from core.api.routes.events import _set_pusher, publish_event
             _set_pusher(self)  # 스냅샷 접근용 참조 등록
         except ImportError:
             logger.debug("events 모듈 없음 — SSE 발행 스킵")
@@ -101,9 +100,17 @@ class DashboardPusher:
         counts = count_by_state(tickets)
         if counts != self._prev_counts:
             agg = aggregate_all_periods(tickets)
+            # per-org IN_PROGRESS 카운트 (캐릭터 활성 상태 표시용)
+            org_counts: dict[str, dict[str, int]] = {}
+            for t in tickets:
+                org = t.org_id or t.assignee or "unassigned"
+                if org not in org_counts:
+                    org_counts[org] = {"in_progress": 0, "pending": 0, "done": 0, "blocked": 0}
+                org_counts[org][t.state.value] = org_counts[org].get(t.state.value, 0) + 1
             ticket_payload = {
                 **counts,
                 "aggregations": {k: v.to_dict() for k, v in agg.items()},
+                "org_counts": org_counts,
                 "ts": time.time(),
             }
             # 글로벌 이벤트 발행 (하위 호환 + all 채널)

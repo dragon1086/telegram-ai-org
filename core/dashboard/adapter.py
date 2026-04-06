@@ -180,7 +180,14 @@ class DataSourceAdapter:
                     tables = {row[0] for row in await cur.fetchall()}
 
                 if "pm_tasks" in tables:
-                    return await self._load_pm_tasks(conn)
+                    tickets = await self._load_pm_tasks(conn)
+                    # pm_goals에서 PM봇 활동 상태 추가
+                    async with conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='pm_goals'"
+                    ) as cur:
+                        if await cur.fetchone():
+                            tickets += await self._load_pm_goals(conn)
+                    return tickets
                 elif "tasks" in tables:
                     return await self._load_legacy_tasks(conn)
                 return []
@@ -251,6 +258,45 @@ class DataSourceAdapter:
                     completed_at=completed_at,
                     title=(description or "")[:80],
                     org_id=org_id or "",
+                )
+            )
+        return tickets
+
+    async def _load_pm_goals(self, conn: "aiosqlite.Connection") -> list[TicketStatus]:
+        """pm_goals 테이블에서 PM봇 활동 상태를 TicketStatus로 로드.
+
+        active 목표 → IN_PROGRESS, completed/achieved → DONE, 나머지 → BLOCKED.
+        """
+        _GOAL_STATUS_MAP = {
+            "active":     TicketState.IN_PROGRESS,
+            "in_progress": TicketState.IN_PROGRESS,
+            "completed":  TicketState.DONE,
+            "achieved":   TicketState.DONE,
+            "cancelled":  TicketState.BLOCKED,
+            "stagnated":  TicketState.BLOCKED,
+        }
+        async with conn.execute(
+            "SELECT id, title, status, created_at, updated_at FROM pm_goals ORDER BY updated_at DESC LIMIT 20"
+        ) as cur:
+            rows = await cur.fetchall()
+
+        tickets = []
+        now = time.time()
+        for row in rows:
+            goal_id, title, status, created_at, updated_at = row
+            state = _GOAL_STATUS_MAP.get(str(status).lower(), TicketState.PENDING)
+            ca = self._to_epoch(created_at) or now
+            ua = self._to_epoch(updated_at)
+            tickets.append(
+                TicketStatus(
+                    ticket_id=f"goal-{goal_id}",
+                    state=state,
+                    assignee="aiorg_pm_bot",
+                    created_at=ca,
+                    started_at=ua if state == TicketState.IN_PROGRESS else ca,
+                    completed_at=ua if state == TicketState.DONE else None,
+                    title=f"[목표] {(title or '')[:72]}",
+                    org_id="aiorg_pm_bot",
                 )
             )
         return tickets

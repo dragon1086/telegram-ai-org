@@ -107,8 +107,21 @@ export class Dashboard {
    */
   _handleRealtimeEvent(event) {
     switch (event.type) {
-      case 'ticket_update':
+      case 'ticket_update': {
+        // per-org 카운트로 각 캐릭터 활성 상태 업데이트
+        const orgCounts = event.org_counts;
+        if (orgCounts && this._stateManager) {
+          for (const [orgId, counts] of Object.entries(orgCounts)) {
+            const severity = this._computeSeverity(counts);
+            this._stateManager.updateFromSeverity(orgId, severity.severity);
+            const panel = this._characterPanels.get(orgId);
+            if (panel) {
+              panel.update({ ...severity, lastUpdated: Date.now(), animationTrigger: 'none' });
+            }
+          }
+        }
         break;
+      }
 
       case 'task_complete': {
         const orgId = event.org_id || event.assignee;

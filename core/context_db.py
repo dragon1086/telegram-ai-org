@@ -641,6 +641,32 @@ class ContextDB:
                 if task["status"] == "pending":
                     deps_ready = True
                     async with self._connect() as dep_db:
+                        # 의존 태스크가 failed인지 먼저 확인 — cascade 실패 처리
+                        failed_cursor = await dep_db.execute(
+                            """SELECT d.depends_on FROM pm_task_dependencies d
+                               JOIN pm_tasks dep ON dep.id = d.depends_on
+                               WHERE d.task_id = ?
+                                 AND dep.status = 'failed'
+                               LIMIT 1""",
+                            (task["id"],),
+                        )
+                        failed_dep_row = await failed_cursor.fetchone()
+                        if failed_dep_row and failed_dep_row[0] != task.get("parent_id"):
+                            # 의존 태스크 실패 → 이 태스크도 cascade failed
+                            failed_dep_id = failed_dep_row[0]
+                            logger.warning(
+                                f"[CASCADE-FAIL] 태스크 {task['id']} ({dept_id}): "
+                                f"의존 태스크 {failed_dep_id} 가 failed — cascade 실패 처리."
+                            )
+                            await self.update_pm_task_status(
+                                task["id"], "failed",
+                                result=(
+                                    f"[CASCADE-FAIL] 의존 태스크 {failed_dep_id} 실패로 인한 "
+                                    "자동 cascade 실패 처리."
+                                ),
+                            )
+                            continue
+
                         dep_cursor = await dep_db.execute(
                             """SELECT d.depends_on, dep.status FROM pm_task_dependencies d
                                JOIN pm_tasks dep ON dep.id = d.depends_on
