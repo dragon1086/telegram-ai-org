@@ -914,10 +914,7 @@ class GoalTracker:
                 break
             active = [s for s in subtasks if s["status"] not in terminal]
             if not active:
-                # 루트 PM 태스크가 아직 실행 중이면 계속 대기 (dispatch collision 방지)
-                root_active = await self._db.get_active_parent_tasks()
-                if not root_active:
-                    break
+                break
 
             # cancel_event와 sleep을 동시에 대기
             if cancel_event:
